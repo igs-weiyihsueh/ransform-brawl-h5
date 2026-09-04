@@ -162,7 +162,7 @@ export class DebugSystem implements GameSystem {
     this.infoText.setText(
       `玩家:${player.getCharacterKey()}(${soulInfo})  面向 ${facing}   ${hitInfo}${iframe}\n` +
         `${energyInfo}   下一隻敵人(E補新/R補同型):${nextEnemy}   場上:${enemies.length}  ${enemyInfo}\n` +
-        `[G]生變身道具  [Z/左鍵]攻擊/放招` +
+        `[G]生變身道具  [X]衝刺  [Z/左鍵]攻擊/放招` +
         (player.isOnCooldown() ? '   [玩家攻擊冷卻中]' : ''),
     );
   }

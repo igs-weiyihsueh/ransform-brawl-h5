@@ -32,6 +32,20 @@ export const PLAYER_CONFIG = {
   bodySize: { width: 0.6, height: 1 },
 } as const;
 
+/** 衝刺（Dash）設定（對齊 Unity PlayerConfig）。單位 unit，判定時 ×PPU。 */
+export const DASH_CONFIG = {
+  /** 衝刺速度（unit/s）。 */
+  speed: 8,
+  /** 衝刺持續時間（秒）。 */
+  duration: 0.2,
+  /** 衝刺命中傷害。 */
+  damage: 1,
+  /** 衝刺命中側向擊退力道（輕微）。 */
+  knockback: 1,
+  /** 衝刺命中判定圓半徑（unit）。 */
+  radius: 0.5,
+} as const;
+
 /**
  * 玩家普攻的 AttackData（對齊 Unity）。
  * 幾何數值為「未乘 scale」的原始 unit 值；實際判定時再 × GLOBAL_CHARACTER_SCALE。

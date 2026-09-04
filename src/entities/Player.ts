@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import {
+  DASH_CONFIG,
   PLAYER_CONFIG,
   PLAYER_HIT_RADIUS,
   PLAYER_IFRAME_DURATION,
@@ -40,6 +41,13 @@ export class Player implements Hittable {
   private iFrameRemaining = 0;
   /** debug：最近被誰打到。 */
   private lastHitBy = '';
+
+  /** 衝刺狀態。 */
+  private dashing = false;
+  private dashRemaining = 0;
+  private dashDir: Vec2 = { x: 0, y: 0 };
+  /** 本次衝刺已命中過的敵人（去重，一隻一次）。 */
+  private readonly dashHitSet = new Set<object>();
 
   private readonly hitRadiusPx: number;
 
@@ -164,6 +172,64 @@ export class Player implements Hittable {
     if (dir === this.facing) return;
     this.facing = dir;
     this.anim.setFacing(dir);
+  }
+
+  // --- 衝刺（Dash） ---
+
+  isDashing(): boolean {
+    return this.dashing;
+  }
+
+  /** 目前衝刺方向（正規化）。 */
+  getDashDir(): Vec2 {
+    return { x: this.dashDir.x, y: this.dashDir.y };
+  }
+
+  /**
+   * 發動衝刺。方向 dir 會被正規化；若為零向量則用當前面向。無 cooldown（呼叫端擋 isDashing）。
+   */
+  startDash(dir: Vec2): void {
+    let x = dir.x;
+    let y = dir.y;
+    const len = Math.hypot(x, y);
+    if (len < 1e-6) {
+      x = this.facing;
+      y = 0;
+    } else {
+      x /= len;
+      y /= len;
+    }
+    this.dashing = true;
+    this.dashRemaining = DASH_CONFIG.duration;
+    this.dashDir = { x, y };
+    this.dashHitSet.clear();
+    // 面向依水平衝刺方向。
+    if (x > 0) this.setFacing(1);
+    else if (x < 0) this.setFacing(-1);
+    this.anim.play('move'); // 衝刺用現有 move 動畫
+  }
+
+  /**
+   * 衝刺每幀更新：位移 dashSpeed×dt 往 dashDir；時間到結束。
+   * @returns 是否仍在衝刺中（結束當幀回 false）。
+   */
+  updateDash(dt: number): boolean {
+    if (!this.dashing) return false;
+    const speedPx = DASH_CONFIG.speed * PPU;
+    this.anim.sprite.x += this.dashDir.x * speedPx * dt;
+    this.anim.sprite.y += this.dashDir.y * speedPx * dt;
+    this.dashRemaining -= dt;
+    if (this.dashRemaining <= 0) {
+      this.dashing = false;
+    }
+    return this.dashing;
+  }
+
+  /** 衝刺命中去重：回傳 true 表示這隻本次衝刺尚未打過（並記錄）。 */
+  tryDashHit(enemy: object): boolean {
+    if (this.dashHitSet.has(enemy)) return false;
+    this.dashHitSet.add(enemy);
+    return true;
   }
 
   /**

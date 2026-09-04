@@ -4,7 +4,13 @@ import type { GameSystem } from '@/systems/GameSystem';
 import { computeJustPressed } from '@/systems/inputEdge';
 
 /** 可做 edge 偵測（justPressed）的動作名。用動作層命名，與現有 WASD/attack 抽象一致。 */
-export type InputAction = 'attack' | 'respawn' | 'switchPlayer' | 'switchEnemy' | 'spawnItem';
+export type InputAction =
+  | 'attack'
+  | 'dash'
+  | 'respawn'
+  | 'switchPlayer'
+  | 'switchEnemy'
+  | 'spawnItem';
 
 // 轉出純函式，讓既有 import 點（若有）仍可從此取得；實作在 inputEdge.ts（零依賴、可測）。
 export { computeJustPressed } from '@/systems/inputEdge';
@@ -41,6 +47,7 @@ export class InputSystem implements GameSystem {
   /** 每幀 snapshot：本幀是否按下 / 是否剛按下（edge）。 */
   private downNow: Record<InputAction, boolean> = {
     attack: false,
+    dash: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -48,6 +55,7 @@ export class InputSystem implements GameSystem {
   };
   private justPressedNow: Record<InputAction, boolean> = {
     attack: false,
+    dash: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -55,6 +63,7 @@ export class InputSystem implements GameSystem {
   };
   private prevDown: Record<InputAction, boolean> = {
     attack: false,
+    dash: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -79,6 +88,7 @@ export class InputSystem implements GameSystem {
 
     this.actionKeys = {
       attack: kb.addKey(KC.Z),
+      dash: kb.addKey(KC.X),
       respawn: kb.addKey(KC.R),
       switchPlayer: kb.addKey(KC.T),
       switchEnemy: kb.addKey(KC.E),
@@ -151,6 +161,11 @@ export class InputSystem implements GameSystem {
   /** 攻擊「動作」的 edge（Z 或滑鼠左鍵）。給放招/COMBO 用。 */
   justPressedAttack(): boolean {
     return this.justPressedNow.attack;
+  }
+
+  /** 衝刺鍵（X）的 edge。 */
+  justPressedDash(): boolean {
+    return this.justPressedNow.dash;
   }
 
   // --- 相容既有呼叫端（改讀 snapshot，語意不變） ---
