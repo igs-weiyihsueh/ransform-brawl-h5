@@ -24,6 +24,19 @@ QA（測騎）維護。記錄「**當前實作下是等價 mutant、但條件性
 - **寫不出（整個定義域每個輸入都同輸出＝數學等價）→ 進本清單**（如 Fan 上下對稱、整數域 ceil≡round）＋記分家條件。
 
 判準是**「定義域上有沒有可鑑別差異」**，不是「呼叫端現在可不可達」。
+
+### 理論骨架：可測性 = 觸發條件能否用「這個 unit 可控的輸入」構造出來
+
+一段程式碼路徑**可不可測**，取決於**它的觸發條件能不能透過「這個 unit 自己可控的輸入」構造出來**：
+
+- **參數層 = 直接可控**：觸發值（如負數）就是函式參數，測試可直接餵進去 → **可測 → 寫測試**
+  （防禦 guard 屬此類：負輸入在參數定義域內，是「呼叫端現在不傳」而非「函式不接受」）。
+- **內部狀態層 / 受不變量把守 = 構造不出**：要觸發的狀態被這個 unit 的公開 API + 類別不變量擋住，
+  無法從外部用可控輸入構造出來 → **測不出 → 留清單**（並把「哪個不變量守著」寫成分家條件）。
+
+「內部狀態不可達 → 真等價」與「分家條件」是**同一件事的兩面**：不可達是因為某個不變量守著；
+不變量一鬆，那個狀態就變可達、該碼就從等價變可測且承重。所以每筆的分家條件要**明確綁到它依賴的不變量**。
+
 為何不「一律不寫、全列清單」：那讓 guard 沒有測試網接住、全靠人讀清單＝靜默失效。
 **清單是「提醒」不是「守衛」，只裝「測試本質上做不到的」（真等價），不是「懶得測的」**。
 
@@ -53,13 +66,15 @@ QA（測騎）維護。記錄「**當前實作下是等價 mutant、但條件性
 - **等價點**：`src/systems/CreditSystem.ts` `consumeOnHit()` 的
   `this.credit = Math.max(0, this.credit - CREDIT_PER_HIT);`
   ——把 `Math.max(0, …)` 拿掉（只留 `this.credit - CREDIT_PER_HIT`）不產生行為差異。
-- **為何留清單而非寫測試（用判準）**：`consumeOnHit()` **不吃參數**，只讀內部狀態 `this.credit`；
-  要讓這行 clamp 真的 clamp，需要在 `credit=0 且非耗盡` 的狀態下呼叫它——但開頭 `if (this.outOfCredit) return;`
-  ＋歸 0 時**同幀原子** `enterOutOfCredit()`，使「credit 會走負」的狀態**透過任何公開 API 呼叫序列都不可達**。
-  因此在此函式（經公開 API 可達）的定義域上，**寫不出鑑別測試** → 屬真等價、留清單。
+- **為何留清單而非寫測試（用判準）**：`consumeOnHit()` **不吃參數**，只讀內部狀態 `this.credit`（內部狀態層）。
+  要讓這行 clamp 真的 clamp，需要在 `credit=0 且非耗盡` 的狀態下呼叫它——但**類別不變量**守著這個狀態：
+  開頭 `if (this.outOfCredit) return;` ＋ credit 歸 0 時**同幀原子** `enterOutOfCredit()`，使「credit 會走負」的狀態
+  **透過任何公開 API 呼叫序列都不可達**。因此經公開 API 的定義域上**寫不出鑑別測試** → 屬真等價、留清單。
   （對比 chest/jp 的 `amount<=0` guard：那是**參數**級契約，負數在參數定義域內、可直接傳入鑑別 → 寫防禦契約測試，不入清單。）
-- **何時變真回歸點**：若 `if (outOfCredit) return` guard 被拿掉／或改成允許在 credit 可能為負的狀態下扣
-  （＝讓「credit 走負」的狀態變可達），這個 clamp 就成為唯一防負值的承重碼、且變可鑑別 → 屆時補「扣到負值被 clamp 回 0」對照。
+- **依賴的不變量（＝分家條件，同件事兩面）**：真等價身份**依賴類別不變量**
+  「`outOfCredit` guard ＋ 歸 0 同幀原子進耗盡」使「credit 走負」的狀態不可達。
+  → **在當前不變量下，經公開 API 不可達 → 真等價；若該不變量改變（guard 被拿掉／改成允許在 credit 可能為負的狀態下扣）使該狀態變可達，此 clamp 即變可測且承重，須補防禦契約測試「扣到負值被 clamp 回 0」。**
+  （此即 batch6 對 credit clamp 的原始預測，前後一致：不可達是因不變量守著，不變量一鬆就變可達變承重。）
 - **驗證紀錄**：batch6 + batch10 皆實測「拿掉 clamp → credit 測試全綠」。真正守「不為負」的鑑別力現由
   `if(outOfCredit)return` guard + 「倒數中命中不誤扣」不變量 case 提供（拿掉 guard → 該 case 紅）。
 
@@ -75,6 +90,24 @@ QA（測騎）維護。記錄「**當前實作下是等價 mutant、但條件性
   例如 0.3、0.7），ceil 與 round 就會分家（round 會往下捨、ceil 一律進位）→ 屆時補「ceil ≠ round」對照。
 - **驗證紀錄**：batch7（COMBO harden）實測「ceil→round → 全綠」。真正該抓的是 **ceil vs floor**（floor 會少給票），
   已由多條 ticket case + `ceil≠floor` 對照守著。
+
+## 4. GuardEvent 派彩的 `if (won)` 分支（vs 無條件派彩）
+
+- **等價點**：`src/systems/GuardEvent.ts` `finish()` 內
+  `if (won) { const reward = Math.round(this.preset.rewardTickets * hpRatio); ... }`
+  ——把 `if (won)` 改成 `if (true)`（敗也走派彩分支）在**玩家可觀察行為（發出的獎券數）**上不產生差異。
+- **依賴前提**：獎券公式為 `round(rewardTickets × hpRatio)`，且**敗 ⟺ 雕像 HP=0 ⟺ hpRatio=0**
+  （`isDefeated` 只在 `hp<=0` 翻真；敗只透過 `isDefeated()` 觸發）。
+  所以敗時 hpRatio=0 → `round(rewardTickets × 0)=0` → 走不走派彩分支，發出的獎券都是 0。
+- **技術上的可鑑別點（誠實標註，判斷邊界）**：`if(true)` 版在敗時會多**呼叫一次** `ticket.addTickets(0)`
+  （`if(won)` 版則完全不呼叫）。這可用 addTickets 的**呼叫次數**（call count）鑑別——但 `addTickets(0)` 在
+  TicketSystem 是 no-op（`if (n<=0) return`），**非玩家可觀察的行為契約**，只是內部呼叫細節。
+  故本清單將它列為「玩家可觀察行為等價」；是否為了「呼叫次數」寫一條測試＝團隊判斷（見下方判斷問題，待顧問定調）。
+- **何時變真回歸點**：若獎券公式改成**不隨 hpRatio 歸零**（例如敗也給固定安慰獎、或 reward 有與 hpRatio 無關的底），
+  或敗的觸發條件改成「HP>0 也可能敗」（hpRatio 不再必為 0），則 `if(won)` 就成為唯一擋住「敗發獎券」的承重碼 → 屆時補「敗→0 獎券」對照（該對照目前已存在且會紅——見驗證紀錄）。
+- **驗證紀錄**：batch11（Guard harden）實測「`if(won)`→`if(true)` → 玩家可觀察測試（敗給 0 獎券）全綠」。
+  真正守「敗不發獎券」的鑑別力，在「獎券公式 × hpRatio」這條前提成立時，由公式本身（hpRatio=0）保證。
+  ⚠️ 待顧問定調：這種「玩家可觀察等價、但 call-count 可鑑別」的點，要用 call-count 寫測試、還是留清單？
 
 ---
 
