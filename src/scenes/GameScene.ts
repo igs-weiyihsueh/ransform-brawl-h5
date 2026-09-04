@@ -16,6 +16,7 @@ import { EnergySystem } from '@/systems/EnergySystem';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import { InputSystem } from '@/systems/InputSystem';
+import { JpSystem } from '@/systems/JpSystem';
 import { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import { TransformSystem } from '@/systems/TransformSystem';
 import { TicketSystem } from '@/systems/TicketSystem';
@@ -82,6 +83,8 @@ export class GameScene extends Phaser.Scene {
     const combo = new ComboSystem();
     const ticket = new TicketSystem();
     const chest = new ChestSystem();
+    const wave = new WaveSystem(this.previewLevels);
+    const jp = new JpSystem();
 
     // 共用 context（各 system 只透過它取服務/狀態）。
     this.ctx = {
@@ -97,6 +100,8 @@ export class GameScene extends Phaser.Scene {
       combo,
       ticket,
       chest,
+      wave,
+      jp,
       getEnemies: () => spawner.getEnemies(),
     };
 
@@ -136,8 +141,8 @@ export class GameScene extends Phaser.Scene {
     this.register(this.ctx.combo); // COMBO：連段倒數/結算彩票
     this.register(this.ctx.ticket); // 彩票計數器
     this.register(this.ctx.chest); // 寶盒：擊殺累積能量/自動開箱
-    // 波次：試玩模式注入 previewLevels（跑編輯器送來的關卡）；一般玩家 undefined → WaveSystem 自行 fetch JSON。
-    this.register(new WaveSystem(this.previewLevels));
+    this.register(this.ctx.jp); // JP：幕通關給燈/命中累積倍數/集滿派彩
+    this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
     this.register(new UISystem()); // HUD：唯讀當幀狀態刷新顯示
     // DebugSystem 需讀玩家/敵人判定圖形；正式版可整包移除這行。
     this.register(new DebugSystem(playerControl, this.ctx.spawner));

@@ -8,8 +8,10 @@ import type { EffectSystem } from '@/systems/EffectSystem';
 import type { EnemySpawner } from '@/systems/EnemySpawner';
 import type { EnergySystem } from '@/systems/EnergySystem';
 import type { InputSystem } from '@/systems/InputSystem';
+import type { JpSystem } from '@/systems/JpSystem';
 import type { TicketSystem } from '@/systems/TicketSystem';
 import type { TransformSystem } from '@/systems/TransformSystem';
+import type { WaveSystem } from '@/systems/WaveSystem';
 
 /**
  * GameContext — 各 GameSystem 共用的執行環境與服務。
@@ -44,6 +46,10 @@ export interface GameContext {
   readonly ticket: TicketSystem;
   /** 寶盒系統：擊殺累積寶盒能量、滿 165 自動開箱（UI 讀進度、EnemySpawner 擊殺灌 charge）。 */
   readonly chest: ChestSystem;
+  /** 波次/關卡系統：生怪節奏、一幕通關事件（JP 給燈）。 */
+  readonly wave: WaveSystem;
+  /** JP 累積獎池：三組燈/倍數池、集滿派彩（幕通關給燈、命中扣 credit 累積、灌 ticket）。 */
+  readonly jp: JpSystem;
 
   /** 取得目前場上存活的敵人（唯讀快照，供命中查詢/AI 目標）。 */
   getEnemies(): readonly Enemy[];

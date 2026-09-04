@@ -56,6 +56,7 @@ const EXPECTED_SYSTEMS = [
   'ComboSystem',
   'TicketSystem',
   'ChestSystem',
+  'JpSystem',
   'WaveSystem',
   'UISystem',
   'DebugSystem',

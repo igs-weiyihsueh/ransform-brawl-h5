@@ -49,6 +49,9 @@ export class WaveSystem implements GameSystem {
   /** 本系統生出、目前仍追蹤中的敵人（用來偵測擊殺）。 */
   private tracked: Enemy[] = [];
 
+  /** 一幕通關回呼（本關 nodes 全跑完時觸發，供 JP 給燈）。 */
+  onStageClear: (() => void) | null = null;
+
   /**
    * @param preloadedLevels 選填：直接注入已驗證的關卡（測試/編輯器預覽用）。
    *   不給時，init() 會自行從 levels.json 載入。
@@ -109,10 +112,13 @@ export class WaveSystem implements GameSystem {
     if (this.nodeIndex + 1 < level.nodes.length) {
       this.enterNode(this.nodeIndex + 1);
     } else if (this.levels && this.levelIndex + 1 < this.levels.length) {
+      // 本關 nodes 全跑完 = 一幕通關。
+      this.onStageClear?.();
       this.levelIndex += 1;
       this.enterNode(0);
     } else {
-      // 全破：停在尾端（node 越界 → currentNode() 回 undefined → update no-op）。
+      // 全破：最後一關 nodes 全跑完 = 一幕通關（也算）。
+      this.onStageClear?.();
       this.nodeIndex = level.nodes.length;
     }
   }
