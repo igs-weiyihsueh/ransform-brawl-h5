@@ -58,3 +58,10 @@ npm run typecheck # 只跑 tsc 型別檢查
 ## 設計解析度
 
 目前設 `1920 x 1080`（橫式），使用 `Phaser.Scale.FIT` + `CENTER_BOTH` 自動縮放置中。可於 `src/config/gameConfig.ts` 調整。
+
+## 自動部署（GitHub Pages）
+
+已設定 `.github/workflows/deploy.yml`：push 到 `main` → `npm ci` + `npm run build` → 自動把 `dist/` 發佈到 GitHub Pages，拿到固定連結。
+
+- Vite `base` 設為 `'./'`（相對路徑），因此不論 repo 名或 Pages 子路徑（`https://<帳號>.github.io/<repo>/`）都能正確載入資源，不用硬寫 repo 名。
+- repo 建立後，需在 GitHub repo 的 **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions**（只需設定一次）。
