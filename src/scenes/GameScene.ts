@@ -94,13 +94,16 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * 註冊系統。順序 = 每幀執行順序（變身-leader 定）：
-   *   Input(共用服務，被動讀) → PlayerControl → Enemy → Wave → UI → Debug。
+   *   Input → PlayerControl → Enemy → Wave → UI → Debug。
+   * InputSystem 排最前：每幀先 snapshot justPressed，後面系統該幀讀到一致值。
    * UI 排在玩家/敵人/波次更新之後，才讀到「當幀」狀態；Debug 疊層排最末。
    * 新系統在這裡加一行即可，無須改 update()。
    */
   private registerSystems(): void {
     const playerControl = new PlayerControlSystem();
     const enemy = new EnemySystem();
+    // InputSystem 同時是 ctx.input 服務與 registry member；排最前做輸入 snapshot。
+    this.register(this.ctx.input);
     this.register(playerControl); // 玩家操控（讀 Input 服務）
     this.register(enemy); // 敵人執行時（驅動 spawner）
     // 波次：試玩模式注入 previewLevels（跑編輯器送來的關卡）；一般玩家 undefined → WaveSystem 自行 fetch JSON。
@@ -121,13 +124,12 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** 場景關閉：依序清理每個 system + 共用服務，清空 registry。由 SHUTDOWN 事件觸發。 */
+  /** 場景關閉：依序清理每個 system，清空 registry。由 SHUTDOWN 事件觸發。 */
   private onShutdown(): void {
     for (const sys of this.systems) {
       sys.destroy?.();
     }
-    // 共用服務（非 registry 成員）也清理。
-    this.ctx.input.destroy();
+    // InputSystem 現在也是 registry member，destroy() 已在上面迴圈被呼叫，無需另外清。
     this.systems = [];
   }
 }
