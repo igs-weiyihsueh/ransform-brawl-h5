@@ -1,0 +1,20 @@
+{
+  "name": "transform-brawl-h5",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "《變身大亂鬥》H5 版 — Phaser 3 + TypeScript + Vite",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^6.0.3"
+  }
+}

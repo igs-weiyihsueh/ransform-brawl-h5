@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agend-翼騎-h5-t1545349337914282034": {
+      "command": "/root/.agend/instances/翼騎-h5-t1545349337914282034/mcp-wrapper-agend.sh",
+      "args": []
+    }
+  }
+}
