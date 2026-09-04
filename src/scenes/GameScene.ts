@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CHARACTERS } from '@/config/animationConfig';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
+import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import { DebugSystem } from '@/systems/DebugSystem';
@@ -28,8 +29,16 @@ export class GameScene extends Phaser.Scene {
   private systems: GameSystem[] = [];
   private ctx!: GameContext;
 
+  /** 試玩模式注入的關卡（由 main.ts 經 scene data 傳入）；一般玩家為 undefined。 */
+  private previewLevels?: LevelData[];
+
   constructor() {
     super({ key: 'GameScene' });
+  }
+
+  /** 接收 scene.start 傳入的資料（試玩模式帶 previewLevels）。 */
+  init(data?: { previewLevels?: LevelData[] }): void {
+    this.previewLevels = data?.previewLevels;
   }
 
   /** 載入全部角色逐幀圖 + 攻擊特效。 */
@@ -94,7 +103,8 @@ export class GameScene extends Phaser.Scene {
     const enemy = new EnemySystem();
     this.register(playerControl); // 玩家操控（讀 Input 服務）
     this.register(enemy); // 敵人執行時（驅動 spawner）
-    this.register(new WaveSystem()); // 波次：透過 ctx.spawner 主導生怪
+    // 波次：試玩模式注入 previewLevels（跑編輯器送來的關卡）；一般玩家 undefined → WaveSystem 自行 fetch JSON。
+    this.register(new WaveSystem(this.previewLevels));
     this.register(new UISystem()); // HUD：唯讀當幀狀態刷新顯示
     // DebugSystem 需讀玩家/敵人判定圖形；正式版可整包移除這行。
     this.register(new DebugSystem(playerControl, this.ctx.spawner));
