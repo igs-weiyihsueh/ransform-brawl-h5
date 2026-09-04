@@ -11,6 +11,7 @@ import {
 } from '@/config/gameConfig';
 import { Enemy } from '@/entities/Enemy';
 import { Player } from '@/entities/Player';
+import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import { buildAttackOBB, queryHits } from '@/systems/hitDetection';
 import { InputSystem } from '@/systems/InputSystem';
 
@@ -33,8 +34,18 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' });
   }
 
+  /** 載入 Human（玩家）與 Enemy_Rush（敵人）所有動作的逐幀圖。 */
+  preload(): void {
+    CharacterAnimator.preload(this, 'Human');
+    CharacterAnimator.preload(this, 'Enemy_Rush');
+  }
+
   create(): void {
     this.cameras.main.setBackgroundColor(BACKGROUND_COLOR);
+
+    // 依設定建立 Phaser animations（全域只需一次）。
+    CharacterAnimator.register(this, 'Human');
+    CharacterAnimator.register(this, 'Enemy_Rush');
 
     this.input_ = new InputSystem(this);
     this.player = new Player(this, GAME_WIDTH * 0.4, GAME_HEIGHT * 0.5);

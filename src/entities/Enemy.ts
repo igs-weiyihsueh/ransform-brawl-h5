@@ -1,38 +1,40 @@
 import Phaser from 'phaser';
-import { ENEMY_RUSH_CONFIG, GLOBAL_CHARACTER_SCALE } from '@/config/combatConfig';
+import {
+  ENEMY_RUSH_CONFIG,
+  SPRITE_SCALE,
+} from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
+import { CharacterAnimator, FRAME_SIZE } from '@/systems/CharacterAnimator';
 import type { Hittable, Vec2 } from '@/systems/hitDetection';
 
+/** 敵人使用的角色美術 key。 */
+const ENEMY_CHARACTER = 'Enemy_Rush';
+
 /**
- * Enemy — 敵人實體（Enemy_Rush：骷髏衝鋒兵，近戰追擊）。
+ * Enemy — 敵人實體（Enemy_Rush，逐幀動畫）。
  *
- * 實作 Hittable，讓命中判定系統能查詢它的中心與碰撞半徑。
- * 追擊/停止的 AI 邏輯在 update()，由 GameScene 每幀餵入玩家位置。
+ * 實作 Hittable 供命中判定查詢。AI：追玩家、進 attackRange 停；
+ * 動畫：移動 move / 停下 idle / 受擊 damaged / 死亡 death 播完消失。
  */
 export class Enemy implements Hittable {
-  readonly sprite: Phaser.GameObjects.Rectangle;
+  private readonly anim: CharacterAnimator;
 
   private hp: number;
   private readonly maxHp: number;
   private readonly radiusPx: number;
 
-  /** 被擊退後殘餘的位移速度（像素/秒），逐幀衰減。 */
   private knockbackVel: Vec2 = { x: 0, y: 0 };
-
-  /** 受擊閃白殘餘秒數。 */
-  private flashRemaining = 0;
-
+  private damagedRemaining = 0;
+  private dying = false;
   private dead = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    const w = ENEMY_RUSH_CONFIG.bodySize.width * GLOBAL_CHARACTER_SCALE * PPU;
-    const h = ENEMY_RUSH_CONFIG.bodySize.height * GLOBAL_CHARACTER_SCALE * PPU;
-    this.sprite = scene.add.rectangle(x, y, w, h, 0xe57373);
-    this.sprite.setStrokeStyle(2, 0x000000);
+    this.anim = new CharacterAnimator(scene, ENEMY_CHARACTER, x, y);
+    this.anim.setScale(SPRITE_SCALE);
     this.hp = ENEMY_RUSH_CONFIG.hp;
     this.maxHp = ENEMY_RUSH_CONFIG.hp;
-    // 碰撞半徑用色塊寬高取較大半邊，讓矩形攻擊框好命中。
-    this.radiusPx = Math.max(w, h) / 2;
+    // 碰撞半徑用視覺高度的一半估算（畫布 256 × 顯示 scale ÷ 2）。
+    this.radiusPx = (FRAME_SIZE * SPRITE_SCALE) / 2;
   }
 
   isDead(): boolean {
@@ -40,64 +42,62 @@ export class Enemy implements Hittable {
   }
 
   getHitCenter(): Vec2 {
-    return { x: this.sprite.x, y: this.sprite.y };
+    return { x: this.anim.sprite.x, y: this.anim.sprite.y };
   }
 
   getHitRadius(): number {
     return this.radiusPx;
   }
 
-  /**
-   * 每幀更新：朝玩家追擊，進入 attackRange 內停下；套用擊退殘速與受擊閃白。
-   */
+  /** 每幀更新：擊退殘速、追擊/停止、動畫狀態。 */
   update(playerPos: Vec2, dt: number): void {
-    if (this.dead) return;
+    if (this.dead || this.dying) return;
 
-    // 擊退殘速（先套用，衰減）。
-    this.sprite.x += this.knockbackVel.x * dt;
-    this.sprite.y += this.knockbackVel.y * dt;
-    const decay = Math.pow(0.001, dt); // 每秒衰減到 0.1%，快速歸零
+    // 擊退殘速（衰減）。
+    this.anim.sprite.x += this.knockbackVel.x * dt;
+    this.anim.sprite.y += this.knockbackVel.y * dt;
+    const decay = Math.pow(0.001, dt);
     this.knockbackVel.x *= decay;
     this.knockbackVel.y *= decay;
 
-    // 追擊：朝玩家移動，直到進入 attackRange。
-    const dx = playerPos.x - this.sprite.x;
-    const dy = playerPos.y - this.sprite.y;
+    if (this.damagedRemaining > 0) {
+      this.damagedRemaining = Math.max(0, this.damagedRemaining - dt);
+    }
+
+    // 追擊。
+    const dx = playerPos.x - this.anim.sprite.x;
+    const dy = playerPos.y - this.anim.sprite.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const rangePx = ENEMY_RUSH_CONFIG.attackRange * PPU;
 
+    let moving = false;
     if (dist > rangePx && dist > 0.0001) {
       const speedPx = ENEMY_RUSH_CONFIG.moveSpeed * PPU;
-      this.sprite.x += (dx / dist) * speedPx * dt;
-      this.sprite.y += (dy / dist) * speedPx * dt;
+      this.anim.sprite.x += (dx / dist) * speedPx * dt;
+      this.anim.sprite.y += (dy / dist) * speedPx * dt;
+      moving = true;
     }
 
-    // 受擊閃白衰減。
-    if (this.flashRemaining > 0) {
-      this.flashRemaining = Math.max(0, this.flashRemaining - dt);
-      if (this.flashRemaining === 0) {
-        this.sprite.setFillStyle(0xe57373);
-      }
+    // 面向玩家（水平）。
+    if (dx > 0) this.anim.setFacing(1);
+    else if (dx < 0) this.anim.setFacing(-1);
+
+    // 受擊硬直期間播 damaged，其餘依移動播 move/idle。
+    if (this.damagedRemaining > 0) {
+      this.anim.play('damaged');
+    } else {
+      this.anim.play(moving ? 'move' : 'idle');
     }
   }
 
-  /**
-   * 受擊：扣血、閃白、擊退。HP 歸 0 死亡消失。
-   * @param damage 傷害。
-   * @param knockback 擊退力道（像素/秒等效）。
-   * @param fromPos 攻擊來源位置（決定擊退方向）。
-   */
+  /** 受擊：扣血、播 damaged、擊退。HP 歸 0 播 death 後消失。 */
   takeHit(damage: number, knockback: number, fromPos: Vec2): void {
-    if (this.dead) return;
+    if (this.dead || this.dying) return;
     this.hp -= damage;
 
-    // 受擊閃白。
-    this.flashRemaining = 0.1;
-    this.sprite.setFillStyle(0xffffff);
-
-    // 擊退：往遠離攻擊來源方向推。knockback(unit) → 像素/秒等效速度。
-    const dx = this.sprite.x - fromPos.x;
-    const dy = this.sprite.y - fromPos.y;
+    // 擊退方向：遠離攻擊來源。
+    const dx = this.anim.sprite.x - fromPos.x;
+    const dy = this.anim.sprite.y - fromPos.y;
     const len = Math.sqrt(dx * dx + dy * dy) || 1;
     const kbPx = knockback * PPU;
     this.knockbackVel.x = (dx / len) * kbPx;
@@ -105,15 +105,23 @@ export class Enemy implements Hittable {
 
     if (this.hp <= 0) {
       this.die();
+    } else {
+      this.damagedRemaining = 0.2;
+      this.anim.play('damaged', { force: true });
     }
   }
 
   private die(): void {
-    this.dead = true;
-    this.sprite.destroy();
+    this.dying = true;
+    this.anim.play('death', {
+      force: true,
+      onComplete: () => {
+        this.dead = true;
+        this.anim.destroy();
+      },
+    });
   }
 
-  /** 給 debug UI 用。 */
   getHp(): number {
     return this.hp;
   }

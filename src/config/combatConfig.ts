@@ -10,6 +10,18 @@ import type { AttackData } from '@/systems/AttackData';
 /** 角色整體縮放（Unity globalCharacterScale）。攻擊判定的 offset/尺寸都要 × 此值。 */
 export const GLOBAL_CHARACTER_SCALE = 1.5;
 
+/**
+ * 逐幀動畫貼圖的縮放。
+ *
+ * 幀畫布為 256×256（FRAME_SIZE），但角色實際只佔畫布一部分。
+ * 目標：讓角色視覺高度大致對齊階段 1 的色塊（body height 1 unit × scale1.5 × PPU100 = 150px）。
+ * 這裡用一個基準倍率 × GLOBAL_CHARACTER_SCALE；若某角色看起來太大/太小，調 spriteScaleBase 即可。
+ */
+export const SPRITE_SCALE_BASE = 0.7;
+
+/** 動畫貼圖最終縮放 = 基準 × 角色整體 scale。 */
+export const SPRITE_SCALE = SPRITE_SCALE_BASE * GLOBAL_CHARACTER_SCALE;
+
 /** 玩家設定。 */
 export const PLAYER_CONFIG = {
   /** 移動速度（unit/s）。 */
