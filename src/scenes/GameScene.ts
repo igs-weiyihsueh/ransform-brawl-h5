@@ -11,6 +11,8 @@ import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import { InputSystem } from '@/systems/InputSystem';
 import { PlayerControlSystem } from '@/systems/PlayerControlSystem';
+import { UISystem } from '@/systems/UISystem';
+import { WaveSystem } from '@/systems/WaveSystem';
 
 /**
  * GameScene — 主場景（系統註冊表版）。
@@ -82,15 +84,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * 註冊系統。順序 = 每幀執行順序：
-   *   玩家操控 → 敵人執行 → debug 疊層。
+   * 註冊系統。順序 = 每幀執行順序（變身-leader 定）：
+   *   Input(共用服務，被動讀) → PlayerControl → Enemy → Wave → UI → Debug。
+   * UI 排在玩家/敵人/波次更新之後，才讀到「當幀」狀態；Debug 疊層排最末。
    * 新系統在這裡加一行即可，無須改 update()。
    */
   private registerSystems(): void {
     const playerControl = new PlayerControlSystem();
     const enemy = new EnemySystem();
-    this.register(playerControl);
-    this.register(enemy);
+    this.register(playerControl); // 玩家操控（讀 Input 服務）
+    this.register(enemy); // 敵人執行時（驅動 spawner）
+    this.register(new WaveSystem()); // 波次：透過 ctx.spawner 主導生怪
+    this.register(new UISystem()); // HUD：唯讀當幀狀態刷新顯示
     // DebugSystem 需讀玩家/敵人判定圖形；正式版可整包移除這行。
     this.register(new DebugSystem(playerControl, this.ctx.spawner));
   }
