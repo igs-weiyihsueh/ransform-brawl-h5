@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>波次編輯器 — 變身大亂鬥 H5</title>
+    <style>
+      :root {
+        --bg: #1a1a2e;
+        --panel: #23233a;
+        --panel2: #2c2c48;
+        --line: #3a3a5c;
+        --text: #e6e6f0;
+        --muted: #9a9ab5;
+        --accent: #6c8cff;
+        --danger: #ff6c7a;
+        --ok: #59d98e;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Arial, "Microsoft JhengHei", sans-serif;
+        font-size: 14px;
+      }
+      header {
+        padding: 10px 16px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      header h1 { font-size: 16px; margin: 0; }
+      header .spacer { flex: 1; }
+      button {
+        background: var(--panel2);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      button:hover { border-color: var(--accent); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.danger { color: var(--danger); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .layout { display: flex; height: calc(100vh - 53px); }
+      .col { overflow-y: auto; padding: 12px; }
+      .col-levels { width: 240px; border-right: 1px solid var(--line); background: var(--panel); }
+      .col-nodes { width: 300px; border-right: 1px solid var(--line); }
+      .col-inspector { flex: 1; }
+      .section-title { color: var(--muted); font-size: 12px; text-transform: uppercase; margin: 4px 0 8px; letter-spacing: 0.5px; }
+      .list-item {
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        margin-bottom: 6px;
+        cursor: pointer;
+        background: var(--panel2);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .list-item.selected { border-color: var(--accent); background: #34345a; }
+      .list-item .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 1px 6px; border-radius: 10px; }
+      .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+      .row label { width: 120px; color: var(--muted); }
+      .row input, .row select {
+        flex: 1;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 13px;
+      }
+      .mini { display: flex; gap: 6px; }
+      .mini button { padding: 4px 8px; font-size: 12px; }
+      .spawn-entry { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+      .spawn-entry select { flex: 2; }
+      .spawn-entry input { flex: 1; }
+      #status {
+        padding: 8px 16px;
+        font-size: 13px;
+        white-space: pre-wrap;
+        border-top: 1px solid var(--line);
+        background: var(--panel);
+        max-height: 160px;
+        overflow-y: auto;
+      }
+      .status-ok { color: var(--ok); }
+      .status-err { color: var(--danger); }
+      .empty { color: var(--muted); padding: 20px 0; text-align: center; }
+      .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>波次編輯器</h1>
+      <span class="badge" id="schema-version"></span>
+      <div class="spacer"></div>
+      <button id="btn-load-default">載入預設 levels.json</button>
+      <button id="btn-load-file">載入 JSON 檔…</button>
+      <input id="file-input" type="file" accept="application/json,.json" hidden />
+      <button id="btn-export" class="primary">驗證並下載 JSON</button>
+    </header>
+
+    <div class="layout">
+      <div class="col col-levels">
+        <div class="section-title">關卡</div>
+        <div id="level-list"></div>
+        <button id="btn-add-level" style="width:100%">+ 新增關卡</button>
+      </div>
+
+      <div class="col col-nodes">
+        <div class="section-title">節點序列</div>
+        <div id="node-list"></div>
+        <div class="mini" style="margin-top:8px">
+          <button data-add-node="Spawn">+ Spawn</button>
+          <button data-add-node="Reward">+ Reward</button>
+          <button data-add-node="Event">+ Event</button>
+        </div>
+      </div>
+
+      <div class="col col-inspector">
+        <div class="section-title">Inspector</div>
+        <div id="inspector"></div>
+      </div>
+    </div>
+
+    <div id="status">就緒。可載入預設 levels.json 或新增關卡開始編輯。</div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

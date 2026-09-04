@@ -15,5 +15,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      // 多頁：遊戲主頁 + 獨立波次編輯器頁（各自打包，遊戲 bundle 不含編輯器）。
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        editor: fileURLToPath(new URL('./editor/index.html', import.meta.url)),
+      },
+    },
   },
 });

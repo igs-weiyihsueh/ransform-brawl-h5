@@ -1,8 +1,7 @@
-import {
-  type LevelData,
-  type LevelsFile,
-  validateLevels,
-} from '@/config/levelSchema';
+import { type LevelData, validateLevels } from '@/config/levelSchema';
+
+// 轉出 schema 的共用驗證閘門，讓載入器消費端也能從這裡取得（單一實作）。
+export { assertValidLevels } from '@/config/levelSchema';
 
 /**
  * levelLoader.ts — 關卡 JSON 載入器。
@@ -65,19 +64,6 @@ export async function loadLevels(url: string = DEFAULT_LEVELS_URL): Promise<Leve
   }
 
   return result.data.levels;
-}
-
-/**
- * 直接驗證一份已 parse 的 LevelsFile 物件（供測試/編輯器預覽用），
- * 同樣大聲失敗。
- */
-export function assertValidLevels(raw: unknown): LevelsFile {
-  const result = validateLevels(raw);
-  if (!result.ok) {
-    const detail = result.errors.map((m) => `  - ${m}`).join('\n');
-    return fail(`關卡資料驗證失敗（${result.errors.length} 項）：\n${detail}`);
-  }
-  return result.data;
 }
 
 /** 統一的大聲失敗：先 console.error 再拋。回傳型別 never 讓呼叫端類型收斂。 */

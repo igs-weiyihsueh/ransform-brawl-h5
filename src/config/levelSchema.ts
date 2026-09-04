@@ -99,6 +99,29 @@ export type ValidateResult =
   | { ok: true; data: LevelsFile }
   | { ok: false; errors: string[] };
 
+/** 關卡資料驗證失敗時拋出的錯誤（訊息已含逐條精準定位）。 */
+export class LevelValidationError extends Error {
+  readonly errors: string[];
+  constructor(errors: string[]) {
+    super(
+      `關卡資料驗證失敗（${errors.length} 項）：\n${errors.map((m) => `  - ${m}`).join('\n')}`,
+    );
+    this.name = 'LevelValidationError';
+    this.errors = errors;
+  }
+}
+
+/**
+ * 驗證一份已 parse 的資料，通過回傳收斂型別的 LevelsFile；否則**大聲失敗**拋
+ * LevelValidationError。遊戲載入器、WaveSystem、編輯器共用同一個驗證閘門。
+ * 純函式、零依賴（不 fetch、不碰 runtime）。
+ */
+export function assertValidLevels(raw: unknown): LevelsFile {
+  const result = validateLevels(raw);
+  if (!result.ok) throw new LevelValidationError(result.errors);
+  return result.data;
+}
+
 /** 內部：判斷是否為有限數字。 */
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
