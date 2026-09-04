@@ -108,6 +108,9 @@
         display: flex;
         flex-direction: column;
       }
+      /* hidden 屬性要真的隱藏：顯式 display:flex 會蓋過 UA 的 display:none，
+         故補這條讓 [hidden] 生效（startPreview 才 hidden=false 顯示 flex）。 */
+      #preview-overlay[hidden] { display: none; }
       .preview-bar {
         display: flex;
         align-items: center;
