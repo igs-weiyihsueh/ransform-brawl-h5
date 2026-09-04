@@ -65,6 +65,9 @@ export class Enemy implements Hittable {
   /** 出手回呼（由場景設定）。 */
   onAttack: ((e: EnemyAttackEvent) => void) | null = null;
 
+  /** 擊殺回呼（由 EnemySpawner 設定），死亡當下觸發一次，帶敵人角色 key。 */
+  onKilled: ((enemyKey: string) => void) | null = null;
+
   constructor(scene: Phaser.Scene, x: number, y: number, charKey: string = ENEMY_CHARACTERS[0]) {
     this.cfg = ENEMY_AI[charKey] ?? ENEMY_AI[ENEMY_CHARACTERS[0]];
     this.scaleFactor = getPerCharScale(this.cfg.characterKey);
@@ -266,6 +269,7 @@ export class Enemy implements Hittable {
   private die(): void {
     this.state = 'death';
     this.knockbackVel = { x: 0, y: 0 };
+    this.onKilled?.(this.cfg.characterKey); // 擊殺事件（寶盒能量等結算用）
     this.anim.play('death', {
       force: true,
       onComplete: () => {

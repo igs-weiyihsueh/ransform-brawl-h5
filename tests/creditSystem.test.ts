@@ -241,3 +241,65 @@ describe('CreditSystem — 耗盡倒數', () => {
     expect(sys.getCountdown()).toBe(0);
   });
 });
+
+// ===========================================================================
+// 帳本不變量：倒數期間互動（顧問補充 — 帳本型機制最易在邊界靜默出錯）。
+// 專打：鎖定/倒數中「會改狀態的操作」必須被擋；投幣能正確中斷倒數；歸零後狀態正確。
+// ===========================================================================
+describe('CreditSystem — 帳本不變量：倒數期間互動', () => {
+  /** 進耗盡並走一段倒數（仍在倒數中）。 */
+  function enterCountdown(elapsed = 4) {
+    const ctl = makeControllable();
+    consumeTo(ctl.sys, 1);
+    ctl.sys.consumeOnHit(); // → 0 進耗盡，countdown=OUT_OF_CREDIT_COUNTDOWN
+    ctl.sys.update(elapsed); // 倒數中（未到 0）
+    return ctl;
+  }
+
+  it('不變量：倒數中命中(consumeOnHit)不誤扣、不改狀態、不影響倒數', () => {
+    const { sys } = enterCountdown(4);
+    const creditBefore = sys.getCredit(); // 0
+    const countdownBefore = sys.getCountdown();
+    expect(sys.isOutOfCredit()).toBe(true);
+    sys.consumeOnHit();
+    sys.consumeOnHit();
+    expect(sys.getCredit()).toBe(creditBefore); // 仍 0，不變負/不誤扣
+    expect(sys.isOutOfCredit()).toBe(true);
+    expect(sys.getCountdown()).toBeCloseTo(countdownBefore);
+  });
+
+  it('不變量：倒數中閘門仍鎖（canAttack=false、canAct=false）', () => {
+    const { sys } = enterCountdown(4);
+    expect(sys.canAttack()).toBe(false);
+    expect(sys.canAct()).toBe(false);
+  });
+
+  it('不變量：倒數中投幣 → 中止倒數 + 解鎖（credit>0、countdown 歸 0、閘門開）', () => {
+    const { sys, coinRef } = enterCountdown(4);
+    expect(sys.getCountdown()).toBeGreaterThan(0);
+    coinRef.pressed = true;
+    sys.update(0.016);
+    coinRef.pressed = false;
+    expect(sys.isOutOfCredit()).toBe(false);
+    expect(sys.getCredit()).toBe(COIN_INSERT_AMOUNT);
+    expect(sys.getCountdown()).toBe(0);
+    expect(sys.canAttack()).toBe(true);
+    expect(sys.canAct()).toBe(true);
+    sys.update(0.016);
+    expect(sys.isOutOfCredit()).toBe(false);
+  });
+
+  it('不變量：倒數歸零重置後，credit=起始值且完全解鎖、後續命中正常扣（狀態乾淨）', () => {
+    const { sys } = makeControllable();
+    consumeTo(sys, 1);
+    sys.consumeOnHit();
+    sys.update(OUT_OF_CREDIT_COUNTDOWN);
+    expect(sys.isOutOfCredit()).toBe(false);
+    expect(sys.getCredit()).toBe(STARTING_CREDIT);
+    expect(sys.canAttack()).toBe(true);
+    expect(sys.canAct()).toBe(true);
+    sys.consumeOnHit();
+    expect(sys.getCredit()).toBe(STARTING_CREDIT - 1);
+    expect(sys.isOutOfCredit()).toBe(false);
+  });
+});

@@ -89,8 +89,8 @@ export class UISystem implements GameSystem {
     return this.ctx.ticket.getTickets();
   }
 
-  /** 寶箱/獎勵進度比例（0..1）。stub：未實作，暫回 0。 */
+  /** 寶箱進度比例（0..1）。接 ChestSystem（chestCharge/門檻）。 */
   private getProgress(): number {
-    return 0;
+    return this.ctx.chest.getProgress();
   }
 }

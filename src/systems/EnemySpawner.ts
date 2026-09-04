@@ -33,10 +33,14 @@ export class EnemySpawner {
     this.worldBounds = worldBounds;
   }
 
+  /** 擊殺回呼（由 GameScene 設定，例如給寶盒能量）。帶被擊殺敵人的角色 key。 */
+  onEnemyKilled: ((enemyKey: string) => void) | null = null;
+
   /** 生怪 API：生成一隻指定類型的敵人於 (x,y)，回傳該敵人。 */
   spawn(type: string, x: number, y: number): Enemy {
     const e = new Enemy(this.scene, x, y, type);
     e.onAttack = (ev) => this.handleEnemyAttack(ev);
+    e.onKilled = (key) => this.onEnemyKilled?.(key);
     this.enemies.push(e);
     return e;
   }

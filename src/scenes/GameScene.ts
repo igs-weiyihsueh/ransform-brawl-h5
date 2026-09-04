@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
 import { CHARACTERS } from '@/config/animationConfig';
+import { chestChargeFor } from '@/config/chestConfig';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
+import { ChestSystem } from '@/systems/ChestSystem';
 import { ComboSystem } from '@/systems/ComboSystem';
 import { CreditSystem } from '@/systems/CreditSystem';
 import { DebugSystem } from '@/systems/DebugSystem';
@@ -79,6 +81,7 @@ export class GameScene extends Phaser.Scene {
     const credit = new CreditSystem();
     const combo = new ComboSystem();
     const ticket = new TicketSystem();
+    const chest = new ChestSystem();
 
     // 共用 context（各 system 只透過它取服務/狀態）。
     this.ctx = {
@@ -93,8 +96,12 @@ export class GameScene extends Phaser.Scene {
       credit,
       combo,
       ticket,
+      chest,
       getEnemies: () => spawner.getEnemies(),
     };
+
+    // 擊殺 → 給寶盒能量（依敵人類型 chestChargeFor）。
+    spawner.onEnemyKilled = (enemyKey) => chest.addCharge(chestChargeFor(enemyKey));
 
     this.registerSystems();
 
@@ -128,6 +135,7 @@ export class GameScene extends Phaser.Scene {
     this.register(this.ctx.transform); // 變身：道具撿取/變身退變/魂力
     this.register(this.ctx.combo); // COMBO：連段倒數/結算彩票
     this.register(this.ctx.ticket); // 彩票計數器
+    this.register(this.ctx.chest); // 寶盒：擊殺累積能量/自動開箱
     // 波次：試玩模式注入 previewLevels（跑編輯器送來的關卡）；一般玩家 undefined → WaveSystem 自行 fetch JSON。
     this.register(new WaveSystem(this.previewLevels));
     this.register(new UISystem()); // HUD：唯讀當幀狀態刷新顯示

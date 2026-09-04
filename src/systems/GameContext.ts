@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import type { Enemy } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
+import type { ChestSystem } from '@/systems/ChestSystem';
 import type { ComboSystem } from '@/systems/ComboSystem';
 import type { CreditSystem } from '@/systems/CreditSystem';
 import type { EffectSystem } from '@/systems/EffectSystem';
@@ -41,6 +42,8 @@ export interface GameContext {
   readonly combo: ComboSystem;
   /** 彩票系統：累積彩票（COMBO 結算灌入、UI 讀彩票數）。 */
   readonly ticket: TicketSystem;
+  /** 寶盒系統：擊殺累積寶盒能量、滿 165 自動開箱（UI 讀進度、EnemySpawner 擊殺灌 charge）。 */
+  readonly chest: ChestSystem;
 
   /** 取得目前場上存活的敵人（唯讀快照，供命中查詢/AI 目標）。 */
   getEnemies(): readonly Enemy[];
