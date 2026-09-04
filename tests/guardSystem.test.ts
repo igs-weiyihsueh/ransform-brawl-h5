@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import Phaser from 'phaser';
 import { getGuardPreset, GUARD_FALLBACK, GUARD_PRESETS } from '@/config/guardConfig';
 import { GuardTarget } from '@/entities/GuardTarget';
@@ -96,10 +96,17 @@ describe('GuardTarget — HP / 敗判定 / hpRatio', () => {
 let sharedGame: Phaser.Game;
 let sharedScene: Phaser.Scene;
 
-// 註：GuardEvent/GuardTarget 需 Phaser scene，這裡共用一個 HEADLESS scene（快）。
-// 已知脆弱點（不影響好版）：若在【壞版】下多個 GuardEvent「不結束」（例如把勝利條件
-// remaining<=0 改成 <0），它們會在共用 scene 上累積物件；整檔一起跑該壞版可能 OOM。
-// 但鑑別力本身沒問題——單獨跑對應測試（vitest -t）該壞版會【乾淨變紅】(已驗)。
+// GuardEvent/GuardTarget 需 Phaser scene，共用一個 HEADLESS scene（快）。
+// 🔴 儀器不可被受測系統污染（instrument-validity）：兩道防護，讓「壞版 mutation → 乾淨斷言紅」而非 OOM：
+//   (1) afterEach 一律 destroy 本測建立的雕像（含壞版下事件不結束、未被 GuardEvent 自行 destroy 的），
+//       避免在共用 scene 累積。
+//   (2) 【真正的 OOM 根因修正】斷言不直接吃「持有 Phaser 物件的值」：
+//       原本 `expect(state.guardTarget).toBeNull()` 在壞版下（雕像未清）會讓 vitest 去 diff 一個
+//       帶【循環參照】的 Phaser GuardTarget → "invalid table size / heap OOM"（分不清紅是斷言抓到還是掛掉）。
+//       改成 boolean 斷言 `expect(state.guardTarget === null).toBe(true)` → 失敗時只 diff 布林，
+//       壞版產生【乾淨斷言紅】。通則：測 Phaser 相關邏輯時，斷言值收斂成 primitive，別把活物件丟進 expect diff。
+const createdTargets: GuardTarget[] = [];
+
 beforeAll(async () => {
   await new Promise<void>((resolve) => {
     class Boot extends Phaser.Scene {
@@ -122,6 +129,19 @@ beforeAll(async () => {
   });
 });
 
+afterEach(() => {
+  // 一律清掉本測建立的雕像（含壞版下「不結束」而未被 GuardEvent 自行 destroy 的），
+  // 確保 harness 不被受測系統的失控狀態污染。
+  for (const t of createdTargets) {
+    try {
+      t.destroy();
+    } catch {
+      // 已 destroy 的忽略。
+    }
+  }
+  createdTargets.length = 0;
+});
+
 afterAll(() => {
   sharedGame?.destroy(true);
 });
@@ -142,6 +162,7 @@ function makeGuardCtx() {
     spawner: {
       setGuardTarget: (t: GuardTarget | null) => {
         state.guardTarget = t;
+        if (t) createdTargets.push(t); // 註冊給 afterEach 清理（防壞版累積）
       },
       spawn: () => {
         state.spawnedCount += 1;
@@ -243,14 +264,14 @@ describe('GuardEvent — 勝敗狀態機 + 獎券', () => {
   it('🔴 敗不 GameOver：敗後 cleanup（清回玩家目標/清敵/destroy 雕像）且回報結束讓關卡前進', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
-    expect(state.guardTarget).not.toBeNull(); // 開場設了雕像為目標
+    expect(state.guardTarget !== null).toBe(true); // 開場設了雕像為目標（用 boolean 避免 diff Phaser 物件）
     state.guardTarget!.takeDamage(100); // 敗
     const done = ev.update(1);
     // 語意：敗也結束（done=true 讓 WaveSystem advanceNode 前進），不是 gameover/不卡住。
     expect(done).toBe(true);
     expect(ev.isFinished()).toBe(true);
     // cleanup 發生：敵人目標清回（setGuardTarget(null)）、清全部敵人。
-    expect(state.guardTarget).toBeNull(); // 已 setGuardTarget(null)
+    expect(state.guardTarget === null).toBe(true); // 已 setGuardTarget(null)（boolean 斷言）
     expect(state.clearedCalls).toBeGreaterThanOrEqual(1); // clearAllEnemies 被呼叫
     // 無「扣命/gameover」的呼叫（fake ctx 沒有那種 API，且獎券=0 不誤發）。
     expect(state.ticketsAdded).toBe(0);
@@ -260,7 +281,7 @@ describe('GuardEvent — 勝敗狀態機 + 獎券', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
     ev.update(60); // 勝
-    expect(state.guardTarget).toBeNull(); // 清回玩家目標
+    expect(state.guardTarget === null).toBe(true); // 清回玩家目標（boolean 斷言）
     expect(state.clearedCalls).toBeGreaterThanOrEqual(1);
   });
 
