@@ -1,15 +1,11 @@
 import { DASH_CONFIG, PLAYER_CONFIG } from '@/config/combatConfig';
 import {
   FREEZE_SEC,
-  HELMET_DASH_SPEED_MULT,
-  HELMET_MOVESPEED_MULT,
   LIGHTNING_CHAIN_COUNT,
   LIGHTNING_CHAIN_DAMAGE,
   LIGHTNING_CHAIN_RANGE,
   LIGHTNING_PARALYZE_SEC,
   MOUNT_DASH_EXTRA_HITS,
-  MOUNT_DASH_SPEED_MULT,
-  SECOND_TRANSFORM_DMG_MULT,
 } from '@/config/buffConfig';
 import { PPU } from '@/config/gameConfig';
 import type { AttackData } from '@/systems/AttackData';
@@ -101,17 +97,13 @@ export class PlayerControlSystem implements GameSystem {
     if (this.shapeFlash > 0) this.shapeFlash -= dt;
   }
 
-  /** 依 BuffSystem 狀態設定玩家倍率/護盾（頭盔 MoveSpeed/Dash/Shield + 寶盒坐騎）。 */
+  /** 依 BuffSystem 聚合倍率設定玩家 stat 倍率/護盾（同 stat 多來源已相乘+clamp）。 */
   private applyBuffState(): void {
     const { buff, player } = this.ctx;
-    // 移速：頭盔 MoveSpeed。
-    player.setSpeedMultiplier(buff.isActive('MoveSpeed') ? HELMET_MOVESPEED_MULT : 1);
-    // 衝刺速度：頭盔 Dash 或 寶盒坐騎（取較大倍率）。
-    let dashMult = 1;
-    if (buff.isActive('Dash')) dashMult = Math.max(dashMult, HELMET_DASH_SPEED_MULT);
-    if (buff.isActive('mount')) dashMult = Math.max(dashMult, MOUNT_DASH_SPEED_MULT);
-    player.setDashSpeedMultiplier(dashMult);
-    // 護盾：頭盔 Shield。
+    // 移速 / 衝刺速度：用聚合倍率（單點 getStatMultiplier，含 clamp）。
+    player.setSpeedMultiplier(buff.getStatMultiplier('moveSpeed'));
+    player.setDashSpeedMultiplier(buff.getStatMultiplier('dashSpeed'));
+    // 護盾：頭盔 Shield（純狀態，非 stat 倍率）。
     player.setShielded(buff.isActive('Shield'));
   }
 
@@ -195,10 +187,8 @@ export class PlayerControlSystem implements GameSystem {
     const pos = player.getPosition();
     const facing = player.getFacing();
     const scale = energy.getAttackScale();
-    // 傷害 = 基礎 × 能量倍率 × (二段變身時 ×1.5)。
-    const buffDmgMult = this.ctx.buff.isActive('secondTransform')
-      ? SECOND_TRANSFORM_DMG_MULT
-      : 1;
+    // 傷害 = 基礎 × 能量倍率 × damage stat 聚合倍率（二段變身等，含 clamp）。
+    const buffDmgMult = this.ctx.buff.getStatMultiplier('damage');
     const dmg = EnergySystem.applyMultiplier(attack.damage, intent.multiplier * buffDmgMult);
 
     const hits: Enemy[] = [];

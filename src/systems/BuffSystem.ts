@@ -1,10 +1,14 @@
-import type { BuffId } from '@/config/buffConfig';
+import { STAT_MULT_CLAMP, type BuffId, type StatTag } from '@/config/buffConfig';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 
-/** 一個 buff 定義：id + 持續秒數 + 生命週期 hook。 */
+/** 一個 buff 定義（顧問 confirm 形狀）。 */
 export interface BuffDef {
   id: BuffId;
+  /** 影響哪個 stat（可選；純 hook 效果可省）。 */
+  statTag?: StatTag;
+  /** 對該 stat 的倍率（statTag 有值時使用）。 */
+  magnitude?: number;
   duration: number;
   onApply?: () => void;
   onExpire?: () => void;
@@ -16,11 +20,14 @@ interface ActiveBuff {
 }
 
 /**
- * BuffSystem — 通用計時 buff 框架（頭盔能力 + 寶盒坐騎/二段變身共用）。
+ * BuffSystem — 統一計時 buff 框架（頭盔能力 + 寶盒坐騎/二段變身共用）。顧問 confirm 形狀。
  *
- * apply(def)：套用 → onApply → 計時；到期自動 onExpire + 移除。
- * 可同時多個；同 id 重套 = 覆蓋（重置計時、不重複 onApply）。
- * isActive(id) 查詢；getRemaining(id) 給 UI 倒數。
+ * - 同 id 重套 = refresh 計時（重置 duration），不疊加 magnitude、不重跑 onApply。
+ * - 不同 buff 各自獨立共存。
+ * - 同 stat 多來源聚合 = magnitude 相乘（getStatMultiplier，順序無關）；
+ *   clamp 套在「聚合後」結果（[0.1,5] placeholder）。
+ * - 只有一個 buff 影響該 stat 時，積 = 單一 mult = 等同 Unity base×mult。
+ * - 到期自動移除 + onExpire 還原。
  */
 export class BuffSystem implements GameSystem {
   readonly name = 'BuffSystem';
@@ -43,33 +50,44 @@ export class BuffSystem implements GameSystem {
     }
   }
 
-  /** 套用 buff。同 id 已存在 → 覆蓋重置計時（不重跑 onApply）；否則 onApply + 加入。 */
+  /** 套用 buff。同 id 已存在 → refresh 計時（不重跑 onApply、不疊 magnitude）；否則 onApply + 加入。 */
   apply(def: BuffDef): void {
     const existing = this.active.get(def.id);
     if (existing) {
-      existing.remaining = def.duration; // 重套覆蓋：重置計時
+      existing.remaining = def.duration; // refresh
       return;
     }
     def.onApply?.();
     this.active.set(def.id, { def, remaining: def.duration });
   }
 
-  /** 是否啟用中。 */
+  /**
+   * 聚合某 stat 的倍率：所有 active buff 中 statTag 命中者的 magnitude 相乘（順序無關），
+   * 再對「聚合後結果」clamp（[0.1,5] placeholder）。無命中回 1（等同無效果）。
+   */
+  getStatMultiplier(stat: StatTag): number {
+    let mult = 1;
+    for (const [, b] of this.active) {
+      if (b.def.statTag === stat && b.def.magnitude !== undefined) {
+        mult *= b.def.magnitude;
+      }
+    }
+    const [lo, hi] = STAT_MULT_CLAMP;
+    return Math.min(hi, Math.max(lo, mult));
+  }
+
   isActive(id: BuffId): boolean {
     return this.active.has(id);
   }
 
-  /** 剩餘秒數（未啟用回 0）。 */
   getRemaining(id: BuffId): number {
     return this.active.get(id)?.remaining ?? 0;
   }
 
-  /** 目前啟用中的 buff id 清單（debug/UI）。 */
   getActiveIds(): BuffId[] {
     return [...this.active.keys()];
   }
 
-  /** 立即移除某 buff（觸發 onExpire）。 */
   remove(id: BuffId): void {
     const b = this.active.get(id);
     if (!b) return;
@@ -78,7 +96,6 @@ export class BuffSystem implements GameSystem {
   }
 
   destroy(): void {
-    // 場景關閉：觸發所有 onExpire 還原（避免殘留視覺/狀態）。
     for (const [, b] of this.active) b.def.onExpire?.();
     this.active.clear();
   }

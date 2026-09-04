@@ -1,5 +1,6 @@
 import {
   BUFF_DURATION,
+  BUFF_STAT,
   HELMET_ABILITIES,
   type BuffId,
 } from '@/config/buffConfig';
@@ -39,11 +40,21 @@ export class HelmetSystem implements GameSystem {
     this.equip(ability);
   }
 
-  /** 裝備某能力頭盔：套計時 buff（預設 8s；重裝覆蓋重置計時）。 */
+  /**
+   * 裝備某能力頭盔（H5 單槽：撿新頭盔先移除前一個能力，再套新的）。
+   * 套計時 buff（預設 8s；同 id 重撿覆蓋＝refresh 計時）。
+   */
   equip(ability: BuffId): void {
+    // 單槽：移除前一個頭盔能力（若不同）。
+    if (this.lastEquipped && this.lastEquipped !== ability) {
+      this.ctx.buff.remove(this.lastEquipped);
+    }
     this.lastEquipped = ability;
+    const stat = BUFF_STAT[ability];
     this.ctx.buff.apply({
       id: ability,
+      statTag: stat?.stat,
+      magnitude: stat?.magnitude,
       duration: BUFF_DURATION[ability],
       onApply: () => console.info(`[Helmet] 裝備能力 ${ability}（${BUFF_DURATION[ability]}s）`),
       onExpire: () => console.info(`[Helmet] 能力 ${ability} 到期`),

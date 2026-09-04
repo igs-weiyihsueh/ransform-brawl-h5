@@ -1,5 +1,5 @@
 import { CHEST_OPEN_THRESHOLD } from '@/config/chestConfig';
-import { BUFF_DURATION } from '@/config/buffConfig';
+import { BUFF_DURATION, BUFF_STAT } from '@/config/buffConfig';
 import { isTicketReward, pickChestReward } from '@/systems/chestLoot';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
@@ -71,6 +71,8 @@ export class ChestSystem implements GameSystem {
       this.mountBuffActive = true;
       this.ctx.buff?.apply({
         id: 'mount',
+        statTag: BUFF_STAT.mount?.stat,
+        magnitude: BUFF_STAT.mount?.magnitude,
         duration: BUFF_DURATION.mount,
         onApply: () => console.info('[Chest] 坐騎啟用（衝刺強化 20s，零式暫定）'),
       });
@@ -79,6 +81,8 @@ export class ChestSystem implements GameSystem {
       this.secondTransformUntil = BUFF_DURATION.secondTransform;
       this.ctx.buff?.apply({
         id: 'secondTransform',
+        statTag: BUFF_STAT.secondTransform?.stat,
+        magnitude: BUFF_STAT.secondTransform?.magnitude,
         duration: BUFF_DURATION.secondTransform,
         onApply: () =>
           console.info('[Chest] 二段變身啟用（傷害×1.5+護COMBO 30s，零式暫定）'),
