@@ -1,11 +1,13 @@
 import Phaser from 'phaser';
 import {
   PLAYER_CONFIG,
+  PLAYER_HIT_RADIUS,
+  PLAYER_IFRAME_DURATION,
   SPRITE_SCALE,
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
-import type { Vec2 } from '@/systems/hitDetection';
+import type { Hittable, Vec2 } from '@/systems/hitDetection';
 
 /** 玩家可用的角色美術 key（debug 預覽用 T 鍵循環切換）。 */
 export const PLAYER_CHARACTERS = ['Human', 'SunWukong'] as const;
@@ -15,9 +17,10 @@ export const PLAYER_CHARACTERS = ['Human', 'SunWukong'] as const;
  *
  * 封裝移動、面向、攻擊冷卻/前搖計時，並依狀態機驅動動畫：
  * idle/move 循環、attack 播一次（配合 hitDelay/cooldown）、damaged 受擊、death 死亡。
- * 命中判定不在此（交給 hitDetection + GameScene），這裡提供位置/面向/時序。
+ * 實作 Hittable，讓敵人攻擊/射彈能以幾何判定命中玩家。
+ * 命中「自己的攻擊」判定不在此（交給 hitDetection + GameScene）。
  */
-export class Player {
+export class Player implements Hittable {
   private anim: CharacterAnimator;
   private charKey: string;
 
@@ -33,12 +36,20 @@ export class Player {
   /** 受擊硬直剩餘秒數（播 damaged，期間不覆蓋成 move/idle）。 */
   private damagedRemaining = 0;
 
+  /** 無敵幀剩餘秒數（>0 表示免疫且閃爍）。 */
+  private iFrameRemaining = 0;
+  /** debug：最近被誰打到。 */
+  private lastHitBy = '';
+
+  private readonly hitRadiusPx: number;
+
   constructor(scene: Phaser.Scene, x: number, y: number, charKey: string = PLAYER_CHARACTERS[0]) {
     this.scene = scene;
     this.charKey = charKey;
     this.anim = new CharacterAnimator(scene, charKey, x, y);
     this.anim.setScale(SPRITE_SCALE);
     this.anim.setFacing(this.facing);
+    this.hitRadiusPx = PLAYER_HIT_RADIUS * PPU;
   }
 
   private readonly scene: Phaser.Scene;
@@ -65,6 +76,39 @@ export class Player {
 
   getPosition(): Vec2 {
     return { x: this.anim.sprite.x, y: this.anim.sprite.y };
+  }
+
+  // --- Hittable（供敵人攻擊/射彈判定玩家） ---
+  getHitCenter(): Vec2 {
+    return { x: this.anim.sprite.x, y: this.anim.sprite.y };
+  }
+
+  getHitRadius(): number {
+    return this.hitRadiusPx;
+  }
+
+  /** 目前是否處於無敵幀（iFrame 內免疫再次受擊）。 */
+  isInvincible(): boolean {
+    return this.iFrameRemaining > 0;
+  }
+
+  getLastHitBy(): string {
+    return this.lastHitBy;
+  }
+
+  /**
+   * 玩家被敵人攻擊命中。
+   * 這階段：只做受擊反饋（damaged 動畫 + 0.5s iFrame 閃爍），不扣血、不死亡。
+   * iFrame 內呼叫會被忽略。damage 先收下備用（魂力系統之後才實際處理）。
+   * @returns 是否實際受擊（false = 被 iFrame 擋掉）。
+   */
+  takeHit(_damage: number, sourceName: string): boolean {
+    if (this.iFrameRemaining > 0) return false;
+    this.lastHitBy = sourceName;
+    this.iFrameRemaining = PLAYER_IFRAME_DURATION;
+    this.damagedRemaining = 0.25;
+    this.anim.play('damaged', { force: true });
+    return true;
   }
 
   getFacing(): number {
@@ -122,6 +166,15 @@ export class Player {
     }
     if (this.damagedRemaining > 0) {
       this.damagedRemaining = Math.max(0, this.damagedRemaining - dt);
+    }
+    // iFrame 倒數 + 閃爍（每 ~60ms 切換半透明）。
+    if (this.iFrameRemaining > 0) {
+      this.iFrameRemaining = Math.max(0, this.iFrameRemaining - dt);
+      const blink = Math.floor(this.iFrameRemaining / 0.06) % 2 === 0;
+      this.anim.sprite.setAlpha(blink ? 0.4 : 1);
+      if (this.iFrameRemaining === 0) {
+        this.anim.sprite.setAlpha(1);
+      }
     }
     if (this.pendingHit) {
       this.hitDelayRemaining -= dt;

@@ -102,6 +102,57 @@ export function queryHits<T extends Hittable>(obb: OBB, targets: readonly T[]): 
   return hits;
 }
 
+/** 攻擊判定圓（世界像素座標）。 */
+export interface AttackCircle {
+  center: Vec2;
+  radius: number;
+}
+
+/**
+ * 由 AttackData（shapeType='circle'）+ 攻擊者位置 + 面向 + 角色 scale，
+ * 算出世界像素座標的判定圓。offsetX 沿面向、offsetY 垂直，皆 × scale × PPU。
+ */
+export function buildAttackCircle(
+  attack: AttackData,
+  attackerPos: Vec2,
+  facing: number,
+  scale: number,
+): AttackCircle {
+  const dir = facing >= 0 ? 1 : -1;
+  const cx = attackerPos.x + dir * attack.offsetX * scale * PPU;
+  const cy = attackerPos.y + attack.offsetY * scale * PPU;
+  return {
+    center: { x: cx, y: cy },
+    radius: (attack.radius ?? 0) * scale * PPU,
+  };
+}
+
+/** 圓對圓重疊判定。 */
+export function circleIntersectsCircle(
+  a: AttackCircle,
+  circleCenter: Vec2,
+  circleRadius: number,
+): boolean {
+  const dx = circleCenter.x - a.center.x;
+  const dy = circleCenter.y - a.center.y;
+  const r = a.radius + circleRadius;
+  return dx * dx + dy * dy <= r * r;
+}
+
+/** 用判定圓對一組 Hittable 做命中查詢，回傳所有命中的目標。 */
+export function queryHitsCircle<T extends Hittable>(
+  circle: AttackCircle,
+  targets: readonly T[],
+): T[] {
+  const hits: T[] = [];
+  for (const t of targets) {
+    if (circleIntersectsCircle(circle, t.getHitCenter(), t.getHitRadius())) {
+      hits.push(t);
+    }
+  }
+  return hits;
+}
+
 function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
 }

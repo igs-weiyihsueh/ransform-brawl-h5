@@ -56,3 +56,9 @@ export const ENEMY_RUSH_CONFIG = {
   /** 佔位色塊尺寸（unit，未乘 scale）。 */
   bodySize: { width: 0.6, height: 1 },
 } as const;
+
+/** 玩家受擊無敵時間（秒），對齊 Unity iFrameDuration。 */
+export const PLAYER_IFRAME_DURATION = 0.5;
+
+/** 玩家被攻擊命中的碰撞半徑（unit）。 */
+export const PLAYER_HIT_RADIUS = 0.4;

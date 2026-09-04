@@ -10,11 +10,16 @@ import {
   GAME_WIDTH,
 } from '@/config/gameConfig';
 import { CHARACTERS } from '@/config/animationConfig';
-import { Enemy, ENEMY_CHARACTERS } from '@/entities/Enemy';
+import { Enemy, ENEMY_CHARACTERS, type EnemyAttackEvent } from '@/entities/Enemy';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
-import { buildAttackOBB, queryHits } from '@/systems/hitDetection';
+import {
+  buildAttackOBB,
+  circleIntersectsCircle,
+  queryHits,
+} from '@/systems/hitDetection';
 import { InputSystem } from '@/systems/InputSystem';
+import { Projectile } from '@/systems/Projectile';
 
 /**
  * GameScene — 垂直切片主場景。
@@ -27,6 +32,8 @@ export class GameScene extends Phaser.Scene {
   private input_!: InputSystem;
   private player!: Player;
   private enemies: Enemy[] = [];
+  private projectiles: Projectile[] = [];
+  private worldBounds!: Phaser.Geom.Rectangle;
 
   private debugGfx!: Phaser.GameObjects.Graphics;
   private infoText!: Phaser.GameObjects.Text;
@@ -55,6 +62,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.input_ = new InputSystem(this);
+    this.worldBounds = new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT);
     this.player = new Player(
       this,
       GAME_WIDTH * 0.4,
@@ -107,11 +115,20 @@ export class GameScene extends Phaser.Scene {
       this.resolveAttack();
     }
 
-    // 4) 敵人 AI（追擊/停止/擊退/閃白）
+    // 4) 敵人 AI（狀態機：追→蓄力→出手→冷卻；受擊/死亡）
     const playerPos = this.player.getPosition();
     for (const e of this.enemies) {
       e.update(playerPos, dt);
     }
+
+    // 4b) 射彈更新 + 對玩家命中判定
+    for (const p of this.projectiles) {
+      const hit = p.update(this.player, dt, this.worldBounds);
+      if (hit) {
+        this.player.takeHit(p.damage, p.sourceLabel);
+      }
+    }
+    this.projectiles = this.projectiles.filter((p) => !p.isDead());
 
     // 5) 清掉死亡敵人
     this.enemies = this.enemies.filter((e) => !e.isDead());
@@ -160,46 +177,103 @@ export class GameScene extends Phaser.Scene {
     const x = GAME_WIDTH * 0.7 + Phaser.Math.Between(-120, 120);
     const y = GAME_HEIGHT * 0.5 + Phaser.Math.Between(-200, 200);
     const e = new Enemy(this, x, y, ENEMY_CHARACTERS[this.enemyTypeIndex]);
+    e.onAttack = (ev) => this.handleEnemyAttack(ev);
     this.enemies.push(e);
+  }
+
+  /** 敵人出手：近戰→對玩家做圓判定；射彈→生成可重用 Projectile。 */
+  private handleEnemyAttack(ev: EnemyAttackEvent): void {
+    if (ev.kind === 'melee' && ev.meleeCircle) {
+      const hit = circleIntersectsCircle(
+        { center: ev.meleeCircle.center, radius: ev.meleeCircle.radius },
+        this.player.getHitCenter(),
+        this.player.getHitRadius(),
+      );
+      if (hit) {
+        this.player.takeHit(ev.damage, ev.sourceName);
+      }
+      // debug：閃現近戰判定圓。
+      this.flashEnemyCircle(ev.meleeCircle.center, ev.meleeCircle.radius);
+    } else if (ev.kind === 'projectile' && ev.projectile) {
+      const p = new Projectile(this, {
+        x: ev.projectile.x,
+        y: ev.projectile.y,
+        dir: ev.projectile.dir,
+        speedUnits: ev.projectile.speedUnits,
+        radiusUnits: ev.projectile.radiusUnits,
+        damage: ev.damage,
+        knockback: ev.knockback,
+        sourceLabel: ev.sourceName,
+      });
+      this.projectiles.push(p);
+    }
   }
 
   private attackFlashRemaining = 0;
   private lastOBB: ReturnType<typeof buildAttackOBB> | null = null;
+
+  /** 敵人近戰判定圓的 debug 閃現。 */
+  private enemyCircleFlash = 0;
+  private lastEnemyCircle: { center: { x: number; y: number }; radius: number } | null =
+    null;
 
   private flashAttackBox(obb: ReturnType<typeof buildAttackOBB>): void {
     this.attackFlashRemaining = 0.12;
     this.lastOBB = obb;
   }
 
+  private flashEnemyCircle(center: { x: number; y: number }, radius: number): void {
+    this.enemyCircleFlash = 0.15;
+    this.lastEnemyCircle = { center, radius };
+  }
+
   private drawAttackDebug(): void {
     this.debugGfx.clear();
-    if (this.attackFlashRemaining <= 0 || !this.lastOBB) return;
+    const dt = this.game.loop.delta / 1000;
 
-    this.attackFlashRemaining -= this.game.loop.delta / 1000;
-    const obb = this.lastOBB;
-    this.debugGfx.lineStyle(2, 0xffeb3b, 0.9);
-    this.debugGfx.save();
-    this.debugGfx.translateCanvas(obb.center.x, obb.center.y);
-    this.debugGfx.rotateCanvas(obb.rotation);
-    this.debugGfx.strokeRect(
-      -obb.halfLength,
-      -obb.halfWidth,
-      obb.halfLength * 2,
-      obb.halfWidth * 2,
-    );
-    this.debugGfx.restore();
+    // 玩家攻擊框（黃）。
+    if (this.attackFlashRemaining > 0 && this.lastOBB) {
+      this.attackFlashRemaining -= dt;
+      const obb = this.lastOBB;
+      this.debugGfx.lineStyle(2, 0xffeb3b, 0.9);
+      this.debugGfx.save();
+      this.debugGfx.translateCanvas(obb.center.x, obb.center.y);
+      this.debugGfx.rotateCanvas(obb.rotation);
+      this.debugGfx.strokeRect(
+        -obb.halfLength,
+        -obb.halfWidth,
+        obb.halfLength * 2,
+        obb.halfWidth * 2,
+      );
+      this.debugGfx.restore();
+    }
+
+    // 敵人近戰判定圓（紅）。
+    if (this.enemyCircleFlash > 0 && this.lastEnemyCircle) {
+      this.enemyCircleFlash -= dt;
+      this.debugGfx.lineStyle(2, 0xff5252, 0.9);
+      this.debugGfx.strokeCircle(
+        this.lastEnemyCircle.center.x,
+        this.lastEnemyCircle.center.y,
+        this.lastEnemyCircle.radius,
+      );
+    }
   }
 
   private updateInfo(): void {
     const enemyInfo = this.enemies
-      .map((e) => `HP ${e.getHp()}/${e.getMaxHp()}`)
+      .map((e) => `${e.getCharacterKey().replace('Enemy_', '')}[${e.getState()}]HP${e.getHp()}/${e.getMaxHp()}`)
       .join('  ');
     const facing = this.player.getFacing() >= 0 ? '→' : '←';
     const nextEnemy = ENEMY_CHARACTERS[this.enemyTypeIndex];
+    const hitInfo = this.player.getLastHitBy()
+      ? `最近被 ${this.player.getLastHitBy()} 打`
+      : '未被打';
+    const iframe = this.player.isInvincible() ? ' [iFrame無敵中]' : '';
     this.infoText.setText(
-      `玩家:${this.player.getCharacterKey()}  面向 ${facing}\n` +
-        `下一隻敵人(E/R):${nextEnemy}   場上:${this.enemies.length}  ${enemyInfo}` +
-        (this.player.isOnCooldown() ? '   [攻擊冷卻中]' : ''),
+      `玩家:${this.player.getCharacterKey()}  面向 ${facing}   ${hitInfo}${iframe}\n` +
+        `下一隻敵人(E補新/R補同型):${nextEnemy}   場上:${this.enemies.length}  ${enemyInfo}` +
+        (this.player.isOnCooldown() ? '   [玩家攻擊冷卻中]' : ''),
     );
   }
 }
