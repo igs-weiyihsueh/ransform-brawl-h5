@@ -1,30 +1,38 @@
 /**
  * UI/HUD 數值與版面設定（資料驅動，見 docs/h5_collab_spec.md §6）。
  *
- * HUD 全部用「螢幕座標」定位（固定不隨相機移動）；座標基準為設計解析度
- * 1920×1080（見 gameConfig）。所有顏色/尺寸/位置集中在此，UI 元件只讀不寫死。
+ * 對照 Unity prefab 版面，HUD 分兩塊：
+ *  A. 角色頭上 UI（PlayerUI 200×80）—— 世界座標，跟隨玩家浮在頭上。
+ *  B. 下方面板（4 欄 P1~P4）—— 螢幕底部固定（setScrollFactor 0）。
  *
- * 註：能量/COMBO 系統尚未實作 → UISystem 以 stub 供數值，本檔僅定義「視覺框架」外觀。
- * 之後接真資料只換 UISystem 內的資料來源一行，不需改本檔或元件。
+ * 座標/尺寸基準為設計解析度 1920×1080（見 gameConfig）。所有顏色/尺寸集中在此。
+ * 目前用色塊+文字+基本圖形排佈局，真美術 icon 之後替換。
+ * 數字（Credit/彩票/魂力/COMBO）走 stub 佔位，能量接現有 getEnergy。
  */
 
 /** 各 HUD 區塊與螢幕邊緣的統一留白（px）。 */
 export const HUD_MARGIN = 32;
 
+/** HUD 用字型堆疊（含中文備援）。 */
+export const HUD_FONT_FAMILY = 'Arial, "Microsoft JhengHei", "Noto Sans TC", sans-serif';
+
+/** 角色頭上 UI 繪製深度（畫在角色之上）。 */
+export const OVERHEAD_DEPTH = 900;
+/** 下方面板繪製深度（畫在最上層，固定螢幕）。 */
+export const PANEL_DEPTH = 1000;
+
 /** HUD 共用配色（兒童向：高對比、明亮）。 */
 export const HUD_COLORS = {
   /** 面板底色（半透明深色）。 */
-  panelFill: 0x000000,
-  panelFillAlpha: 0.45,
+  panelFill: 0x101024,
+  panelFillAlpha: 0.82,
   /** 面板外框。 */
   panelStroke: 0xffffff,
-  panelStrokeAlpha: 0.6,
+  panelStrokeAlpha: 0.7,
   /** 一般文字。 */
   text: '#ffffff',
   /** 次要/佔位文字（灰）。 */
   textMuted: '#bbbbbb',
-  /** 提示強調（受擊 iFrame）。 */
-  warn: '#ff5252',
   /** 能量格：已充能（亮金）。 */
   energyOn: 0xffd54f,
   /** 能量格：未充能（暗）。 */
@@ -35,75 +43,155 @@ export const HUD_COLORS = {
   energyReady: 0x66ffcc,
   /** COMBO 數字色（亮橘）。 */
   comboText: '#ffb300',
-  /** 魂力佔位區塊色。 */
-  soulPlaceholder: 0x5a3a6a,
+  /** 玩家編號牌底色。 */
+  pNumBg: 0x2196f3,
+  /** 魂力環底槽色。 */
+  soulRingBg: 0x3a3a5a,
+  /** 魂力環充填色。 */
+  soulRingFill: 0xba68c8,
+  /** Credit 底框色。 */
+  creditBg: 0x000000,
+  /** 金幣 icon 佔位色。 */
+  coin: 0xffca28,
+  /** 寶箱 icon 佔位色。 */
+  chest: 0x8d6e63,
+  /** 進度條底槽色。 */
+  progressBg: 0x2a2a3a,
+  /** 進度條充填色。 */
+  progressFill: 0x4caf50,
+  /** P2~P4 佔位欄的整體淡化提示色（未加入）。 */
+  slotInactive: 0x555566,
 } as const;
 
-/** 玩家 HUD（左上）：目前角色 + 受擊提示 + 魂力佔位。 */
-export const PLAYER_HUD_LAYOUT = {
-  x: HUD_MARGIN,
-  y: HUD_MARGIN,
-  /** 面板寬高（px）。 */
-  width: 320,
-  height: 108,
-  /** 內距。 */
-  padding: 14,
-  /** 標題（目前角色）字級。 */
-  titleFontSize: '30px',
-  /** 受擊提示字級。 */
-  statusFontSize: '22px',
-  /** 魂力佔位條高度（px）。 */
-  soulBarHeight: 20,
-  /** 魂力佔位文字。 */
-  soulLabel: '魂力',
+/**
+ * A. 角色頭上 UI（跟隨玩家，世界座標）。
+ * 對照 Unity PlayerUI 200×80。座標皆為「相對容器中心」的 local 值，
+ * 容器每幀移到 player 位置上方（offsetY）。
+ */
+export const OVERHEAD_LAYOUT = {
+  /** 整體寬高（px，僅供背板/排版參考）。 */
+  width: 200,
+  height: 80,
+  /** 容器相對玩家中心的垂直位移（負=往上；px）。角色頭頂之上。 */
+  offsetY: -140,
+
+  /** 玩家編號牌（左上，圓角方 36×36）。 */
+  pNum: {
+    x: -84,
+    y: -18,
+    size: 36,
+    fontSize: '20px',
+    /** 玩家編號文字（單人先 P1）。 */
+    text: 'P1',
+  },
+
+  /** 魂力環（左側 60×60 圓環）。stub：先固定滿。 */
+  soulRing: {
+    x: -60,
+    y: 8,
+    radius: 26,
+    thickness: 7,
+  },
+
+  /** Credit 數字 + 金幣 icon（右側 130×40）。stub：回 0/99999。 */
+  credit: {
+    x: 4,
+    y: -14,
+    width: 120,
+    height: 34,
+    fontSize: '22px',
+    coinSize: 22,
+    /** stub 佔位顯示值。 */
+    placeholder: '00000',
+  },
+
+  /** 能量 4 格（SkillGauge Slot0~3，水平排；搬自原能量條）。 */
+  energy: {
+    /** 相對容器的起點（左格左緣）。 */
+    x: -20,
+    y: 22,
+  },
+
+  /** COMBO「n HIT」（上方）。 */
+  combo: {
+    x: 0,
+    y: -52,
+    fontSize: '24px',
+    /** 後綴文字。 */
+    suffix: ' HIT',
+    /** combo=0 時隱藏。 */
+    hideWhenZero: true,
+  },
 } as const;
 
-/** 能量條（4 格）：置於畫面下方中央，普攻命中亮一格、滿格可放招。 */
+/**
+ * 能量 4 格外觀（頭上 UI 用小尺寸，對照 Unity SkillGauge Slot 14×14）。
+ * 由 PlayerOverheadUI 以 local 座標嵌入容器；EnergyBar 只負責畫格與滿格閃爍。
+ */
 export const ENERGY_BAR_LAYOUT = {
   /** 格數（對應 Unity 4 格滿放招）。 */
   cellCount: 4,
   /** 單格尺寸（px）。 */
-  cellWidth: 92,
-  cellHeight: 34,
+  cellWidth: 16,
+  cellHeight: 16,
   /** 格間距（px）。 */
-  cellGap: 12,
+  cellGap: 6,
   /** 圓角半徑（px）。 */
-  cornerRadius: 8,
-  /** 距畫面底部留白（px）。 */
-  bottomOffset: 40,
-  /** 標籤文字（少字兒童向）。 */
-  label: '能量',
-  labelFontSize: '24px',
-  labelGap: 10,
+  cornerRadius: 3,
   /**
-   * 滿格「可放招」閃爍設定（對照 Unity SkillGaugeUI.ShowReady：
+   * 滿格「可放招」閃爍（對照 Unity SkillGaugeUI.ShowReady：
    * 4 格在白↔亮色之間來回閃爍當可放招提示，非靜態）。
    */
   readyFlash: {
-    /** 閃爍色 A（白）。 */
     colorA: 0xffffff,
-    /** 閃爍色 B（亮綠，= energyReady）。 */
     colorB: 0x66ffcc,
     /** 一次來回（A→B→A）的週期（秒）。 */
     periodSec: 0.5,
   },
 } as const;
 
-/** COMBO 數字：置於右上，連擊時放大顯示大數字。 */
-export const COMBO_LAYOUT = {
-  x: 1920 - HUD_MARGIN,
-  y: HUD_MARGIN,
-  /** 大數字字級。 */
-  numberFontSize: '84px',
-  /** "COMBO" 標籤字級。 */
-  labelFontSize: '30px',
-  label: 'COMBO',
-  /** combo 為 0（無連擊）時是否隱藏整組。 */
-  hideWhenZero: true,
+/**
+ * B. 下方面板（螢幕底部固定，4 欄 P1~P4 橫排）。
+ * 對照 Unity：每欄有面板底框 / 寶箱 icon 70×70 / 彩票數 / 進度條 / 金幣 icon。
+ * 目前單人 → P1 完整、P2~P4 佔位淡化。
+ */
+export const BOTTOM_PANEL_LAYOUT = {
+  /** 玩家欄數。 */
+  slotCount: 4,
+  /** 面板距畫面底部留白（px）。 */
+  bottomOffset: 16,
+  /** 欄間距（px）。 */
+  slotGap: 20,
+  /** 單欄尺寸（px）。 */
+  slotWidth: 420,
+  slotHeight: 120,
+  /** 欄內距。 */
+  padding: 14,
+  /** 圓角。 */
+  cornerRadius: 14,
+
+  /** 寶箱 icon（左，方塊佔位 70×70）。 */
+  chest: {
+    size: 70,
+  },
+  /** 彩票數字（寶箱右）。stub 回 0。 */
+  ticket: {
+    fontSize: '30px',
+    labelFontSize: '16px',
+    label: '彩票',
+    placeholder: '00000',
+  },
+  /** 進度條（下方）。 */
+  progress: {
+    height: 16,
+    cornerRadius: 6,
+    /** stub 佔位比例（0..1）。 */
+    placeholderRatio: 0,
+  },
+  /** 金幣 icon（右下角）。 */
+  coin: {
+    size: 26,
+  },
+  /** 欄標籤字級（P1~P4）。 */
+  labelFontSize: '22px',
 } as const;
-
-/** HUD 用字型堆疊（含中文備援）。 */
-export const HUD_FONT_FAMILY = 'Arial, "Microsoft JhengHei", "Noto Sans TC", sans-serif';
-
-/** HUD 繪製深度（畫在遊戲物件之上，固定不被角色擋住）。 */
-export const HUD_DEPTH = 1000;

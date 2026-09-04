@@ -1,80 +1,96 @@
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
-import { ComboCounter } from '@/systems/ui/ComboCounter';
-import { EnergyBar } from '@/systems/ui/EnergyBar';
-import { PlayerHud } from '@/systems/ui/PlayerHud';
+import { BottomPanel } from '@/systems/ui/BottomPanel';
+import { PlayerOverheadUI } from '@/systems/ui/PlayerOverheadUI';
 
 /**
  * UISystem — HUD 系統（見 docs/h5_collab_spec.md）。
  *
- * 職責：在 init 建立固定螢幕 HUD（玩家框架 / 能量 4 格 / COMBO 數字），
- * update 每幀「只讀」ctx 狀態刷新顯示。純顯示層，**絕不回寫任何核心狀態**。
+ * 對照 Unity prefab，HUD 分兩塊，皆為純顯示層（**絕不回寫任何核心狀態**）：
+ *  A. PlayerOverheadUI —— 角色頭上 UI，世界座標，每幀跟隨 ctx.player 位置。
+ *     元素：玩家編號牌 / 魂力環 / Credit+金幣 / 能量 4 格 / COMBO。
+ *  B. BottomPanel —— 螢幕底部固定 4 欄 P1~P4（單人：P1 完整、P2~P4 佔位）。
+ *     元素：面板底框 / 寶箱 icon / 彩票數 / 進度條 / 金幣 icon。
  *
- * 資料來源分兩類：
- *  - 已存在狀態：直接讀 ctx.player（角色 / iFrame 無敵）。
- *  - 尚未實作的系統（能量 / COMBO / 魂力）：走本檔的 stub（見 getEnergy/getCombo/getSoulRatio），
- *    目前一律回 0，只畫視覺框架。日後系統做好，只需把對應 stub 換成真資料一行，
- *    UI 元件與版面完全不動。
+ * 資料來源：
+ *  - 已存在狀態：ctx.player.getPosition()（頭上 UI 跟隨）、能量接 getEnergy。
+ *  - 尚未實作系統（Credit / 彩票 / 魂力 / COMBO / 能量真值）：走本檔 stub，
+ *    目前回佔位值，只排佈局。日後系統做好只換對應 stub 一行，UI 版面不動。
  *
- * 邊界：本系統只新增 UI 檔，不改 Player/Enemy/GameScene/config 等他人檔案；
+ * 邊界：只新增 UI 檔，不改 Player/Enemy/GameScene/config 等他人檔；
  * 註冊（registerSystems）由整合者統一加。
  */
 export class UISystem implements GameSystem {
   readonly name = 'UISystem';
 
   private ctx!: GameContext;
-  private playerHud!: PlayerHud;
-  private energyBar!: EnergyBar;
-  private comboCounter!: ComboCounter;
+  private overhead!: PlayerOverheadUI;
+  private bottomPanel!: BottomPanel;
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
     const scene = ctx.scene;
-    this.playerHud = new PlayerHud(scene);
-    this.energyBar = new EnergyBar(scene);
-    this.comboCounter = new ComboCounter(scene);
+    this.overhead = new PlayerOverheadUI(scene);
+    this.bottomPanel = new BottomPanel(scene);
   }
 
   update(dt: number): void {
     const player = this.ctx.player;
 
-    // 玩家 HUD：讀現有狀態（唯讀）。
-    this.playerHud.setCharacter(player.getCharacterKey());
-    this.playerHud.setInvincible(player.isInvincible());
-    this.playerHud.setSoul(this.getSoulRatio());
+    // A. 頭上 UI：跟隨玩家世界座標 + 刷新數值。
+    const pos = player.getPosition();
+    this.overhead.followWorldPosition(pos.x, pos.y);
+    this.overhead.setSoul(this.getSoulRatio());
+    this.overhead.setCredit(this.getCredit());
+    this.overhead.setCombo(this.getCombo());
+    this.overhead.setEnergy(this.getEnergy());
+    this.overhead.updateEnergy(dt);
 
-    // 能量 / COMBO：走 stub（系統尚未實作）。
-    this.energyBar.setEnergy(this.getEnergy());
-    this.energyBar.update(dt);
-    this.comboCounter.setCombo(this.getCombo());
+    // B. 下方面板：刷新 P1 stub 數值（P2~P4 佔位不刷新）。
+    this.bottomPanel.setTicket(0, this.getTicket());
+    this.bottomPanel.setProgress(0, this.getProgress());
   }
 
   destroy(): void {
-    this.playerHud.destroy();
-    this.energyBar.destroy();
-    this.comboCounter.destroy();
+    this.overhead.destroy();
+    this.bottomPanel.destroy();
   }
 
   // ---------------------------------------------------------------------------
-  // 資料來源 stub —— 能量 / COMBO / 魂力系統尚未實作。
-  // 之後接真資料：把對應這一行的回傳改成讀真正的服務即可（UI 不需重做）。
+  // 資料來源 stub —— 相依系統（Credit / 彩票 / 魂力 / COMBO / 能量）尚未實作。
+  // 之後接真資料：把對應這一行的回傳改成讀真正的服務即可（UI 版面不需重做）。
   // 例：能量系統做好後
   //   private getEnergy(): number { return this.ctx.energy.getCharge(); }
   // （若需在 GameContext 加欄位，走 spec §4 由 leader 過 additive，不自己加。）
   // ---------------------------------------------------------------------------
 
-  /** 目前能量充能格數（0..4）。stub：能量系統未實作，暫回 0。 */
+  /** 能量充能格數（0..4）。stub：能量系統未實作，暫回 0。 */
   private getEnergy(): number {
     return 0;
   }
 
-  /** 目前 COMBO 連擊數。stub：COMBO 系統未實作，暫回 0。 */
+  /** COMBO 連擊數。stub：COMBO 系統未實作，暫回 0。 */
   private getCombo(): number {
     return 0;
   }
 
-  /** 魂力顯示比例（0..1）。stub：魂力系統未實作，暫回 0（佔位框架）。 */
+  /** 魂力顯示比例（0..1）。stub：魂力系統未實作，暫回 1（環先畫滿當佔位）。 */
   private getSoulRatio(): number {
+    return 1;
+  }
+
+  /** Credit 數字。stub：Credit 系統未實作，暫回 0。 */
+  private getCredit(): number {
+    return 0;
+  }
+
+  /** 彩票數。stub：彩票系統未實作，暫回 0。 */
+  private getTicket(): number {
+    return 0;
+  }
+
+  /** 寶箱/獎勵進度比例（0..1）。stub：未實作，暫回 0。 */
+  private getProgress(): number {
     return 0;
   }
 }
