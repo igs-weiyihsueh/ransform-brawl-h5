@@ -43,6 +43,9 @@ export class UISystem implements GameSystem {
     this.overhead.setSoul(this.getSoulRatio());
     this.overhead.setCredit(this.getCredit());
     this.overhead.setCombo(this.getCombo());
+    // COMBO 警告閃爍 + 滿檔 MAX!（接 ComboSystem）。
+    this.overhead.setComboWarning(this.ctx.combo.isWarning());
+    if (this.ctx.combo.consumeMaxTriggered()) this.overhead.showMaxCombo();
     this.overhead.setEnergy(this.getEnergy());
     this.overhead.updateEnergy(dt);
 

@@ -25,14 +25,24 @@ export class PlayerOverheadUI {
   private readonly soulRing: Phaser.GameObjects.Graphics;
   private readonly creditText: Phaser.GameObjects.Text;
   private readonly comboText: Phaser.GameObjects.Text;
+  private readonly maxText: Phaser.GameObjects.Text;
   private readonly energyBar: EnergyBar;
 
   private shownSoul = -1;
   private shownCredit = -1;
   private shownCombo = -1;
+  /** COMBO 警告閃爍中旗標，避免重複啟動 tween。 */
+  private comboWarning = false;
+  /** 警告閃爍 tween（active 時存在）。 */
+  private warnTween?: Phaser.Tweens.Tween;
+  /** MAX! 一次性強調 tween（播放中存在）。 */
+  private maxTween?: Phaser.Tweens.Tween;
+  /** 保存 scene 以供 tween 使用。 */
+  private readonly scene: Phaser.Scene;
 
   constructor(scene: Phaser.Scene) {
     const cfg = OVERHEAD_LAYOUT;
+    this.scene = scene;
     this.container = scene.add.container(0, 0);
     this.container.setDepth(OVERHEAD_DEPTH);
 
@@ -96,6 +106,18 @@ export class PlayerOverheadUI {
       .setOrigin(0.5);
     this.container.add(this.comboText);
 
+    // --- MAX!（一次性強調，對照 Unity ShowMaxCombo）；預設隱藏 ---
+    this.maxText = scene.add
+      .text(cfg.combo.x, cfg.combo.y + cfg.combo.max.offsetY, cfg.combo.max.text, {
+        fontFamily: HUD_FONT_FAMILY,
+        fontSize: cfg.combo.max.fontSize,
+        color: cfg.combo.max.color,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setVisible(false);
+    this.container.add(this.maxText);
+
     // 初始顯示。
     this.setSoul(1);
     this.setCredit(0);
@@ -149,6 +171,65 @@ export class PlayerOverheadUI {
     if (visible) this.comboText.setText(`${n}${cfg.suffix}`);
   }
 
+  /**
+   * COMBO 快超時警告（對照 Unity ComboUI warning）。
+   * active=true：數字變警告色 + 閃爍；false：停止並復原。
+   * 由翼騎接 ComboSystem.isWarning() 每幀（或狀態變化時）呼叫。
+   */
+  setComboWarning(active: boolean): void {
+    if (active === this.comboWarning) return;
+    this.comboWarning = active;
+
+    const w = OVERHEAD_LAYOUT.combo.warning;
+    if (active) {
+      // 變警告色 + 明↔暗閃爍（yoyo 無限）。
+      this.comboText.setColor(w.color);
+      this.warnTween = this.scene.tweens.add({
+        targets: this.comboText,
+        alpha: { from: 1, to: w.minAlpha },
+        duration: w.blinkMs,
+        yoyo: true,
+        repeat: -1,
+      });
+    } else {
+      // 停止閃爍、復原顏色與透明度。
+      this.warnTween?.stop();
+      this.warnTween = undefined;
+      this.comboText.setAlpha(1);
+      this.comboText.setColor(HUD_COLORS.comboText);
+    }
+  }
+
+  /**
+   * COMBO 滿檔強調（對照 Unity ShowMaxCombo）：顯示 "MAX!" 放大彈跳後淡出。
+   * 一次性：由翼騎接 ComboSystem.consumeMaxTriggered() 為 true 時呼叫一次。
+   */
+  showMaxCombo(): void {
+    const m = OVERHEAD_LAYOUT.combo.max;
+    // 若上一次還在播，先停掉重來。
+    this.maxTween?.stop();
+    this.maxText.setVisible(true).setAlpha(1).setScale(m.punchScale);
+    // 放大彈回 → 停留 → 淡出隱藏。
+    this.maxTween = this.scene.tweens.add({
+      targets: this.maxText,
+      scale: 1,
+      duration: m.popMs,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.maxTween = this.scene.tweens.add({
+          targets: this.maxText,
+          alpha: 0,
+          duration: m.fadeMs,
+          delay: m.popMs,
+          onComplete: () => {
+            this.maxText.setVisible(false).setAlpha(1).setScale(1);
+            this.maxTween = undefined;
+          },
+        });
+      },
+    });
+  }
+
   /** 設定能量格數（0..4）。接現有 getEnergy stub。 */
   setEnergy(value: number): void {
     this.energyBar.setEnergy(value);
@@ -160,6 +241,8 @@ export class PlayerOverheadUI {
   }
 
   destroy(): void {
+    this.warnTween?.stop();
+    this.maxTween?.stop();
     this.energyBar.destroy();
     this.container.destroy(); // 連同容器內所有子物件一併銷毀
   }

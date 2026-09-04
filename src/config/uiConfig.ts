@@ -123,6 +123,35 @@ export const OVERHEAD_LAYOUT = {
     suffix: ' HIT',
     /** combo=0 時隱藏。 */
     hideWhenZero: true,
+    /**
+     * 快超時警告（對照 Unity ComboUI warning）：數字閃爍 + 變警告色，
+     * 提示 COMBO 快歸零。由 setComboWarning(true/false) 開關。
+     */
+    warning: {
+      /** 警告色（亮紅）。 */
+      color: '#ff3b30',
+      /** 一次閃爍（明↔暗）的時間（毫秒）。 */
+      blinkMs: 220,
+      /** 閃爍最低透明度。 */
+      minAlpha: 0.25,
+    },
+    /**
+     * MAX!（對照 Unity ShowMaxCombo）：COMBO 滿檔時的一次性放大強調。
+     * 由 showMaxCombo() 觸發，播放後淡出。
+     */
+    max: {
+      text: 'MAX!',
+      color: '#ffe14d',
+      fontSize: '40px',
+      /** 相對 COMBO 數字的垂直位移（負=更上方）。 */
+      offsetY: -34,
+      /** 放大起始倍率（從此縮回 1）。 */
+      punchScale: 1.8,
+      /** 放大→縮回時間（毫秒）。 */
+      popMs: 260,
+      /** 停留後淡出時間（毫秒）。 */
+      fadeMs: 500,
+    },
   },
 } as const;
 
