@@ -20,6 +20,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 測試 job（QA/測騎維護的單元測試）。
+  # CI = Advisory（決策 c6a756dd）：跑測試並在 Actions 顯示紅綠，但【不硬擋部署】。
+  # 作法：本 job 獨立，build/deploy 皆【不 needs 它】→ 測試紅了也不會中止部署。
+  # 測試結果在 Actions 頁一眼可見，把關靠鐵騎人審 + 這裡的紅綠可見性。
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests (advisory — does not block deploy)
+        run: npm test
+
   build:
     runs-on: ubuntu-latest
     steps:
