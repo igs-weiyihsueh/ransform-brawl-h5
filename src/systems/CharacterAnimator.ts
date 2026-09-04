@@ -113,8 +113,13 @@ export class CharacterAnimator {
     }
   }
 
-  /** 綁一次性的「動畫完成」callback（下一次 ANIMATION_COMPLETE 觸發後自動移除）。 */
+  /**
+   * 綁一次性的「動畫完成」callback。
+   * 先清掉先前殘留的 ANIMATION_COMPLETE 監聽，確保只有最新一次的 onComplete 生效
+   * （避免同狀態重複 play 或循環動畫累積過期監聽，導致舊 callback 誤觸發）。
+   */
   private attachOnce(cb: () => void): void {
+    this.sprite.off(Phaser.Animations.Events.ANIMATION_COMPLETE);
     this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, cb);
   }
 

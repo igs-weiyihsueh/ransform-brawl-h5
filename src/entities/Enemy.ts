@@ -14,7 +14,7 @@ import {
 export const ENEMY_CHARACTERS = ['Enemy_Rush', 'Enemy_Ranged', 'Enemy_Elite'] as const;
 
 /** 敵人 AI 狀態。 */
-type EnemyState = 'idle' | 'chase' | 'charge' | 'cooldown' | 'damaged' | 'death';
+type EnemyState = 'idle' | 'chase' | 'charge' | 'attack' | 'cooldown' | 'damaged' | 'death';
 
 /**
  * 敵人出手時通知場景的資料。melee 帶命中圓，projectile 帶生成參數。
@@ -59,6 +59,8 @@ export class Enemy implements Hittable {
 
   private knockbackVel: Vec2 = { x: 0, y: 0 };
   private dead = false;
+  /** attack 動畫是否播完（由 onComplete 設定），播完才進 cooldown。 */
+  private attackAnimDone = false;
 
   /** 出手回呼（由場景設定）。 */
   onAttack: ((e: EnemyAttackEvent) => void) | null = null;
@@ -152,9 +154,19 @@ export class Enemy implements Hittable {
 
       case 'charge':
         this.timer -= dt;
+        // 蓄力期間維持 idle 姿勢（別移動），時間到 → 進 attack 狀態出手。
         this.anim.play('idle');
         if (this.timer <= 0) {
-          this.fireAttack(playerPos);
+          this.state = 'attack';
+          this.attackAnimDone = false;
+          this.fireAttack(playerPos); // 內含 play('attack', force) + 觸發判定/射彈
+        }
+        break;
+
+      case 'attack':
+        // 出手中：只播 attack 動畫，不做任何會覆蓋動畫的事（不移動、不改 play）。
+        // 待 attack 動畫播完（attackAnimDone）→ 進 cooldown。
+        if (this.attackAnimDone) {
           this.state = 'cooldown';
           this.timer = this.cfg.attackCooldown;
         }
@@ -179,9 +191,15 @@ export class Enemy implements Hittable {
     }
   }
 
-  /** 出手：播 attack 動畫並發出攻擊事件（近戰命中圓 / 射彈生成參數）。 */
+  /** 出手：播 attack 動畫（一次性）並發出攻擊事件（近戰命中圓 / 射彈生成參數）。 */
   private fireAttack(playerPos: Vec2): void {
-    this.anim.play('attack', { force: true });
+    // 播 attack 一次性動畫；播完 → attackAnimDone，讓狀態機進 cooldown。
+    this.anim.play('attack', {
+      force: true,
+      onComplete: () => {
+        this.attackAnimDone = true;
+      },
+    });
     const pos = this.getHitCenter();
     const a = this.cfg.attack;
 
