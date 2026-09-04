@@ -23,6 +23,7 @@ import {
   type SpawnNodeData,
   validateLevels,
 } from '@/config/levelSchema';
+import { enemyTypeLabel, nodeTypeLabel } from './labels';
 
 // ---- 編輯狀態（可變草稿；匯出時才驗證） ----------------------------------
 // 注意：編輯過程用寬鬆型別草稿（欄位可能暫時不合法），匯出前才收斂驗證。
@@ -203,9 +204,11 @@ function renderNodeList(): void {
 }
 
 function nodeSummary(node: LevelNodeData): string {
-  if (node.nodeType === 'Spawn') return `Spawn (殺${node.killQuota})`;
-  if (node.nodeType === 'Reward') return `Reward${node.rewardPresetName ? ` (${node.rewardPresetName})` : ''}`;
-  return `Event (${node.eventPresetName})`;
+  if (node.nodeType === 'Spawn') return `${nodeTypeLabel('Spawn')}（殺敵 ${node.killQuota}）`;
+  if (node.nodeType === 'Reward') {
+    return `${nodeTypeLabel('Reward')}${node.rewardPresetName ? `（${node.rewardPresetName}）` : ''}`;
+  }
+  return `${nodeTypeLabel('Event')}（${node.eventPresetName}）`;
 }
 
 function moveNode(from: number, to: number): void {
@@ -270,10 +273,10 @@ function renderInspector(): void {
 
   // 關卡層級欄位：id / name。
   inspectorEl.appendChild(
-    fieldRow('關卡 id', textInput(lvl.id, (v) => { lvl.id = v; })),
+    fieldRow('關卡ID', textInput(lvl.id, (v) => { lvl.id = v; })),
   );
   inspectorEl.appendChild(
-    fieldRow('顯示名 name', textInput(lvl.name ?? '', (v) => {
+    fieldRow('關卡名稱', textInput(lvl.name ?? '', (v) => {
       if (v.length === 0) delete lvl.name;
       else lvl.name = v;
     })),
@@ -291,7 +294,7 @@ function renderInspector(): void {
   const hr = document.createElement('div');
   hr.className = 'section-title';
   hr.style.marginTop = '16px';
-  hr.textContent = `節點 #${state.selectedNode + 1}：${node.nodeType}`;
+  hr.textContent = `節點 #${state.selectedNode + 1}：${nodeTypeLabel(node.nodeType)}`;
   inspectorEl.appendChild(hr);
 
   if (node.nodeType === 'Spawn') renderSpawnInspector(node);
@@ -300,15 +303,15 @@ function renderInspector(): void {
 }
 
 function renderSpawnInspector(node: SpawnNodeData): void {
-  inspectorEl.appendChild(fieldRow('killQuota', numberInput(node.killQuota, (v) => { node.killQuota = v; })));
-  inspectorEl.appendChild(fieldRow('maxAlive', numberInput(node.maxAlive, (v) => { node.maxAlive = v; })));
-  inspectorEl.appendChild(fieldRow('spawnThreshold', numberInput(node.spawnThreshold, (v) => { node.spawnThreshold = v; })));
-  inspectorEl.appendChild(fieldRow('spawnInterval', numberInput(node.spawnInterval, (v) => { node.spawnInterval = v; })));
+  inspectorEl.appendChild(fieldRow('殺敵數', numberInput(node.killQuota, (v) => { node.killQuota = v; })));
+  inspectorEl.appendChild(fieldRow('場上上限', numberInput(node.maxAlive, (v) => { node.maxAlive = v; })));
+  inspectorEl.appendChild(fieldRow('補怪門檻', numberInput(node.spawnThreshold, (v) => { node.spawnThreshold = v; })));
+  inspectorEl.appendChild(fieldRow('生怪間隔（秒）', numberInput(node.spawnInterval, (v) => { node.spawnInterval = v; })));
 
   const spawnsTitle = document.createElement('div');
   spawnsTitle.className = 'section-title';
   spawnsTitle.style.marginTop = '12px';
-  spawnsTitle.textContent = 'spawns（敵種 + 權重）';
+  spawnsTitle.textContent = '敵人配置（敵種 + 權重）';
   inspectorEl.appendChild(spawnsTitle);
 
   node.spawns.forEach((entry, si) => {
@@ -318,8 +321,8 @@ function renderSpawnInspector(node: SpawnNodeData): void {
     const sel = document.createElement('select');
     for (const t of ENEMY_TYPES) {
       const opt = document.createElement('option');
-      opt.value = t;
-      opt.textContent = t;
+      opt.value = t; // JSON 值維持英文 enum
+      opt.textContent = enemyTypeLabel(t); // 顯示中文（英文）
       if (t === entry.enemyType) opt.selected = true;
       sel.appendChild(opt);
     }
@@ -332,6 +335,7 @@ function renderSpawnInspector(node: SpawnNodeData): void {
     w.type = 'number';
     w.step = 'any';
     w.value = String(entry.weight);
+    w.title = '權重';
     w.addEventListener('input', () => {
       const v = Number(w.value);
       entry.weight = Number.isFinite(v) ? v : 0;
@@ -361,7 +365,7 @@ function renderSpawnInspector(node: SpawnNodeData): void {
 
 function renderRewardInspector(node: RewardNodeData): void {
   inspectorEl.appendChild(
-    fieldRow('rewardPresetName', textInput(node.rewardPresetName ?? '', (v) => {
+    fieldRow('獎勵預設名', textInput(node.rewardPresetName ?? '', (v) => {
       if (v.length === 0) delete node.rewardPresetName;
       else node.rewardPresetName = v;
     })),
@@ -374,7 +378,7 @@ function renderRewardInspector(node: RewardNodeData): void {
 
 function renderEventInspector(node: EventNodeData): void {
   inspectorEl.appendChild(
-    fieldRow('eventPresetName', textInput(node.eventPresetName, (v) => { node.eventPresetName = v; })),
+    fieldRow('事件預設名', textInput(node.eventPresetName, (v) => { node.eventPresetName = v; })),
   );
   const hint = document.createElement('div');
   hint.className = 'hint';

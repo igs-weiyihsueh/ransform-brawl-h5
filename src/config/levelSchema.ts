@@ -37,6 +37,47 @@ export type NodeType = 'Spawn' | 'Reward' | 'Event';
 /** 執行期用的合法 NodeType 清單。 */
 export const NODE_TYPES: readonly NodeType[] = ['Spawn', 'Reward', 'Event'] as const;
 
+// ---------------------------------------------------------------------------
+// 以下為【驗證訊息】內部用的中文標籤（private，不 export）。
+// 供 validateLevels 組錯誤字串用；不是對外的 UI 顯示 API——
+// 編輯器要顯示用的中文對照放在 editor/labels.ts（presentation 屬編輯器側）。
+// ⚠️ 這些只影響錯誤訊息「文字」，不影響 JSON 的英文 enum 值。
+// ---------------------------------------------------------------------------
+
+const NODE_TYPE_MSG_LABELS: Readonly<Record<NodeType, string>> = {
+  Spawn: '刷怪',
+  Reward: '獎勵',
+  Event: '事件',
+};
+
+const ENEMY_TYPE_MSG_LABELS: Readonly<Record<EnemyType, string>> = {
+  Enemy_Rush: '衝鋒兵',
+  Enemy_Ranged: '遠程兵',
+  Enemy_Elite: '菁英兵',
+};
+
+/** 訊息用：節點類型「中文（英文enum）」，找不到退回原值。 */
+function nodeTypeMsg(type: string): string {
+  const zh = (NODE_TYPE_MSG_LABELS as Record<string, string>)[type];
+  return zh ? `${zh}（${type}）` : type;
+}
+
+/** 訊息用：敵種「中文（英文enum）」，找不到退回原值。 */
+function enemyTypeMsg(type: string): string {
+  const zh = (ENEMY_TYPE_MSG_LABELS as Record<string, string>)[type];
+  return zh ? `${zh}（${type}）` : type;
+}
+
+/** 訊息用：合法節點類型的顯示清單。 */
+function nodeTypesDisplay(): string {
+  return NODE_TYPES.map((t) => nodeTypeMsg(t)).join(' / ');
+}
+
+/** 訊息用：合法敵種的顯示清單。 */
+function enemyTypesDisplay(): string {
+  return ENEMY_TYPES.map((t) => enemyTypeMsg(t)).join(' / ');
+}
+
 /** 生怪權重項：{敵種, 相對權重}。對應 Unity spawns[] 元素。 */
 export interface SpawnEntry {
   enemyType: EnemyType;
@@ -151,51 +192,53 @@ export function validateLevels(json: unknown): ValidateResult {
 
   // version
   if (!isFiniteNumber(root.version)) {
-    errors.push('頂層 version 缺少或非數字（預期 version: 1）。');
+    errors.push('頂層「版本 version」缺少或非數字（預期 version: 1）。');
   } else if (root.version !== LEVELS_SCHEMA_VERSION) {
     errors.push(
-      `頂層 version=${String(root.version)} 不支援（此版本只接受 ${LEVELS_SCHEMA_VERSION}）。`,
+      `頂層「版本 version」=${String(root.version)} 不支援（此版本只接受 ${LEVELS_SCHEMA_VERSION}）。`,
     );
   }
 
   // levels
   if (!Array.isArray(root.levels)) {
-    errors.push('頂層 levels 缺少或不是陣列。');
+    errors.push('頂層「關卡清單 levels」缺少或不是陣列。');
     return { ok: false, errors };
   }
   if (root.levels.length === 0) {
-    errors.push('levels 為空陣列，至少要有一關。');
+    errors.push('「關卡清單 levels」為空，至少要有一關。');
   }
 
   const seenIds = new Set<string>();
   root.levels.forEach((lvlRaw, li) => {
-    const where = `levels[${li}]`;
+    const where = `第 ${li + 1} 關`;
     if (typeof lvlRaw !== 'object' || lvlRaw === null) {
-      errors.push(`${where} 必須是物件 { id, nodes }。`);
+      errors.push(`${where} 必須是物件（含 關卡ID、節點清單）。`);
       return;
     }
     const lvl = lvlRaw as Record<string, unknown>;
 
     if (!isNonEmptyString(lvl.id)) {
-      errors.push(`${where}.id 缺少或非非空字串。`);
+      errors.push(`${where} 的「關卡ID id」缺少或非非空字串。`);
     } else {
-      if (seenIds.has(lvl.id)) errors.push(`${where}.id "${lvl.id}" 與其他關卡重複。`);
+      if (seenIds.has(lvl.id)) {
+        errors.push(`${where} 的「關卡ID id」"${lvl.id}" 與其他關卡重複。`);
+      }
       seenIds.add(lvl.id);
     }
 
-    const idLabel = isNonEmptyString(lvl.id) ? lvl.id : `#${li}`;
+    const idLabel = isNonEmptyString(lvl.id) ? lvl.id : `第${li + 1}關`;
 
     // name 為 optional；若提供則須為非空字串。
     if (lvl.name !== undefined && !isNonEmptyString(lvl.name)) {
-      errors.push(`關 "${idLabel}" 的 name 若提供必須是非空字串。`);
+      errors.push(`關卡「${idLabel}」的「關卡名稱 name」若提供必須是非空字串。`);
     }
 
     if (!Array.isArray(lvl.nodes)) {
-      errors.push(`關 "${idLabel}" 的 nodes 缺少或不是陣列。`);
+      errors.push(`關卡「${idLabel}」的「節點清單 nodes」缺少或不是陣列。`);
       return;
     }
     if (lvl.nodes.length === 0) {
-      errors.push(`關 "${idLabel}" 的 nodes 為空，至少要有一個節點。`);
+      errors.push(`關卡「${idLabel}」的「節點清單 nodes」為空，至少要有一個節點。`);
     }
 
     lvl.nodes.forEach((nodeRaw, ni) => {
@@ -215,7 +258,7 @@ function validateNode(
   ni: number,
   errors: string[],
 ): void {
-  const at = `關 "${levelLabel}" node[${ni}]`;
+  const at = `關卡「${levelLabel}」第 ${ni + 1} 個節點`;
   if (typeof nodeRaw !== 'object' || nodeRaw === null) {
     errors.push(`${at} 必須是物件。`);
     return;
@@ -225,26 +268,31 @@ function validateNode(
 
   if (!isNonEmptyString(nodeType) || !NODE_TYPES.includes(nodeType as NodeType)) {
     errors.push(
-      `${at}.nodeType="${String(nodeType)}" 不合法（預期 ${NODE_TYPES.join(' / ')}）。`,
+      `${at} 的「節點類型 nodeType」="${String(nodeType)}" 不合法（預期 ${nodeTypesDisplay()}）。`,
     );
     return; // nodeType 錯就無從往下驗欄位
   }
 
+  const typeLabel = nodeTypeMsg(nodeType);
   switch (nodeType as NodeType) {
     case 'Spawn':
-      validateSpawnNode(node, at, errors);
+      validateSpawnNode(node, `${at}（${typeLabel}）`, errors);
       break;
     case 'Reward':
       if (
         node.rewardPresetName !== undefined &&
         !isNonEmptyString(node.rewardPresetName)
       ) {
-        errors.push(`${at}(Reward).rewardPresetName 若提供必須是非空字串。`);
+        errors.push(
+          `${at}（${typeLabel}）的「獎勵預設名 rewardPresetName」若提供必須是非空字串。`,
+        );
       }
       break;
     case 'Event':
       if (!isNonEmptyString(node.eventPresetName)) {
-        errors.push(`${at}(Event).eventPresetName 缺少或非非空字串（如 "Guard60"）。`);
+        errors.push(
+          `${at}（${typeLabel}）的「事件預設名 eventPresetName」缺少或非非空字串（如 "Guard60"）。`,
+        );
       }
       break;
     default:
@@ -258,14 +306,21 @@ function validateSpawnNode(
   at: string,
   errors: string[],
 ): void {
+  const fieldLabel: Record<string, string> = {
+    killQuota: '殺敵數 killQuota',
+    maxAlive: '場上上限 maxAlive',
+    spawnThreshold: '補怪門檻 spawnThreshold',
+    spawnInterval: '生怪間隔 spawnInterval',
+  };
   const numField = (key: string, opts: { positive?: boolean }): void => {
+    const label = fieldLabel[key] ?? key;
     const v = node[key];
     if (!isFiniteNumber(v)) {
-      errors.push(`${at}(Spawn).${key} 缺少或非數字。`);
+      errors.push(`${at} 的「${label}」缺少或非數字。`);
     } else if (opts.positive && v <= 0) {
-      errors.push(`${at}(Spawn).${key}=${v} 必須 > 0。`);
+      errors.push(`${at} 的「${label}」=${v} 必須 > 0。`);
     } else if (!opts.positive && v < 0) {
-      errors.push(`${at}(Spawn).${key}=${v} 不可為負。`);
+      errors.push(`${at} 的「${label}」=${v} 不可為負。`);
     }
   };
 
@@ -281,21 +336,21 @@ function validateSpawnNode(
     node.spawnThreshold > node.maxAlive
   ) {
     errors.push(
-      `${at}(Spawn).spawnThreshold(${node.spawnThreshold}) 不應大於 maxAlive(${node.maxAlive})。`,
+      `${at} 的「補怪門檻 spawnThreshold」(${node.spawnThreshold}) 不應大於「場上上限 maxAlive」(${node.maxAlive})。`,
     );
   }
 
   if (!Array.isArray(node.spawns)) {
-    errors.push(`${at}(Spawn).spawns 缺少或不是陣列。`);
+    errors.push(`${at} 的「敵人配置 spawns」缺少或不是陣列。`);
     return;
   }
   if (node.spawns.length === 0) {
-    errors.push(`${at}(Spawn).spawns 為空，至少要有一種可生怪。`);
+    errors.push(`${at} 的「敵人配置 spawns」為空，至少要有一種可生怪。`);
   }
   node.spawns.forEach((entryRaw, si) => {
-    const eAt = `${at}(Spawn).spawns[${si}]`;
+    const eAt = `${at} 的第 ${si + 1} 筆敵人配置`;
     if (typeof entryRaw !== 'object' || entryRaw === null) {
-      errors.push(`${eAt} 必須是物件 { enemyType, weight }。`);
+      errors.push(`${eAt} 必須是物件（含 敵種、權重）。`);
       return;
     }
     const entry = entryRaw as Record<string, unknown>;
@@ -304,11 +359,11 @@ function validateSpawnNode(
       !ENEMY_TYPES.includes(entry.enemyType as EnemyType)
     ) {
       errors.push(
-        `${eAt}.enemyType="${String(entry.enemyType)}" 不合法（預期 ${ENEMY_TYPES.join(' / ')}）。`,
+        `${eAt} 的「敵種 enemyType」="${String(entry.enemyType)}" 不合法（預期 ${enemyTypesDisplay()}）。`,
       );
     }
     if (!isFiniteNumber(entry.weight) || entry.weight <= 0) {
-      errors.push(`${eAt}.weight 缺少或非正數。`);
+      errors.push(`${eAt} 的「權重 weight」缺少或非正數。`);
     }
   });
 }
