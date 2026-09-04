@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "levels": [
+    {
+      "id": "Level0",
+      "name": "第一關",
+      "nodes": [
+        {
+          "nodeType": "Spawn",
+          "killQuota": 30,
+          "maxAlive": 15,
+          "spawnThreshold": 10,
+          "spawnInterval": 0.4,
+          "spawns": [
+            { "enemyType": "Enemy_Rush", "weight": 0.7 },
+            { "enemyType": "Enemy_Ranged", "weight": 0.2 },
+            { "enemyType": "Enemy_Elite", "weight": 0.1 }
+          ]
+        },
+        {
+          "nodeType": "Spawn",
+          "killQuota": 40,
+          "maxAlive": 20,
+          "spawnThreshold": 15,
+          "spawnInterval": 0.35,
+          "spawns": [
+            { "enemyType": "Enemy_Rush", "weight": 0.7 },
+            { "enemyType": "Enemy_Ranged", "weight": 0.2 },
+            { "enemyType": "Enemy_Elite", "weight": 0.1 }
+          ]
+        },
+        {
+          "nodeType": "Reward"
+        },
+        {
+          "nodeType": "Event",
+          "eventPresetName": "Guard60"
+        }
+      ]
+    }
+  ]
+}
