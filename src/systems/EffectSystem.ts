@@ -69,7 +69,7 @@ export class EffectSystem {
    * 在世界座標播放一次特效。
    * @param effectKey 特效 key（對應 VFX_EFFECTS / vfx/<key>/）。
    * @param x,y 世界像素座標（通常為攻擊判定中心）。
-   * @param facing 面向：+1 面右不翻、-1 面左鏡像。
+   * @param facing 面向：+1 面右、-1 面左（與角色面向一致）。
    * @param scaleOverride 覆蓋 config 的 scale（可選）。
    */
   play(effectKey: string, x: number, y: number, facing: number, scaleOverride?: number): void {
@@ -82,7 +82,9 @@ export class EffectSystem {
     spr.setOrigin(0.5, 0.5);
     spr.setDepth(def.depth);
     spr.setScale(scaleOverride ?? def.scale);
-    spr.setFlipX(facing < 0); // 面左鏡像
+    // VFX 幀圖預設朝向為「面左」，故面右時才鏡像，讓特效方向跟角色面向一致
+    // （面右→朝右、面左→朝左，與攻擊判定 OBB 的 offsetX 方向對齊）。
+    spr.setFlipX(facing > 0);
     spr.play(animKey(effectKey));
     // 播完自動銷毀。
     spr.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => spr.destroy());
