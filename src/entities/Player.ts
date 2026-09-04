@@ -13,6 +13,12 @@ import type { Hittable, Vec2 } from '@/systems/hitDetection';
 /** 玩家可用的角色美術 key（debug 預覽用 T 鍵循環切換）。 */
 export const PLAYER_CHARACTERS = ['Human', 'SunWukong'] as const;
 
+/** 衝刺殘影：生成間隔(秒)、藍色半透明 tint、初始 alpha、fade 時長(秒)。 */
+const AFTER_IMAGE_INTERVAL = 0.05;
+const AFTER_IMAGE_TINT = 0x8080ff; // ≈ (0.5, 0.5, 1)
+const AFTER_IMAGE_ALPHA = 0.5;
+const AFTER_IMAGE_FADE = 0.3;
+
 /**
  * Player — 玩家實體（Human 逐幀動畫）。
  *
@@ -48,6 +54,8 @@ export class Player implements Hittable {
   private dashDir: Vec2 = { x: 0, y: 0 };
   /** 本次衝刺已命中過的敵人（去重，一隻一次）。 */
   private readonly dashHitSet = new Set<object>();
+  /** 衝刺殘影生成計時器（每 AFTER_IMAGE_INTERVAL 秒生一個）。 */
+  private afterImageTimer = 0;
 
   private readonly hitRadiusPx: number;
 
@@ -203,14 +211,16 @@ export class Player implements Hittable {
     this.dashRemaining = DASH_CONFIG.duration;
     this.dashDir = { x, y };
     this.dashHitSet.clear();
+    this.afterImageTimer = 0;
     // 面向依水平衝刺方向。
     if (x > 0) this.setFacing(1);
     else if (x < 0) this.setFacing(-1);
     this.anim.play('move'); // 衝刺用現有 move 動畫
+    this.spawnAfterImage(); // 起手先生一個殘影
   }
 
   /**
-   * 衝刺每幀更新：位移 dashSpeed×dt 往 dashDir；時間到結束。
+   * 衝刺每幀更新：位移 dashSpeed×dt 往 dashDir；每 AFTER_IMAGE_INTERVAL 生殘影；時間到結束。
    * @returns 是否仍在衝刺中（結束當幀回 false）。
    */
   updateDash(dt: number): boolean {
@@ -218,11 +228,42 @@ export class Player implements Hittable {
     const speedPx = DASH_CONFIG.speed * PPU;
     this.anim.sprite.x += this.dashDir.x * speedPx * dt;
     this.anim.sprite.y += this.dashDir.y * speedPx * dt;
+
+    // 殘影：每 0.05s 生一個。
+    this.afterImageTimer += dt;
+    while (this.afterImageTimer >= AFTER_IMAGE_INTERVAL) {
+      this.afterImageTimer -= AFTER_IMAGE_INTERVAL;
+      this.spawnAfterImage();
+    }
+
     this.dashRemaining -= dt;
     if (this.dashRemaining <= 0) {
       this.dashing = false;
     }
     return this.dashing;
+  }
+
+  /**
+   * 生成一個衝刺殘影：快照當前角色貼圖的 ghost（同 texture/frame + 藍色半透明），
+   * 排序在角色下一層(depth-1)，tween alpha→0 over 0.3s 後銷毀。
+   * 只複製角色本體 sprite（腳底光/UI 等裝飾不在此 sprite 上，天然排除）。
+   */
+  private spawnAfterImage(): void {
+    const src = this.anim.sprite;
+    const ghost = this.scene.add.sprite(src.x, src.y, src.texture.key, src.frame.name);
+    ghost.setOrigin(src.originX, src.originY);
+    ghost.setScale(src.scaleX, src.scaleY);
+    ghost.setFlipX(src.flipX);
+    ghost.setTint(AFTER_IMAGE_TINT);
+    ghost.setAlpha(AFTER_IMAGE_ALPHA);
+    ghost.setDepth((src.depth || 0) - 1); // 角色下一層
+    this.scene.tweens.add({
+      targets: ghost,
+      alpha: 0,
+      duration: AFTER_IMAGE_FADE * 1000,
+      ease: 'Linear',
+      onComplete: () => ghost.destroy(),
+    });
   }
 
   /** 衝刺命中去重：回傳 true 表示這隻本次衝刺尚未打過（並記錄）。 */
