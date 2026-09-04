@@ -122,9 +122,14 @@ export class CharacterAnimator {
     return this.currentState;
   }
 
-  /** 面向翻轉：+1 面右（原圖朝向）、-1 面左。 */
+  /**
+   * 面向翻轉：+1 面右、-1 面左。
+   * 註：SPUM 烘出來的 sprite 預設朝向與直覺相反，故此處 flipX 反轉，
+   * 讓「面右不翻、面左翻」對應到正確視覺（按右→面右、按左→面左）。
+   * 5 隻角色同套 SPUM 同方式烘、預設朝向一致，統一在這裡處理即可。
+   */
   setFacing(facing: number): void {
-    this.sprite.setFlipX(facing < 0);
+    this.sprite.setFlipX(facing > 0);
   }
 
   /** 設定整體縮放（相對 256×256 畫布）。 */

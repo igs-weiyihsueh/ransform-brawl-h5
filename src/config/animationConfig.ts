@@ -29,12 +29,9 @@ export type CharacterDef = Record<AnimState, ActionDef>;
 export const FRAME_SIZE = 256;
 
 /**
- * 預設幀率規則：
- * - idle/move 循環：24fps
- * - attack/death/damaged 一次性：24fps
+ * 播放幀率規則：idle/move 循環 24fps；attack/death/damaged 一次性 24fps。
  *
- * 註：規格提到 Enemy_Rush/move 為 20 幀（POC 60fps 烘），但實際放進來的資料夾
- * 只有 8 幀（frame_00~07），故此處照「實際檔案數」設定；若之後補到 20 幀再調整。
+ * 全角色所有動作幀數統一：idle12 / move8 / attack12 / damaged8 / death16。
  */
 const A = (frames: number, fps = 24, loop = false): ActionDef => ({ frames, fps, loop });
 
