@@ -10,6 +10,7 @@ import type {
 import type { Enemy } from '@/entities/Enemy';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
+import { GuardEvent } from '@/systems/GuardEvent';
 
 /**
  * WaveSystem — 波次/關卡系統（Spawn 節點核心，資料由 JSON 驅動）。
@@ -52,6 +53,14 @@ export class WaveSystem implements GameSystem {
   /** 一幕通關回呼（本關 nodes 全跑完時觸發，供 JP 給燈）。 */
   onStageClear: (() => void) | null = null;
 
+  /** 進行中的守護波（Event 節點）；null 表示非守護波。 */
+  private guardEvent: GuardEvent | null = null;
+
+  /** debug/UI：目前守護波（若有）。 */
+  getGuardEvent(): GuardEvent | null {
+    return this.guardEvent;
+  }
+
   /**
    * @param preloadedLevels 選填：直接注入已驗證的關卡（測試/編輯器預覽用）。
    *   不給時，init() 會自行從 levels.json 載入。
@@ -81,8 +90,27 @@ export class WaveSystem implements GameSystem {
 
     if (node.nodeType === 'Spawn') {
       this.updateSpawnNode(node, dt);
+    } else if (node.nodeType === 'Event') {
+      this.updateEventNode(node, dt);
     } else {
-      // Reward / Event：stub，直接前進（schema 已定，流程之後接）。
+      // Reward：stub，直接前進（schema 已定，流程之後接）。
+      this.advanceNode();
+    }
+  }
+
+  /** Event 節點（守護波）：首次進入建 GuardEvent，每幀 tick，結束前進節點。 */
+  private updateEventNode(node: { eventPresetName: string }, dt: number): void {
+    if (!this.guardEvent) {
+      // 守護波敵種：預設三型（Event 節點 schema 未帶 spawns）。
+      this.guardEvent = new GuardEvent(this.ctx, node.eventPresetName, [
+        'Enemy_Rush',
+        'Enemy_Ranged',
+        'Enemy_Elite',
+      ]);
+    }
+    const done = this.guardEvent.update(dt);
+    if (done) {
+      this.guardEvent = null;
       this.advanceNode();
     }
   }

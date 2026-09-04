@@ -68,6 +68,14 @@ export class Enemy implements Hittable {
   /** 擊殺回呼（由 EnemySpawner 設定），死亡當下觸發一次，帶敵人角色 key。 */
   onKilled: ((enemyKey: string) => void) | null = null;
 
+  /** 守護波目標覆蓋：設定後 AI 追/打此目標而非玩家；清除(null)回玩家。 */
+  private guardTarget: { getPosition(): Vec2 } | null = null;
+
+  /** 設定/清除守護目標覆蓋（守護波開始設雕像、結束清回玩家）。 */
+  setGuardTarget(target: { getPosition(): Vec2 } | null): void {
+    this.guardTarget = target;
+  }
+
   constructor(scene: Phaser.Scene, x: number, y: number, charKey: string = ENEMY_CHARACTERS[0]) {
     this.cfg = ENEMY_AI[charKey] ?? ENEMY_AI[ENEMY_CHARACTERS[0]];
     this.scaleFactor = getPerCharScale(this.cfg.characterKey);
@@ -80,6 +88,14 @@ export class Enemy implements Hittable {
 
   isDead(): boolean {
     return this.dead;
+  }
+
+  /** 立即銷毀（守護波 cleanup ClearAllActiveEnemies 用，不播死亡動畫、不觸發 onKilled）。 */
+  forceDestroy(): void {
+    if (this.dead) return;
+    this.dead = true;
+    this.state = 'death';
+    this.anim.destroy();
   }
 
   getHitCenter(): Vec2 {
@@ -119,11 +135,13 @@ export class Enemy implements Hittable {
 
     if (this.state === 'death') return;
 
-    const dx = playerPos.x - this.anim.sprite.x;
-    const dy = playerPos.y - this.anim.sprite.y;
+    // 守護波：有覆蓋目標則追/打雕像，否則玩家。
+    const aim = this.guardTarget ? this.guardTarget.getPosition() : playerPos;
+    const dx = aim.x - this.anim.sprite.x;
+    const dy = aim.y - this.anim.sprite.y;
     const dist = Math.hypot(dx, dy);
 
-    // 面向玩家（水平）。
+    // 面向目標（水平）。
     if (dx > 0.001) this.setFacing(1);
     else if (dx < -0.001) this.setFacing(-1);
 
@@ -161,7 +179,7 @@ export class Enemy implements Hittable {
         if (this.timer <= 0) {
           this.state = 'attack';
           this.attackAnimDone = false;
-          this.fireAttack(playerPos); // 內含 play('attack', force) + 觸發判定/射彈
+          this.fireAttack(aim); // 對準目標（守護波為雕像，否則玩家）出手
         }
         break;
 

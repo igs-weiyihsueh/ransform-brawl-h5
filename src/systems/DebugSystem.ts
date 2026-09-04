@@ -143,7 +143,8 @@ export class DebugSystem implements GameSystem {
   }
 
   private updateInfo(): void {
-    const { player, energy, transform, credit, combo, ticket, chest, jp } = this.ctx;
+    const { player, energy, transform, credit, combo, ticket, chest, jp, wave } = this.ctx;
+    const guard = wave.getGuardEvent();
     const enemies = this.ctx.getEnemies();
     const enemyInfo = enemies
       .map(
@@ -165,10 +166,13 @@ export class DebugSystem implements GameSystem {
     const comboInfo = `COMBO ${combo.getCombo()}${combo.isWarning() ? '(警告!)' : ''}  彩票 ${ticket.getTickets()}`;
     const chestInfo = `寶盒 ${chest.getCharge()}/${chest.getThreshold()}(開${chest.getOpensCount()}${chest.getLastReward() ? ' 最近:' + chest.getLastReward() : ''})`;
     const jpInfo = `JP 紅${jp.getLights('red')}燈×${jp.getMultiplier('red').toFixed(1)} 藍${jp.getLights('blue')}燈×${jp.getMultiplier('blue').toFixed(1)} 紫${jp.getLights('purple')}燈×${jp.getMultiplier('purple').toFixed(1)}${jp.getLastPayout() ? ' 派:' + jp.getLastPayout() : ''}`;
+    const guardInfo = guard
+      ? `\n🛡守護波 剩${guard.getRemaining()}s 雕像HP ${guard.getTargetHp()}/${guard.getTargetMaxHp()}`
+      : '';
     this.infoText.setText(
       `玩家:${player.getCharacterKey()}(${soulInfo})  面向 ${facing}   ${hitInfo}${iframe}\n` +
         `${creditInfo}   ${comboInfo}   ${chestInfo}   ${energyInfo}\n` +
-        `${jpInfo}\n` +
+        `${jpInfo}${guardInfo}\n` +
         `下一隻敵人(E補新/R補同型):${nextEnemy}   場上:${enemies.length}  ${enemyInfo}\n` +
         `[G]生變身道具  [X]衝刺  [C]投幣  [Z/左鍵]攻擊/放招` +
         (player.isOnCooldown() ? '   [玩家攻擊冷卻中]' : ''),

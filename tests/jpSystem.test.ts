@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CREDIT_PER_COIN,
+  JP_BOSS_GATED,
   JP_GROUP_CONFIG,
   JP_LIGHTS_TO_TRIGGER,
   JP_TICKET_FACE,
   multiplierStepPerCoin,
   pickLightGroup,
+  type JpGroup,
 } from '@/config/jpConfig';
 import type { GameContext } from '@/systems/GameContext';
 import { JpSystem } from '@/systems/JpSystem';
+import { TicketSystem } from '@/systems/TicketSystem';
 
 /**
  * JpSystem + jpConfig 測試（零式定案 924a1d83）。
@@ -104,4 +108,197 @@ describe('JpSystem — 累積/燈/派彩', () => {
     expect(afterFirst).toBe(JP_GROUP_CONFIG.red.startMultiplier); // 5，非 30
     expect(afterFirst).not.toBe(JP_GROUP_CONFIG.red.capMultiplier);
   });
+});
+
+// ===========================================================================
+// 深度強化（QA 測騎接手）：每幣步進/封頂/起始 · pickLightGroup 均等區間邊界 ·
+// 5 燈觸發門檻 · 派彩公式+歸零(只該組) · BOSS gate · ticket 生產者關係。
+// ===========================================================================
+
+/** 建 JpSystem + 記 ticket / 抓 onStageClear 回呼（可直接觸發一幕通關）。 */
+function makeJp() {
+  const state = { ticketsAdded: 0, addCalls: 0, stageClear: null as null | (() => void) };
+  const ctx = {
+    ticket: {
+      addTickets: (n: number) => {
+        state.ticketsAdded += n;
+        state.addCalls += 1;
+      },
+    },
+    wave: {
+      set onStageClear(cb: () => void) {
+        state.stageClear = cb;
+      },
+    },
+  } as unknown as GameContext;
+  const sys = new JpSystem();
+  sys.init(ctx);
+  return { sys, state };
+}
+
+/** 用 stub Math.random 強制 pickLightGroup 選某組，觸發 n 幕通關。 */
+function clearStagesForGroup(
+  state: { stageClear: null | (() => void) },
+  group: JpGroup,
+  n: number,
+): void {
+  const rngByGroup: Record<JpGroup, number> = { red: 0, blue: 0.4, purple: 0.7 };
+  const real = Math.random;
+  Math.random = () => rngByGroup[group];
+  try {
+    for (let i = 0; i < n; i += 1) state.stageClear?.();
+  } finally {
+    Math.random = real;
+  }
+}
+
+describe('JpSystem — 每幣累積：步進/封頂/起始/部分幣', () => {
+  it('起始倍數 red5/blue10/purple20', () => {
+    const { sys } = makeJp();
+    expect(sys.getMultiplier('red')).toBe(5);
+    expect(sys.getMultiplier('blue')).toBe(10);
+    expect(sys.getMultiplier('purple')).toBe(20);
+  });
+
+  it('恰 450 幣（4500 Credit）從起始漲到平均出獎倍數（red→15.75/blue→22.5/purple→29.25，皆未觸頂）', () => {
+    const { sys } = makeJp();
+    sys.notifyCreditSpent(CREDIT_PER_COIN * 450);
+    expect(sys.getMultiplier('red')).toBeCloseTo(15.75);
+    expect(sys.getMultiplier('blue')).toBeCloseTo(22.5);
+    expect(sys.getMultiplier('purple')).toBeCloseTo(29.25);
+  });
+
+  it('部分幣（5 Credit = 0.5 幣）步進 = step × 0.5', () => {
+    const { sys } = makeJp();
+    sys.notifyCreditSpent(5); // 0.5 幣
+    expect(sys.getMultiplier('red')).toBeCloseTo(5 + multiplierStepPerCoin('red') * 0.5);
+  });
+
+  it('封頂 clamp：狂灌不超過 cap（red30/blue50/purple80）', () => {
+    const { sys } = makeJp();
+    sys.notifyCreditSpent(CREDIT_PER_COIN * 1_000_000);
+    expect(sys.getMultiplier('red')).toBe(30);
+    expect(sys.getMultiplier('blue')).toBe(50);
+    expect(sys.getMultiplier('purple')).toBe(80);
+  });
+
+  it('notifyCreditSpent(0/負) 不累積（守 amount>0）', () => {
+    const { sys } = makeJp();
+    sys.notifyCreditSpent(0);
+    sys.notifyCreditSpent(-10);
+    expect(sys.getMultiplier('red')).toBe(5); // 沒動
+  });
+});
+
+describe('pickLightGroup — 均等 33.3% 區間邊界（精確 rng 打三組交界）', () => {
+  const at = (r: number) => pickLightGroup(() => r);
+  // i = min(2, floor(rng×3))：[0,1/3)紅 [1/3,2/3)藍 [2/3,1)紫；交界（floor 進位）歸下一組。
+  it('rng=0 → 紅；rng→1(0.9999) → 紫（兩端）', () => {
+    expect(at(0)).toBe('red');
+    expect(at(0.9999)).toBe('purple');
+  });
+
+  it('紅/藍交界 1/3：0.3332→紅、恰好 1/3→藍', () => {
+    expect(at(0.3332)).toBe('red');
+    expect(at(1 / 3)).toBe('blue');
+  });
+
+  it('藍/紫交界 2/3：0.6665→藍、恰好 2/3→紫', () => {
+    expect(at(0.6665)).toBe('blue');
+    expect(at(2 / 3)).toBe('purple');
+  });
+
+  it('rng=1.0（極端上界）→ 紫（min(2,…) 夾住不越界）', () => {
+    expect(at(1.0)).toBe('purple');
+  });
+});
+
+describe('JpSystem — 5 燈觸發門檻（4 不觸發、恰 5 觸發）', () => {
+  it('同組給 4 燈 → 不觸發派彩、lights=4', () => {
+    const { sys, state } = makeJp();
+    clearStagesForGroup(state, 'red', 4);
+    expect(sys.getLights('red')).toBe(4);
+    expect(state.ticketsAdded).toBe(0); // 未派彩
+  });
+
+  it('同組第 5 燈 → 觸發派彩、該組 lights 歸 0（門檻邊界）', () => {
+    const { sys, state } = makeJp();
+    clearStagesForGroup(state, 'red', 5);
+    expect(state.ticketsAdded).toBeGreaterThan(0); // 派彩發生
+    expect(sys.getLights('red')).toBe(0); // 派彩後燈歸零
+  });
+});
+
+describe('JpSystem — 派彩公式 + 歸零(只該組) + ticket 生產者', () => {
+  it('派彩金額 = round(當前倍數 × 30)：red 封頂30 → 5 燈觸發 → 派 900', () => {
+    const { sys, state } = makeJp();
+    sys.notifyCreditSpent(CREDIT_PER_COIN * 1_000_000); // red 封頂 30
+    clearStagesForGroup(state, 'red', 5); // 集滿觸發
+    expect(state.ticketsAdded).toBe(Math.round(30 * JP_TICKET_FACE)); // 900
+    expect(sys.getLights('red')).toBe(0);
+    expect(sys.getMultiplier('red')).toBe(5); // 該組倍數歸零重累積
+  });
+
+  it('派彩只影響該組：red 派彩後 blue/purple 倍數與燈不受影響', () => {
+    const { sys, state } = makeJp();
+    sys.notifyCreditSpent(CREDIT_PER_COIN * 100); // 三組都累積一點
+    const blueBefore = sys.getMultiplier('blue');
+    const purpleBefore = sys.getMultiplier('purple');
+    // 給 blue、purple 各 2 燈（不觸發），再讓 red 集滿派彩。
+    clearStagesForGroup(state, 'blue', 2);
+    clearStagesForGroup(state, 'purple', 2);
+    clearStagesForGroup(state, 'red', 5); // red 派彩
+    expect(sys.getMultiplier('red')).toBe(5); // 只有 red 歸零
+    expect(sys.getMultiplier('blue')).toBeCloseTo(blueBefore); // blue 不受影響
+    expect(sys.getMultiplier('purple')).toBeCloseTo(purpleBefore);
+    expect(sys.getLights('blue')).toBe(2); // blue/purple 燈保留
+    expect(sys.getLights('purple')).toBe(2);
+  });
+
+  it('起始倍數派彩（未累積直接觸發）：red 5×30=150、blue 10×30=300、purple 20×30=600', () => {
+    const cases: Array<[JpGroup, number]> = [
+      ['red', 150],
+      ['blue', 300],
+      ['purple', 600],
+    ];
+    for (const [g, expected] of cases) {
+      const { sys, state } = makeJp();
+      clearStagesForGroup(state, g, 5);
+      expect(state.ticketsAdded).toBe(expected);
+    }
+  });
+
+  it('ticket 生產者關係：JP 只透過 addTickets 灌入（純帳本，不改別的）', () => {
+    const ticket = new TicketSystem();
+    ticket.init({} as unknown as GameContext);
+    const state = { stageClear: null as null | (() => void) };
+    const ctx = {
+      ticket,
+      wave: {
+        set onStageClear(cb: () => void) {
+          state.stageClear = cb;
+        },
+      },
+    } as unknown as GameContext;
+    const sys = new JpSystem();
+    sys.init(ctx);
+    clearStagesForGroup(state, 'red', 5); // red 起始 5×30=150
+    expect(ticket.getTickets()).toBe(150);
+    // 純帳本：再手動 addTickets(7) 精確 +7（JP 沒塞別的邏輯進 ticket）。
+    const before = ticket.getTickets();
+    ticket.addTickets(7);
+    expect(ticket.getTickets()).toBe(before + 7);
+  });
+});
+
+describe('JpSystem — BOSS gate（JP_BOSS_GATED=false → 集滿直接派）', () => {
+  it('目前 gated=false：集滿 5 燈直接派彩（不需 BOSS）', () => {
+    expect(JP_BOSS_GATED).toBe(false);
+    const { sys, state } = makeJp();
+    clearStagesForGroup(state, 'red', 5);
+    expect(state.ticketsAdded).toBe(150); // 直接派（起始 5×30）
+    expect(sys.getLights('red')).toBe(0);
+  });
+  // 註：JP_BOSS_GATED=true 分支（集滿→打BOSS→贏才派）目前不可達（H5 無 BOSS）。
+  // 之後 B 段做 BOSS、gated 改 true 時，補「gated=true 集滿不直接派、贏 BOSS 後才派」對照。
 });
