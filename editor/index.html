@@ -98,6 +98,39 @@
       .status-err { color: var(--danger); }
       .empty { color: var(--muted); padding: 20px 0; text-align: center; }
       .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+      /* 試玩內嵌覆蓋層 */
+      #preview-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(10, 10, 20, 0.92);
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+      }
+      .preview-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 16px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      .preview-bar .spacer { flex: 1; }
+      #preview-msg { color: var(--danger); font-size: 13px; }
+      #preview-frame-host {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      #preview-frame-host iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: var(--bg);
+      }
     </style>
   </head>
   <body>
@@ -108,6 +141,9 @@
       <button id="btn-load-default">載入預設 levels.json</button>
       <button id="btn-load-file">載入 JSON 檔…</button>
       <input id="file-input" type="file" accept="application/json,.json" hidden />
+      <button id="btn-preview">試玩</button>
+      <button id="btn-preview-reapply" hidden>重新套用</button>
+      <button id="btn-preview-close" hidden>關閉試玩</button>
       <button id="btn-export" class="primary">驗證並下載 JSON</button>
     </header>
 
@@ -122,9 +158,9 @@
         <div class="section-title">節點序列</div>
         <div id="node-list"></div>
         <div class="mini" style="margin-top:8px">
-          <button data-add-node="Spawn">+ Spawn</button>
-          <button data-add-node="Reward">+ Reward</button>
-          <button data-add-node="Event">+ Event</button>
+          <button data-add-node="Spawn">+ 刷怪</button>
+          <button data-add-node="Reward">+ 獎勵</button>
+          <button data-add-node="Event">+ 事件</button>
         </div>
       </div>
 
@@ -135,6 +171,16 @@
     </div>
 
     <div id="status">就緒。可載入預設 levels.json 或新增關卡開始編輯。</div>
+
+    <!-- 試玩：iframe 內嵌遊戲（?preview=1）。預設隱藏，按「試玩」才建立。 -->
+    <div id="preview-overlay" hidden>
+      <div class="preview-bar">
+        <span id="preview-title">試玩中</span>
+        <div class="spacer"></div>
+        <span id="preview-msg"></span>
+      </div>
+      <div id="preview-frame-host"></div>
+    </div>
 
     <script type="module" src="./main.ts"></script>
   </body>

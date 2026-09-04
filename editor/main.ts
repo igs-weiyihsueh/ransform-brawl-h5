@@ -23,6 +23,11 @@ import {
   type SpawnNodeData,
   validateLevels,
 } from '@/config/levelSchema';
+import {
+  PREVIEW_MSG,
+  PREVIEW_QUERY_FLAG,
+  type PreviewMessage,
+} from '@/config/previewProtocol';
 import { enemyTypeLabel, nodeTypeLabel } from './labels';
 
 // ---- 編輯狀態（可變草稿；匯出時才驗證） ----------------------------------
@@ -458,6 +463,175 @@ function exportJson(): void {
   setStatus(`驗證通過，已下載 levels.json（${validated.levels.length} 關）。`, 'ok');
 }
 
+// ---- 試玩（iframe + postMessage + ready 交握） ----------------------------
+//
+// 流程（協定見 @/config/previewProtocol）：
+//  1. 建 iframe src=../?preview=1，掛 window message listener，等遊戲送 preview-ready。
+//  2. 收 ready → 比對 schemaVersion vs 編輯器 LEVELS_SCHEMA_VERSION，不符攔下不送資料。
+//  3. 一致 → assertValidLevels(當前 levels) 過 → postMessage preview-levels（targetOrigin=自身 origin）。
+//  4. 收 preview-error → 在編輯器 UI 顯示 reason。
+//  5. ready 逾時（5 秒）→ 顯示載入逾時（覆蓋 iframe 載入失敗/遊戲 crash：遊戲死了發不出 error）。
+//  6. origin 檢查：只收 event.origin === location.origin。
+//  7. 支援邊改邊試玩：試玩開著可「重新套用」再送一次（遊戲端會帶新關卡重啟）。
+
+const READY_TIMEOUT_MS = 5000;
+
+interface PreviewSession {
+  iframe: HTMLIFrameElement;
+  ready: boolean;
+  readyTimer: number | null;
+  onMessage: (e: MessageEvent) => void;
+}
+
+let preview: PreviewSession | null = null;
+
+/** 編輯器頁在 /editor/，遊戲頁在上一層；帶 ?preview=1。 */
+function gamePreviewUrl(): string {
+  return `../?${PREVIEW_QUERY_FLAG}=1`;
+}
+
+function setPreviewMsg(msg: string): void {
+  $('preview-msg').textContent = msg;
+}
+
+function showPreviewButtons(active: boolean): void {
+  ($('btn-preview') as HTMLButtonElement).hidden = active;
+  ($('btn-preview-reapply') as HTMLButtonElement).hidden = !active;
+  ($('btn-preview-close') as HTMLButtonElement).hidden = !active;
+}
+
+/** 開始試玩：建 iframe、掛 listener、起 ready 逾時。 */
+function startPreview(): void {
+  if (state.levels.length === 0) {
+    setStatus('沒有可試玩的關卡，請先新增或載入關卡。', 'err');
+    return;
+  }
+  // 送出前先自我驗證：不合法就別開試玩（大聲擋下）。
+  const check = validateLevels({ version: state.version, levels: state.levels });
+  if (!check.ok) {
+    setStatus(
+      `試玩被擋下：資料不合法（${check.errors.length} 項）：\n${check.errors.map((m) => `  - ${m}`).join('\n')}`,
+      'err',
+    );
+    return;
+  }
+
+  closePreview(); // 若已有 session，先收乾淨
+
+  const overlay = $('preview-overlay') as HTMLDivElement;
+  const host = $('preview-frame-host');
+  host.innerHTML = '';
+  overlay.hidden = false;
+  setPreviewMsg('遊戲載入中…');
+  showPreviewButtons(true);
+
+  const iframe = document.createElement('iframe');
+  iframe.src = gamePreviewUrl();
+  host.appendChild(iframe);
+
+  const onMessage = (e: MessageEvent): void => handlePreviewMessage(e);
+  window.addEventListener('message', onMessage);
+
+  const readyTimer = window.setTimeout(() => {
+    if (preview && !preview.ready) {
+      setPreviewMsg('遊戲載入逾時，請重整頁面後再試。');
+      setStatus('試玩失敗：遊戲載入逾時（iframe 未回報 preview-ready）。', 'err');
+    }
+  }, READY_TIMEOUT_MS);
+
+  preview = { iframe, ready: false, readyTimer, onMessage };
+}
+
+/** 重新套用：試玩開著時把當前編輯的關卡再送一次（邊改邊試玩）。 */
+function reapplyPreview(): void {
+  if (!preview) {
+    startPreview();
+    return;
+  }
+  if (!preview.ready) {
+    setStatus('遊戲尚未就緒，請稍候或重整。', 'err');
+    return;
+  }
+  sendLevelsToPreview();
+}
+
+/** 關閉試玩：移除 iframe、解除 listener、清 timer。 */
+function closePreview(): void {
+  if (!preview) {
+    ($('preview-overlay') as HTMLDivElement).hidden = true;
+    showPreviewButtons(false);
+    return;
+  }
+  window.removeEventListener('message', preview.onMessage);
+  if (preview.readyTimer !== null) window.clearTimeout(preview.readyTimer);
+  preview.iframe.remove();
+  preview = null;
+  ($('preview-overlay') as HTMLDivElement).hidden = true;
+  setPreviewMsg('');
+  showPreviewButtons(false);
+}
+
+/** 處理來自 iframe 的協定訊息。 */
+function handlePreviewMessage(e: MessageEvent): void {
+  // ④ origin 檢查：非同源忽略。
+  if (e.origin !== window.location.origin) return;
+  if (!preview) return;
+  const data = e.data as PreviewMessage | undefined;
+  if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
+
+  switch (data.type) {
+    case PREVIEW_MSG.ready: {
+      preview.ready = true;
+      if (preview.readyTimer !== null) {
+        window.clearTimeout(preview.readyTimer);
+        preview.readyTimer = null;
+      }
+      // ② 版本歪斜早攔：比對 schemaVersion。
+      if (data.schemaVersion !== LEVELS_SCHEMA_VERSION) {
+        const reason = `編輯器（v${LEVELS_SCHEMA_VERSION}）與遊戲（v${data.schemaVersion}）schema 版本不符，請重整頁面。`;
+        setPreviewMsg(reason);
+        setStatus(`試玩中止：${reason}`, 'err');
+        return; // 不送資料
+      }
+      sendLevelsToPreview();
+      break;
+    }
+    case PREVIEW_MSG.error: {
+      // ④ 在編輯器 UI 顯示遊戲端拒絕原因。
+      setPreviewMsg(`遊戲端拒絕關卡：${data.reason}`);
+      setStatus(`試玩失敗（遊戲端驗證）：${data.reason}`, 'err');
+      break;
+    }
+    default:
+      break; // preview-levels 是編輯器→遊戲，不會收到
+  }
+}
+
+/** ③ 送資料：assertValidLevels 驗過 → postMessage preview-levels（targetOrigin=自身 origin）。 */
+function sendLevelsToPreview(): void {
+  if (!preview) return;
+  let file: LevelsFile;
+  try {
+    file = assertValidLevels({ version: state.version, levels: state.levels });
+  } catch (err) {
+    const reason = (err as Error).message;
+    setPreviewMsg('關卡資料不合法，未送出。');
+    setStatus(`試玩被擋下：${reason}`, 'err');
+    return;
+  }
+  const win = preview.iframe.contentWindow;
+  if (!win) {
+    setStatus('試玩失敗：iframe 尚未就緒。', 'err');
+    return;
+  }
+  win.postMessage(
+    { type: PREVIEW_MSG.levels, payload: file },
+    window.location.origin, // 同源 targetOrigin
+  );
+  setPreviewMsg('已送出關卡，遊戲執行中。改動後可按「重新套用」。');
+  setStatus(`已送出 ${file.levels.length} 關到試玩。`, 'ok');
+}
+
 // ---- 事件綁定 -------------------------------------------------------------
 
 function addLevel(): void {
@@ -485,6 +659,9 @@ function bindUI(): void {
   $('btn-load-default').addEventListener('click', () => void loadDefault());
   $('btn-export').addEventListener('click', exportJson);
   $('btn-add-level').addEventListener('click', addLevel);
+  $('btn-preview').addEventListener('click', startPreview);
+  $('btn-preview-reapply').addEventListener('click', reapplyPreview);
+  $('btn-preview-close').addEventListener('click', closePreview);
 
   const fileInput = $<HTMLInputElement>('file-input');
   $('btn-load-file').addEventListener('click', () => fileInput.click());
