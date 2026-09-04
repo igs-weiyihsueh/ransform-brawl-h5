@@ -22,16 +22,19 @@
  *      phaser3spectorjs 而爆 → vitest.config.ts 把 'phaser' alias 到預打包的 dist/phaser.js（UMD，
  *      default interop 正確；也是瀏覽器實際跑的同一份 bundle）。
  *   4. render 模式用 Phaser.HEADLESS：跳過 WebGL/canvas 繪製，只跑場景生命週期 + 邏輯。
- *   5. 資源以本機 HTTP server 服務 public/（loader 真的載得到），並用
+ *   5. 資源以本機 HTTP server 服務 public/ 的角色/特效 PNG（scene.load.image），並用
  *      loader.imageLoadType='HTMLImageElement'（走 img.src 直載，配合上面 onload 墊片，
  *      避開 jsdom XHR→blob 這條在測試環境無法完成解碼的路徑）。
+ *   6. teardown race 防護：以 preview 模式 boot（scene.add(...,{previewLevels})），
+ *      WaveSystem 走注入不 fetch levels.json → 沒有 in-flight promise 在 afterEach 後才 reject
+ *      → 不會有 unhandled rejection 讓退出碼變 1（見 PREVIEW_LEVELS 說明）。
  *
- * 目前能達到的最遠點（誠實）：場景會走到 CREATING 狀態（create() 已完整執行、5 個系統都 init 完），
- * 之後 step 數幀不丟例外。RUNNING(5) 這一步在 jsdom+HEADLESS 下未穩定達到（見報告），
- * 但 create() 全程跑完 + 系統全接上 = 已足以抓「接線斷」這個目標。
  * 成功信號 = 場景進入 RUNNING(5)：Phaser 只有在 scene.create() 完整跑完（沒丟例外）後
  * 才把狀態設為 RUNNING；若 create() 中途丟例外，狀態會卡在 CREATING(4)。
  * 因此「有沒有到 RUNNING」正是「create() 接線有沒有全程跑通」的鑑別點。
+ * （通則同決策 0a45909b：只信「只有正常系統才滿足」的信號 RUNNING，不信代理信號 CREATING；
+ *   並保留「拿掉一個 register→系統清單相等斷言必紅」當守衛。退出碼 0 才是 CI 真信號，
+ *   不是只看 passed 數——in-flight fetch 的 unhandled rejection 會讓 passed 全綠卻退出碼 1。）
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -40,6 +43,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, normalize, join } from 'node:path';
 import Phaser from 'phaser';
 import { GameScene } from '../src/scenes/GameScene';
+import type { LevelData } from '../src/config/levelSchema';
 
 /** 期望的系統註冊順序（= 每幀執行順序，見 GameScene.registerSystems 的架構註解）。 */
 const EXPECTED_SYSTEMS = [
@@ -53,26 +57,56 @@ const EXPECTED_SYSTEMS = [
   'DebugSystem',
 ] as const;
 
+/**
+ * 注入用的已驗證關卡（preview 模式）。
+ *
+ * 為什麼用 preview 模式 boot：
+ *   GameScene.init 收到 previewLevels 時，會用 new WaveSystem(previewLevels) 注入關卡，
+ *   WaveSystem.init 就【不會】走 `void loadLevels().then()` 那條 async-無-catch 的 fetch。
+ *   一般（無 data）boot 會 fetch levels.json；那個 in-flight fetch 若在測試 afterEach
+ *   關掉 asset server／還原 fetch【之後】才 reject，就變成 unhandled rejection → 退出碼 1
+ *   （本機 timing 剛好先 resolve 看似綠，CI 慢一點就 race 到紅）。這是 boot smoke 的
+ *   teardown race。用 preview 注入關卡 → 根本不 fetch → 沒有 in-flight promise → 無 race，
+ *   且 boot smoke 仍完整驗到「create 到 RUNNING + 系統接線」的真信號（不變）。
+ *
+ * 形狀對齊 config/levelSchema 的 LevelData（單一關、單一 Spawn 節點，已符 validateLevels）。
+ */
+const PREVIEW_LEVELS: LevelData[] = [
+  {
+    id: 'smoke-1',
+    name: 'boot smoke',
+    nodes: [
+      {
+        nodeType: 'Spawn',
+        killQuota: 1,
+        maxAlive: 1,
+        spawnThreshold: 1,
+        spawnInterval: 1,
+        spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }],
+      },
+    ],
+  },
+];
+
 const PUBLIC_DIR = join(process.cwd(), 'public');
 const MIME: Record<string, string> = { '.png': 'image/png', '.json': 'application/json' };
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
 let server: Server | null = null;
 let game: Phaser.Game | null = null;
-let originalFetch: typeof fetch | null = null;
 
 afterEach(() => {
   game?.destroy(true);
   game = null;
   server?.close();
   server = null;
-  if (originalFetch) {
-    globalThis.fetch = originalFetch;
-    originalFetch = null;
-  }
 });
 
-/** 起一個只服務 public/ 的最小 HTTP server（jsdom 的 asset 請求會打到 127.0.0.1:3000）。 */
+/**
+ * 起一個只服務 public/ 的最小 HTTP server。
+ * 注意：這裡只為 GameScene.preload() 的角色/特效 PNG（scene.load.image）服務；
+ * 關卡 JSON 走 preview 注入不 fetch（見 PREVIEW_LEVELS 說明），故不再需要 fetch polyfill。
+ */
 async function startAssetServer(): Promise<void> {
   server = createServer(async (req, res) => {
     try {
@@ -86,24 +120,13 @@ async function startAssetServer(): Promise<void> {
     }
   });
   await new Promise<void>((r) => server!.listen(3000, '127.0.0.1', () => r()));
-
-  // WaveSystem.init 會 fetch('assets/data/levels.json')（相對 URL）。node/jsdom 的 fetch
-  // 無法解析相對 URL → reject → 因 WaveSystem 用 void fetch().then() 無 catch → 變 unhandled
-  // rejection，讓 test process 退出碼變 1（Advisory CI 誤紅）。這裡把 global fetch 包一層：
-  // 相對路徑補上本機 asset server 的 origin，讓關卡 JSON 真的載得到（也順帶測到真實載入路徑）。
-  const realFetch = globalThis.fetch.bind(globalThis);
-  originalFetch = globalThis.fetch;
-  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    if (typeof input === 'string' && !/^https?:\/\//.test(input)) {
-      const url = `http://127.0.0.1:3000/${input.replace(/^\//, '')}`;
-      return realFetch(url, init);
-    }
-    return realFetch(input, init);
-  }) as typeof fetch;
 }
 
-/** 建一個 HEADLESS game，帶入場景陣列。 */
-function createHeadlessGame(scenes: typeof GameScene[]): Phaser.Game {
+/**
+ * 建一個 HEADLESS game。scene 不放進 config 陣列（避免無 data 自動啟動 → 觸發 fetch），
+ * boot 後由呼叫端 game.scene.add(key, GameScene, true, {previewLevels}) 帶 data 啟動。
+ */
+function createHeadlessGame(): Phaser.Game {
   return new Phaser.Game({
     type: Phaser.HEADLESS,
     width: 800,
@@ -113,7 +136,6 @@ function createHeadlessGame(scenes: typeof GameScene[]): Phaser.Game {
     physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 } } },
     // 走 img.src 直載（配合 setup 的 onload 墊片），避開 jsdom XHR→blob 無法解碼的路徑。
     loader: { imageLoadType: 'HTMLImageElement' },
-    scene: scenes,
   });
 }
 
@@ -164,12 +186,15 @@ async function bootToRunning(
 }
 
 describe('boot smoke — GameScene 接線 + create 跑通', () => {
-  it('遊戲能 boot、GameScene.create() 完整跑到 RUNNING、5 個系統依序接上 registry、無 create 期例外', async () => {
+  it('遊戲能 boot、GameScene.create() 完整跑到 RUNNING、系統依序接上 registry、無 create 期例外', async () => {
     await startAssetServer();
-    game = createHeadlessGame([GameScene]);
+    game = createHeadlessGame();
 
     const ready = await waitReady(game);
     expect(ready).toBe(true); // 環境陷阱沒處理好 → 根本不 READY（instrument 有效性檢查）
+
+    // preview 模式啟動：帶 previewLevels → WaveSystem 不 fetch（消除 teardown race）。
+    game.scene.add('GameScene', GameScene, true, { previewLevels: PREVIEW_LEVELS });
 
     const { scene, running, errors } = await bootToRunning(game, 'GameScene');
 
@@ -189,8 +214,9 @@ describe('boot smoke — GameScene 接線 + create 跑通', () => {
 
   it('RUNNING 後 step 數幀，全程不丟例外（每幀 system.update 都跑）', async () => {
     await startAssetServer();
-    game = createHeadlessGame([GameScene]);
+    game = createHeadlessGame();
     await waitReady(game);
+    game.scene.add('GameScene', GameScene, true, { previewLevels: PREVIEW_LEVELS });
     const { scene, running } = await bootToRunning(game, 'GameScene');
     expect(running).toBe(true);
 

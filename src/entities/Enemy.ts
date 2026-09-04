@@ -135,7 +135,6 @@ export class Enemy implements Hittable {
         break;
 
       case 'chase': {
-        this.anim.play('idle'); // 預設，下面若移動改 move
         if (dist <= attackPx) {
           // 進入攻擊距離 → 開始蓄力。
           this.state = 'charge';
