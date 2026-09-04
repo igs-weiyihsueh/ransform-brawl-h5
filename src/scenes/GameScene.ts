@@ -4,6 +4,7 @@ import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
+import { ComboSystem } from '@/systems/ComboSystem';
 import { CreditSystem } from '@/systems/CreditSystem';
 import { DebugSystem } from '@/systems/DebugSystem';
 import { EffectSystem } from '@/systems/EffectSystem';
@@ -15,6 +16,7 @@ import type { GameSystem } from '@/systems/GameSystem';
 import { InputSystem } from '@/systems/InputSystem';
 import { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import { TransformSystem } from '@/systems/TransformSystem';
+import { TicketSystem } from '@/systems/TicketSystem';
 import { UISystem } from '@/systems/UISystem';
 import { WaveSystem } from '@/systems/WaveSystem';
 
@@ -75,6 +77,8 @@ export class GameScene extends Phaser.Scene {
     const energy = new EnergySystem();
     const transform = new TransformSystem();
     const credit = new CreditSystem();
+    const combo = new ComboSystem();
+    const ticket = new TicketSystem();
 
     // 共用 context（各 system 只透過它取服務/狀態）。
     this.ctx = {
@@ -87,6 +91,8 @@ export class GameScene extends Phaser.Scene {
       energy,
       transform,
       credit,
+      combo,
+      ticket,
       getEnemies: () => spawner.getEnemies(),
     };
 
@@ -103,13 +109,12 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * 註冊系統。順序 = 每幀執行順序（變身-leader 定）：
-   *   Input → Credit → Energy → PlayerControl → Enemy → Transform → Wave → UI → Debug。
+   *   Input → Credit → Energy → PlayerControl → Enemy → Transform → Combo → Ticket → Wave → UI → Debug。
    * InputSystem 排最前：每幀先 snapshot justPressed，後面系統該幀讀到一致值。
-   * Credit 在 PlayerControl 前：投幣/耗盡狀態就緒供攻擊/移動閘門與 UI 讀。
-   * Energy 在 PlayerControl 前：放招意圖/充能狀態就緒供 PlayerControl 與 UI 讀。
-   * Transform 在 Enemy 後、UI 前：撿道具/變身/魂力更新後，UI 讀到當幀魂力/變身狀態。
-   * UI 排在玩家/敵人/波次更新之後，才讀到「當幀」狀態；Debug 疊層排最末。
-   * 新系統在這裡加一行即可，無須改 update()。
+   * Credit/Energy 在 PlayerControl 前：閘門/放招/充能/耗盡狀態就緒供讀。
+   * Transform 在 Enemy 後、UI 前：撿道具/變身/魂力更新後，UI 讀到當幀。
+   * Combo/Ticket 在 PlayerControl 命中結算後、UI 前：連段倒數/結算彩票後 UI 讀當幀。
+   * UI 排在各狀態更新之後；Debug 疊層排最末。新系統在這裡加一行即可。
    */
   private registerSystems(): void {
     const playerControl = new PlayerControlSystem();
@@ -121,6 +126,8 @@ export class GameScene extends Phaser.Scene {
     this.register(playerControl); // 玩家操控（讀 Input/Credit/Energy）
     this.register(enemy); // 敵人執行時（驅動 spawner）
     this.register(this.ctx.transform); // 變身：道具撿取/變身退變/魂力
+    this.register(this.ctx.combo); // COMBO：連段倒數/結算彩票
+    this.register(this.ctx.ticket); // 彩票計數器
     // 波次：試玩模式注入 previewLevels（跑編輯器送來的關卡）；一般玩家 undefined → WaveSystem 自行 fetch JSON。
     this.register(new WaveSystem(this.previewLevels));
     this.register(new UISystem()); // HUD：唯讀當幀狀態刷新顯示

@@ -109,10 +109,11 @@ export class PlayerControlSystem implements GameSystem {
       // Enemy.takeHit 以 (enemy - fromPos) 為擊退方向：令 fromPos = enemy - lat → 沿 lat 推。
       const fromPos = { x: c.x - lat.x, y: c.y - lat.y };
       e.takeHit(DASH_CONFIG.damage, DASH_CONFIG.knockback, fromPos);
-      // 衝刺命中不充能（不呼叫 energy.reportHit）；但 Credit 要扣，一次衝刺最多扣 1。
+      // 衝刺命中不充能（不呼叫 energy.reportHit）；但 Credit 扣 + COMBO 累積，一次衝刺最多一次。
       if (!this.dashConsumedCredit) {
         this.dashConsumedCredit = true;
         this.ctx.credit.consumeOnHit();
+        this.ctx.combo.onHit();
       }
     }
   }
@@ -169,8 +170,11 @@ export class PlayerControlSystem implements GameSystem {
 
     // 充能回報：普攻打到人才 +1（招式命中不充）。
     energy.reportHit(intent.isSkill, hitAny);
-    // Credit：所有命中都扣 1（普攻/招式一次命中扣一次）。
-    if (hitAny) this.ctx.credit.consumeOnHit();
+    // Credit：所有命中都扣 1（普攻/招式一次命中扣一次）；COMBO 累積。
+    if (hitAny) {
+      this.ctx.credit.consumeOnHit();
+      this.ctx.combo.onHit();
+    }
   }
 
   // --- debug 繪製取用 ---

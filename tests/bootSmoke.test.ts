@@ -53,6 +53,8 @@ const EXPECTED_SYSTEMS = [
   'PlayerControlSystem',
   'EnemySystem',
   'TransformSystem',
+  'ComboSystem',
+  'TicketSystem',
   'WaveSystem',
   'UISystem',
   'DebugSystem',

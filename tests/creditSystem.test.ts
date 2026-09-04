@@ -91,3 +91,153 @@ describe('CreditSystem — Credit 資源 / 耗盡 / 投幣', () => {
     expect(sys.canAttack()).not.toBe(badCanAttack); // 兩者不同 → 證明耗盡判斷有作用
   });
 });
+
+// ===========================================================================
+// 深度強化（QA 測騎接手）：扣 Credit 邊界 / 閘門 / 投幣解除 / 耗盡倒數。
+// ===========================================================================
+
+/**
+ * 進階 fake：可逐幀切換投幣、記錄 tint 呼叫。
+ * coinRef.pressed 由測試改動；player.setOutOfCreditTint 記進 tints。
+ */
+function makeControllable() {
+  const coinRef = { pressed: false };
+  const tints: boolean[] = [];
+  const ctx = {
+    input: { justPressedCoin: () => coinRef.pressed },
+    player: { setOutOfCreditTint: (v: boolean) => tints.push(v) },
+  } as unknown as GameContext;
+  const sys = new CreditSystem();
+  sys.init(ctx);
+  return { sys, coinRef, tints };
+}
+
+/** 把 credit 消到指定值（前提：過程不會提前歸 0 進耗盡）。回傳 sys。 */
+function consumeTo(sys: CreditSystem, target: number): void {
+  // 從 STARTING_CREDIT 扣到 target（每次 -1）。target 需 >0 才不會中途進耗盡。
+  const times = STARTING_CREDIT - target;
+  for (let i = 0; i < times; i += 1) sys.consumeOnHit();
+}
+
+describe('CreditSystem — 扣 Credit 邊界（1→0 進耗盡 / 2→1 不耗盡 / clamp）', () => {
+  it('credit=2 → 命中 → 1，【不】進耗盡、仍可攻擊/行動（邊界另一側）', () => {
+    const { sys } = makeControllable();
+    consumeTo(sys, 2);
+    expect(sys.getCredit()).toBe(2);
+    expect(sys.isOutOfCredit()).toBe(false);
+    sys.consumeOnHit(); // 2 → 1
+    expect(sys.getCredit()).toBe(1);
+    expect(sys.isOutOfCredit()).toBe(false); // 1 > 0 → 不耗盡
+    expect(sys.canAttack()).toBe(true);
+    expect(sys.canAct()).toBe(true);
+  });
+
+  it('credit=1 → 命中 → 0，進耗盡（邊界這一側）', () => {
+    const { sys } = makeControllable();
+    consumeTo(sys, 1);
+    expect(sys.getCredit()).toBe(1);
+    expect(sys.isOutOfCredit()).toBe(false);
+    sys.consumeOnHit(); // 1 → 0
+    expect(sys.getCredit()).toBe(0);
+    expect(sys.isOutOfCredit()).toBe(true);
+  });
+
+  it('耗盡後再 consumeOnHit：守 0 不變負（clamp + guard，扣多次仍 0）', () => {
+    const { sys } = makeControllable();
+    consumeTo(sys, 1);
+    sys.consumeOnHit(); // → 0 進耗盡
+    sys.consumeOnHit();
+    sys.consumeOnHit();
+    expect(sys.getCredit()).toBe(0); // 不會變負
+    expect(sys.isOutOfCredit()).toBe(true);
+  });
+});
+
+describe('CreditSystem — CanAttack / canAct 閘門', () => {
+  it('credit>0 非耗盡：canAttack=true、canAct=true', () => {
+    const { sys } = makeControllable();
+    consumeTo(sys, 5);
+    expect(sys.canAttack()).toBe(true);
+    expect(sys.canAct()).toBe(true);
+  });
+
+  it('耗盡：canAttack=false 且 canAct=false（移動也鎖）', () => {
+    const { sys } = makeControllable();
+    consumeTo(sys, 1);
+    sys.consumeOnHit(); // 進耗盡
+    expect(sys.canAttack()).toBe(false);
+    expect(sys.canAct()).toBe(false); // 耗盡連移動都鎖（這條就是閘門鑑別點）
+  });
+});
+
+describe('CreditSystem — 投幣 AddCredit 與耗盡解除', () => {
+  it('一般狀態投幣：credit += 100（非耗盡不誤觸解除流程）', () => {
+    const { sys } = makeControllable();
+    consumeTo(sys, 10);
+    sys.addCredit(COIN_INSERT_AMOUNT);
+    expect(sys.getCredit()).toBe(10 + COIN_INSERT_AMOUNT);
+    expect(sys.isOutOfCredit()).toBe(false);
+  });
+
+  it('耗盡狀態投幣 → credit>0 → 自動解除耗盡（投幣後恰好 >0）', () => {
+    const { sys } = makeControllable();
+    consumeTo(sys, 1);
+    sys.consumeOnHit(); // 進耗盡 credit=0
+    expect(sys.isOutOfCredit()).toBe(true);
+    sys.addCredit(COIN_INSERT_AMOUNT);
+    expect(sys.getCredit()).toBe(COIN_INSERT_AMOUNT); // > 0
+    expect(sys.isOutOfCredit()).toBe(false); // 解除
+    expect(sys.canAttack()).toBe(true);
+    expect(sys.canAct()).toBe(true);
+  });
+
+  it('C 鍵投幣（update 讀 justPressedCoin）：耗盡中按 C → 立即解除', () => {
+    const { sys, coinRef } = makeControllable();
+    consumeTo(sys, 1);
+    sys.consumeOnHit(); // 耗盡
+    coinRef.pressed = true;
+    sys.update(0.016); // 這幀讀到投幣
+    expect(sys.isOutOfCredit()).toBe(false);
+    expect(sys.getCredit()).toBe(COIN_INSERT_AMOUNT);
+  });
+});
+
+describe('CreditSystem — 耗盡倒數', () => {
+  it('倒數中（未到 0）仍耗盡、getCountdown 遞減', () => {
+    const { sys } = makeControllable();
+    consumeTo(sys, 1);
+    sys.consumeOnHit(); // 進耗盡，countdown=10
+    sys.update(3); // 走 3 秒
+    expect(sys.isOutOfCredit()).toBe(true); // 尚未到 0
+    expect(sys.getCountdown()).toBeCloseTo(OUT_OF_CREDIT_COUNTDOWN - 3);
+  });
+
+  it('倒數恰好走完 → 重置到起始值 + 解除耗盡（不卡死）', () => {
+    const { sys } = makeControllable();
+    consumeTo(sys, 1);
+    sys.consumeOnHit(); // 耗盡
+    sys.update(OUT_OF_CREDIT_COUNTDOWN); // 恰好走完
+    expect(sys.isOutOfCredit()).toBe(false);
+    expect(sys.getCredit()).toBe(STARTING_CREDIT);
+    expect(sys.getCountdown()).toBe(0);
+  });
+
+  it('倒數中途投幣 → 立即解除（不必等倒數完）', () => {
+    const { sys, coinRef } = makeControllable();
+    consumeTo(sys, 1);
+    sys.consumeOnHit(); // 耗盡
+    sys.update(4); // 倒數到剩 6，仍耗盡
+    expect(sys.isOutOfCredit()).toBe(true);
+    coinRef.pressed = true;
+    sys.update(0.016); // 投幣
+    expect(sys.isOutOfCredit()).toBe(false);
+    expect(sys.getCredit()).toBe(COIN_INSERT_AMOUNT);
+  });
+
+  it('非耗盡狀態 getCountdown 恆為 0', () => {
+    const { sys } = makeControllable();
+    expect(sys.getCountdown()).toBe(0);
+    consumeTo(sys, 5);
+    expect(sys.getCountdown()).toBe(0);
+  });
+});

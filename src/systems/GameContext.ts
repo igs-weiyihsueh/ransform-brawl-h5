@@ -1,11 +1,13 @@
 import type Phaser from 'phaser';
 import type { Enemy } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
+import type { ComboSystem } from '@/systems/ComboSystem';
 import type { CreditSystem } from '@/systems/CreditSystem';
 import type { EffectSystem } from '@/systems/EffectSystem';
 import type { EnemySpawner } from '@/systems/EnemySpawner';
 import type { EnergySystem } from '@/systems/EnergySystem';
 import type { InputSystem } from '@/systems/InputSystem';
+import type { TicketSystem } from '@/systems/TicketSystem';
 import type { TransformSystem } from '@/systems/TransformSystem';
 
 /**
@@ -35,6 +37,10 @@ export interface GameContext {
   readonly transform: TransformSystem;
   /** Credit 系統：投幣/命資源 + 耗盡狀態（UI 讀 credit、攻擊/移動閘門、命中扣 credit）。 */
   readonly credit: CreditSystem;
+  /** COMBO 連段系統：連段數/警告/結算彩票（UI 讀 COMBO、命中累積）。 */
+  readonly combo: ComboSystem;
+  /** 彩票系統：累積彩票（COMBO 結算灌入、UI 讀彩票數）。 */
+  readonly ticket: TicketSystem;
 
   /** 取得目前場上存活的敵人（唯讀快照，供命中查詢/AI 目標）。 */
   getEnemies(): readonly Enemy[];

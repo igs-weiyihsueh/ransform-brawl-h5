@@ -69,9 +69,9 @@ export class UISystem implements GameSystem {
     return this.ctx.energy.getEnergy();
   }
 
-  /** COMBO 連擊數。stub：COMBO 系統未實作，暫回 0。 */
+  /** COMBO 連擊數。接 ComboSystem。 */
   private getCombo(): number {
-    return 0;
+    return this.ctx.combo.getCombo();
   }
 
   /** 魂力顯示比例（0..1）。接 TransformSystem：變身時 soul/max、退變時 0。 */
@@ -84,9 +84,9 @@ export class UISystem implements GameSystem {
     return this.ctx.credit.getCredit();
   }
 
-  /** 彩票數。stub：彩票系統未實作，暫回 0。 */
+  /** 彩票數。接 TicketSystem。 */
   private getTicket(): number {
-    return 0;
+    return this.ctx.ticket.getTickets();
   }
 
   /** 寶箱/獎勵進度比例（0..1）。stub：未實作，暫回 0。 */
