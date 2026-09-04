@@ -41,6 +41,7 @@ const HUMAN_SKILLS: CharacterSkillSet = {
     damage: 1,
     hitDelay: 0.1,
     knockback: 10,
+    vfxKey: 'attack_03',
   },
   // skill1 落點衝擊：圓形
   skill1: {
@@ -51,8 +52,9 @@ const HUMAN_SKILLS: CharacterSkillSet = {
     damage: 3,
     hitDelay: 0.2,
     knockback: 6,
+    vfxKey: 'attack_01',
   },
-  // skill2 旋風掃：圓形（凡人先不用，備用）
+  // skill2 旋風掃：圓形（凡人先不用，備用；Unity 為粒子特效，凡人永不觸發，借用 attack_09 當 fallback）
   skill2: {
     shapeType: 'circle',
     radius: 2,
@@ -61,8 +63,9 @@ const HUMAN_SKILLS: CharacterSkillSet = {
     damage: 5,
     hitDelay: 0.1,
     knockback: 6,
+    vfxKey: 'attack_09',
   },
-  // ultimate 如意金箍棒：矩形（凡人先不用，備用）
+  // ultimate 如意金箍棒：矩形（凡人先不用，備用；fallback attack_10）
   ultimate: {
     shapeType: 'rectangle',
     width: 2,
@@ -72,6 +75,7 @@ const HUMAN_SKILLS: CharacterSkillSet = {
     damage: 10,
     hitDelay: 0.1,
     knockback: 6,
+    vfxKey: 'attack_10',
   },
 };
 
@@ -86,6 +90,7 @@ const SUNWUKONG_SKILLS: CharacterSkillSet = {
     damage: 1,
     hitDelay: 0.1,
     knockback: 10,
+    vfxKey: 'attack_04',
   },
   // skill1：扇形
   skill1: {
@@ -97,6 +102,7 @@ const SUNWUKONG_SKILLS: CharacterSkillSet = {
     damage: 3,
     hitDelay: 0.2,
     knockback: 6,
+    vfxKey: 'attack_08',
   },
   skill2: {
     shapeType: 'circle',
@@ -106,6 +112,7 @@ const SUNWUKONG_SKILLS: CharacterSkillSet = {
     damage: 5,
     hitDelay: 0.1,
     knockback: 6,
+    vfxKey: 'attack_09',
   },
   ultimate: {
     shapeType: 'rectangle',
@@ -116,6 +123,7 @@ const SUNWUKONG_SKILLS: CharacterSkillSet = {
     damage: 10,
     hitDelay: 0.1,
     knockback: 6,
+    vfxKey: 'attack_10',
   },
 };
 

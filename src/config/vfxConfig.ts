@@ -35,4 +35,10 @@ export const VFX_EFFECTS: Record<string, VFXEffectDef> = {
     scale: 1,
     depth: 55,
   },
+  // 招式/普攻 VFX（皆 Unity fps20 / sortingOrder55、1-indexed）。
+  attack_01: { frames: 10, startIndex: 1, fps: 20, scale: 1, depth: 55 }, // 凡人 skill1
+  attack_04: { frames: 6, startIndex: 1, fps: 20, scale: 1, depth: 55 }, // 悟空 normalAttack
+  attack_08: { frames: 13, startIndex: 1, fps: 20, scale: 1, depth: 55 }, // 悟空 skill1
+  attack_09: { frames: 7, startIndex: 1, fps: 20, scale: 1, depth: 55 }, // 悟空 skill2
+  attack_10: { frames: 8, startIndex: 1, fps: 20, scale: 1, depth: 55 }, // 悟空 ultimate
 };

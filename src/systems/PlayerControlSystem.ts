@@ -152,7 +152,10 @@ export class PlayerControlSystem implements GameSystem {
     }
 
     this.shapeFlash = 0.12;
-    effects.play('attack_03', effectCenter.x, effectCenter.y, facing);
+    // 依當前 AttackData 的 vfxKey 播對應特效（資料驅動；未設則不播）。
+    if (attack.vfxKey) {
+      effects.play(attack.vfxKey, effectCenter.x, effectCenter.y, facing);
+    }
 
     // 充能回報：普攻打到人才 +1（招式命中不充）。
     energy.reportHit(intent.isSkill, hitAny);

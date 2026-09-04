@@ -32,4 +32,6 @@ export interface AttackData {
   hitDelay: number;
   /** 命中時對目標的擊退力道。 */
   knockback: number;
+  /** 播放的攻擊特效 key（對應 VFX_EFFECTS / vfx/<key>/）。未設則不播特效。 */
+  vfxKey?: string;
 }
