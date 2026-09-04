@@ -75,22 +75,24 @@ export const OVERHEAD_LAYOUT = {
   /** 容器相對玩家中心的垂直位移（負=往上；px）。角色頭頂之上。 */
   offsetY: -140,
 
-  /** 玩家編號牌（左上，圓角方 36×36）。 */
-  pNum: {
-    x: -84,
-    y: -18,
-    size: 36,
+  /**
+   * 玩家編號牌 + 魂力環（同心，對齊 Unity HPRing 60 外圈 / PNum 36 內圓）。
+   * 中心 (cx, cy) 為 local 座標；內圓是圓形 P1 編號牌，外圈是魂力填充弧。
+   */
+  badge: {
+    /** 同心圓中心（相對容器）。 */
+    cx: -66,
+    cy: -2,
+    /** 內圓（P1 編號牌）半徑 → 直徑 36。 */
+    innerRadius: 18,
+    /** 魂力環半徑（環中線）→ 對齊 Unity HPRing 60。 */
+    ringRadius: 26,
+    /** 魂力環線寬。 */
+    ringThickness: 7,
+    /** P1 文字字級。 */
     fontSize: '20px',
     /** 玩家編號文字（單人先 P1）。 */
     text: 'P1',
-  },
-
-  /** 魂力環（左側 60×60 圓環）。stub：先固定滿。 */
-  soulRing: {
-    x: -60,
-    y: 8,
-    radius: 26,
-    thickness: 7,
   },
 
   /** Credit 數字 + 金幣 icon（右側 130×40）。stub：回 0/99999。 */

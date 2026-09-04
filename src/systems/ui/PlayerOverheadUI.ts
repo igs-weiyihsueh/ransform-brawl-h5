@@ -36,26 +36,27 @@ export class PlayerOverheadUI {
     this.container = scene.add.container(0, 0);
     this.container.setDepth(OVERHEAD_DEPTH);
 
-    // --- 玩家編號牌（圓角方底 + 文字）---
+    // --- 玩家編號牌（圓形）+ 魂力環（同心，環在外圈繞著編號牌）---
+    // 繪製順序：魂力環 → 內圓編號牌底 → P1 文字（文字在最上）。
+    this.soulRing = scene.add.graphics();
+    this.container.add(this.soulRing);
+
     const pnum = scene.add.graphics();
     pnum.fillStyle(HUD_COLORS.pNumBg, 1);
-    pnum.fillRoundedRect(cfg.pNum.x, cfg.pNum.y, cfg.pNum.size, cfg.pNum.size, 6);
+    pnum.fillCircle(cfg.badge.cx, cfg.badge.cy, cfg.badge.innerRadius);
     pnum.lineStyle(2, HUD_COLORS.panelStroke, 0.9);
-    pnum.strokeRoundedRect(cfg.pNum.x, cfg.pNum.y, cfg.pNum.size, cfg.pNum.size, 6);
+    pnum.strokeCircle(cfg.badge.cx, cfg.badge.cy, cfg.badge.innerRadius);
     this.container.add(pnum);
+
     const pnumText = scene.add
-      .text(cfg.pNum.x + cfg.pNum.size / 2, cfg.pNum.y + cfg.pNum.size / 2, cfg.pNum.text, {
+      .text(cfg.badge.cx, cfg.badge.cy, cfg.badge.text, {
         fontFamily: HUD_FONT_FAMILY,
-        fontSize: cfg.pNum.fontSize,
+        fontSize: cfg.badge.fontSize,
         color: HUD_COLORS.text,
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
     this.container.add(pnumText);
-
-    // --- 魂力環（stub 先固定滿）---
-    this.soulRing = scene.add.graphics();
-    this.container.add(this.soulRing);
 
     // --- Credit 底框 + 金幣 icon + 數字 ---
     const creditBg = scene.add.graphics();
@@ -106,25 +107,25 @@ export class PlayerOverheadUI {
     this.container.setPosition(x, y + OVERHEAD_LAYOUT.offsetY);
   }
 
-  /** 設定魂力比例（0..1）。stub：目前傳固定值（魂力系統未做）。 */
+  /** 設定魂力比例（0..1）。環繞在編號牌外圈（同心）。stub：目前傳固定值。 */
   setSoul(ratio: number): void {
     const clamped = Phaser.Math.Clamp(ratio, 0, 1);
     if (clamped === this.shownSoul) return;
     this.shownSoul = clamped;
 
-    const cfg = OVERHEAD_LAYOUT.soulRing;
+    const cfg = OVERHEAD_LAYOUT.badge;
     const g = this.soulRing;
     g.clear();
-    // 底槽環。
-    g.lineStyle(cfg.thickness, HUD_COLORS.soulRingBg, 1);
-    g.strokeCircle(cfg.x, cfg.y, cfg.radius);
-    // 充填弧（從 12 點鐘順時針）。
+    // 底槽環（外圈，繞著編號牌）。
+    g.lineStyle(cfg.ringThickness, HUD_COLORS.soulRingBg, 1);
+    g.strokeCircle(cfg.cx, cfg.cy, cfg.ringRadius);
+    // 魂力充填弧（從 12 點鐘順時針，弧度表現魂力多寡）。
     if (clamped > 0) {
       const start = -Math.PI / 2;
       const end = start + Math.PI * 2 * clamped;
-      g.lineStyle(cfg.thickness, HUD_COLORS.soulRingFill, 1);
+      g.lineStyle(cfg.ringThickness, HUD_COLORS.soulRingFill, 1);
       g.beginPath();
-      g.arc(cfg.x, cfg.y, cfg.radius, start, end, false);
+      g.arc(cfg.cx, cfg.cy, cfg.ringRadius, start, end, false);
       g.strokePath();
     }
   }
