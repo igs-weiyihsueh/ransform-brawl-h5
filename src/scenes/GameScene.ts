@@ -75,6 +75,10 @@ export class GameScene extends Phaser.Scene {
     for (const sys of this.systems) {
       sys.init(this.ctx);
     }
+
+    // 場景 shutdown（stop/restart/切場景）時，依序呼叫各 system.destroy()，
+    // 釋放事件監聽/計時器，避免場景重啟累積殘留。
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown, this);
   }
 
   /**
@@ -102,10 +106,13 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  shutdown(): void {
+  /** 場景關閉：依序清理每個 system + 共用服務，清空 registry。由 SHUTDOWN 事件觸發。 */
+  private onShutdown(): void {
     for (const sys of this.systems) {
       sys.destroy?.();
     }
+    // 共用服務（非 registry 成員）也清理。
+    this.ctx.input.destroy();
     this.systems = [];
   }
 }

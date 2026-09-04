@@ -18,8 +18,11 @@ export class InputSystem {
   private readonly keySwitchEnemy: Phaser.Input.Keyboard.Key;
 
   private pointerAttack = false;
+  private readonly scene: Phaser.Scene;
+  private readonly onPointerDown: (p: Phaser.Input.Pointer) => void;
 
   constructor(scene: Phaser.Scene) {
+    this.scene = scene;
     const kb = scene.input.keyboard;
     if (!kb) {
       throw new Error('Keyboard input plugin is not available.');
@@ -36,11 +39,17 @@ export class InputSystem {
     this.keySwitchEnemy = kb.addKey(KC.E);
 
     // 滑鼠左鍵也可攻擊；用 justDown 的概念以事件緩存。
-    scene.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) => {
+    this.onPointerDown = (p: Phaser.Input.Pointer) => {
       if (p.leftButtonDown()) {
         this.pointerAttack = true;
       }
-    });
+    };
+    scene.input.on(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown);
+  }
+
+  /** 場景關閉時解除自己註冊的輸入監聽（避免殘留）。 */
+  destroy(): void {
+    this.scene.input.off(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown);
   }
 
   /** 取得正規化後的移動向量（-1..1，斜向已正規化）。 */
