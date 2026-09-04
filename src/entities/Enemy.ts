@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { getPerCharScale } from '@/config/animationConfig';
 import {
   ENEMY_RUSH_CONFIG,
   SPRITE_SCALE,
@@ -33,8 +34,9 @@ export class Enemy implements Hittable {
     this.anim.setScale(SPRITE_SCALE);
     this.hp = ENEMY_RUSH_CONFIG.hp;
     this.maxHp = ENEMY_RUSH_CONFIG.hp;
-    // 碰撞半徑用視覺高度的一半估算（畫布 256 × 顯示 scale ÷ 2）。
-    this.radiusPx = (FRAME_SIZE * SPRITE_SCALE) / 2;
+    // 碰撞半徑用視覺高度的一半估算（畫布 256 × 顯示 scale × 該角色補償 ÷ 2），
+    // 讓大隻角色（如 Enemy_Elite）的判定範圍跟著視覺一起變大。
+    this.radiusPx = (FRAME_SIZE * SPRITE_SCALE * getPerCharScale(charKey)) / 2;
   }
 
   isDead(): boolean {

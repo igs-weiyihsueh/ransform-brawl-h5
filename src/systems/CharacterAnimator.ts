@@ -3,6 +3,7 @@ import {
   ALL_ANIM_STATES,
   CHARACTERS,
   FRAME_SIZE,
+  getPerCharScale,
   type AnimState,
   type CharacterDef,
 } from '@/config/animationConfig';
@@ -132,9 +133,13 @@ export class CharacterAnimator {
     this.sprite.setFlipX(facing > 0);
   }
 
-  /** 設定整體縮放（相對 256×256 畫布）。 */
+  /**
+   * 設定整體縮放（相對 256×256 畫布）。
+   * 會自動乘上該角色的 perCharScale 補償（見 animationConfig.PER_CHAR_SCALE），
+   * 所以呼叫端只要傳共用的 SPRITE_SCALE，個別角色大小校正集中在 config。
+   */
   setScale(scale: number): void {
-    this.sprite.setScale(scale);
+    this.sprite.setScale(scale * getPerCharScale(this.charKey));
   }
 
   setPosition(x: number, y: number): void {

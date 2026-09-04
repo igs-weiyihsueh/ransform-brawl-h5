@@ -80,3 +80,26 @@ export const ALL_ANIM_STATES: readonly AnimState[] = [
   'damaged',
   'death',
 ];
+
+/**
+ * 每角色顯示縮放倍率（default 1）。
+ *
+ * 因為每隻角色是各自 union bounds 烘進同一個 256² 畫布，世界尺寸大的角色
+ * 在畫布裡反而被縮小，再套同一個 SPRITE_SCALE 就顯得偏小。
+ * 這裡針對個別角色補償：finalScale = SPRITE_SCALE × PER_CHAR_SCALE[charKey]。
+ *
+ * 例：Enemy_Elite 世界尺寸大(viewH≈2.45 vs Human1.93) → 調大讓它像個大隻菁英。
+ * （更正解是全角色統一 pixels-per-world-unit 重烘，之後要精準再處理。）
+ */
+export const PER_CHAR_SCALE: Record<string, number> = {
+  Human: 1,
+  SunWukong: 1,
+  Enemy_Rush: 1,
+  Enemy_Ranged: 1,
+  Enemy_Elite: 1.5,
+};
+
+/** 取得某角色的顯示縮放倍率（未設定則 1）。 */
+export function getPerCharScale(charKey: string): number {
+  return PER_CHAR_SCALE[charKey] ?? 1;
+}
