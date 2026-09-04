@@ -134,6 +134,25 @@ describe('validateLevels — 陽性對照（合法檔放行）', () => {
     expect(validateLevels(f).ok).toBe(true);
   });
 
+  // --- 釘住 Reward.rewardPresetName 的 optional 設計（架構顧問要求）---
+  // 設計決定：rewardPresetName 是 optional（無 preset = 用預設固定獎勵）。
+  // 以下兩條陽性 case 釘住此語意，防止日後有人誤把它改成 required、
+  // 讓驗證默默變嚴卻沒有測試抓到。
+  it('Reward 節點【有】rewardPresetName → 通過（optional 設計）', () => {
+    const f = makeValidFile();
+    // makeValidFile 的 level-1 第 2 個節點是 Reward，且已帶 rewardPresetName
+    const rewardNode = f.levels[0].nodes[1] as unknown as Record<string, unknown>;
+    rewardNode.rewardPresetName = 'coin-pack';
+    expect(validateLevels(f).ok).toBe(true);
+  });
+
+  it('Reward 節點【無】rewardPresetName → 仍通過（optional 設計，關鍵回歸鎖）', () => {
+    const f = makeValidFile();
+    const rewardNode = f.levels[0].nodes[1] as unknown as Record<string, unknown>;
+    delete rewardNode.rewardPresetName; // 不提供 → 依 optional 設計必須放行
+    expect(validateLevels(f).ok).toBe(true);
+  });
+
   it('spawnThreshold == maxAlive（邊界，允許）→ 通過', () => {
     const f = makeValidFile();
     const node = firstSpawnNode(f);
