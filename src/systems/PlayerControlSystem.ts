@@ -1,8 +1,21 @@
 import { DASH_CONFIG, PLAYER_CONFIG } from '@/config/combatConfig';
+import {
+  FREEZE_SEC,
+  HELMET_DASH_SPEED_MULT,
+  HELMET_MOVESPEED_MULT,
+  LIGHTNING_CHAIN_COUNT,
+  LIGHTNING_CHAIN_DAMAGE,
+  LIGHTNING_CHAIN_RANGE,
+  LIGHTNING_PARALYZE_SEC,
+  MOUNT_DASH_EXTRA_HITS,
+  MOUNT_DASH_SPEED_MULT,
+  SECOND_TRANSFORM_DMG_MULT,
+} from '@/config/buffConfig';
 import { PPU } from '@/config/gameConfig';
 import type { AttackData } from '@/systems/AttackData';
 import { lateralKnockbackDir } from '@/systems/dashMath';
 import { EnergySystem, type AttackIntent } from '@/systems/EnergySystem';
+import type { Enemy } from '@/entities/Enemy';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import {
@@ -50,6 +63,9 @@ export class PlayerControlSystem implements GameSystem {
   update(dt: number): void {
     const { input, player, energy, credit } = this.ctx;
 
+    // 依 buff 狀態每幀設定玩家倍率/護盾（頭盔/寶盒）。
+    this.applyBuffState();
+
     // 衝刺觸發（X，edge；需可攻擊(credit>0且非耗盡)、非衝刺中）。
     if (input.justPressedDash() && !player.isDashing() && credit.canAttack()) {
       const move = input.getMoveVector();
@@ -85,6 +101,55 @@ export class PlayerControlSystem implements GameSystem {
     if (this.shapeFlash > 0) this.shapeFlash -= dt;
   }
 
+  /** 依 BuffSystem 狀態設定玩家倍率/護盾（頭盔 MoveSpeed/Dash/Shield + 寶盒坐騎）。 */
+  private applyBuffState(): void {
+    const { buff, player } = this.ctx;
+    // 移速：頭盔 MoveSpeed。
+    player.setSpeedMultiplier(buff.isActive('MoveSpeed') ? HELMET_MOVESPEED_MULT : 1);
+    // 衝刺速度：頭盔 Dash 或 寶盒坐騎（取較大倍率）。
+    let dashMult = 1;
+    if (buff.isActive('Dash')) dashMult = Math.max(dashMult, HELMET_DASH_SPEED_MULT);
+    if (buff.isActive('mount')) dashMult = Math.max(dashMult, MOUNT_DASH_SPEED_MULT);
+    player.setDashSpeedMultiplier(dashMult);
+    // 護盾：頭盔 Shield。
+    player.setShielded(buff.isActive('Shield'));
+  }
+
+  /** 命中敵人後的 buff 附加效果：Lightning(麻痺+連鎖) / Freeze(凍結)。 */
+  private applyOnHitBuffs(hitEnemies: { getHitCenter(): { x: number; y: number }; applyStun(s: number): void }[]): void {
+    const { buff } = this.ctx;
+    if (hitEnemies.length === 0) return;
+
+    if (buff.isActive('Freeze')) {
+      for (const e of hitEnemies) e.applyStun(FREEZE_SEC);
+    }
+    if (buff.isActive('Lightning')) {
+      // 主目標麻痺 + 連鎖最近 N 隻（範圍內）各傷 + 麻痺。
+      const main = hitEnemies[0];
+      main.applyStun(LIGHTNING_PARALYZE_SEC);
+      const center = main.getHitCenter();
+      const rangePx = LIGHTNING_CHAIN_RANGE * PPU;
+      const others = this.ctx
+        .getEnemies()
+        .filter((e) => !hitEnemies.includes(e as never))
+        .map((e) => ({ e, d: this.dist2(center, e.getHitCenter()) }))
+        .filter((o) => o.d <= rangePx * rangePx)
+        .sort((a, b) => a.d - b.d)
+        .slice(0, LIGHTNING_CHAIN_COUNT);
+      const from = this.ctx.player.getPosition();
+      for (const o of others) {
+        o.e.takeHit(LIGHTNING_CHAIN_DAMAGE, DASH_CONFIG.knockback, from);
+        o.e.applyStun(LIGHTNING_PARALYZE_SEC);
+      }
+    }
+  }
+
+  private dist2(a: { x: number; y: number }, b: { x: number; y: number }): number {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return dx * dx + dy * dy;
+  }
+
   /**
    * 衝刺命中：每幀以半徑 dashRadius 的圓抓範圍內敵人，每隻本次衝刺只打一次（去重），
    * 造成 dashDamage + 側向擊退（垂直於衝刺方向、依敵人在哪側決定左右）。不充能。
@@ -93,7 +158,11 @@ export class PlayerControlSystem implements GameSystem {
     const { player } = this.ctx;
     const pos = player.getPosition();
     const dir = player.getDashDir();
-    const radiusPx = DASH_CONFIG.radius * PPU;
+    // 坐騎：範圍放大（命中數 3→5 近似）＝半徑 × (1 + extraHits/基準)。
+    const mountMult = this.ctx.buff.isActive('mount')
+      ? 1 + MOUNT_DASH_EXTRA_HITS / 3
+      : 1;
+    const radiusPx = DASH_CONFIG.radius * PPU * mountMult;
 
     for (const e of this.ctx.getEnemies()) {
       const c = e.getHitCenter();
@@ -126,42 +195,43 @@ export class PlayerControlSystem implements GameSystem {
     const pos = player.getPosition();
     const facing = player.getFacing();
     const scale = energy.getAttackScale();
-    const dmg = EnergySystem.applyMultiplier(attack.damage, intent.multiplier);
+    // 傷害 = 基礎 × 能量倍率 × (二段變身時 ×1.5)。
+    const buffDmgMult = this.ctx.buff.isActive('secondTransform')
+      ? SECOND_TRANSFORM_DMG_MULT
+      : 1;
+    const dmg = EnergySystem.applyMultiplier(attack.damage, intent.multiplier * buffDmgMult);
 
-    let hitAny = false;
+    const hits: Enemy[] = [];
     let effectCenter = pos;
 
     if (attack.shapeType === 'circle') {
       const circle = buildAttackCircle(attack, pos, facing, scale);
-      for (const e of queryHitsCircle(circle, this.ctx.getEnemies())) {
-        e.takeHit(dmg, attack.knockback, pos);
-        hitAny = true;
-      }
+      hits.push(...queryHitsCircle(circle, this.ctx.getEnemies()));
       this.lastCircle = circle;
       this.lastOBB = null;
       this.lastFan = null;
       effectCenter = circle.center;
     } else if (attack.shapeType === 'fan') {
       const fan = buildAttackFan(attack, pos, facing, scale);
-      for (const e of queryHitsFan(fan, this.ctx.getEnemies())) {
-        e.takeHit(dmg, attack.knockback, pos);
-        hitAny = true;
-      }
+      hits.push(...queryHitsFan(fan, this.ctx.getEnemies()));
       this.lastFan = fan;
       this.lastOBB = null;
       this.lastCircle = null;
       effectCenter = fan.center;
     } else {
       const obb = buildAttackOBB(attack, pos, facing, scale);
-      for (const e of queryHits(obb, this.ctx.getEnemies())) {
-        e.takeHit(dmg, attack.knockback, pos);
-        hitAny = true;
-      }
+      hits.push(...queryHits(obb, this.ctx.getEnemies()));
       this.lastOBB = obb;
       this.lastCircle = null;
       this.lastFan = null;
       effectCenter = obb.center;
     }
+
+    for (const e of hits) e.takeHit(dmg, attack.knockback, pos);
+    const hitAny = hits.length > 0;
+
+    // 頭盔命中效果：Lightning(麻痺+連鎖) / Freeze(凍結)。
+    this.applyOnHitBuffs(hits);
 
     this.shapeFlash = 0.12;
     // 依當前 AttackData 的 vfxKey 播對應特效（資料驅動；未設則不播）。

@@ -76,6 +76,20 @@ export class Enemy implements Hittable {
     this.guardTarget = target;
   }
 
+  /** 定身（麻痺/凍結）剩餘秒數：>0 時 update 停止行動（移動/攻擊）。 */
+  private stunRemaining = 0;
+
+  /** 套用定身 N 秒（麻痺/凍結，additive；取較長者）。 */
+  applyStun(seconds: number): void {
+    if (this.dead) return;
+    this.stunRemaining = Math.max(this.stunRemaining, seconds);
+  }
+
+  /** 是否定身中。 */
+  isStunned(): boolean {
+    return this.stunRemaining > 0;
+  }
+
   constructor(scene: Phaser.Scene, x: number, y: number, charKey: string = ENEMY_CHARACTERS[0]) {
     this.cfg = ENEMY_AI[charKey] ?? ENEMY_AI[ENEMY_CHARACTERS[0]];
     this.scaleFactor = getPerCharScale(this.cfg.characterKey);
@@ -134,6 +148,13 @@ export class Enemy implements Hittable {
     this.knockbackVel.y *= decay;
 
     if (this.state === 'death') return;
+
+    // 定身（麻痺/凍結）：停止行動（移動/攻擊/AI），只保留 idle 動畫，倒數。
+    if (this.stunRemaining > 0) {
+      this.stunRemaining -= dt;
+      this.anim.play('idle');
+      return;
+    }
 
     // 守護波：有覆蓋目標則追/打雕像，否則玩家。
     const aim = this.guardTarget ? this.guardTarget.getPosition() : playerPos;

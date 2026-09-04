@@ -1,4 +1,5 @@
 import { CHEST_OPEN_THRESHOLD } from '@/config/chestConfig';
+import { BUFF_DURATION } from '@/config/buffConfig';
 import { isTicketReward, pickChestReward } from '@/systems/chestLoot';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
@@ -23,7 +24,11 @@ export class ChestSystem implements GameSystem {
   /** 最近一次開出的獎勵種類（UI/debug 顯示）。 */
   private lastReward = '';
 
-  /** 效果類旗標（暫定，待零式校準真正效果）。 */
+  /**
+   * 效果類旗標（保留向後相容 + 無 BuffSystem 時的 fallback）。
+   * 有 ctx.buff 時另外套真 buff（正式效果由 BuffSystem 計時）；
+   * 無 ctx.buff（如純測試 ctx）時用這裡的旗標/倒數。
+   */
   private mountBuffActive = false;
   private secondTransformUntil = 0;
 
@@ -32,10 +37,13 @@ export class ChestSystem implements GameSystem {
   }
 
   update(dt: number): void {
-    // 二段變身增益倒數（暫定 30s）。
+    // fallback 倒數（僅在無 BuffSystem 接管時有意義）。
     if (this.secondTransformUntil > 0) {
-      this.secondTransformUntil -= dt;
-      if (this.secondTransformUntil <= 0) this.secondTransformUntil = 0;
+      this.secondTransformUntil = Math.max(0, this.secondTransformUntil - dt);
+    }
+    // 若有 BuffSystem，旗標以 buff 實際狀態為準。
+    if (this.ctx.buff) {
+      this.mountBuffActive = this.ctx.buff.isActive('mount');
     }
   }
 
@@ -59,13 +67,22 @@ export class ChestSystem implements GameSystem {
     if (isTicketReward(reward.kind)) {
       this.ctx.ticket.addTickets(reward.tickets);
     } else if (reward.kind === 'mount') {
-      // 暫定：衝刺強化。真正數值待零式校準（先旗標 + log，不卡主流程）。
+      // 坐騎：20s dashSpeed×1.5 + 衝刺範圍+2。有 BuffSystem → 套真 buff；旗標同步供查詢/測試。
       this.mountBuffActive = true;
-      console.info('[Chest] 開出坐騎（衝刺強化，暫定，待零式校準）');
+      this.ctx.buff?.apply({
+        id: 'mount',
+        duration: BUFF_DURATION.mount,
+        onApply: () => console.info('[Chest] 坐騎啟用（衝刺強化 20s，零式暫定）'),
+      });
     } else if (reward.kind === 'secondTransform') {
-      // 暫定：30s 增益。
-      this.secondTransformUntil = 30;
-      console.info('[Chest] 開出二段變身（30s 增益，暫定，待零式校準）');
+      // 二段變身：30s 傷害×1.5 + 被打不斷 COMBO。
+      this.secondTransformUntil = BUFF_DURATION.secondTransform;
+      this.ctx.buff?.apply({
+        id: 'secondTransform',
+        duration: BUFF_DURATION.secondTransform,
+        onApply: () =>
+          console.info('[Chest] 二段變身啟用（傷害×1.5+護COMBO 30s，零式暫定）'),
+      });
     }
   }
 
@@ -93,12 +110,15 @@ export class ChestSystem implements GameSystem {
     return this.lastReward;
   }
 
-  /** 暫定效果查詢（待零式校準真正效果；先供 debug/UI 觀察）。 */
+  /** 坐騎效果是否啟用（有 BuffSystem 以其狀態為準，否則用旗標）。 */
   isMountBuffActive(): boolean {
-    return this.mountBuffActive;
+    return this.ctx.buff ? this.ctx.buff.isActive('mount') : this.mountBuffActive;
   }
 
+  /** 二段變身效果是否啟用（有 BuffSystem 以其狀態為準，否則用 fallback 倒數）。 */
   isSecondTransformActive(): boolean {
-    return this.secondTransformUntil > 0;
+    return this.ctx.buff
+      ? this.ctx.buff.isActive('secondTransform')
+      : this.secondTransformUntil > 0;
   }
 }

@@ -8,6 +8,7 @@ export type InputAction =
   | 'attack'
   | 'dash'
   | 'coin'
+  | 'helmet'
   | 'respawn'
   | 'switchPlayer'
   | 'switchEnemy'
@@ -50,6 +51,7 @@ export class InputSystem implements GameSystem {
     attack: false,
     dash: false,
     coin: false,
+    helmet: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -59,6 +61,7 @@ export class InputSystem implements GameSystem {
     attack: false,
     dash: false,
     coin: false,
+    helmet: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -68,6 +71,7 @@ export class InputSystem implements GameSystem {
     attack: false,
     dash: false,
     coin: false,
+    helmet: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -94,6 +98,7 @@ export class InputSystem implements GameSystem {
       attack: kb.addKey(KC.Z),
       dash: kb.addKey(KC.X),
       coin: kb.addKey(KC.C),
+      helmet: kb.addKey(KC.H),
       respawn: kb.addKey(KC.R),
       switchPlayer: kb.addKey(KC.T),
       switchEnemy: kb.addKey(KC.E),
@@ -176,6 +181,11 @@ export class InputSystem implements GameSystem {
   /** 投幣鍵（C）的 edge。 */
   justPressedCoin(): boolean {
     return this.justPressedNow.coin;
+  }
+
+  /** debug 撿頭盔鍵（H）的 edge。 */
+  justPressedHelmet(): boolean {
+    return this.justPressedNow.helmet;
   }
 
   // --- 相容既有呼叫端（改讀 snapshot，語意不變） ---

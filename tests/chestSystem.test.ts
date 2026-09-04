@@ -135,6 +135,21 @@ describe('chestChargeFor — 擊殺累加（多隻）', () => {
     expect(sys.getCharge()).toBe(0);
     expect(sys.getOpensCount()).toBe(0);
   });
+
+  // 防禦契約測試：addCharge 對「負量」的刻意契約＝no-op（作者用 if(amount<=0)return 定義）。
+  // 負量在 addCharge 的【定義域】內可達（是呼叫端現在不傳、非函式不接受）；此測試把「擋負」
+  // 釘成可執行契約——拿掉 guard 會讓負量錯誤地【減少】charge（甚至下溢誤觸連開判斷），故會紅。
+  // （對齊 jpSystem 的 notifyCreditSpent(負) 測試；顧問定調：定義域上寫得出鑑別測試就寫測試。）
+  it('防禦契約：addCharge(負量) 為 no-op（不減 charge、不誤觸開箱）', () => {
+    const { sys } = makeSys();
+    sys.addCharge(100); // 先累到 100（未達門檻 165）
+    sys.addCharge(-50); // 負量：契約為 no-op
+    expect(sys.getCharge()).toBe(100); // 不被扣、不變
+    expect(sys.getOpensCount()).toBe(0); // 不誤觸開箱
+    sys.addCharge(-9999); // 大負量也不下溢、不亂開
+    expect(sys.getCharge()).toBe(100);
+    expect(sys.getOpensCount()).toBe(0);
+  });
 });
 
 describe('ChestSystem — 165 門檻邊界 & 連開排隊餘數', () => {

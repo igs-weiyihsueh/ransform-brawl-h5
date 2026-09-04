@@ -119,6 +119,7 @@ export class Player implements Hittable {
    * @returns 是否實際受擊（false = 被 iFrame 擋掉）。
    */
   takeHit(damage: number, sourceName: string): boolean {
+    if (this.shielded) return false; // 護盾：完全免疫（不扣血/魂力、不擊退）
     if (this.iFrameRemaining > 0) return false;
     this.lastHitBy = sourceName;
     this.iFrameRemaining = PLAYER_IFRAME_DURATION;
@@ -131,6 +132,26 @@ export class Player implements Hittable {
 
   /** 受擊扣魂力鉤子（由 TransformSystem 設；變身中才有）。 */
   private soulDamageSink: ((damage: number) => void) | null = null;
+
+  /** buff 倍率/狀態（由 PlayerControl 每幀依 BuffSystem 設定）。 */
+  private speedMult = 1;
+  private dashSpeedMult = 1;
+  private shielded = false;
+
+  /** 設定移動速度倍率（頭盔 MoveSpeed）。 */
+  setSpeedMultiplier(m: number): void {
+    this.speedMult = m;
+  }
+
+  /** 設定衝刺速度倍率（頭盔 Dash / 寶盒坐騎）。 */
+  setDashSpeedMultiplier(m: number): void {
+    this.dashSpeedMult = m;
+  }
+
+  /** 設定護盾（頭盔 Shield）：受擊免疫、不扣魂力、不擊退。 */
+  setShielded(on: boolean): void {
+    this.shielded = on;
+  }
 
   /** 設定/清除受擊扣魂力鉤子。變身時設、退變時傳 null 清除。 */
   setSoulDamageSink(sink: ((damage: number) => void) | null): void {
@@ -168,7 +189,7 @@ export class Player implements Hittable {
 
   /** 依移動向量更新位置、面向與 idle/move 動畫。 */
   move(moveVec: Vec2, dt: number): void {
-    const speedPx = PLAYER_CONFIG.moveSpeed * PPU;
+    const speedPx = PLAYER_CONFIG.moveSpeed * PPU * this.speedMult;
     this.anim.sprite.x += moveVec.x * speedPx * dt;
     this.anim.sprite.y += moveVec.y * speedPx * dt;
 
@@ -231,7 +252,7 @@ export class Player implements Hittable {
    */
   updateDash(dt: number): boolean {
     if (!this.dashing) return false;
-    const speedPx = DASH_CONFIG.speed * PPU;
+    const speedPx = DASH_CONFIG.speed * PPU * this.dashSpeedMult;
     this.anim.sprite.x += this.dashDir.x * speedPx * dt;
     this.anim.sprite.y += this.dashDir.y * speedPx * dt;
 

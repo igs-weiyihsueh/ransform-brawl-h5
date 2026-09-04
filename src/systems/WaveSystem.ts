@@ -101,12 +101,8 @@ export class WaveSystem implements GameSystem {
   /** Event 節點（守護波）：首次進入建 GuardEvent，每幀 tick，結束前進節點。 */
   private updateEventNode(node: { eventPresetName: string }, dt: number): void {
     if (!this.guardEvent) {
-      // 守護波敵種：預設三型（Event 節點 schema 未帶 spawns）。
-      this.guardEvent = new GuardEvent(this.ctx, node.eventPresetName, [
-        'Enemy_Rush',
-        'Enemy_Ranged',
-        'Enemy_Elite',
-      ]);
+      // 守護波敵種/drip 全由 preset 決定（不動凍結的 levelSchema）。
+      this.guardEvent = new GuardEvent(this.ctx, node.eventPresetName);
     }
     const done = this.guardEvent.update(dt);
     if (done) {

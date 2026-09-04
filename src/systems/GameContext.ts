@@ -4,9 +4,11 @@ import type { Player } from '@/entities/Player';
 import type { ChestSystem } from '@/systems/ChestSystem';
 import type { ComboSystem } from '@/systems/ComboSystem';
 import type { CreditSystem } from '@/systems/CreditSystem';
+import type { BuffSystem } from '@/systems/BuffSystem';
 import type { EffectSystem } from '@/systems/EffectSystem';
 import type { EnemySpawner } from '@/systems/EnemySpawner';
 import type { EnergySystem } from '@/systems/EnergySystem';
+import type { HelmetSystem } from '@/systems/HelmetSystem';
 import type { InputSystem } from '@/systems/InputSystem';
 import type { JpSystem } from '@/systems/JpSystem';
 import type { TicketSystem } from '@/systems/TicketSystem';
@@ -50,6 +52,10 @@ export interface GameContext {
   readonly wave: WaveSystem;
   /** JP 累積獎池：三組燈/倍數池、集滿派彩（幕通關給燈、命中扣 credit 累積、灌 ticket）。 */
   readonly jp: JpSystem;
+  /** 通用計時 buff 框架（頭盔能力 + 寶盒坐騎/二段變身共用）。 */
+  readonly buff: BuffSystem;
+  /** 頭盔能力系統（撿頭盔套計時能力）。 */
+  readonly helmet: HelmetSystem;
 
   /** 取得目前場上存活的敵人（唯讀快照，供命中查詢/AI 目標）。 */
   getEnemies(): readonly Enemy[];

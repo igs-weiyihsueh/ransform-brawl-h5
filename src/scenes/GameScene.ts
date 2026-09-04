@@ -4,6 +4,7 @@ import { chestChargeFor } from '@/config/chestConfig';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
+import { BuffSystem } from '@/systems/BuffSystem';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import { ChestSystem } from '@/systems/ChestSystem';
 import { ComboSystem } from '@/systems/ComboSystem';
@@ -15,6 +16,7 @@ import { EnemySystem } from '@/systems/EnemySystem';
 import { EnergySystem } from '@/systems/EnergySystem';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
+import { HelmetSystem } from '@/systems/HelmetSystem';
 import { InputSystem } from '@/systems/InputSystem';
 import { JpSystem } from '@/systems/JpSystem';
 import { PlayerControlSystem } from '@/systems/PlayerControlSystem';
@@ -85,6 +87,8 @@ export class GameScene extends Phaser.Scene {
     const chest = new ChestSystem();
     const wave = new WaveSystem(this.previewLevels);
     const jp = new JpSystem();
+    const buff = new BuffSystem();
+    const helmet = new HelmetSystem();
 
     // 共用 context（各 system 只透過它取服務/狀態）。
     this.ctx = {
@@ -102,6 +106,8 @@ export class GameScene extends Phaser.Scene {
       chest,
       wave,
       jp,
+      buff,
+      helmet,
       getEnemies: () => spawner.getEnemies(),
     };
 
@@ -133,6 +139,8 @@ export class GameScene extends Phaser.Scene {
     const enemy = new EnemySystem();
     // InputSystem 同時是 ctx.input 服務與 registry member；排最前做輸入 snapshot。
     this.register(this.ctx.input);
+    this.register(this.ctx.buff); // 計時 buff 框架（頭盔/寶盒共用）：早更新，效果供後面讀
+    this.register(this.ctx.helmet); // 頭盔能力（讀 H 鍵套 buff）
     this.register(this.ctx.credit); // Credit：投幣/耗盡狀態 + 命中扣 credit 閘門
     this.register(this.ctx.energy); // 能量/招式：放招決策 + 充能狀態
     this.register(playerControl); // 玩家操控（讀 Input/Credit/Energy）

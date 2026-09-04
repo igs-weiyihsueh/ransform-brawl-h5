@@ -1,23 +1,18 @@
-import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
-import { GUARD_DRIP, getGuardPreset, type GuardPreset } from '@/config/guardConfig';
+import { getGuardPreset, pickGuardEnemy, type GuardPreset } from '@/config/guardConfig';
 import { GuardTarget } from '@/entities/GuardTarget';
-import type { EnemyType } from '@/config/levelSchema';
 import type { GameContext } from '@/systems/GameContext';
 
 /**
  * GuardEvent — 一場守護波（Guard Event）的執行狀態機（決策 76f235e4）。
  *
- * 由 WaveSystem 在 Event 節點建立並每幀 tick。
- * 流程：生 GuardTarget（場中央）+ 把敵人目標切成雕像 → drip 生敵維持 maxAlive →
- *   倒數 timeLimit（量條由時間扣）→ 勝(撐過且 HP>0) / 敗(HP≤0 提早結束) →
- *   cleanup（停 drip、清全部敵人、destroy 雕像、敵人目標清回玩家）→
- *   勝 payout round(rewardTickets × hpRatio)、敗 0（log）。無 GameOver、無扣命。
+ * 由 WaveSystem 在 Event 節點建立並每幀 tick。守護的敵人 drip 配置全在 guardPreset
+ * （不動凍結的 levelSchema）。流程：生 GuardTarget（場中央）+ 敵人目標切雕像 →
+ *   drip 維持 maxAlive → 倒數 timeLimit（量條由時間扣）→ 勝/敗 → cleanup → 結算獎券。
  */
 export class GuardEvent {
   private readonly ctx: GameContext;
   private readonly preset: GuardPreset;
-  private readonly spawnTypes: EnemyType[];
 
   private target: GuardTarget;
   private remaining: number;
@@ -25,10 +20,9 @@ export class GuardEvent {
   private finished = false;
   private won = false;
 
-  constructor(ctx: GameContext, presetName: string, spawnTypes: EnemyType[]) {
+  constructor(ctx: GameContext, presetName: string) {
     this.ctx = ctx;
     this.preset = getGuardPreset(presetName);
-    this.spawnTypes = spawnTypes.length > 0 ? spawnTypes : ['Enemy_Rush'];
     this.remaining = this.preset.timeLimit;
 
     // 生雕像於場中央，敵人攻擊改打雕像。
@@ -66,9 +60,13 @@ export class GuardEvent {
     // drip：維持場上敵人數（無 killQuota）。存活 < spawnThreshold 時補到 maxAlive。
     this.spawnCooldown -= dt;
     const alive = this.ctx.getEnemies().length;
-    if (alive < GUARD_DRIP.spawnThreshold && this.spawnCooldown <= 0 && alive < GUARD_DRIP.maxAlive) {
+    if (
+      alive < this.preset.spawnThreshold &&
+      this.spawnCooldown <= 0 &&
+      alive < this.preset.maxAlive
+    ) {
       this.spawnAroundTarget();
-      this.spawnCooldown = GUARD_DRIP.spawnInterval;
+      this.spawnCooldown = this.preset.spawnInterval;
     }
     return false;
   }
@@ -76,9 +74,9 @@ export class GuardEvent {
   private spawnAroundTarget(): void {
     const c = this.target.getPosition();
     const ang = Math.random() * Math.PI * 2;
-    const x = c.x + Math.cos(ang) * GUARD_DRIP.spawnRadiusPx;
-    const y = c.y + Math.sin(ang) * GUARD_DRIP.spawnRadiusPx;
-    const type = this.spawnTypes[Phaser.Math.Between(0, this.spawnTypes.length - 1)];
+    const x = c.x + Math.cos(ang) * this.preset.spawnRadiusPx;
+    const y = c.y + Math.sin(ang) * this.preset.spawnRadiusPx;
+    const type = pickGuardEnemy(this.preset.spawns);
     this.ctx.spawner.spawn(type, x, y);
   }
 
