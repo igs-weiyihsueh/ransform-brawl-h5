@@ -64,6 +64,25 @@ export const HUD_COLORS = {
 } as const;
 
 /**
+ * UI icon 貼圖（從 Unity 撈的真美術，放 public/assets/images/ui/）。
+ * key = Phaser texture key；path = 載入路徑（相對 public/）。
+ * UISystem.preload(scene) 統一載入這些；元件用 scene.add.image(key) 顯示。
+ * displaySize = 顯示邊長（px），依原有佔位版面尺寸對齊。
+ */
+export const UI_ICONS = {
+  /** 金幣（Credit 顯示）。 */
+  coin: { key: 'ui-coin', path: 'assets/images/ui/coin.png' },
+  /** 彩票（底部面板彩票數）。 */
+  ticket: { key: 'ui-ticket', path: 'assets/images/ui/ticket.png' },
+  /** 魂力環 sprite（對照 Unity RingSprite，同心包 P 編號牌）。 */
+  ring: { key: 'ui-ring', path: 'assets/images/ui/ring.png' },
+  /** 寶箱（底部面板寶盒格）。 */
+  chest: { key: 'ui-chest', path: 'assets/images/ui/chest.png' },
+  /** JP 燈（未來 JP UI 用，先備著 preload）。 */
+  lamp: { key: 'ui-lamp', path: 'assets/images/ui/lamp.png' },
+} as const;
+
+/**
  * A. 角色頭上 UI（跟隨玩家，世界座標）。
  * 對照 Unity PlayerUI 200×80。座標皆為「相對容器中心」的 local 值，
  * 容器每幀移到 player 位置上方（offsetY）。

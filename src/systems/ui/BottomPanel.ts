@@ -5,6 +5,7 @@ import {
   HUD_COLORS,
   HUD_FONT_FAMILY,
   PANEL_DEPTH,
+  UI_ICONS,
 } from '@/config/uiConfig';
 
 /** 單一玩家欄的可刷新元素。 */
@@ -82,31 +83,49 @@ export class BottomPanel {
         .setDepth(PANEL_DEPTH),
     );
 
-    // 寶箱 icon（方塊佔位）。
+    // 寶箱 icon（chest.png，退回方塊佔位）。
     const chestX = x + cfg.padding;
     const chestY = y + cfg.slotHeight - cfg.padding - cfg.chest.size;
-    const chest = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
-    chest.fillStyle(HUD_COLORS.chest, alpha);
-    chest.fillRoundedRect(chestX, chestY, cfg.chest.size, cfg.chest.size, 8);
-    chest.lineStyle(2, 0x5d4037, alpha);
-    chest.strokeRoundedRect(chestX, chestY, cfg.chest.size, cfg.chest.size, 8);
-    // 寶箱蓋線（簡單佔位裝飾）。
-    chest.lineStyle(2, 0x5d4037, alpha);
-    chest.lineBetween(chestX, chestY + cfg.chest.size * 0.35, chestX + cfg.chest.size, chestY + cfg.chest.size * 0.35);
-
-    // 彩票標籤 + 數字（寶箱右）。
-    const infoX = chestX + cfg.chest.size + 16;
-    track(
-      scene.add
-        .text(infoX, chestY, cfg.ticket.label, {
-          fontFamily: HUD_FONT_FAMILY,
-          fontSize: cfg.ticket.labelFontSize,
-          color: HUD_COLORS.textMuted,
-        })
+    if (scene.textures.exists(UI_ICONS.chest.key)) {
+      track(scene.add.image(chestX, chestY, UI_ICONS.chest.key))
+        .setOrigin(0, 0)
+        .setDisplaySize(cfg.chest.size, cfg.chest.size)
         .setAlpha(alpha)
         .setScrollFactor(0)
-        .setDepth(PANEL_DEPTH),
-    );
+        .setDepth(PANEL_DEPTH);
+    } else {
+      const chest = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
+      chest.fillStyle(HUD_COLORS.chest, alpha);
+      chest.fillRoundedRect(chestX, chestY, cfg.chest.size, cfg.chest.size, 8);
+      chest.lineStyle(2, 0x5d4037, alpha);
+      chest.strokeRoundedRect(chestX, chestY, cfg.chest.size, cfg.chest.size, 8);
+      chest.lineStyle(2, 0x5d4037, alpha);
+      chest.lineBetween(chestX, chestY + cfg.chest.size * 0.35, chestX + cfg.chest.size, chestY + cfg.chest.size * 0.35);
+    }
+
+    // 彩票 icon（ticket.png）+ 數字（寶箱右）。無圖時退回「彩票」文字標籤。
+    const infoX = chestX + cfg.chest.size + 16;
+    if (scene.textures.exists(UI_ICONS.ticket.key)) {
+      const tSize = Number.parseInt(cfg.ticket.labelFontSize, 10) + 6;
+      track(scene.add.image(infoX, chestY + tSize / 2, UI_ICONS.ticket.key))
+        .setOrigin(0, 0.5)
+        .setDisplaySize(tSize, tSize)
+        .setAlpha(alpha)
+        .setScrollFactor(0)
+        .setDepth(PANEL_DEPTH);
+    } else {
+      track(
+        scene.add
+          .text(infoX, chestY, cfg.ticket.label, {
+            fontFamily: HUD_FONT_FAMILY,
+            fontSize: cfg.ticket.labelFontSize,
+            color: HUD_COLORS.textMuted,
+          })
+          .setAlpha(alpha)
+          .setScrollFactor(0)
+          .setDepth(PANEL_DEPTH),
+      );
+    }
     const ticketText = track(
       scene.add
         .text(infoX, chestY + 22, cfg.ticket.placeholder, {
@@ -120,15 +139,23 @@ export class BottomPanel {
         .setDepth(PANEL_DEPTH),
     );
 
-    // 金幣 icon（右下角圓形佔位）。
+    // 金幣 icon（coin.png，退回右下角圓形佔位）。
     const coinR = cfg.coin.size / 2;
     const coinCx = x + cfg.slotWidth - cfg.padding - coinR;
     const coinCy = y + cfg.slotHeight - cfg.padding - coinR;
-    const coin = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
-    coin.fillStyle(HUD_COLORS.coin, alpha);
-    coin.fillCircle(coinCx, coinCy, coinR);
-    coin.lineStyle(2, 0x8a6d0f, alpha);
-    coin.strokeCircle(coinCx, coinCy, coinR);
+    if (scene.textures.exists(UI_ICONS.coin.key)) {
+      track(scene.add.image(coinCx, coinCy, UI_ICONS.coin.key))
+        .setDisplaySize(cfg.coin.size, cfg.coin.size)
+        .setAlpha(alpha)
+        .setScrollFactor(0)
+        .setDepth(PANEL_DEPTH);
+    } else {
+      const coin = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
+      coin.fillStyle(HUD_COLORS.coin, alpha);
+      coin.fillCircle(coinCx, coinCy, coinR);
+      coin.lineStyle(2, 0x8a6d0f, alpha);
+      coin.strokeCircle(coinCx, coinCy, coinR);
+    }
 
     // 進度條（下方，跨欄寬）。
     const progressX = infoX;

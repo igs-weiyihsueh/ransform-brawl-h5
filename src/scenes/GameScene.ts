@@ -51,12 +51,13 @@ export class GameScene extends Phaser.Scene {
     this.previewLevels = data?.previewLevels;
   }
 
-  /** 載入全部角色逐幀圖 + 攻擊特效。 */
+  /** 載入全部角色逐幀圖 + 攻擊特效 + UI icon。 */
   preload(): void {
     for (const charKey of Object.keys(CHARACTERS)) {
       CharacterAnimator.preload(this, charKey);
     }
     EffectSystem.preload(this);
+    UISystem.preload(this); // 載入 UI icon（coin/ticket/ring/chest/lamp）
   }
 
   create(): void {

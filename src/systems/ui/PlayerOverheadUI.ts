@@ -4,6 +4,7 @@ import {
   HUD_FONT_FAMILY,
   OVERHEAD_DEPTH,
   OVERHEAD_LAYOUT,
+  UI_ICONS,
 } from '@/config/uiConfig';
 import { EnergyBar } from '@/systems/ui/EnergyBar';
 
@@ -39,6 +40,8 @@ export class PlayerOverheadUI {
   private maxTween?: Phaser.Tweens.Tween;
   /** 保存 scene 以供 tween 使用。 */
   private readonly scene: Phaser.Scene;
+  /** 是否已用 ring.png 當魂力環底圖（true 時 setSoul 不再畫底槽環，只畫填充弧）。 */
+  private hasRingSprite = false;
 
   constructor(scene: Phaser.Scene) {
     const cfg = OVERHEAD_LAYOUT;
@@ -47,7 +50,14 @@ export class PlayerOverheadUI {
     this.container.setDepth(OVERHEAD_DEPTH);
 
     // --- 玩家編號牌（圓形）+ 魂力環（同心，環在外圈繞著編號牌）---
-    // 繪製順序：魂力環 → 內圓編號牌底 → P1 文字（文字在最上）。
+    // 繪製順序：魂力環底圖(ring.png 或畫底槽) → 魂力填充弧 → 內圓編號牌 → P1 文字。
+    // ring.png 當底框（對照 Unity RingSprite）；魂力多寡仍用彩色弧疊在上面表現。
+    if (scene.textures.exists(UI_ICONS.ring.key)) {
+      const ringImg = scene.add.image(cfg.badge.cx, cfg.badge.cy, UI_ICONS.ring.key);
+      ringImg.setDisplaySize(cfg.badge.ringRadius * 2 + cfg.badge.ringThickness, cfg.badge.ringRadius * 2 + cfg.badge.ringThickness);
+      this.container.add(ringImg);
+      this.hasRingSprite = true;
+    }
     this.soulRing = scene.add.graphics();
     this.container.add(this.soulRing);
 
@@ -68,21 +78,26 @@ export class PlayerOverheadUI {
       .setOrigin(0.5);
     this.container.add(pnumText);
 
-    // --- Credit 底框 + 金幣 icon + 數字 ---
+    // --- Credit 底框 + 金幣 icon（coin.png，退回圓形佔位）+ 數字 ---
     const creditBg = scene.add.graphics();
     creditBg.fillStyle(HUD_COLORS.creditBg, 0.55);
     creditBg.fillRoundedRect(cfg.credit.x, cfg.credit.y, cfg.credit.width, cfg.credit.height, 6);
     this.container.add(creditBg);
-    // 金幣 icon 佔位（圓）。
-    const coin = scene.add.graphics();
     const coinR = cfg.credit.coinSize / 2;
     const coinCx = cfg.credit.x + coinR + 6;
     const coinCy = cfg.credit.y + cfg.credit.height / 2;
-    coin.fillStyle(HUD_COLORS.coin, 1);
-    coin.fillCircle(coinCx, coinCy, coinR);
-    coin.lineStyle(2, 0x8a6d0f, 1);
-    coin.strokeCircle(coinCx, coinCy, coinR);
-    this.container.add(coin);
+    if (scene.textures.exists(UI_ICONS.coin.key)) {
+      const coinImg = scene.add.image(coinCx, coinCy, UI_ICONS.coin.key);
+      coinImg.setDisplaySize(cfg.credit.coinSize, cfg.credit.coinSize);
+      this.container.add(coinImg);
+    } else {
+      const coin = scene.add.graphics();
+      coin.fillStyle(HUD_COLORS.coin, 1);
+      coin.fillCircle(coinCx, coinCy, coinR);
+      coin.lineStyle(2, 0x8a6d0f, 1);
+      coin.strokeCircle(coinCx, coinCy, coinR);
+      this.container.add(coin);
+    }
     this.creditText = scene.add
       .text(coinCx + coinR + 6, coinCy, cfg.credit.placeholder, {
         fontFamily: HUD_FONT_FAMILY,
@@ -138,9 +153,11 @@ export class PlayerOverheadUI {
     const cfg = OVERHEAD_LAYOUT.badge;
     const g = this.soulRing;
     g.clear();
-    // 底槽環（外圈，繞著編號牌）。
-    g.lineStyle(cfg.ringThickness, HUD_COLORS.soulRingBg, 1);
-    g.strokeCircle(cfg.cx, cfg.cy, cfg.ringRadius);
+    // 沒有 ring.png 時才畫底槽環（有 sprite 就用圖當底，只疊填充弧）。
+    if (!this.hasRingSprite) {
+      g.lineStyle(cfg.ringThickness, HUD_COLORS.soulRingBg, 1);
+      g.strokeCircle(cfg.cx, cfg.cy, cfg.ringRadius);
+    }
     // 魂力充填弧（從 12 點鐘順時針，弧度表現魂力多寡）。
     if (clamped > 0) {
       const start = -Math.PI / 2;

@@ -1,5 +1,7 @@
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
+import type Phaser from 'phaser';
+import { UI_ICONS } from '@/config/uiConfig';
 import { BottomPanel } from '@/systems/ui/BottomPanel';
 import { PlayerOverheadUI } from '@/systems/ui/PlayerOverheadUI';
 
@@ -22,6 +24,17 @@ import { PlayerOverheadUI } from '@/systems/ui/PlayerOverheadUI';
  */
 export class UISystem implements GameSystem {
   readonly name = 'UISystem';
+
+  /**
+   * 載入 HUD 用的 UI icon 貼圖（對照 EffectSystem.preload 慣例）。
+   * 由 GameScene.preload() 呼叫一次：UISystem.preload(this)。
+   * 沒載到的 icon，元件會自動退回原本的色塊/圖形佔位（不會壞）。
+   */
+  static preload(scene: Phaser.Scene): void {
+    for (const icon of Object.values(UI_ICONS)) {
+      scene.load.image(icon.key, icon.path);
+    }
+  }
 
   private ctx!: GameContext;
   private overhead!: PlayerOverheadUI;
