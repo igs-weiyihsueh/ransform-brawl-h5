@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { BootScene } from '@/scenes/BootScene';
+import { GameScene } from '@/scenes/GameScene';
 
 /**
  * 遊戲進入點：建立 Phaser.Game 實例。
@@ -21,7 +22,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene],
+  scene: [BootScene, GameScene],
 };
 
 // eslint-disable-next-line no-new

@@ -6,10 +6,10 @@ import {
 } from '@/config/gameConfig';
 
 /**
- * BootScene — 最小可跑場景。
+ * BootScene — 開場/載入場景。
  *
- * 階段 0 骨架：只顯示純色背景 + 一行置中文字，確認 Phaser 正常運作。
- * 之後會拆成 BootScene（載資源）→ 各遊戲場景。
+ * 目前無資源可載，顯示標題後短暫停留即切到 GameScene。
+ * 之後 preload() 會在這裡載美術/音效/JSON。
  */
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -27,5 +27,10 @@ export class BootScene extends Phaser.Scene {
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
+
+    // 短暫停留後進入遊戲場景。
+    this.time.delayedCall(600, () => {
+      this.scene.start('GameScene');
+    });
   }
 }
