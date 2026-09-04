@@ -9,8 +9,9 @@ import {
   GAME_HEIGHT,
   GAME_WIDTH,
 } from '@/config/gameConfig';
-import { Enemy } from '@/entities/Enemy';
-import { Player } from '@/entities/Player';
+import { CHARACTERS } from '@/config/animationConfig';
+import { Enemy, ENEMY_CHARACTERS } from '@/entities/Enemy';
+import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import { buildAttackOBB, queryHits } from '@/systems/hitDetection';
 import { InputSystem } from '@/systems/InputSystem';
@@ -30,25 +31,36 @@ export class GameScene extends Phaser.Scene {
   private debugGfx!: Phaser.GameObjects.Graphics;
   private infoText!: Phaser.GameObjects.Text;
 
+  /** debug：玩家皮膚循環索引、下一隻要 spawn 的敵人類型索引。 */
+  private playerSkinIndex = 0;
+  private enemyTypeIndex = 0;
+
   constructor() {
     super({ key: 'GameScene' });
   }
 
-  /** 載入 Human（玩家）與 Enemy_Rush（敵人）所有動作的逐幀圖。 */
+  /** 載入全部 5 隻角色所有動作的逐幀圖（資料驅動：直接跑 CHARACTERS 註冊表）。 */
   preload(): void {
-    CharacterAnimator.preload(this, 'Human');
-    CharacterAnimator.preload(this, 'Enemy_Rush');
+    for (const charKey of Object.keys(CHARACTERS)) {
+      CharacterAnimator.preload(this, charKey);
+    }
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor(BACKGROUND_COLOR);
 
-    // 依設定建立 Phaser animations（全域只需一次）。
-    CharacterAnimator.register(this, 'Human');
-    CharacterAnimator.register(this, 'Enemy_Rush');
+    // 依設定建立全部角色的 Phaser animations（全域只需一次）。
+    for (const charKey of Object.keys(CHARACTERS)) {
+      CharacterAnimator.register(this, charKey);
+    }
 
     this.input_ = new InputSystem(this);
-    this.player = new Player(this, GAME_WIDTH * 0.4, GAME_HEIGHT * 0.5);
+    this.player = new Player(
+      this,
+      GAME_WIDTH * 0.4,
+      GAME_HEIGHT * 0.5,
+      PLAYER_CHARACTERS[this.playerSkinIndex],
+    );
     this.spawnEnemy();
 
     // debug：畫攻擊判定框。
@@ -61,11 +73,16 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.add
-      .text(GAME_WIDTH / 2, 32, 'WASD/方向鍵移動  Z/左鍵攻擊  R 補一隻敵人', {
-        fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
-        fontSize: '22px',
-        color: '#aaaaaa',
-      })
+      .text(
+        GAME_WIDTH / 2,
+        32,
+        'WASD/方向鍵 移動   Z/左鍵 攻擊   T 切換玩家(Human↔SunWukong)   E 切換敵人類型   R 補一隻敵人',
+        {
+          fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+          fontSize: '20px',
+          color: '#aaaaaa',
+        },
+      )
       .setOrigin(0.5, 0);
   }
 
@@ -103,8 +120,20 @@ export class GameScene extends Phaser.Scene {
     this.drawAttackDebug();
     this.updateInfo();
 
-    // 測試用：補一隻敵人
+    // 測試用：補一隻敵人（用目前選定的敵人類型）
     if (this.input_.isRespawnJustPressed()) {
+      this.spawnEnemy();
+    }
+
+    // debug：T 循環切換玩家皮膚 Human↔SunWukong
+    if (this.input_.isSwitchPlayerJustPressed()) {
+      this.playerSkinIndex = (this.playerSkinIndex + 1) % PLAYER_CHARACTERS.length;
+      this.player.switchCharacter(PLAYER_CHARACTERS[this.playerSkinIndex]);
+    }
+
+    // debug：E 循環切換「下一隻要補的」敵人類型，並立即補一隻該類型出來看
+    if (this.input_.isSwitchEnemyJustPressed()) {
+      this.enemyTypeIndex = (this.enemyTypeIndex + 1) % ENEMY_CHARACTERS.length;
       this.spawnEnemy();
     }
   }
@@ -127,7 +156,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnEnemy(): void {
-    const e = new Enemy(this, GAME_WIDTH * 0.7, GAME_HEIGHT * 0.5);
+    // 隨機在右側散開一點，避免多隻疊在同一點。
+    const x = GAME_WIDTH * 0.7 + Phaser.Math.Between(-120, 120);
+    const y = GAME_HEIGHT * 0.5 + Phaser.Math.Between(-200, 200);
+    const e = new Enemy(this, x, y, ENEMY_CHARACTERS[this.enemyTypeIndex]);
     this.enemies.push(e);
   }
 
@@ -163,8 +195,10 @@ export class GameScene extends Phaser.Scene {
       .map((e) => `HP ${e.getHp()}/${e.getMaxHp()}`)
       .join('  ');
     const facing = this.player.getFacing() >= 0 ? '→' : '←';
+    const nextEnemy = ENEMY_CHARACTERS[this.enemyTypeIndex];
     this.infoText.setText(
-      `面向 ${facing}   敵人:${this.enemies.length}  ${enemyInfo}` +
+      `玩家:${this.player.getCharacterKey()}  面向 ${facing}\n` +
+        `下一隻敵人(E/R):${nextEnemy}   場上:${this.enemies.length}  ${enemyInfo}` +
         (this.player.isOnCooldown() ? '   [攻擊冷卻中]' : ''),
     );
   }

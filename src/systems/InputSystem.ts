@@ -14,6 +14,8 @@ export class InputSystem {
   private readonly cursors: Phaser.Types.Input.Keyboard.CursorKeys;
   private readonly keyAttack: Phaser.Input.Keyboard.Key;
   private readonly keyRespawn: Phaser.Input.Keyboard.Key;
+  private readonly keySwitchPlayer: Phaser.Input.Keyboard.Key;
+  private readonly keySwitchEnemy: Phaser.Input.Keyboard.Key;
 
   private pointerAttack = false;
 
@@ -30,6 +32,8 @@ export class InputSystem {
     this.cursors = kb.createCursorKeys();
     this.keyAttack = kb.addKey(KC.Z);
     this.keyRespawn = kb.addKey(KC.R);
+    this.keySwitchPlayer = kb.addKey(KC.T);
+    this.keySwitchEnemy = kb.addKey(KC.E);
 
     // 滑鼠左鍵也可攻擊；用 justDown 的概念以事件緩存。
     scene.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) => {
@@ -67,5 +71,15 @@ export class InputSystem {
   /** 這一幀是否剛按下重生鍵（R），方便測試補一隻敵人。 */
   isRespawnJustPressed(): boolean {
     return Phaser.Input.Keyboard.JustDown(this.keyRespawn);
+  }
+
+  /** debug：這一幀是否剛按下切換玩家皮膚鍵（T）。 */
+  isSwitchPlayerJustPressed(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.keySwitchPlayer);
+  }
+
+  /** debug：這一幀是否剛按下切換敵人類型鍵（E）。 */
+  isSwitchEnemyJustPressed(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.keySwitchEnemy);
   }
 }

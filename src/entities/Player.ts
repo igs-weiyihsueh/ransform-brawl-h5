@@ -7,8 +7,8 @@ import { PPU } from '@/config/gameConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import type { Vec2 } from '@/systems/hitDetection';
 
-/** 玩家使用的角色美術 key。 */
-const PLAYER_CHARACTER = 'Human';
+/** 玩家可用的角色美術 key（debug 預覽用 T 鍵循環切換）。 */
+export const PLAYER_CHARACTERS = ['Human', 'SunWukong'] as const;
 
 /**
  * Player — 玩家實體（Human 逐幀動畫）。
@@ -18,7 +18,8 @@ const PLAYER_CHARACTER = 'Human';
  * 命中判定不在此（交給 hitDetection + GameScene），這裡提供位置/面向/時序。
  */
 export class Player {
-  private readonly anim: CharacterAnimator;
+  private anim: CharacterAnimator;
+  private charKey: string;
 
   /** 面向：+1 面右、-1 面左。 */
   private facing = 1;
@@ -32,10 +33,34 @@ export class Player {
   /** 受擊硬直剩餘秒數（播 damaged，期間不覆蓋成 move/idle）。 */
   private damagedRemaining = 0;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
-    this.anim = new CharacterAnimator(scene, PLAYER_CHARACTER, x, y);
+  constructor(scene: Phaser.Scene, x: number, y: number, charKey: string = PLAYER_CHARACTERS[0]) {
+    this.scene = scene;
+    this.charKey = charKey;
+    this.anim = new CharacterAnimator(scene, charKey, x, y);
     this.anim.setScale(SPRITE_SCALE);
     this.anim.setFacing(this.facing);
+  }
+
+  private readonly scene: Phaser.Scene;
+
+  /**
+   * debug：切換玩家角色皮膚（Human↔SunWukong）。保留位置與面向，重建 animator。
+   */
+  switchCharacter(charKey: string): void {
+    if (charKey === this.charKey) return;
+    const { x, y } = this.anim.sprite;
+    this.charKey = charKey;
+    this.anim.destroy();
+    this.anim = new CharacterAnimator(this.scene, charKey, x, y);
+    this.anim.setScale(SPRITE_SCALE);
+    this.anim.setFacing(this.facing);
+    // 重建後狀態旗標歸零，避免卡在舊 attack。
+    this.attacking = false;
+    this.damagedRemaining = 0;
+  }
+
+  getCharacterKey(): string {
+    return this.charKey;
   }
 
   getPosition(): Vec2 {

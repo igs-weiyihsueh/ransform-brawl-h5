@@ -7,8 +7,8 @@ import { PPU } from '@/config/gameConfig';
 import { CharacterAnimator, FRAME_SIZE } from '@/systems/CharacterAnimator';
 import type { Hittable, Vec2 } from '@/systems/hitDetection';
 
-/** 敵人使用的角色美術 key。 */
-const ENEMY_CHARACTER = 'Enemy_Rush';
+/** 敵人可用的角色美術 key（debug 預覽用循環選擇）。 */
+export const ENEMY_CHARACTERS = ['Enemy_Rush', 'Enemy_Ranged', 'Enemy_Elite'] as const;
 
 /**
  * Enemy — 敵人實體（Enemy_Rush，逐幀動畫）。
@@ -28,8 +28,8 @@ export class Enemy implements Hittable {
   private dying = false;
   private dead = false;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
-    this.anim = new CharacterAnimator(scene, ENEMY_CHARACTER, x, y);
+  constructor(scene: Phaser.Scene, x: number, y: number, charKey: string = ENEMY_CHARACTERS[0]) {
+    this.anim = new CharacterAnimator(scene, charKey, x, y);
     this.anim.setScale(SPRITE_SCALE);
     this.hp = ENEMY_RUSH_CONFIG.hp;
     this.maxHp = ENEMY_RUSH_CONFIG.hp;

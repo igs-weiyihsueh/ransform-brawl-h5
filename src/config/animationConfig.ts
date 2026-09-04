@@ -50,7 +50,27 @@ export const CHARACTERS: Record<string, CharacterDef> = {
     damaged: A(8, 24, false),
     death: A(16, 24, false),
   },
-  // SunWukong / Enemy_Ranged / Enemy_Elite 之後照樣補（圖已就位）。
+  SunWukong: {
+    idle: A(12, 24, true),
+    move: A(8, 24, true),
+    attack: A(12, 24, false),
+    damaged: A(8, 24, false),
+    death: A(16, 24, false),
+  },
+  Enemy_Ranged: {
+    idle: A(12, 24, true),
+    move: A(8, 24, true),
+    attack: A(12, 24, false),
+    damaged: A(8, 24, false),
+    death: A(16, 24, false),
+  },
+  Enemy_Elite: {
+    idle: A(12, 24, true),
+    move: A(8, 24, true),
+    attack: A(12, 24, false),
+    damaged: A(8, 24, false),
+    death: A(16, 24, false),
+  },
 };
 
 export const ALL_ANIM_STATES: readonly AnimState[] = [
