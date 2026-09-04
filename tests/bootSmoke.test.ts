@@ -44,6 +44,7 @@ import { GameScene } from '../src/scenes/GameScene';
 /** 期望的系統註冊順序（= 每幀執行順序，見 GameScene.registerSystems 的架構註解）。 */
 const EXPECTED_SYSTEMS = [
   'InputSystem',
+  'EnergySystem',
   'PlayerControlSystem',
   'EnemySystem',
   'WaveSystem',

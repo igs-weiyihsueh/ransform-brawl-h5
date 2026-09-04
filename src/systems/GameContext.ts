@@ -3,6 +3,7 @@ import type { Enemy } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import type { EffectSystem } from '@/systems/EffectSystem';
 import type { EnemySpawner } from '@/systems/EnemySpawner';
+import type { EnergySystem } from '@/systems/EnergySystem';
 import type { InputSystem } from '@/systems/InputSystem';
 
 /**
@@ -26,6 +27,8 @@ export interface GameContext {
   readonly effects: EffectSystem;
   /** 生怪器：波次等系統透過它生怪，不碰 Enemy 內部。 */
   readonly spawner: EnemySpawner;
+  /** 能量/招式系統：放招決策 + 充能狀態（UI 讀能量條、PlayerControl 取攻擊意圖）。 */
+  readonly energy: EnergySystem;
 
   /** 取得目前場上存活的敵人（唯讀快照，供命中查詢/AI 目標）。 */
   getEnemies(): readonly Enemy[];

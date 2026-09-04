@@ -8,6 +8,7 @@ import { DebugSystem } from '@/systems/DebugSystem';
 import { EffectSystem } from '@/systems/EffectSystem';
 import { EnemySpawner } from '@/systems/EnemySpawner';
 import { EnemySystem } from '@/systems/EnemySystem';
+import { EnergySystem } from '@/systems/EnergySystem';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import { InputSystem } from '@/systems/InputSystem';
@@ -69,6 +70,7 @@ export class GameScene extends Phaser.Scene {
       PLAYER_CHARACTERS[0],
     );
     const spawner = new EnemySpawner(this, player, worldBounds);
+    const energy = new EnergySystem();
 
     // 共用 context（各 system 只透過它取服務/狀態）。
     this.ctx = {
@@ -78,6 +80,7 @@ export class GameScene extends Phaser.Scene {
       input,
       effects,
       spawner,
+      energy,
       getEnemies: () => spawner.getEnemies(),
     };
 
@@ -94,8 +97,9 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * 註冊系統。順序 = 每幀執行順序（變身-leader 定）：
-   *   Input → PlayerControl → Enemy → Wave → UI → Debug。
+   *   Input → Energy → PlayerControl → Enemy → Wave → UI → Debug。
    * InputSystem 排最前：每幀先 snapshot justPressed，後面系統該幀讀到一致值。
+   * Energy 在 PlayerControl 前：放招意圖/充能狀態就緒供 PlayerControl 與 UI 讀。
    * UI 排在玩家/敵人/波次更新之後，才讀到「當幀」狀態；Debug 疊層排最末。
    * 新系統在這裡加一行即可，無須改 update()。
    */
@@ -104,7 +108,8 @@ export class GameScene extends Phaser.Scene {
     const enemy = new EnemySystem();
     // InputSystem 同時是 ctx.input 服務與 registry member；排最前做輸入 snapshot。
     this.register(this.ctx.input);
-    this.register(playerControl); // 玩家操控（讀 Input 服務）
+    this.register(this.ctx.energy); // 能量/招式：放招決策 + 充能狀態
+    this.register(playerControl); // 玩家操控（讀 Input/Energy）
     this.register(enemy); // 敵人執行時（驅動 spawner）
     // 波次：試玩模式注入 previewLevels（跑編輯器送來的關卡）；一般玩家 undefined → WaveSystem 自行 fetch JSON。
     this.register(new WaveSystem(this.previewLevels));

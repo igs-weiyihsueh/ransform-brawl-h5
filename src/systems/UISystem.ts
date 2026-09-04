@@ -64,9 +64,9 @@ export class UISystem implements GameSystem {
   // （若需在 GameContext 加欄位，走 spec §4 由 leader 過 additive，不自己加。）
   // ---------------------------------------------------------------------------
 
-  /** 能量充能格數（0..4）。stub：能量系統未實作，暫回 0。 */
+  /** 能量充能格數（0..上限）。接 EnergySystem（決策 15fec2a4）。 */
   private getEnergy(): number {
-    return 0;
+    return this.ctx.energy.getEnergy();
   }
 
   /** COMBO 連擊數。stub：COMBO 系統未實作，暫回 0。 */

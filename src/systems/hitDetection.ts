@@ -153,6 +153,78 @@ export function queryHitsCircle<T extends Hittable>(
   return hits;
 }
 
+/** 攻擊判定扇形（世界像素座標）。apex 在 center，朝 facing 方向張開 angle 度、半徑 radius。 */
+export interface AttackFan {
+  center: Vec2;
+  radius: number;
+  /** 面向方向（+1 右、-1 左），決定扇形朝向。 */
+  facing: number;
+  /** 半張角（弧度）：命中需與面向夾角 <= 此值。 */
+  halfAngleRad: number;
+}
+
+/**
+ * 由 AttackData（shapeType='fan'）算出世界像素扇形。
+ * 命中條件：目標在半徑內 且 與面向水平方向的夾角 <= angle/2。
+ */
+export function buildAttackFan(
+  attack: AttackData,
+  attackerPos: Vec2,
+  facing: number,
+  scale: number,
+): AttackFan {
+  const dir = facing >= 0 ? 1 : -1;
+  const cx = attackerPos.x + dir * attack.offsetX * scale * PPU;
+  const cy = attackerPos.y + attack.offsetY * scale * PPU;
+  return {
+    center: { x: cx, y: cy },
+    radius: (attack.radius ?? 0) * scale * PPU,
+    facing: dir,
+    halfAngleRad: (((attack.angle ?? 0) / 2) * Math.PI) / 180,
+  };
+}
+
+/**
+ * 扇形對圓的命中判定。
+ * 條件：圓心到扇心距離（減去圓半徑後）在扇半徑內，且圓心方向與面向夾角 <= 半張角。
+ * 為讓貼很近的目標仍算中，距離為 0 時視為命中。
+ */
+export function fanIntersectsCircle(
+  fan: AttackFan,
+  circleCenter: Vec2,
+  circleRadius: number,
+): boolean {
+  const dx = circleCenter.x - fan.center.x;
+  const dy = circleCenter.y - fan.center.y;
+  const dist = Math.hypot(dx, dy);
+
+  // 半徑檢查：把目標碰撞半徑納入（近似），距離超過扇半徑+目標半徑則不中。
+  if (dist > fan.radius + circleRadius) return false;
+  if (dist <= 1e-6) return true; // 幾乎同點 → 中
+
+  // 角度檢查：目標方向與面向（+x*dir）的夾角。
+  // 面向向量為 (fan.facing, 0)；用點積求夾角。
+  const forwardX = fan.facing;
+  const cosTheta = (dx * forwardX) / dist; // forward 為單位水平向量，y=0
+  const clamped = cosTheta < -1 ? -1 : cosTheta > 1 ? 1 : cosTheta;
+  const theta = Math.acos(clamped);
+  return theta <= fan.halfAngleRad;
+}
+
+/** 用扇形對一組 Hittable 做命中查詢。 */
+export function queryHitsFan<T extends Hittable>(
+  fan: AttackFan,
+  targets: readonly T[],
+): T[] {
+  const hits: T[] = [];
+  for (const t of targets) {
+    if (fanIntersectsCircle(fan, t.getHitCenter(), t.getHitRadius())) {
+      hits.push(t);
+    }
+  }
+  return hits;
+}
+
 function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
 }
