@@ -98,17 +98,42 @@ export class Player implements Hittable {
 
   /**
    * 玩家被敵人攻擊命中。
-   * 這階段：只做受擊反饋（damaged 動畫 + 0.5s iFrame 閃爍），不扣血、不死亡。
-   * iFrame 內呼叫會被忽略。damage 先收下備用（魂力系統之後才實際處理）。
+   * 受擊反饋：damaged 動畫 + 0.5s iFrame 閃爍。iFrame 內呼叫會被忽略。
+   * 若已設 soulDamageSink（變身中），命中真正落地時把 damage 交給它扣魂力。
    * @returns 是否實際受擊（false = 被 iFrame 擋掉）。
    */
-  takeHit(_damage: number, sourceName: string): boolean {
+  takeHit(damage: number, sourceName: string): boolean {
     if (this.iFrameRemaining > 0) return false;
     this.lastHitBy = sourceName;
     this.iFrameRemaining = PLAYER_IFRAME_DURATION;
     this.damagedRemaining = 0.25;
     this.anim.play('damaged', { force: true });
+    // 變身中：把傷害交給魂力扣血鉤子（TransformSystem 設定）。
+    this.soulDamageSink?.(damage);
     return true;
+  }
+
+  /** 受擊扣魂力鉤子（由 TransformSystem 設；變身中才有）。 */
+  private soulDamageSink: ((damage: number) => void) | null = null;
+
+  /** 設定/清除受擊扣魂力鉤子。變身時設、退變時傳 null 清除。 */
+  setSoulDamageSink(sink: ((damage: number) => void) | null): void {
+    this.soulDamageSink = sink;
+  }
+
+  /**
+   * 變身金光閃 + 無敵。金(1,0.9,0.3)/原色交替 flashes 次、每次 halfSec 秒，並套 iFrame。
+   * 用 tint 閃（精緻 VFX 之後補）。
+   */
+  playTransformFlash(iframeSec: number, flashes = 5, halfSec = 0.1): void {
+    this.iFrameRemaining = Math.max(this.iFrameRemaining, iframeSec);
+    const gold = 0xffe64d; // 約 (1, 0.9, 0.3)
+    const spr = this.anim.sprite;
+    for (let i = 0; i < flashes; i += 1) {
+      this.scene.time.delayedCall(i * halfSec * 2, () => spr.setTint(gold));
+      this.scene.time.delayedCall(i * halfSec * 2 + halfSec, () => spr.clearTint());
+    }
+    this.scene.time.delayedCall(flashes * halfSec * 2, () => spr.clearTint());
   }
 
   getFacing(): number {

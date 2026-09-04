@@ -4,7 +4,7 @@ import type { GameSystem } from '@/systems/GameSystem';
 import { computeJustPressed } from '@/systems/inputEdge';
 
 /** 可做 edge 偵測（justPressed）的動作名。用動作層命名，與現有 WASD/attack 抽象一致。 */
-export type InputAction = 'attack' | 'respawn' | 'switchPlayer' | 'switchEnemy';
+export type InputAction = 'attack' | 'respawn' | 'switchPlayer' | 'switchEnemy' | 'spawnItem';
 
 // 轉出純函式，讓既有 import 點（若有）仍可從此取得；實作在 inputEdge.ts（零依賴、可測）。
 export { computeJustPressed } from '@/systems/inputEdge';
@@ -44,18 +44,21 @@ export class InputSystem implements GameSystem {
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
+    spawnItem: false,
   };
   private justPressedNow: Record<InputAction, boolean> = {
     attack: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
+    spawnItem: false,
   };
   private prevDown: Record<InputAction, boolean> = {
     attack: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
+    spawnItem: false,
   };
 
   private readonly scene: Phaser.Scene;
@@ -79,6 +82,7 @@ export class InputSystem implements GameSystem {
       respawn: kb.addKey(KC.R),
       switchPlayer: kb.addKey(KC.T),
       switchEnemy: kb.addKey(KC.E),
+      spawnItem: kb.addKey(KC.G),
     };
 
     // 滑鼠左鍵也算 attack 按下：事件只設 raw 旗標，實際 edge 在 update() snapshot 統一算。
@@ -169,5 +173,10 @@ export class InputSystem implements GameSystem {
   /** debug：這一幀是否剛按下切換敵人類型鍵（E）。 */
   isSwitchEnemyJustPressed(): boolean {
     return this.justPressedNow.switchEnemy;
+  }
+
+  /** debug：這一幀是否剛按下生成變身道具鍵（G）。 */
+  isSpawnItemJustPressed(): boolean {
+    return this.justPressedNow.spawnItem;
   }
 }

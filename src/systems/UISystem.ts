@@ -74,9 +74,9 @@ export class UISystem implements GameSystem {
     return 0;
   }
 
-  /** 魂力顯示比例（0..1）。stub：魂力系統未實作，暫回 1（環先畫滿當佔位）。 */
+  /** 魂力顯示比例（0..1）。接 TransformSystem：變身時 soul/max、退變時 0。 */
   private getSoulRatio(): number {
-    return 1;
+    return this.ctx.transform.getSoulRatio();
   }
 
   /** Credit 數字。stub：Credit 系統未實作，暫回 0。 */

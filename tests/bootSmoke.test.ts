@@ -47,6 +47,7 @@ const EXPECTED_SYSTEMS = [
   'EnergySystem',
   'PlayerControlSystem',
   'EnemySystem',
+  'TransformSystem',
   'WaveSystem',
   'UISystem',
   'DebugSystem',

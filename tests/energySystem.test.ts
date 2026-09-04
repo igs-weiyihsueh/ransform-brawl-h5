@@ -112,3 +112,109 @@ describe('EnergySystem — 充能與放招', () => {
     expect(sys.getEnergy()).toBe(1);
   });
 });
+
+// ===========================================================================
+// 深度強化（QA 測騎接手）：計數/循環/倍率的邊界。
+// ===========================================================================
+
+describe('EnergySystem — 凡人計數邊界（3 未 ready / 4 ready / 放招歸 0）', () => {
+  it('命中 3 下：energy=3、未 ready（第 4 下才到門檻）', () => {
+    const sys = makeSystem('Human');
+    for (let i = 0; i < 3; i += 1) {
+      sys.reportHit(false, true);
+      sys.update(0);
+    }
+    expect(sys.getEnergy()).toBe(3);
+    expect(sys.isReady()).toBe(false);
+    // 未 ready → 這次攻擊仍是普攻
+    expect(sys.resolveAttackIntent().isSkill).toBe(false);
+  });
+
+  it('第 4 下命中 → energy=4、ready；再命中不超過上限（clamp 在 4）', () => {
+    const sys = makeSystem('Human');
+    for (let i = 0; i < 4; i += 1) {
+      sys.reportHit(false, true);
+      sys.update(0);
+    }
+    expect(sys.getEnergy()).toBe(4);
+    expect(sys.isReady()).toBe(true);
+    // 已滿再命中：不超過 cap（Math.min 夾住）
+    sys.reportHit(false, true);
+    sys.update(0);
+    expect(sys.getEnergy()).toBe(4);
+  });
+
+  it('ready 後放招 → 歸 0 且 not ready（消耗）', () => {
+    const sys = makeSystem('Human');
+    for (let i = 0; i < 4; i += 1) {
+      sys.reportHit(false, true);
+      sys.update(0);
+    }
+    const fired = sys.resolveAttackIntent();
+    expect(fired.isSkill).toBe(true);
+    sys.update(0);
+    expect(sys.getEnergy()).toBe(0);
+    expect(sys.isReady()).toBe(false);
+  });
+});
+
+describe('EnergySystem — 悟空 Full 循環 index % 3 邊界', () => {
+  const fireCycleValue = (sys: EnergySystem): number => {
+    for (let i = 0; i < 4; i += 1) {
+      sys.reportHit(false, true);
+      sys.update(0);
+    }
+    const fired = sys.resolveAttackIntent();
+    sys.update(0);
+    return fired.attack.damage;
+  };
+
+  it('循環嚴格為 skill1(3)→skill2(5)→ultimate(10)→skill1(3)→skill2(5)（跨越 index%3 邊界）', () => {
+    const sys = makeSystem('SunWukong');
+    const seq = [
+      fireCycleValue(sys), // index0 → skill1
+      fireCycleValue(sys), // index1 → skill2
+      fireCycleValue(sys), // index2 → ultimate
+      fireCycleValue(sys), // index3%3=0 → skill1（回圈邊界）
+      fireCycleValue(sys), // index4%3=1 → skill2
+    ];
+    expect(seq).toEqual([3, 5, 10, 3, 5]);
+  });
+
+  it('凡人不循環：連放兩次都 skill1(3)，且形狀恆為 circle', () => {
+    const sys = makeSystem('Human');
+    const fire = (): { dmg: number; shape: string } => {
+      for (let i = 0; i < 4; i += 1) {
+        sys.reportHit(false, true);
+        sys.update(0);
+      }
+      const f = sys.resolveAttackIntent();
+      sys.update(0);
+      return { dmg: f.attack.damage, shape: f.attack.shapeType };
+    };
+    expect(fire()).toEqual({ dmg: 3, shape: 'circle' });
+    expect(fire()).toEqual({ dmg: 3, shape: 'circle' });
+  });
+});
+
+describe('EnergySystem.applyMultiplier — round + max(1) 邊界', () => {
+  it('凡人 0.5：普攻 base1 → round(0.5)=1（剛好落在 1，不需 max 補）', () => {
+    expect(EnergySystem.applyMultiplier(1, 0.5)).toBe(1);
+  });
+
+  it('max(1) 真的有作用：round 會得 0 的情況被抬到 1（base1 × 0.4 → round(0.4)=0 → 1）', () => {
+    // 這條專門釘 max(1)：若拿掉 max，會得 0。
+    expect(EnergySystem.applyMultiplier(1, 0.4)).toBe(1);
+    expect(Math.round(1 * 0.4)).toBe(0); // 佐證：沒有 max 就是 0
+  });
+
+  it('round 半進位邊界：base3×0.5=1.5→2、base5×0.5=2.5→3（round 而非 floor/truncate）', () => {
+    expect(EnergySystem.applyMultiplier(3, 0.5)).toBe(2); // round(1.5)=2
+    expect(EnergySystem.applyMultiplier(5, 0.5)).toBe(3); // round(2.5)=3（若 floor 會是 2）
+  });
+
+  it('變身 1.0：原值不變（base10→10、base1→1）', () => {
+    expect(EnergySystem.applyMultiplier(10, 1.0)).toBe(10);
+    expect(EnergySystem.applyMultiplier(1, 1.0)).toBe(1);
+  });
+});

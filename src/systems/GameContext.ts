@@ -5,6 +5,7 @@ import type { EffectSystem } from '@/systems/EffectSystem';
 import type { EnemySpawner } from '@/systems/EnemySpawner';
 import type { EnergySystem } from '@/systems/EnergySystem';
 import type { InputSystem } from '@/systems/InputSystem';
+import type { TransformSystem } from '@/systems/TransformSystem';
 
 /**
  * GameContext — 各 GameSystem 共用的執行環境與服務。
@@ -29,6 +30,8 @@ export interface GameContext {
   readonly spawner: EnemySpawner;
   /** 能量/招式系統：放招決策 + 充能狀態（UI 讀能量條、PlayerControl 取攻擊意圖）。 */
   readonly energy: EnergySystem;
+  /** 變身系統：變身狀態 + 魂力（UI 讀魂力環、道具撿取觸發變身）。 */
+  readonly transform: TransformSystem;
 
   /** 取得目前場上存活的敵人（唯讀快照，供命中查詢/AI 目標）。 */
   getEnemies(): readonly Enemy[];
