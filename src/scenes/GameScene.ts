@@ -13,6 +13,7 @@ import { CHARACTERS } from '@/config/animationConfig';
 import { Enemy, ENEMY_CHARACTERS, type EnemyAttackEvent } from '@/entities/Enemy';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
+import { EffectSystem } from '@/systems/EffectSystem';
 import {
   buildAttackOBB,
   circleIntersectsCircle,
@@ -34,6 +35,7 @@ export class GameScene extends Phaser.Scene {
   private enemies: Enemy[] = [];
   private projectiles: Projectile[] = [];
   private worldBounds!: Phaser.Geom.Rectangle;
+  private effects!: EffectSystem;
 
   private debugGfx!: Phaser.GameObjects.Graphics;
   private infoText!: Phaser.GameObjects.Text;
@@ -46,11 +48,12 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' });
   }
 
-  /** 載入全部 5 隻角色所有動作的逐幀圖（資料驅動：直接跑 CHARACTERS 註冊表）。 */
+  /** 載入全部 5 隻角色所有動作的逐幀圖（資料驅動：直接跑 CHARACTERS 註冊表）+ 攻擊特效。 */
   preload(): void {
     for (const charKey of Object.keys(CHARACTERS)) {
       CharacterAnimator.preload(this, charKey);
     }
+    EffectSystem.preload(this); // 全部 VFX
   }
 
   create(): void {
@@ -60,6 +63,8 @@ export class GameScene extends Phaser.Scene {
     for (const charKey of Object.keys(CHARACTERS)) {
       CharacterAnimator.register(this, charKey);
     }
+    EffectSystem.register(this); // 全部 VFX 動畫
+    this.effects = new EffectSystem(this);
 
     this.input_ = new InputSystem(this);
     this.worldBounds = new Phaser.Geom.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT);
@@ -170,6 +175,8 @@ export class GameScene extends Phaser.Scene {
     }
     // 攻擊命中框閃現一下（0.12s）方便觀察。
     this.flashAttackBox(obb);
+    // 在攻擊判定中心播放普攻斬擊特效（依面向鏡像）。
+    this.effects.play('attack_03', obb.center.x, obb.center.y, this.player.getFacing());
   }
 
   private spawnEnemy(): void {
