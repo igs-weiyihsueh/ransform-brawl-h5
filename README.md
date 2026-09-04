@@ -57,4 +57,4 @@ npm run typecheck # 只跑 tsc 型別檢查
 
 ## 設計解析度
 
-目前設 `720 x 1280`（直式，符合街機兌換機直式螢幕），使用 `Phaser.Scale.FIT` + `CENTER_BOTH` 自動縮放置中。確定實機方向後可於 `src/config/gameConfig.ts` 調整。
+目前設 `1920 x 1080`（橫式），使用 `Phaser.Scale.FIT` + `CENTER_BOTH` 自動縮放置中。可於 `src/config/gameConfig.ts` 調整。
