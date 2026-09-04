@@ -34,6 +34,9 @@ export class PlayerControlSystem implements GameSystem {
   /** 本次攻擊的意圖（按鍵當下決定，hitDelay 到期時據此結算）。 */
   private pendingIntent: AttackIntent | null = null;
 
+  /** 本次衝刺是否已扣過 Credit（一次衝刺最多扣 1）。 */
+  private dashConsumedCredit = false;
+
   /** debug 繪製用：最近判定形狀。 */
   private lastOBB: OBB | null = null;
   private lastCircle: AttackCircle | null = null;
@@ -45,12 +48,13 @@ export class PlayerControlSystem implements GameSystem {
   }
 
   update(dt: number): void {
-    const { input, player, energy } = this.ctx;
+    const { input, player, energy, credit } = this.ctx;
 
-    // 衝刺觸發（X，edge；無 cooldown，非衝刺中才可再衝）。
-    if (input.justPressedDash() && !player.isDashing()) {
+    // 衝刺觸發（X，edge；需可攻擊(credit>0且非耗盡)、非衝刺中）。
+    if (input.justPressedDash() && !player.isDashing() && credit.canAttack()) {
       const move = input.getMoveVector();
       player.startDash(move); // 有移動往移動方向；否則 startDash 內用面向
+      this.dashConsumedCredit = false; // 新衝刺：重置「本次衝刺是否已扣 credit」
     }
 
     if (player.isDashing()) {
@@ -58,11 +62,13 @@ export class PlayerControlSystem implements GameSystem {
       player.updateDash(dt);
       this.resolveDashHits();
     } else {
-      // 一般移動。
-      player.move(input.getMoveVector(), dt);
+      // 一般移動（耗盡狀態不能移動）。
+      if (credit.canAct()) {
+        player.move(input.getMoveVector(), dt);
+      }
 
-      // 攻擊輸入 → 決定普攻或放招 → 用該 AttackData 的 hitDelay 起前搖
-      if (input.justPressedAttack()) {
+      // 攻擊輸入 → 決定普攻或放招 → 用該 AttackData 的 hitDelay 起前搖（需 CanAttack 閘門）
+      if (input.justPressedAttack() && credit.canAttack()) {
         const intent = energy.resolveAttackIntent();
         if (player.tryStartAttack(intent.attack.hitDelay, PLAYER_CONFIG.attackCooldown)) {
           this.pendingIntent = intent;
@@ -103,7 +109,11 @@ export class PlayerControlSystem implements GameSystem {
       // Enemy.takeHit 以 (enemy - fromPos) 為擊退方向：令 fromPos = enemy - lat → 沿 lat 推。
       const fromPos = { x: c.x - lat.x, y: c.y - lat.y };
       e.takeHit(DASH_CONFIG.damage, DASH_CONFIG.knockback, fromPos);
-      // 衝刺命中不充能：不呼叫 energy.reportHit。
+      // 衝刺命中不充能（不呼叫 energy.reportHit）；但 Credit 要扣，一次衝刺最多扣 1。
+      if (!this.dashConsumedCredit) {
+        this.dashConsumedCredit = true;
+        this.ctx.credit.consumeOnHit();
+      }
     }
   }
 
@@ -159,6 +169,8 @@ export class PlayerControlSystem implements GameSystem {
 
     // 充能回報：普攻打到人才 +1（招式命中不充）。
     energy.reportHit(intent.isSkill, hitAny);
+    // Credit：所有命中都扣 1（普攻/招式一次命中扣一次）。
+    if (hitAny) this.ctx.credit.consumeOnHit();
   }
 
   // --- debug 繪製取用 ---

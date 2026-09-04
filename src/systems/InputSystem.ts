@@ -7,6 +7,7 @@ import { computeJustPressed } from '@/systems/inputEdge';
 export type InputAction =
   | 'attack'
   | 'dash'
+  | 'coin'
   | 'respawn'
   | 'switchPlayer'
   | 'switchEnemy'
@@ -48,6 +49,7 @@ export class InputSystem implements GameSystem {
   private downNow: Record<InputAction, boolean> = {
     attack: false,
     dash: false,
+    coin: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -56,6 +58,7 @@ export class InputSystem implements GameSystem {
   private justPressedNow: Record<InputAction, boolean> = {
     attack: false,
     dash: false,
+    coin: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -64,6 +67,7 @@ export class InputSystem implements GameSystem {
   private prevDown: Record<InputAction, boolean> = {
     attack: false,
     dash: false,
+    coin: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -89,6 +93,7 @@ export class InputSystem implements GameSystem {
     this.actionKeys = {
       attack: kb.addKey(KC.Z),
       dash: kb.addKey(KC.X),
+      coin: kb.addKey(KC.C),
       respawn: kb.addKey(KC.R),
       switchPlayer: kb.addKey(KC.T),
       switchEnemy: kb.addKey(KC.E),
@@ -166,6 +171,11 @@ export class InputSystem implements GameSystem {
   /** 衝刺鍵（X）的 edge。 */
   justPressedDash(): boolean {
     return this.justPressedNow.dash;
+  }
+
+  /** 投幣鍵（C）的 edge。 */
+  justPressedCoin(): boolean {
+    return this.justPressedNow.coin;
   }
 
   // --- 相容既有呼叫端（改讀 snapshot，語意不變） ---

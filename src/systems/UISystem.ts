@@ -79,9 +79,9 @@ export class UISystem implements GameSystem {
     return this.ctx.transform.getSoulRatio();
   }
 
-  /** Credit 數字。stub：Credit 系統未實作，暫回 0。 */
+  /** Credit 數字。接 CreditSystem。 */
   private getCredit(): number {
-    return 0;
+    return this.ctx.credit.getCredit();
   }
 
   /** 彩票數。stub：彩票系統未實作，暫回 0。 */

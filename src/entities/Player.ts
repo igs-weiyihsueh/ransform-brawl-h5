@@ -152,6 +152,12 @@ export class Player implements Hittable {
     this.scene.time.delayedCall(flashes * halfSec * 2, () => spr.clearTint());
   }
 
+  /** Credit 耗盡閃紅：on=紅色 tint、off=清除。由 CreditSystem 每幀切換做閃爍。 */
+  setOutOfCreditTint(on: boolean): void {
+    if (on) this.anim.sprite.setTint(0xff4444);
+    else this.anim.sprite.clearTint();
+  }
+
   getFacing(): number {
     return this.facing;
   }

@@ -143,7 +143,7 @@ export class DebugSystem implements GameSystem {
   }
 
   private updateInfo(): void {
-    const { player, energy, transform } = this.ctx;
+    const { player, energy, transform, credit } = this.ctx;
     const enemies = this.ctx.getEnemies();
     const enemyInfo = enemies
       .map(
@@ -159,10 +159,13 @@ export class DebugSystem implements GameSystem {
     const soulInfo = transform.isTransformed()
       ? `變身中 魂力 ${transform.getSoul()}/100`
       : '凡人';
+    const creditInfo = credit.isOutOfCredit()
+      ? `Credit 0 [耗盡! 按C投幣, 倒數${credit.getCountdown().toFixed(1)}s]`
+      : `Credit ${credit.getCredit()}`;
     this.infoText.setText(
       `玩家:${player.getCharacterKey()}(${soulInfo})  面向 ${facing}   ${hitInfo}${iframe}\n` +
-        `${energyInfo}   下一隻敵人(E補新/R補同型):${nextEnemy}   場上:${enemies.length}  ${enemyInfo}\n` +
-        `[G]生變身道具  [X]衝刺  [Z/左鍵]攻擊/放招` +
+        `${creditInfo}   ${energyInfo}   下一隻敵人(E補新/R補同型):${nextEnemy}   場上:${enemies.length}  ${enemyInfo}\n` +
+        `[G]生變身道具  [X]衝刺  [C]投幣  [Z/左鍵]攻擊/放招` +
         (player.isOnCooldown() ? '   [玩家攻擊冷卻中]' : ''),
     );
   }

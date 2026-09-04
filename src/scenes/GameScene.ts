@@ -4,6 +4,7 @@ import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
+import { CreditSystem } from '@/systems/CreditSystem';
 import { DebugSystem } from '@/systems/DebugSystem';
 import { EffectSystem } from '@/systems/EffectSystem';
 import { EnemySpawner } from '@/systems/EnemySpawner';
@@ -73,6 +74,7 @@ export class GameScene extends Phaser.Scene {
     const spawner = new EnemySpawner(this, player, worldBounds);
     const energy = new EnergySystem();
     const transform = new TransformSystem();
+    const credit = new CreditSystem();
 
     // 共用 context（各 system 只透過它取服務/狀態）。
     this.ctx = {
@@ -84,6 +86,7 @@ export class GameScene extends Phaser.Scene {
       spawner,
       energy,
       transform,
+      credit,
       getEnemies: () => spawner.getEnemies(),
     };
 
@@ -100,8 +103,9 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * 註冊系統。順序 = 每幀執行順序（變身-leader 定）：
-   *   Input → Energy → PlayerControl → Enemy → Transform → Wave → UI → Debug。
+   *   Input → Credit → Energy → PlayerControl → Enemy → Transform → Wave → UI → Debug。
    * InputSystem 排最前：每幀先 snapshot justPressed，後面系統該幀讀到一致值。
+   * Credit 在 PlayerControl 前：投幣/耗盡狀態就緒供攻擊/移動閘門與 UI 讀。
    * Energy 在 PlayerControl 前：放招意圖/充能狀態就緒供 PlayerControl 與 UI 讀。
    * Transform 在 Enemy 後、UI 前：撿道具/變身/魂力更新後，UI 讀到當幀魂力/變身狀態。
    * UI 排在玩家/敵人/波次更新之後，才讀到「當幀」狀態；Debug 疊層排最末。
@@ -112,8 +116,9 @@ export class GameScene extends Phaser.Scene {
     const enemy = new EnemySystem();
     // InputSystem 同時是 ctx.input 服務與 registry member；排最前做輸入 snapshot。
     this.register(this.ctx.input);
+    this.register(this.ctx.credit); // Credit：投幣/耗盡狀態 + 命中扣 credit 閘門
     this.register(this.ctx.energy); // 能量/招式：放招決策 + 充能狀態
-    this.register(playerControl); // 玩家操控（讀 Input/Energy）
+    this.register(playerControl); // 玩家操控（讀 Input/Credit/Energy）
     this.register(enemy); // 敵人執行時（驅動 spawner）
     this.register(this.ctx.transform); // 變身：道具撿取/變身退變/魂力
     // 波次：試玩模式注入 previewLevels（跑編輯器送來的關卡）；一般玩家 undefined → WaveSystem 自行 fetch JSON。
