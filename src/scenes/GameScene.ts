@@ -163,6 +163,8 @@ export class GameScene extends Phaser.Scene {
     };
     // 防穿透對所有 player（多人）：讓 spawner 讀 players[]。
     spawner.getAllPlayers = () => this.ctx.players;
+    // hitFeel 表演注入：新生敵人受擊/死亡時播白閃/punch/火花/死亡粒子（純視覺）。
+    spawner.hitFeelFx = effects;
 
     // 開箱報獎表演（第5項，純視覺）：openChest 尾段回呼 → 在該玩家寶盒位置演出。
     // ⚠️ chest 數值(addTickets/buff)已在 openChest 即時套用、此處只做視覺、與數值解耦。

@@ -46,10 +46,14 @@ export class EnemySpawner {
   /** 取得全部玩家（由 GameScene 注入）：供防穿透對所有 player 頂開。預設只有 P1。 */
   getAllPlayers: () => readonly Player[] = () => [this.player];
 
+  /** hitFeel 表演（由 GameScene 注入 EffectSystem）；spawn 時傳給每隻新敵人。 */
+  hitFeelFx: import('@/entities/Enemy').HitFeelFx | null = null;
+
   /** 生怪 API：生成一隻指定類型的敵人於 (x,y)，回傳該敵人。 */
   spawn(type: string, x: number, y: number): Enemy {
     const e = new Enemy(this.scene, x, y, type);
     e.onAttack = (ev) => this.handleEnemyAttack(ev);
+    e.hitFeelFx = this.hitFeelFx; // hitFeel 表演注入（白閃/punch/火花/死亡粒子）
     e.onKilled = (key, dmgByPlayer, deathPos) =>
       this.onEnemyKilled?.(key, dmgByPlayer, deathPos);
     if (this.guardTarget) e.setGuardTarget(this.guardTarget); // 守護波中新生怪也打雕像

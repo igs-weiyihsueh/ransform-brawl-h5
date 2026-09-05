@@ -361,4 +361,107 @@ export class EffectSystem {
       onComplete: () => g.destroy(),
     });
   }
+
+  // ---- hitFeel 打擊手感（搬自 Unity EnemyConfig，純視覺疊在 Enemy.takeHit/die） ----
+
+  /**
+   * 受擊白閃：sprite 瞬間染色（tint）→ hitFlashDuration 後清除。
+   * @param sprite 被打的角色 sprite（Enemy 的 anim.sprite）。
+   */
+  hitFlash(
+    sprite: Phaser.GameObjects.Sprite,
+    color: number,
+    durationSec: number,
+  ): void {
+    if (!sprite || !sprite.active) return;
+    sprite.setTintFill(color); // 全白剪影閃（比 setTint 更明顯的「白閃」）
+    this.scene.time.delayedCall(durationSec * 1000, () => {
+      if (sprite && sprite.active) sprite.clearTint();
+    });
+  }
+
+  /**
+   * punch 彈跳：受擊瞬間 scale 彈一下（快彈快回），以 sprite 現有 scale 為基準。
+   * @param amount 彈跳量（Unity punchScale 0.35 → 放大到 base×1.35 再回彈）。
+   */
+  punchScale(sprite: Phaser.GameObjects.Sprite, amount: number): void {
+    if (!sprite || !sprite.active) return;
+    const baseX = sprite.scaleX;
+    const baseY = sprite.scaleY;
+    // 先歸位再彈（避免連打疊加爆縮放）。
+    sprite.setScale(baseX, baseY);
+    this.scene.tweens.add({
+      targets: sprite,
+      scaleX: baseX * (1 + amount),
+      scaleY: baseY * (1 + amount),
+      duration: 60,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        if (sprite && sprite.active) sprite.setScale(baseX, baseY);
+      },
+    });
+  }
+
+  /**
+   * 命中火花：從命中點朝「遠離攻擊來源」方向噴數點小火花（白黃），快速外飛淡出。
+   * @param x,y 命中點（被打者位置）。
+   * @param dirX,dirY 噴發方向（遠離攻擊源，未正規化亦可）。
+   */
+  hitSpark(x: number, y: number, dirX: number, dirY: number, color: number): void {
+    const len = Math.hypot(dirX, dirY) || 1;
+    const nx = dirX / len;
+    const ny = dirY / len;
+    const count = 5;
+    for (let i = 0; i < count; i += 1) {
+      const spread = (i - (count - 1) / 2) * 0.4; // 扇形散開
+      const ax = nx * Math.cos(spread) - ny * Math.sin(spread);
+      const ay = nx * Math.sin(spread) + ny * Math.cos(spread);
+      const g = this.scene.add.graphics();
+      g.fillStyle(color, 1);
+      g.fillCircle(0, 0, Phaser.Math.Between(3, 5));
+      g.x = x;
+      g.y = y;
+      g.setDepth(ENERGY_FLY_DEPTH);
+      const dist = Phaser.Math.Between(28, 52);
+      this.scene.tweens.add({
+        targets: g,
+        x: x + ax * dist,
+        y: y + ay * dist,
+        alpha: 0,
+        scale: 0.3,
+        duration: Phaser.Math.Between(160, 240),
+        ease: 'Cubic.easeOut',
+        onComplete: () => g.destroy(),
+      });
+    }
+  }
+
+  /**
+   * 死亡粒子：死亡點金黃粒子向四周爆散淡出。
+   * @param x,y 死亡位置。
+   */
+  deathParticle(x: number, y: number, color: number): void {
+    const count = 10;
+    for (let i = 0; i < count; i += 1) {
+      const a = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+      const g = this.scene.add.graphics();
+      g.fillStyle(color, 1);
+      g.fillCircle(0, 0, Phaser.Math.Between(4, 7));
+      g.x = x;
+      g.y = y;
+      g.setDepth(ENERGY_FLY_DEPTH);
+      const dist = Phaser.Math.Between(40, 80);
+      this.scene.tweens.add({
+        targets: g,
+        x: x + Math.cos(a) * dist,
+        y: y + Math.sin(a) * dist,
+        alpha: 0,
+        scale: 0.2,
+        duration: Phaser.Math.Between(300, 480),
+        ease: 'Cubic.easeOut',
+        onComplete: () => g.destroy(),
+      });
+    }
+  }
 }

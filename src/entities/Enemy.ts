@@ -16,6 +16,19 @@ import {
   type Hittable,
   type Vec2,
 } from '@/systems/hitDetection';
+import { HIT_FEEL } from '@/config/hitFeelConfig';
+import { knockbackDistancePx } from '@/config/hitFeelConfig';
+
+/**
+ * hitFeel 表演介面（Enemy 只依賴這幾個方法，避免對 EffectSystem 的循環相依）。
+ * 由 EnemySpawner 注入 ctx.effects（實作在 EffectSystem）。
+ */
+export interface HitFeelFx {
+  hitFlash(sprite: Phaser.GameObjects.Sprite, color: number, durationSec: number): void;
+  punchScale(sprite: Phaser.GameObjects.Sprite, amount: number): void;
+  hitSpark(x: number, y: number, dirX: number, dirY: number, color: number): void;
+  deathParticle(x: number, y: number, color: number): void;
+}
 
 /** 敵人可用的角色美術 key（debug 預覽用循環選擇）。 */
 export const ENEMY_CHARACTERS = ['Enemy_Rush', 'Enemy_Ranged', 'Enemy_Elite'] as const;
@@ -64,10 +77,19 @@ export class Enemy implements Hittable {
   private timer = 0; // 當前狀態的計時（charge/cooldown/damaged 用）
   private facing = 1;
 
-  private knockbackVel: Vec2 = { x: 0, y: 0 };
   private dead = false;
   /** 上一幀（本幀 update 移動前）的位置，用於 immovable 菁英「只擋自己前進、不被玩家推」。 */
   private prevPos: Vec2 = { x: 0, y: 0 };
+
+  /** hitFeel 表演（由 EnemySpawner 注入 ctx.effects）；null 則不播 juice。 */
+  hitFeelFx: HitFeelFx | null = null;
+
+  /** 局部頓幀剩餘秒數（hitFeel microFreeze，只凍被打這隻：>0 時 update 早退不動作）。 */
+  private freezeRemaining = 0;
+
+  /** 擊退快進快出（hitFeel）：剩餘時長 + 每秒位移向量（取代舊 velocity+指數衰減）。 */
+  private knockbackRemaining = 0;
+  private knockbackPerSec: Vec2 = { x: 0, y: 0 };
   /** attack 動畫是否播完（由 onComplete 設定），播完才進 cooldown。 */
   private attackAnimDone = false;
 
@@ -265,12 +287,20 @@ export class Enemy implements Hittable {
     // 記錄移動前位置（immovable 菁英防穿透用：只擋自己前進、不被玩家推回）。
     this.prevPos = { x: this.anim.sprite.x, y: this.anim.sprite.y };
 
-    // 擊退殘速（衰減）。
-    this.anim.sprite.x += this.knockbackVel.x * dt;
-    this.anim.sprite.y += this.knockbackVel.y * dt;
-    const decay = Math.pow(0.001, dt);
-    this.knockbackVel.x *= decay;
-    this.knockbackVel.y *= decay;
+    // hitFeel 局部頓幀（microFreeze）：只凍被打這隻——早退不做任何位移/AI/動畫，倒數。
+    // （不影響全場，其他敵人照跑；不動數值，扣血已在 takeHit 當下完成。）
+    if (this.freezeRemaining > 0) {
+      this.freezeRemaining -= dt;
+      return;
+    }
+
+    // 擊退（hitFeel 快進快出）：有剩餘時長則按每秒位移推進，時間到即停（取代舊指數衰減）。
+    if (this.knockbackRemaining > 0) {
+      const step = Math.min(dt, this.knockbackRemaining);
+      this.anim.sprite.x += this.knockbackPerSec.x * step;
+      this.anim.sprite.y += this.knockbackPerSec.y * step;
+      this.knockbackRemaining -= dt;
+    }
 
     if (this.state === 'death') return;
 
@@ -405,17 +435,39 @@ export class Enemy implements Hittable {
   /** 被玩家攻擊：扣血、hitStun 硬直、擊退。HP 歸 0 播 death 消失。 */
   takeHit(damage: number, knockback: number, fromPos: Vec2): void {
     if (this.dead || this.state === 'death') return;
-    this.hp -= damage;
+    this.hp -= damage; // 數值即時（不受 hitFeel 影響）
 
-    // 擊退方向：遠離攻擊來源，力道 × (1 - 依 hitStun 感覺的抗性)。
-    // 這裡直接用 knockback（來自玩家攻擊）× hitStun 比例當「抗性」：菁英 hitStun0.05 幾乎不退。
+    // 擊退方向：遠離攻擊來源。
     const dx = this.anim.sprite.x - fromPos.x;
     const dy = this.anim.sprite.y - fromPos.y;
     const len = Math.hypot(dx, dy) || 1;
-    // hitStun 越小越像牆：用 hitStun 當擊退倍率（0.05→幾乎不動，0.8→明顯退）。
-    const kbPx = knockback * PPU * this.cfg.hitStun;
-    this.knockbackVel.x = (dx / len) * kbPx;
-    this.knockbackVel.y = (dy / len) * kbPx;
+    const immovable = this.cfg.immovable === true;
+
+    // hitFeel 擊退「快進快出」：總距離 = clamp(force×forceScale, 0, knockbackDistance)×PPU，
+    // 於 knockbackDuration 內線性推進。菁英(immovable) + hitStun 抗性 → 幾乎/完全不退（保留）。
+    if (HIT_FEEL.enabled && !immovable) {
+      const distPx = knockbackDistancePx(knockback, PPU) * this.cfg.hitStun; // hitStun 當抗性
+      const dur = HIT_FEEL.knockbackDuration;
+      this.knockbackRemaining = dur;
+      this.knockbackPerSec = { x: (dx / len) * (distPx / dur), y: (dy / len) * (distPx / dur) };
+    } else if (!immovable) {
+      // hitFeel 關閉時的後備（基本擊退：舊式力道，於 0.18s 線性推進）。
+      const kbPx = knockback * PPU * this.cfg.hitStun;
+      this.knockbackRemaining = 0.18;
+      this.knockbackPerSec = { x: (dx / len) * (kbPx / 0.18), y: (dy / len) * (kbPx / 0.18) };
+    }
+
+    // hitFeel 純視覺表演（不動數值）：白閃 + punch 彈跳 + 命中火花 + 局部頓幀。
+    if (HIT_FEEL.enabled && this.hitFeelFx) {
+      this.hitFeelFx.hitFlash(this.anim.sprite, HIT_FEEL.hitFlashColor, HIT_FEEL.hitFlashDuration);
+      this.hitFeelFx.punchScale(this.anim.sprite, HIT_FEEL.punchScale);
+      if (HIT_FEEL.hitSparkEnabled) {
+        this.hitFeelFx.hitSpark(this.anim.sprite.x, this.anim.sprite.y, dx, dy, HIT_FEEL.hitSparkColor);
+      }
+    }
+    if (HIT_FEEL.enabled && this.hp > 0) {
+      this.freezeRemaining = Math.max(this.freezeRemaining, HIT_FEEL.microFreezeDuration);
+    }
 
     if (this.hp <= 0) {
       this.die();
@@ -428,7 +480,12 @@ export class Enemy implements Hittable {
 
   private die(): void {
     this.state = 'death';
-    this.knockbackVel = { x: 0, y: 0 };
+    this.knockbackRemaining = 0;
+    this.freezeRemaining = 0;
+    // hitFeel 死亡金黃粒子（純視覺）。
+    if (HIT_FEEL.enabled && this.hitFeelFx) {
+      this.hitFeelFx.deathParticle(this.anim.sprite.x, this.anim.sprite.y, HIT_FEEL.deathParticleColor);
+    }
     this.onKilled?.(this.cfg.characterKey, this.damageByPlayer, {
       x: this.anim.sprite.x,
       y: this.anim.sprite.y,
