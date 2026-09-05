@@ -180,25 +180,7 @@ export class BottomPanel {
         .setDepth(PANEL_DEPTH),
     );
 
-    // 金幣（coin.png，退回圓形佔位）。
-    const coinEl = this.findEl(template, 'coin');
-    if (coinEl) {
-      const cxc = slotX + coinEl.x + coinEl.width / 2;
-      const cyc = slotY + coinEl.y + coinEl.height / 2;
-      if (scene.textures.exists(UI_ICONS.coin.key)) {
-        track(scene.add.image(cxc, cyc, UI_ICONS.coin.key))
-          .setDisplaySize(coinEl.width, coinEl.height)
-          .setAlpha(alpha)
-          .setScrollFactor(0)
-          .setDepth(PANEL_DEPTH);
-      } else {
-        const coin = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
-        coin.fillStyle(HUD_COLORS.coin, alpha);
-        coin.fillCircle(cxc, cyc, coinEl.width / 2);
-        coin.lineStyle(2, 0x8a6d0f, alpha);
-        coin.strokeCircle(cxc, cyc, coinEl.width / 2);
-      }
-    }
+    // 用戶 #6：移除下方面板右下角無意義的金幣顯示（layout schema 的 coin element 保留、僅不繪製，最小改動不碰波騎 schema）。
 
     // 進度條（底槽 + 填充；填充由 setProgress 動態畫）。
     const progEl = this.findEl(template, 'progress');

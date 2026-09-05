@@ -70,8 +70,10 @@ export const HUD_COLORS = {
  * displaySize = 顯示邊長（px），依原有佔位版面尺寸對齊。
  */
 export const UI_ICONS = {
-  /** 金幣（Credit 顯示）。 */
+  /** 金幣（舊 Credit 顯示，用戶 #6 移除下方面板金幣後僅留備用/佔位 fallback）。 */
   coin: { key: 'ui-coin', path: 'assets/images/ui/coin.png' },
+  /** 劍（Credit 投幣點數顯示 icon，用戶 #5：credit 旁改用劍）。 */
+  sword: { key: 'ui-sword', path: 'assets/images/ui/sword.png' },
   /** 彩票（底部面板彩票數）。 */
   ticket: { key: 'ui-ticket', path: 'assets/images/ui/ticket.png' },
   /** 魂力環 sprite（對照 Unity RingSprite，同心包 P 編號牌）。 */

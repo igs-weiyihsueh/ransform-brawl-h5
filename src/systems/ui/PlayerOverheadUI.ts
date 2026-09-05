@@ -82,7 +82,7 @@ export class PlayerOverheadUI {
       .setOrigin(0.5);
     this.container.add(pnumText);
 
-    // --- Credit 底框 + 金幣 icon（coin.png，退回圓形佔位）+ 數字 ---
+    // --- Credit 底框 + 劍 icon（sword.png，用戶 #5：credit=投幣點數改用劍）+ 數字 ---
     const creditBg = scene.add.graphics();
     creditBg.fillStyle(HUD_COLORS.creditBg, 0.55);
     creditBg.fillRoundedRect(cfg.credit.x, cfg.credit.y, cfg.credit.width, cfg.credit.height, 6);
@@ -90,11 +90,12 @@ export class PlayerOverheadUI {
     const coinR = cfg.credit.coinSize / 2;
     const coinCx = cfg.credit.x + coinR + 6;
     const coinCy = cfg.credit.y + cfg.credit.height / 2;
-    if (scene.textures.exists(UI_ICONS.coin.key)) {
-      const coinImg = scene.add.image(coinCx, coinCy, UI_ICONS.coin.key);
-      coinImg.setDisplaySize(cfg.credit.coinSize, cfg.credit.coinSize);
-      this.container.add(coinImg);
+    if (scene.textures.exists(UI_ICONS.sword.key)) {
+      const swordImg = scene.add.image(coinCx, coinCy, UI_ICONS.sword.key);
+      swordImg.setDisplaySize(cfg.credit.coinSize, cfg.credit.coinSize);
+      this.container.add(swordImg);
     } else {
+      // fallback：貼圖沒載到時退回金幣圓形佔位（不致空白）。
       const coin = scene.add.graphics();
       coin.fillStyle(HUD_COLORS.coin, 1);
       coin.fillCircle(coinCx, coinCy, coinR);
