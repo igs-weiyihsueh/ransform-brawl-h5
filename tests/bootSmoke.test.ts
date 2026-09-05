@@ -113,20 +113,39 @@ afterEach(() => {
  * 起一個只服務 public/ 的最小 HTTP server。
  * 注意：這裡只為 GameScene.preload() 的角色/特效 PNG（scene.load.image）服務；
  * 關卡 JSON 走 preview 注入不 fetch（見 PREVIEW_LEVELS 說明），故不再需要 fetch polyfill。
+ *
+ * ⚠️ 埠 3000 是寫死的（jsdom 文件 base URL 預設 http://localhost:3000/，Phaser 用它解相對
+ * 資源路徑；不能改 ephemeral 埠否則資源解析會指向 3000 找不到）。因此不用 listen(0)，
+ * 改用「EADDRINUSE 容錯沿用」：若 3000 已被別的測試檔 asset server（多人 S1/S2/本檔平行）
+ * 或前次殘留佔用 → 沿用它（服務同一個 public/），不自己 listen、不持有（afterEach 不關）。
+ * 只有自己成功 listen 時才持有並在 afterEach 關閉。呼應 QA 平行測試固定埠容錯慣例。
  */
 async function startAssetServer(): Promise<void> {
-  server = createServer(async (req, res) => {
-    try {
-      const p = normalize(decodeURIComponent((req.url ?? '/').split('?')[0]));
-      const buf = await readFile(`${PUBLIC_DIR}${p}`);
-      res.writeHead(200, { 'Content-Type': MIME[extname(p)] ?? 'application/octet-stream' });
-      res.end(buf);
-    } catch {
-      res.writeHead(404);
-      res.end('not found');
-    }
+  await new Promise<void>((resolve) => {
+    const srv = createServer(async (req, res) => {
+      try {
+        const p = normalize(decodeURIComponent((req.url ?? '/').split('?')[0]));
+        const buf = await readFile(`${PUBLIC_DIR}${p}`);
+        res.writeHead(200, { 'Content-Type': MIME[extname(p)] ?? 'application/octet-stream' });
+        res.end(buf);
+      } catch {
+        res.writeHead(404);
+        res.end('not found');
+      }
+    });
+    srv.once('error', (e: NodeJS.ErrnoException) => {
+      if (e.code === 'EADDRINUSE') {
+        server = null; // 別人已在服務 3000，沿用、不持有
+        resolve();
+      } else {
+        throw e;
+      }
+    });
+    srv.listen(3000, '127.0.0.1', () => {
+      server = srv; // 自己持有 → afterEach 關
+      resolve();
+    });
   });
-  await new Promise<void>((r) => server!.listen(3000, '127.0.0.1', () => r()));
 }
 
 /**
