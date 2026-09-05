@@ -1,6 +1,13 @@
 import Phaser from 'phaser';
 import { loadLevels } from '@/config/levelLoader';
 import { SPAWN_WARNING_DURATION_SEC } from '@/config/enemyConfig';
+import {
+  type FireRainPreset,
+  getFireRainPreset,
+  isFireRainPreset,
+  resolveFireRainForEvent,
+} from '@/config/fireRainConfig';
+import { getGuardPreset } from '@/config/guardConfig';
 import type {
   EnemyType,
   LevelData,
@@ -62,9 +69,31 @@ export class WaveSystem implements GameSystem {
   /** 進行中的守護波（Event 節點）；null 表示非守護波。 */
   private guardEvent: GuardEvent | null = null;
 
+  /** 純火雨 Event 節點狀態（用戶試玩#4）：active + 剩餘時間（跑完前進節點）。 */
+  private fireRainActive = false;
+  private fireRainRemaining = 0;
+
   /** debug/UI：目前守護波（若有）。 */
   getGuardEvent(): GuardEvent | null {
     return this.guardEvent;
+  }
+
+  /**
+   * 目前該不該降火雨 + 用哪組參數（用戶試玩#4，FireRainSystem 讀此驅動）：
+   * - 純火雨 Event 節點（active）→ 該節點火雨 preset。
+   * - 守護波進行中且守護 preset attachFireRain → 標準 FireRain。
+   * - 否則 → null（不降火雨）。
+   */
+  getActiveFireRainPreset(): FireRainPreset | null {
+    const node = this.currentNode();
+    if (this.fireRainActive && node?.nodeType === 'Event') {
+      return resolveFireRainForEvent((node as { eventPresetName: string }).eventPresetName, false);
+    }
+    if (this.guardEvent && !this.guardEvent.isFinished()) {
+      const preset = getGuardPreset((node as { eventPresetName?: string })?.eventPresetName);
+      return resolveFireRainForEvent(undefined, preset.attachFireRain === true);
+    }
+    return null;
   }
 
   /** 目前關卡節點索引（0-based，進度條用：已完成節點數）。 */
@@ -144,8 +173,23 @@ export class WaveSystem implements GameSystem {
     }
   }
 
-  /** Event 節點（守護波）：首次進入建 GuardEvent，每幀 tick，結束前進節點。 */
+  /** Event 節點：火雨 preset → 純火雨波（計時）；否則守護波（建 GuardEvent）。 */
   private updateEventNode(node: { eventPresetName: string }, dt: number): void {
+    // 純火雨 Event 節點（eventPresetName 是火雨 preset）：計時跑完前進，不建守護/雕像。
+    if (isFireRainPreset(node.eventPresetName)) {
+      const preset = getFireRainPreset(node.eventPresetName);
+      if (this.fireRainRemaining <= 0 && !this.fireRainActive) {
+        this.fireRainActive = true;
+        this.fireRainRemaining = preset.durationSec;
+      }
+      this.fireRainRemaining -= dt;
+      if (this.fireRainRemaining <= 0) {
+        this.fireRainActive = false;
+        this.advanceNode();
+      }
+      return;
+    }
+    // 守護波（含可選 attachFireRain）。
     if (!this.guardEvent) {
       // 守護波敵種/drip 全由 preset 決定（不動凍結的 levelSchema）。
       this.guardEvent = new GuardEvent(this.ctx, node.eventPresetName);
@@ -174,6 +218,8 @@ export class WaveSystem implements GameSystem {
     this.spawnCooldown = 0;
     this.tracked = [];
     this.pendingSpawns = 0; // 換節點清預警帳
+    this.fireRainActive = false; // 換節點清火雨狀態
+    this.fireRainRemaining = 0;
     this.announceNode();
   }
 

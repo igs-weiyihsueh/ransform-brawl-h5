@@ -34,6 +34,8 @@ export interface GuardPreset {
   spawns: GuardSpawnEntry[];
   /** 生成環繞雕像的半徑（像素）。 */
   spawnRadiusPx: number;
+  /** 附帶火雨（用戶試玩#4，preset 內含非 schema）：true = 守護波同時降火雨（守護+火雨）。 */
+  attachFireRain?: boolean;
 }
 
 const DEFAULT_GUARD_SPAWNS: GuardSpawnEntry[] = [

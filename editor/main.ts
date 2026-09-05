@@ -29,6 +29,8 @@ import {
   type PreviewMessage,
 } from '@/config/previewProtocol';
 import { enemyTypeLabel, nodeTypeLabel } from './labels';
+import { GUARD_PRESETS } from '@/config/guardConfig';
+import { FIRE_RAIN_PRESETS } from '@/config/fireRainConfig';
 
 // ---- 編輯狀態（可變草稿；匯出時才驗證） ----------------------------------
 // 注意：編輯過程用寬鬆型別草稿（欄位可能暫時不合法），匯出前才收斂驗證。
@@ -268,6 +270,29 @@ function textInput(value: string, onChange: (v: string) => void): HTMLInputEleme
   return input;
 }
 
+/** 下拉選單（options: [value, label][]）。 */
+function selectInput(
+  value: string,
+  options: [string, string][],
+  onChange: (v: string) => void,
+): HTMLSelectElement {
+  const sel = document.createElement('select');
+  for (const [val, label] of options) {
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = label;
+    if (val === value) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.addEventListener('change', () => {
+    onChange(sel.value);
+    renderNodeList();
+    renderLevelList();
+    renderInspector();
+  });
+  return sel;
+}
+
 function renderInspector(): void {
   inspectorEl.innerHTML = '';
   const lvl = currentLevel();
@@ -382,12 +407,28 @@ function renderRewardInspector(node: RewardNodeData): void {
 }
 
 function renderEventInspector(node: EventNodeData): void {
+  // 事件類型下拉：守護 preset + 火雨 preset（用戶試玩#4，選火雨 preset = 火雨 Event 節點）。
+  const guardOpts: [string, string][] = Object.keys(GUARD_PRESETS).map((k) => [k, `🛡 守護：${k}`]);
+  const fireOpts: [string, string][] = Object.keys(FIRE_RAIN_PRESETS).map((k) => [k, `🔥 火雨：${k}`]);
+  const options = [...guardOpts, ...fireOpts];
+  // 若目前值不在清單（自訂 preset 名）→ 補一個當前值選項，避免下拉丟失。
+  if (!options.some(([v]) => v === node.eventPresetName)) {
+    options.unshift([node.eventPresetName, `（自訂）${node.eventPresetName}`]);
+  }
   inspectorEl.appendChild(
-    fieldRow('事件預設名', textInput(node.eventPresetName, (v) => { node.eventPresetName = v; })),
+    fieldRow('事件類型 / 預設', selectInput(node.eventPresetName, options, (v) => { node.eventPresetName = v; })),
   );
+  const isFire = node.eventPresetName in FIRE_RAIN_PRESETS;
   const hint = document.createElement('div');
   hint.className = 'hint';
-  hint.textContent = '例：Guard60（守護事件預設名）。必填。';
+  if (isFire) {
+    const p = FIRE_RAIN_PRESETS[node.eventPresetName];
+    hint.textContent =
+      `🔥 火雨事件：每 ${p.intervalSec}s 齊落 ${p.burstCount} 道、半徑 ${Math.round(p.radiusPx)}px、` +
+      `預警 ${p.warningSec}s、傷害 ${p.damage}、最多 ${p.maxConcurrent} 道、持續 ${p.durationSec}s。（只傷玩家）`;
+  } else {
+    hint.textContent = '🛡 守護事件（撐過時限勝）。守護 preset 可帶 attachFireRain=守護+火雨。';
+  }
   inspectorEl.appendChild(hint);
 }
 

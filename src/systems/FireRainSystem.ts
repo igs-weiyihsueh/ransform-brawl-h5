@@ -2,23 +2,24 @@ import Phaser from 'phaser';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import type { Vec2 } from '@/systems/hitDetection';
-import { FIRE_RAIN, pickFireRainPoint, playersInStrike } from '@/systems/fireRainMath';
+import type { FireRainPreset } from '@/config/fireRainConfig';
+import { pickFireRainPoint, playersInStrike } from '@/systems/fireRainMath';
 
 /** 一道進行中的火雨（預警中 or 已落下待清）。 */
 interface Strike {
   pos: Vec2;
   warning: number; // 預警剩餘秒數；<=0 落下
-  ring: Phaser.GameObjects.Graphics;
+  ring: Phaser.GameObjects.Image | Phaser.GameObjects.Graphics;
   struck: boolean;
 }
 
 /**
- * FireRainSystem — 天降火雨（#10，對應 Unity WaveModifierRunner FireRain）。
+ * FireRainSystem — 天降火雨（#10 + #4 事件驅動）。
  *
- * 啟用條件：目前先掛「守護波進行中」自動觸發（零 schema 改動；待異靈確認掛法）。
- * 循環：每 interval(1.5s) 齊落 burstCount 道 → 每道預警紅圈(warningTime 1s) → 火柱範圍傷害
- * （半徑 100px，**只傷玩家** damage 1、不擊退、不傷敵人/守護雕像）。落點縮邊+不重疊+maxConcurrent 上限。
- * 純視覺/傷害讀取，不改波次邏輯。
+ * 觸發：讀 WaveSystem.getActiveFireRainPreset()（用戶#4 由 Event 節點 preset 驅動）：
+ *  - 純火雨 Event 節點 → 該火雨 preset；守護波+attachFireRain → 標準 FireRain；否則不降。
+ * 循環：每 interval 齊落 burstCount 道 → 預警圈(warningTime) → 火柱範圍傷害
+ * （只傷玩家、不擊退、不傷敵人/守護雕像）。落點縮邊+不重疊+maxConcurrent 上限。純視覺/傷害讀取。
  */
 export class FireRainSystem implements GameSystem {
   readonly name = 'FireRainSystem';
@@ -28,18 +29,20 @@ export class FireRainSystem implements GameSystem {
   private strikes: Strike[] = [];
   /** 宣告字播放中（Unity FireRainTextUI 序列：演完才落第一道火雨）。 */
   private announcing = false;
+  /** 目前這場火雨用的參數 preset（由 WaveSystem 節點 preset 決定）。 */
+  private preset: FireRainPreset | null = null;
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
   }
 
   update(dt: number): void {
-    // 觸發條件：守護波進行中 → 開火雨；出守護波 → 停並清乾淨。
-    const guard = this.ctx.wave.getGuardEvent?.();
-    const shouldRun = !!guard && !guard.isFinished();
-    if (shouldRun && !this.active) this.start();
+    // 觸發條件：讀節點 preset（#4 事件驅動）→ 有 preset 開火雨、無則停並清乾淨。
+    const preset = this.ctx.wave.getActiveFireRainPreset?.() ?? null;
+    const shouldRun = preset !== null;
+    if (shouldRun && !this.active) this.start(preset!);
     else if (!shouldRun && this.active) this.stop();
-    if (!this.active) return;
+    if (!this.active || !this.preset) return;
 
     // 宣告字「天降火雨！」演出中：先不落火雨（Unity 序列：演完才降）。
     if (this.announcing) return;
@@ -47,8 +50,8 @@ export class FireRainSystem implements GameSystem {
     // 每 interval 齊落 burstCount 道。
     this.spawnCooldown -= dt;
     if (this.spawnCooldown <= 0) {
-      this.spawnCooldown = FIRE_RAIN.intervalSec;
-      for (let i = 0; i < FIRE_RAIN.burstCount; i += 1) this.trySpawnStrike();
+      this.spawnCooldown = this.preset.intervalSec;
+      for (let i = 0; i < this.preset.burstCount; i += 1) this.trySpawnStrike();
     }
 
     // 推進每道預警 → 落下。
@@ -61,11 +64,12 @@ export class FireRainSystem implements GameSystem {
     this.strikes = this.strikes.filter((s) => !s.struck);
   }
 
-  private start(): void {
+  private start(preset: FireRainPreset): void {
     this.active = true;
+    this.preset = preset;
     this.spawnCooldown = 0; // 立即第一批
     this.strikes = [];
-    // 火雨宣告字（只在每場守護波火雨開始這一次）：左滑進→停3s→右滑出，演完才落第一道火雨。
+    // 火雨宣告字（只在每場火雨開始這一次）：左滑進→停3s→右滑出，演完才落第一道火雨。
     if (typeof this.ctx.effects.fireRainAnnounce === 'function') {
       this.announcing = true;
       this.ctx.effects.fireRainAnnounce(() => {
@@ -80,6 +84,7 @@ export class FireRainSystem implements GameSystem {
   private stop(): void {
     this.active = false;
     this.announcing = false;
+    this.preset = null;
     for (const s of this.strikes) s.ring.destroy();
     this.strikes = [];
   }
@@ -89,21 +94,29 @@ export class FireRainSystem implements GameSystem {
   }
 
   private trySpawnStrike(): void {
-    const pos = pickFireRainPoint(this.activePoints(), Math.random);
+    const p = this.preset!;
+    const pos = pickFireRainPoint(
+      this.activePoints(),
+      Math.random,
+      p.radiusPx,
+      p.edgeMarginPx,
+      p.maxConcurrent,
+    );
     if (!pos) return; // 額度滿/太近 → 這道略過
-    const ring = this.ctx.effects.fireWarningRing(pos.x, pos.y, FIRE_RAIN.radiusPx);
-    this.strikes.push({ pos, warning: FIRE_RAIN.warningSec, ring, struck: false });
+    const ring = this.ctx.effects.fireWarningRing(pos.x, pos.y, p.radiusPx);
+    this.strikes.push({ pos, warning: p.warningSec, ring, struck: false });
   }
 
   private resolveStrike(s: Strike): void {
+    const p = this.preset!;
     s.struck = true;
     s.ring.destroy();
-    this.ctx.effects.fireStrikeFlash(s.pos.x, s.pos.y, FIRE_RAIN.radiusPx);
-    // 範圍傷害：只傷圈內玩家（不傷敵人/守護雕像），damage 1、不擊退。
+    this.ctx.effects.fireStrikeFlash(s.pos.x, s.pos.y, p.radiusPx);
+    // 範圍傷害：只傷圈內玩家（不傷敵人/守護雕像），不擊退。
     const players = this.ctx.players;
-    const centers = players.map((p) => p.getHitCenter());
-    for (const idx of playersInStrike(s.pos, centers, FIRE_RAIN.radiusPx)) {
-      players[idx].takeHit?.(FIRE_RAIN.damage, 'fireRain'); // 只傷玩家、不擊退（Player.takeHit 無擊退參數）
+    const centers = players.map((pl) => pl.getHitCenter());
+    for (const idx of playersInStrike(s.pos, centers, p.radiusPx)) {
+      players[idx].takeHit?.(p.damage, 'fireRain'); // 只傷玩家、不擊退（Player.takeHit 無擊退參數）
     }
   }
 
