@@ -60,6 +60,7 @@ const EXPECTED_SYSTEMS = [
   'ChestSystem',
   'JpSystem',
   'WaveSystem',
+  'ProgressBarSystem', // #7 頂部進度條 HUD（排 Wave 後、UI 前，commit 48289f1）
   'UISystem',
   'DebugSystem',
 ] as const;
