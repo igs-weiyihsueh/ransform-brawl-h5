@@ -83,6 +83,7 @@ export class EnemySpawner {
     }));
     for (const e of this.enemies) {
       e.resolvePenetration(players);
+      e.clampToMapBounds(); // 地圖邊界：敵人不走出場地
     }
 
     // 守護波：射彈打雕像；否則打玩家。

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
+import { MAP_BOUNDS } from '@/config/mapConfig';
 import { ENEMY_CHARACTERS } from '@/entities/Enemy';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { AIController } from '@/systems/AIController';
@@ -106,6 +107,15 @@ export class DebugSystem implements GameSystem {
 
   private drawDebug(): void {
     this.gfx.clear();
+
+    // 地圖邊界（綠框，對應 Unity MapConfig OnDrawGizmos WireCube）。
+    this.gfx.lineStyle(2, 0x00ff00, 0.5);
+    this.gfx.strokeRect(
+      MAP_BOUNDS.minX,
+      MAP_BOUNDS.minY,
+      MAP_BOUNDS.maxX - MAP_BOUNDS.minX,
+      MAP_BOUNDS.maxY - MAP_BOUNDS.minY,
+    );
 
     // 玩家攻擊 OBB（黃）。
     const obb = this.playerControl.getDebugOBB();

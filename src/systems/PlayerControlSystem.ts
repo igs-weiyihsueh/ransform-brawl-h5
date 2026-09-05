@@ -8,6 +8,7 @@ import {
   MOUNT_DASH_EXTRA_HITS,
 } from '@/config/buffConfig';
 import { PPU } from '@/config/gameConfig';
+import { clampToBounds } from '@/config/mapConfig';
 import type { AttackData } from '@/systems/AttackData';
 import { lateralKnockbackDir } from '@/systems/dashMath';
 import { EnergySystem, type AttackIntent } from '@/systems/EnergySystem';
@@ -100,6 +101,14 @@ export class PlayerControlSystem implements GameSystem {
     if (player.updateTimers(dt) && pending) {
       this.resolveAttack(player, pending);
       this.pendingIntent.set(pid, null);
+    }
+
+    // 地圖邊界夾限（LateUpdate 性質：移動/衝刺後才修正）。
+    // 進場中(isJumping)不夾限（從場外跳進來，項目 3 待機區進場鉤子）；只在真超界才寫回。
+    if (!player.isJumping) {
+      const pos = player.getPosition();
+      const c = clampToBounds(pos.x, pos.y);
+      if (c.changed) player.setPosition(c.x, c.y);
     }
   }
 

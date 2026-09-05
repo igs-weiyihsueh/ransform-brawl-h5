@@ -112,6 +112,18 @@ export class Player implements Hittable {
     return { x: this.anim.sprite.x, y: this.anim.sprite.y };
   }
 
+  /** 直接設定位置（地圖邊界 clamp 寫回用）。 */
+  setPosition(x: number, y: number): void {
+    this.anim.sprite.x = x;
+    this.anim.sprite.y = y;
+  }
+
+  /**
+   * 進場動畫旗標：true 時免疫地圖邊界夾限（從場外跳進來，接項目 3 待機區進場）。
+   * 目前無進場動畫，預設 false，不影響現行行為。
+   */
+  isJumping = false;
+
   // --- Hittable（供敵人攻擊/射彈判定玩家） ---
   getHitCenter(): Vec2 {
     return { x: this.anim.sprite.x, y: this.anim.sprite.y };

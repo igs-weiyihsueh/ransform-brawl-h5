@@ -3,6 +3,7 @@ import { getPerCharScale } from '@/config/animationConfig';
 import { SPRITE_SCALE } from '@/config/combatConfig';
 import { ENEMY_AI, type EnemyAIConfig } from '@/config/enemyConfig';
 import { PPU } from '@/config/gameConfig';
+import { clampToBounds } from '@/config/mapConfig';
 import { CharacterAnimator, FRAME_SIZE } from '@/systems/CharacterAnimator';
 import {
   calculateSeparation,
@@ -116,6 +117,16 @@ export class Enemy implements Hittable {
       );
       this.anim.sprite.x = fixed.x;
       this.anim.sprite.y = fixed.y;
+    }
+  }
+
+  /** 地圖邊界夾限：把自己夾回場地內（死亡不夾；只在真超界才寫回）。 */
+  clampToMapBounds(): void {
+    if (this.dead || this.state === 'death') return;
+    const c = clampToBounds(this.anim.sprite.x, this.anim.sprite.y);
+    if (c.changed) {
+      this.anim.sprite.x = c.x;
+      this.anim.sprite.y = c.y;
     }
   }
 
