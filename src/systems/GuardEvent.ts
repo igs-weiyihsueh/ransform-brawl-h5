@@ -1,4 +1,5 @@
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
+import { CHEST_OPEN_THRESHOLD } from '@/config/chestConfig';
 import { getGuardPreset, pickGuardEnemy, type GuardPreset } from '@/config/guardConfig';
 import { GuardTarget } from '@/entities/GuardTarget';
 import type { GameContext } from '@/systems/GameContext';
@@ -92,11 +93,15 @@ export class GuardEvent {
     this.target.destroy();
 
     if (won) {
-      const reward = Math.round(this.preset.rewardTickets * hpRatio);
-      this.ctx.ticket.addTickets(reward); // ticket 生產者：只 addTickets
-      console.info(`[Guard] 勝利！獎券 +${reward}（hpRatio ${hpRatio.toFixed(2)}）`);
+      // 守護成功獎勵：佔位用寶盒進度（用戶決策 76f07f64，之後換正式 JP 燈號/彩金）。
+      // 滿血=給一箱門檻(165)、半血=半箱。
+      const chargeReward = Math.round(CHEST_OPEN_THRESHOLD * hpRatio);
+      this.ctx.chest.addCharge(chargeReward);
+      console.info(
+        `[Guard] 勝利！寶盒進度 +${chargeReward}（hpRatio ${hpRatio.toFixed(2)}，佔位）`,
+      );
     } else {
-      console.info('[Guard] 失敗，無獎券（不 GameOver、關卡續行）');
+      console.info('[Guard] 失敗，無獎勵（不 GameOver、關卡續行）');
     }
   }
 

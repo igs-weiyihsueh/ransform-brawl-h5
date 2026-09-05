@@ -19,7 +19,10 @@ export interface GuardPreset {
   timeLimit: number;
   /** 雕像 HP：被敵人攻擊扣，歸 0 提早結束（敗）。 */
   targetHP: number;
-  /** 勝利基礎獎券（實際 = round(rewardTickets × hpRatio)）。 */
+  /**
+   * 勝利基礎獎券。⚠️ 目前守護成功改給寶盒進度（佔位，決策 76f07f64），此欄位暫未使用；
+   * 保留供之後正式 JP 燈號/彩金獎勵可能沿用或改欄位。
+   */
   rewardTickets: number;
   /** drip：場上維持的敵人數上限。 */
   maxAlive: number;
