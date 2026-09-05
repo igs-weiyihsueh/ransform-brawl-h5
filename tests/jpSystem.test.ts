@@ -398,3 +398,82 @@ describe('JpSystem — S5 ① 派彩平分給所有 active player（floor 均分
   });
   // ⚠️ 不寫「貢獻影響派彩」：S5 平分不讀 recordDamage，改貢獻比例派彩不變＝測不出（顧問明示）。
 });
+
+// ---------------------------------------------------------------------------
+// 用戶 #3：獎勵節點報獎 → 飛光到 JP 燈 → 點亮（addRewardLight 拆出，指定組直接點）。
+//   addRewardLight(g)：點【指定】組下一顆燈（GameScene 先 pickLightGroup、飛光飛向該組真燈）。
+//   lightNextReward()：pickLightGroup + addRewardLight（相容舊路徑，回點亮的組）。
+//   ★ 集滿(5)→派彩 + 該組歸零（Unity 5 顆全亮循環回第 1 顆）。
+//   (前一輪經 onStageClear 路徑測過門檻；這裡直接測 #3 拆出的公開 API + 集滿循環。)
+// ---------------------------------------------------------------------------
+describe('JpSystem — #3 addRewardLight / lightNextReward（獎勵點燈 + 集滿循環）', () => {
+  it('addRewardLight(g)：點【指定】組下一顆 → 該組 litCount +1（前後差 1）', () => {
+    const { sys } = makeJp();
+    expect(sys.getLights('blue')).toBe(0);
+    sys.addRewardLight('blue');
+    expect(sys.getLights('blue')).toBe(1); // +1
+    sys.addRewardLight('blue');
+    expect(sys.getLights('blue')).toBe(2); // 再 +1
+  });
+
+  it('各組獨立：點 red 不影響 blue/purple litCount', () => {
+    const { sys } = makeJp();
+    sys.addRewardLight('red');
+    sys.addRewardLight('red');
+    expect(sys.getLights('red')).toBe(2);
+    expect(sys.getLights('blue')).toBe(0); // 不受影響
+    expect(sys.getLights('purple')).toBe(0);
+  });
+
+  it('★ 集滿派彩 + 循環：第 5 顆點亮 → 觸發 payout + 該組歸零（回 0，不停 5、不變 6）', () => {
+    const { sys, state } = makeJp();
+    // 前 4 顆：不派彩、litCount 累加到 4。
+    for (let i = 0; i < 4; i += 1) sys.addRewardLight('purple');
+    expect(sys.getLights('purple')).toBe(4);
+    expect(state.ticketsAdded).toBe(0); // 未集滿、不派彩
+    // 第 5 顆：集滿 → 派彩 + 歸零循環。
+    sys.addRewardLight('purple');
+    expect(state.ticketsAdded).toBeGreaterThan(0); // ★ 觸發 payout
+    expect(sys.getLights('purple')).toBe(0); // ★ 歸零（非停 5、非 6）
+    expect(sys.getLights('purple')).not.toBe(5);
+  });
+
+  it('集滿循環後可續點：歸零後第 6 次呼叫 = 新循環第 1 顆（litCount 1）', () => {
+    const { sys } = makeJp();
+    for (let i = 0; i < 5; i += 1) sys.addRewardLight('red'); // 集滿→歸零
+    expect(sys.getLights('red')).toBe(0);
+    sys.addRewardLight('red'); // 新循環第 1 顆
+    expect(sys.getLights('red')).toBe(1);
+  });
+
+  it('lightNextReward()：pick 一組 + 點該組一顆 → 回點亮的組、總燈數恰 +1（相容舊路徑）', () => {
+    const { sys } = makeJp();
+    const before = sys.getLights('red') + sys.getLights('blue') + sys.getLights('purple');
+    const g = sys.lightNextReward();
+    const after = sys.getLights('red') + sys.getLights('blue') + sys.getLights('purple');
+    expect(after - before).toBe(1); // 一次總燈數 +1
+    expect(sys.getLights(g)).toBe(1); // 回傳的組正是被點亮那組
+    expect(['red', 'blue', 'purple']).toContain(g);
+  });
+
+  // 🔴 壞版對照：集滿必歸零（若停 5 / 變 6 = 循環壞）。
+  it('壞版對照：purple 第 5 顆後 litCount 必 = 0（不停 5、不變 6）', () => {
+    const { sys } = makeJp();
+    for (let i = 0; i < 5; i += 1) sys.addRewardLight('purple');
+    expect(sys.getLights('purple')).toBe(0);
+  });
+
+  // 🔴 壞版對照：集滿必觸發 payout（ticket 有進帳）。
+  it('壞版對照：blue 集滿 5 顆必觸發派彩（ticketsAdded > 0）', () => {
+    const { sys, state } = makeJp();
+    for (let i = 0; i < 5; i += 1) sys.addRewardLight('blue');
+    expect(state.ticketsAdded).toBeGreaterThan(0);
+  });
+
+  // 🔴 壞版對照：addRewardLight 點錯組會污染別組（各組獨立守衛）。
+  it('壞版對照：addRewardLight("red") 後 blue litCount 仍 0（沒點錯組）', () => {
+    const { sys } = makeJp();
+    sys.addRewardLight('red');
+    expect(sys.getLights('blue')).toBe(0);
+  });
+});
