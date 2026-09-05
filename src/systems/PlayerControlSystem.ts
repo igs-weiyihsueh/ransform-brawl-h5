@@ -57,14 +57,19 @@ export class PlayerControlSystem implements GameSystem {
   }
 
   update(dt: number): void {
-    const { input, player, energy, credit } = this.ctx;
+    const { player, energy, credit } = this.ctx;
+    // S2：pull-based 從該 player 的 InputSource 取意圖（P1=現有 InputSystem，行為同舊）。
+    const src = player.inputSource;
 
     // 依 buff 狀態每幀設定玩家倍率/護盾（頭盔/寶盒）。
     this.applyBuffState();
 
+    // 無 InputSource（理論上不會，防呆）→ 不操控。
+    if (!src) return;
+
     // 衝刺觸發（X，edge；需可攻擊(credit>0且非耗盡)、非衝刺中）。
-    if (input.justPressedDash() && !player.isDashing() && credit.canAttack()) {
-      const move = input.getMoveVector();
+    if (src.justPressedDash() && !player.isDashing() && credit.canAttack()) {
+      const move = src.getMoveVector();
       player.startDash(move); // 有移動往移動方向；否則 startDash 內用面向
       this.dashConsumedCredit = false; // 新衝刺：重置「本次衝刺是否已扣 credit」
     }
@@ -76,11 +81,11 @@ export class PlayerControlSystem implements GameSystem {
     } else {
       // 一般移動（耗盡狀態不能移動）。
       if (credit.canAct()) {
-        player.move(input.getMoveVector(), dt);
+        player.move(src.getMoveVector(), dt);
       }
 
       // 攻擊輸入 → 決定普攻或放招 → 用該 AttackData 的 hitDelay 起前搖（需 CanAttack 閘門）
-      if (input.justPressedAttack() && credit.canAttack()) {
+      if (src.justPressedAttack() && credit.canAttack()) {
         const intent = energy.resolveAttackIntent();
         if (player.tryStartAttack(intent.attack.hitDelay, PLAYER_CONFIG.attackCooldown)) {
           this.pendingIntent = intent;

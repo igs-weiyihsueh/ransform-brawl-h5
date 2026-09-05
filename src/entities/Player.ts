@@ -8,6 +8,7 @@ import {
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
+import type { InputSource } from '@/systems/InputSource';
 import type { Hittable, Vec2 } from '@/systems/hitDetection';
 
 /** 玩家可用的角色美術 key（debug 預覽用 T 鍵循環切換）。 */
@@ -32,6 +33,9 @@ export class Player implements Hittable {
   readonly playerId: number;
   /** 玩家種類（S1 目前只有 human）。 */
   readonly kind: 'human' | 'ai';
+
+  /** 操控意圖來源（S2）：P1=人類 InputSystem；S4 AI 為另一實作。建 ctx 時注入。 */
+  inputSource: InputSource | null = null;
 
   private anim: CharacterAnimator;
   private charKey: string;

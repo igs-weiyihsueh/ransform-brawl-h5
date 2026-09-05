@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
+import type { InputSource } from '@/systems/InputSource';
 import { computeJustPressed } from '@/systems/inputEdge';
 
 /** 可做 edge 偵測（justPressed）的動作名。用動作層命名，與現有 WASD/attack 抽象一致。 */
@@ -31,7 +32,7 @@ export { computeJustPressed } from '@/systems/inputEdge';
  *
  * held / axis（getMoveVector）不走 snapshot、直接讀 .isDown（level 語意），移動行為不變。
  */
-export class InputSystem implements GameSystem {
+export class InputSystem implements GameSystem, InputSource {
   readonly name = 'InputSystem';
 
   private readonly keyW: Phaser.Input.Keyboard.Key;

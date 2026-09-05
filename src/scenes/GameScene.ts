@@ -80,6 +80,8 @@ export class GameScene extends Phaser.Scene {
       PLAYER_CHARACTERS[0],
     );
     const spawner = new EnemySpawner(this, player, worldBounds);
+    // S2：P1 的操控意圖來源 = 現有 InputSystem（同一實例，行為完全同舊）。
+    player.inputSource = input;
     const energy = new EnergySystem();
     const transform = new TransformSystem();
     const credit = new CreditSystem();
