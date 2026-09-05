@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import { VFX_EFFECTS, VFX_FRAME_PAD, type VFXEffectDef } from '@/config/vfxConfig';
 import { ENERGY_FLY, flyAlpha, flyPosition, flyScale } from '@/systems/energyFlyMath';
+import {
+  CHEST_REWARD_FX,
+  chestRewardIsTicket,
+  chestRewardLabel,
+} from '@/systems/chestRewardDisplay';
+import type { ChestRewardKind } from '@/config/chestConfig';
 
 const BASE_PATH = 'assets/images/vfx';
 
@@ -124,6 +130,65 @@ export class EffectSystem {
         dot.setAlpha(flyAlpha(state.t));
       },
       onComplete: () => dot.destroy(),
+    });
+  }
+
+  /**
+   * 開箱報獎表演（第5項，純視覺）：在寶盒位置發光/彈跳 + 報獎文字上飄淡出。
+   * ⚠️ 純視覺疊加：chest 數值(addTickets/buff)已即時套用、與此解耦。
+   * @param x,y 寶盒 UI 位置（getChestAnchor，螢幕座標）
+   * @param kind 獎勵種類；tickets 彩票張數
+   * @param color 該玩家識別色（效果類文字點綴用）
+   */
+  chestReward(
+    x: number,
+    y: number,
+    kind: ChestRewardKind,
+    tickets: number,
+    color: number,
+  ): void {
+    // 1) 寶盒發光/彈跳：識別色光環從小脈動放大再淡出。
+    const ring = this.scene.add.graphics();
+    ring.lineStyle(4, color, 0.9);
+    ring.strokeCircle(0, 0, 30);
+    ring.setDepth(ENERGY_FLY_DEPTH);
+    ring.setScrollFactor(0);
+    ring.x = x;
+    ring.y = y;
+    ring.setScale(0.4);
+    this.scene.tweens.add({
+      targets: ring,
+      scale: CHEST_REWARD_FX.pulseScale,
+      alpha: 0,
+      duration: CHEST_REWARD_FX.pulseSec * 1000,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+
+    // 2) 報獎文字上飄淡出（彩票金色 / 效果類該玩家識別色）。
+    const label = chestRewardLabel(kind, tickets);
+    if (!label) return;
+    const textColor = chestRewardIsTicket(kind)
+      ? '#ffd54f'
+      : `#${color.toString(16).padStart(6, '0')}`;
+    const txt = this.scene.add.text(x, y, label, {
+      fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+      fontSize: '34px',
+      color: textColor,
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 5,
+    });
+    txt.setOrigin(0.5, 1);
+    txt.setDepth(ENERGY_FLY_DEPTH + 1);
+    txt.setScrollFactor(0);
+    this.scene.tweens.add({
+      targets: txt,
+      y: y - CHEST_REWARD_FX.risePx,
+      alpha: { from: 1, to: 0 },
+      duration: CHEST_REWARD_FX.durationSec * 1000,
+      ease: 'Sine.easeOut',
+      onComplete: () => txt.destroy(),
     });
   }
 }

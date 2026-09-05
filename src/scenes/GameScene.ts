@@ -161,6 +161,13 @@ export class GameScene extends Phaser.Scene {
     // 防穿透對所有 player（多人）：讓 spawner 讀 players[]。
     spawner.getAllPlayers = () => this.ctx.players;
 
+    // 開箱報獎表演（第5項，純視覺）：openChest 尾段回呼 → 在該玩家寶盒位置演出。
+    // ⚠️ chest 數值(addTickets/buff)已在 openChest 即時套用、此處只做視覺、與數值解耦。
+    chest.onChestOpened = (pid, reward) => {
+      const anchor = uiSystem.getChestAnchor(pid);
+      if (anchor) effects.chestReward(anchor.x, anchor.y, reward.kind, reward.tickets, playerColor(pid));
+    };
+
     this.registerSystems();
 
     for (const sys of this.systems) {

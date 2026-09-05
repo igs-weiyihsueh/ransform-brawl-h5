@@ -1,4 +1,4 @@
-import { CHEST_OPEN_THRESHOLD } from '@/config/chestConfig';
+import { CHEST_OPEN_THRESHOLD, type ChestRewardKind } from '@/config/chestConfig';
 import { BUFF_DURATION, BUFF_STAT } from '@/config/buffConfig';
 import { isTicketReward, pickChestReward } from '@/systems/chestLoot';
 import type { GameContext } from '@/systems/GameContext';
@@ -27,6 +27,14 @@ export class ChestSystem implements GameSystem {
 
   private mountBuffActive = false;
   private secondTransformUntil = 0;
+
+  /**
+   * 開箱報獎表演回呼（第5項，純視覺）：openChest 尾段發，遊戲層(GameScene)接做演出。
+   * 數值(addTickets/buff)已在 openChest 即時套用，此回呼不涉及數值。
+   */
+  onChestOpened:
+    | ((playerId: number, reward: { kind: ChestRewardKind; tickets: number }) => void)
+    | null = null;
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
@@ -81,6 +89,10 @@ export class ChestSystem implements GameSystem {
           console.info('[Chest] 二段變身啟用（傷害×1.5+護COMBO 30s，零式暫定）'),
       });
     }
+
+    // 開箱報獎表演 hook（純視覺，第5項）：數值已即時套用（上方 addTickets/buff），
+    // 這裡只通知遊戲層做開箱報獎演出。⚠️ 不涉及數值、與 chest 邏輯解耦（不破測試）。
+    this.onChestOpened?.(playerId, { kind: reward.kind, tickets: reward.tickets });
   }
 
   // --- UI / 狀態查詢 ---
