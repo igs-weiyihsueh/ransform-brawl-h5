@@ -130,6 +130,22 @@ QA（測騎）維護。記錄「**當前實作下是等價 mutant、但條件性
   （這正是本清單價值：日後有人做「被打斷 COMBO」時，清單提醒他「有個招牌保護在等這條、要接上並測」。）
 - **驗證紀錄**：batch12（Buff/頭盔 harden）評估。全 src 搜 `secondTransform`：ComboSystem/Player.takeHit/EnemySpawner 皆無參照，確認 inert；「被打不斷」目前只是設計註記、無行為差異可測。
 
+## 6. JP `recordDamage` 的傷害貢獻「記了但派彩還沒讀」（S3 只記不用，S5 才讀）
+
+> ⚠️ **只有一半是等價**：`recordDamage` 的「**記錄**」是可觀察、可測的（見下）；
+> 「**被派彩使用**」這半在 S3 還不存在（payout 不讀 `damageByPlayer`）→ 那半才是 inert / 條件性等價。
+
+- **可測部分（已寫測試，不在清單）**：`recordDamage(playerId, dealt)` 累進 `Map<playerId,total>`，
+  `getDamageContribution(playerId)` 讀得到 → 「記對量」是可觀察行為。已在 `jpSystem.test.ts` 測
+  （記對量、多次累加=傷害總和非命中數、未記回 0、防禦契約 dealt<=0 no-op）。
+- **等價（inert）部分**：S3 的 `payout()` **不讀** `damageByPlayer`（派彩仍現狀：倍數×30）。
+  所以「把 recordDamage 記錄的值改成不影響派彩」目前**對派彩結果無可觀察差異**——因為派彩根本沒讀它。
+  無法寫出「貢獻值影響派彩」的鑑別測試（派彩不讀）。
+- **何時變真回歸點（S5）**：S5「加權派彩」會讓 `payout` **依 `getDamageContribution` 分配彩金**。
+  屆時「貢獻記錯/派彩沒按貢獻分」就有可觀察差異、變真回歸 → 補「貢獻比例 → 派彩分配」對照。
+  ⚠️ **在 S5 接上前，別把 recordDamage 當死碼拿掉**（它在為 S5 蒐集資料；拿掉 → S5 沒資料可分）。
+- **驗證紀錄**：S3（多人遷移）。src `JpSystem.payout` 確認未讀 `damageByPlayer`；記錄本身由 jpSystem.test 測。
+
 ---
 
 ## 已從清單移出（改為防禦契約測試）

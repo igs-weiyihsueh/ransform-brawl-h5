@@ -302,3 +302,41 @@ describe('JpSystem — BOSS gate（JP_BOSS_GATED=false → 集滿直接派）', 
   // 註：JP_BOSS_GATED=true 分支（集滿→打BOSS→贏才派）目前不可達（H5 無 BOSS）。
   // 之後 B 段做 BOSS、gated 改 true 時，補「gated=true 集滿不直接派、贏 BOSS 後才派」對照。
 });
+
+// ===========================================================================
+// S3 新增：recordDamage / getDamageContribution（per-player 傷害貢獻累進，Map<playerId>）。
+// 誠實範圍：S3【只記不用】——派彩(payout)目前不讀 damageByPlayer（S5 加權派彩才讀）。
+//   但「記對量」是【可觀察行為】(getDamageContribution 讀得到 Map 累進值)，可測、非純 inert。
+//   「記了但派彩沒用」這半才是 inert，記進 conditional-equivalences.md（S5 讀時才變承重）。
+// ===========================================================================
+describe('JpSystem — recordDamage per-player 傷害貢獻（S3 記對量，可觀察）', () => {
+  it('recordDamage(0, dealt) → getDamageContribution(0) === dealt（記對量）', () => {
+    const { sys } = makeJp();
+    sys.recordDamage(0, 25);
+    expect(sys.getDamageContribution(0)).toBe(25);
+  });
+
+  it('多次累加：recordDamage(0,10)+recordDamage(0,5) → 15（累進傷害總和，非命中次數）', () => {
+    const { sys } = makeJp();
+    sys.recordDamage(0, 10);
+    sys.recordDamage(0, 5);
+    expect(sys.getDamageContribution(0)).toBe(15); // 傷害「總和」15，不是「命中 2 次」
+  });
+
+  it('未記錄的 playerId → 0（Map 無鍵回 0）', () => {
+    const { sys } = makeJp();
+    expect(sys.getDamageContribution(0)).toBe(0);
+    sys.recordDamage(0, 7);
+    expect(sys.getDamageContribution(0)).toBe(7);
+  });
+
+  // 防禦契約（dealt<=0 在參數定義域內、可鑑別 → 寫測試，非留清單）。
+  it('防禦契約：recordDamage(0, 0/負) 為 no-op（不改貢獻）', () => {
+    const { sys } = makeJp();
+    sys.recordDamage(0, 10);
+    sys.recordDamage(0, 0);
+    sys.recordDamage(0, -5);
+    expect(sys.getDamageContribution(0)).toBe(10); // 只有正量累進
+  });
+  // ⚠️ S3 仍只 P1：測不了「P1/P2 貢獻各自 Map 不互汙」(per-player 獨立鑑別留 S4，那時有 P2-P4)。
+});

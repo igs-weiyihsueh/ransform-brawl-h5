@@ -47,49 +47,49 @@ describe('combo 純函式', () => {
 describe('ComboSystem — 累積/超時結算/凍結/耗盡', () => {
   it('命中累積 +1', () => {
     const { sys } = makeSystem();
-    sys.onHit();
-    sys.onHit();
-    expect(sys.getCombo()).toBe(2);
+    sys.onHit(0);
+    sys.onHit(0);
+    expect(sys.getCombo(0)).toBe(2);
   });
 
   it('耗盡狀態不累積 COMBO', () => {
     const { sys } = makeSystem({ outOfCredit: true });
-    sys.onHit();
-    sys.onHit();
-    expect(sys.getCombo()).toBe(0);
+    sys.onHit(0);
+    sys.onHit(0);
+    expect(sys.getCombo(0)).toBe(0);
   });
 
   it('超時（timer≤0）結算彩票 ceil(count×0.5) 並歸零', () => {
     const { sys, state } = makeSystem();
-    for (let i = 0; i < 3; i += 1) sys.onHit(); // count=3, timer=max(0.5,3-0.3)=2.7
+    for (let i = 0; i < 3; i += 1) sys.onHit(0); // count=3, timer=max(0.5,3-0.3)=2.7
     sys.update(3); // 超時
-    expect(sys.getCombo()).toBe(0);
+    expect(sys.getCombo(0)).toBe(0);
     expect(state.ticketsAdded).toBe(2); // ceil(3×0.5)=2
   });
 
   it('滿檔 100 強制結算 50 張並歸零', () => {
     const { sys, state } = makeSystem();
-    for (let i = 0; i < 100; i += 1) sys.onHit();
-    expect(sys.getCombo()).toBe(0); // 滿檔即結算歸零
+    for (let i = 0; i < 100; i += 1) sys.onHit(0);
+    expect(sys.getCombo(0)).toBe(0); // 滿檔即結算歸零
     expect(state.ticketsAdded).toBe(50);
   });
 
   it('凍結（場上無敵人）→ 不倒數、不結算', () => {
     const { sys, state } = makeSystem({ enemies: 0 });
-    sys.onHit();
+    sys.onHit(0);
     // 但 onHit 當下 enemies=0；累積仍 +1（onHit 不看凍結，只看耗盡）
-    expect(sys.getCombo()).toBe(1);
+    expect(sys.getCombo(0)).toBe(1);
     sys.update(999); // 大量時間但凍結 → 不倒數
-    expect(sys.getCombo()).toBe(1); // 沒被結算
+    expect(sys.getCombo(0)).toBe(1); // 沒被結算
     expect(state.ticketsAdded).toBe(0);
   });
 
   it('警告：計時窗剩餘 < 2s 且連段中且非凍結 → isWarning true', () => {
     const { sys } = makeSystem();
-    for (let i = 0; i < 3; i += 1) sys.onHit(); // timer=2.7
-    expect(sys.isWarning()).toBe(false); // 2.7 > 2
+    for (let i = 0; i < 3; i += 1) sys.onHit(0); // timer=2.7
+    expect(sys.isWarning(0)).toBe(false); // 2.7 > 2
     sys.update(1); // timer=1.7 < 2
-    expect(sys.isWarning()).toBe(true);
+    expect(sys.isWarning(0)).toBe(true);
   });
 
   // 🔴 壞版必紅：結算彩票若用 floor 而非 ceil，count=3 會給 1 而非 2。
@@ -147,12 +147,12 @@ describe('comboTimeoutFor — 計時窗公式邊界 max(0.5, 3 - count×0.1)', (
 describe('ComboSystem — 每命中「重設」計時窗（非累加）', () => {
   it('連續命中後 timer = 當前 count 的公式值（重設，不累加）', () => {
     const { sys } = makeControllable();
-    sys.onHit(); // count1, timer=2.9
+    sys.onHit(0); // count1, timer=2.9
     sys.update(1); // timer=1.9
-    sys.onHit(); // count2 → 重設 timer=comboTimeoutFor(2)=2.8（不是 1.9+something）
+    sys.onHit(0); // count2 → 重設 timer=comboTimeoutFor(2)=2.8（不是 1.9+something）
     // 用 isWarning 邊界間接驗：2.8 >= 2 → 非警告（若是累加/沒重設，1.9<2 會誤報警告）
-    expect(sys.isWarning()).toBe(false);
-    expect(sys.getCombo()).toBe(2);
+    expect(sys.isWarning(0)).toBe(false);
+    expect(sys.getCombo(0)).toBe(2);
   });
 });
 
@@ -173,55 +173,55 @@ describe('ticketsForCombo — ceil 結算邊界（真回歸點：ceil vs floor�
 describe('ComboSystem — 超時結算 + 滿檔 MAX', () => {
   it('超時結算：count5 → 灌 ceil(5×0.5)=3 張、歸 0', () => {
     const { sys, state } = makeControllable();
-    for (let i = 0; i < 5; i += 1) sys.onHit(); // count5, timer=2.5
+    for (let i = 0; i < 5; i += 1) sys.onHit(0); // count5, timer=2.5
     sys.update(3); // 超時
-    expect(sys.getCombo()).toBe(0);
+    expect(sys.getCombo(0)).toBe(0);
     expect(state.ticketsAdded).toBe(3);
   });
 
   it('滿檔 100：強制結算 50、歸 0、maxTriggered 只觸發一次（consume 後清）', () => {
     const { sys, state } = makeControllable();
-    for (let i = 0; i < 100; i += 1) sys.onHit();
-    expect(sys.getCombo()).toBe(0);
+    for (let i = 0; i < 100; i += 1) sys.onHit(0);
+    expect(sys.getCombo(0)).toBe(0);
     expect(state.ticketsAdded).toBe(50);
-    expect(sys.consumeMaxTriggered()).toBe(true); // 第一次讀到 true
-    expect(sys.consumeMaxTriggered()).toBe(false); // 讀後清，不重複觸發
+    expect(sys.consumeMaxTriggered(0)).toBe(true); // 第一次讀到 true
+    expect(sys.consumeMaxTriggered(0)).toBe(false); // 讀後清，不重複觸發
   });
 
   it('一般超時結算【不】設 maxTriggered（只有滿檔才 MAX）', () => {
     const { sys } = makeControllable();
-    for (let i = 0; i < 5; i += 1) sys.onHit();
+    for (let i = 0; i < 5; i += 1) sys.onHit(0);
     sys.update(3); // 一般超時結算
-    expect(sys.consumeMaxTriggered()).toBe(false);
+    expect(sys.consumeMaxTriggered(0)).toBe(false);
   });
 });
 
 describe('ComboSystem — 凍結（場上無敵人）', () => {
   it('凍結中 update 不倒數、不結算（大量時間也不掉）', () => {
     const { sys, state } = makeControllable();
-    sys.onHit(); // count1
+    sys.onHit(0); // count1
     state.enemies = 0; // 凍結
     sys.update(999);
-    expect(sys.getCombo()).toBe(1); // 沒被倒數/結算
+    expect(sys.getCombo(0)).toBe(1); // 沒被倒數/結算
     expect(state.ticketsAdded).toBe(0);
   });
 
   it('凍結中 isWarning 恆 false（即使 timer 本來很低）', () => {
     const { sys, state } = makeControllable();
-    for (let i = 0; i < 25; i += 1) sys.onHit(); // timer=0.5（<2，本會警告）
+    for (let i = 0; i < 25; i += 1) sys.onHit(0); // timer=0.5（<2，本會警告）
     state.enemies = 0; // 凍結
-    expect(sys.isWarning()).toBe(false); // 凍結 → 不警告
+    expect(sys.isWarning(0)).toBe(false); // 凍結 → 不警告
   });
 
   it('解凍後恢復倒數（凍→解 → 時間繼續走 → 會結算）', () => {
     const { sys, state } = makeControllable();
-    for (let i = 0; i < 5; i += 1) sys.onHit(); // count5 timer=2.5
+    for (let i = 0; i < 5; i += 1) sys.onHit(0); // count5 timer=2.5
     state.enemies = 0; // 凍結
     sys.update(999); // 凍結不倒數
-    expect(sys.getCombo()).toBe(5);
+    expect(sys.getCombo(0)).toBe(5);
     state.enemies = 1; // 解凍
     sys.update(3); // 恢復倒數 → 超時結算
-    expect(sys.getCombo()).toBe(0);
+    expect(sys.getCombo(0)).toBe(0);
     expect(state.ticketsAdded).toBe(3); // ceil(5×0.5)
   });
 });
@@ -229,15 +229,15 @@ describe('ComboSystem — 凍結（場上無敵人）', () => {
 describe('ComboSystem — 警告窗 isWarning', () => {
   it('連段中 && 非凍結 && timer<2 → true；timer>=2 → false', () => {
     const { sys } = makeControllable();
-    for (let i = 0; i < 3; i += 1) sys.onHit(); // timer=2.7
-    expect(sys.isWarning()).toBe(false); // 2.7 >= 2
+    for (let i = 0; i < 3; i += 1) sys.onHit(0); // timer=2.7
+    expect(sys.isWarning(0)).toBe(false); // 2.7 >= 2
     sys.update(1); // timer=1.7
-    expect(sys.isWarning()).toBe(true); // <2
+    expect(sys.isWarning(0)).toBe(true); // <2
   });
 
   it('count=0（無連段）→ isWarning false（不因 timer 值誤報）', () => {
     const { sys } = makeControllable();
-    expect(sys.isWarning()).toBe(false);
+    expect(sys.isWarning(0)).toBe(false);
   });
 });
 

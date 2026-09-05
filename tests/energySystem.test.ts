@@ -11,7 +11,8 @@ import type { GameContext } from '@/systems/GameContext';
 function makeSystem(charKey: string): EnergySystem {
   const sys = new EnergySystem();
   const ctx = {
-    player: { getCharacterKey: () => charKey },
+    player: { playerId: 0, getCharacterKey: () => charKey },
+    players: [{ playerId: 0, getCharacterKey: () => charKey }],
   } as unknown as GameContext;
   sys.init(ctx);
   return sys;
@@ -29,37 +30,37 @@ describe('EnergySystem — 充能與放招', () => {
   it('凡人 HumanSimple：普攻命中 4 下 → ready，第 5 次攻擊放 skill1（圓形 dmg3）', () => {
     const sys = makeSystem('Human');
     for (let i = 0; i < 4; i += 1) {
-      const intent = sys.resolveAttackIntent();
+      const intent = sys.resolveAttackIntent(0);
       expect(intent.isSkill).toBe(false); // 未 ready → 普攻
-      sys.reportHit(false, true); // 普攻命中 +1
+      sys.reportHit(0, false, true); // 普攻命中 +1
       sys.update(0);
     }
-    expect(sys.isReady()).toBe(true);
-    expect(sys.getEnergy()).toBe(4);
-    const skill = sys.resolveAttackIntent();
+    expect(sys.isReady(0)).toBe(true);
+    expect(sys.getEnergy(0)).toBe(4);
+    const skill = sys.resolveAttackIntent(0);
     expect(skill.isSkill).toBe(true);
     expect(skill.attack.shapeType).toBe('circle');
     expect(skill.attack.damage).toBe(3);
     // 放招後歸 0
     sys.update(0);
-    expect(sys.getEnergy()).toBe(0);
-    expect(sys.isReady()).toBe(false);
+    expect(sys.getEnergy(0)).toBe(0);
+    expect(sys.isReady(0)).toBe(false);
   });
 
   it('凡人放招永遠是 skill1（放兩次都圓形 dmg3）', () => {
     const sys = makeSystem('Human');
     const chargeToReady = () => {
       for (let i = 0; i < 4; i += 1) {
-        sys.resolveAttackIntent();
-        sys.reportHit(false, true);
+        sys.resolveAttackIntent(0);
+        sys.reportHit(0, false, true);
         sys.update(0);
       }
     };
     chargeToReady();
-    const s1 = sys.resolveAttackIntent();
+    const s1 = sys.resolveAttackIntent(0);
     sys.update(0);
     chargeToReady();
-    const s2 = sys.resolveAttackIntent();
+    const s2 = sys.resolveAttackIntent(0);
     expect(s1.attack.damage).toBe(3);
     expect(s2.attack.damage).toBe(3);
     expect(s1.attack.shapeType).toBe('circle');
@@ -70,11 +71,11 @@ describe('EnergySystem — 充能與放招', () => {
     const sys = makeSystem('SunWukong');
     const chargeAndFire = () => {
       for (let i = 0; i < 4; i += 1) {
-        sys.resolveAttackIntent();
-        sys.reportHit(false, true);
+        sys.resolveAttackIntent(0);
+        sys.reportHit(0, false, true);
         sys.update(0);
       }
-      const fired = sys.resolveAttackIntent();
+      const fired = sys.resolveAttackIntent(0);
       sys.update(0);
       return fired;
     };
@@ -94,22 +95,22 @@ describe('EnergySystem — 充能與放招', () => {
   // 🔴 壞版必紅對照：招式命中、普攻打空氣都不該充能。
   it('招式命中不充能、普攻打空氣不充能', () => {
     const sys = makeSystem('Human');
-    sys.reportHit(false, false); // 普攻沒打到 → 不充
+    sys.reportHit(0, false, false); // 普攻沒打到 → 不充
     sys.update(0);
-    expect(sys.getEnergy()).toBe(0);
-    sys.reportHit(true, true); // 招式命中 → 不充
+    expect(sys.getEnergy(0)).toBe(0);
+    sys.reportHit(0, true, true); // 招式命中 → 不充
     sys.update(0);
-    expect(sys.getEnergy()).toBe(0);
-    sys.reportHit(false, true); // 普攻命中 → +1
+    expect(sys.getEnergy(0)).toBe(0);
+    sys.reportHit(0, false, true); // 普攻命中 → +1
     sys.update(0);
-    expect(sys.getEnergy()).toBe(1);
+    expect(sys.getEnergy(0)).toBe(1);
   });
 
   it('一次攻擊最多 +1（reportHit 一次 = 一次充能，不論打幾隻）', () => {
     const sys = makeSystem('Human');
-    sys.reportHit(false, true); // 一次命中結算（不管打到幾隻）
+    sys.reportHit(0, false, true); // 一次命中結算（不管打到幾隻）
     sys.update(0);
-    expect(sys.getEnergy()).toBe(1);
+    expect(sys.getEnergy(0)).toBe(1);
   });
 });
 
@@ -121,50 +122,50 @@ describe('EnergySystem — 凡人計數邊界（3 未 ready / 4 ready / 放招�
   it('命中 3 下：energy=3、未 ready（第 4 下才到門檻）', () => {
     const sys = makeSystem('Human');
     for (let i = 0; i < 3; i += 1) {
-      sys.reportHit(false, true);
+      sys.reportHit(0, false, true);
       sys.update(0);
     }
-    expect(sys.getEnergy()).toBe(3);
-    expect(sys.isReady()).toBe(false);
+    expect(sys.getEnergy(0)).toBe(3);
+    expect(sys.isReady(0)).toBe(false);
     // 未 ready → 這次攻擊仍是普攻
-    expect(sys.resolveAttackIntent().isSkill).toBe(false);
+    expect(sys.resolveAttackIntent(0).isSkill).toBe(false);
   });
 
   it('第 4 下命中 → energy=4、ready；再命中不超過上限（clamp 在 4）', () => {
     const sys = makeSystem('Human');
     for (let i = 0; i < 4; i += 1) {
-      sys.reportHit(false, true);
+      sys.reportHit(0, false, true);
       sys.update(0);
     }
-    expect(sys.getEnergy()).toBe(4);
-    expect(sys.isReady()).toBe(true);
+    expect(sys.getEnergy(0)).toBe(4);
+    expect(sys.isReady(0)).toBe(true);
     // 已滿再命中：不超過 cap（Math.min 夾住）
-    sys.reportHit(false, true);
+    sys.reportHit(0, false, true);
     sys.update(0);
-    expect(sys.getEnergy()).toBe(4);
+    expect(sys.getEnergy(0)).toBe(4);
   });
 
   it('ready 後放招 → 歸 0 且 not ready（消耗）', () => {
     const sys = makeSystem('Human');
     for (let i = 0; i < 4; i += 1) {
-      sys.reportHit(false, true);
+      sys.reportHit(0, false, true);
       sys.update(0);
     }
-    const fired = sys.resolveAttackIntent();
+    const fired = sys.resolveAttackIntent(0);
     expect(fired.isSkill).toBe(true);
     sys.update(0);
-    expect(sys.getEnergy()).toBe(0);
-    expect(sys.isReady()).toBe(false);
+    expect(sys.getEnergy(0)).toBe(0);
+    expect(sys.isReady(0)).toBe(false);
   });
 });
 
 describe('EnergySystem — 悟空 Full 循環 index % 3 邊界', () => {
   const fireCycleValue = (sys: EnergySystem): number => {
     for (let i = 0; i < 4; i += 1) {
-      sys.reportHit(false, true);
+      sys.reportHit(0, false, true);
       sys.update(0);
     }
-    const fired = sys.resolveAttackIntent();
+    const fired = sys.resolveAttackIntent(0);
     sys.update(0);
     return fired.attack.damage;
   };
@@ -185,10 +186,10 @@ describe('EnergySystem — 悟空 Full 循環 index % 3 邊界', () => {
     const sys = makeSystem('Human');
     const fire = (): { dmg: number; shape: string } => {
       for (let i = 0; i < 4; i += 1) {
-        sys.reportHit(false, true);
+        sys.reportHit(0, false, true);
         sys.update(0);
       }
-      const f = sys.resolveAttackIntent();
+      const f = sys.resolveAttackIntent(0);
       sys.update(0);
       return { dmg: f.attack.damage, shape: f.attack.shapeType };
     };
