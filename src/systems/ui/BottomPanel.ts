@@ -1,80 +1,101 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
-import {
-  BOTTOM_PANEL_LAYOUT,
-  HUD_COLORS,
-  HUD_FONT_FAMILY,
-  PANEL_DEPTH,
-  UI_ICONS,
-} from '@/config/uiConfig';
+import { HUD_COLORS, HUD_FONT_FAMILY, PANEL_DEPTH, UI_ICONS } from '@/config/uiConfig';
+import type { PanelElement, PanelLayout } from '@/config/uiLayoutSchema';
 
-/** 單一玩家欄的可刷新元素。 */
+/** 單一玩家欄：可刷新元素 + 淡化控制。 */
 interface Slot {
+  playerIndex: number;
+  /** 欄內所有顯示物件（供 destroy / 淡化）。 */
+  objects: Phaser.GameObjects.GameObject[];
   ticketText: Phaser.GameObjects.Text;
   progress: Phaser.GameObjects.Graphics;
+  /** progress 底槽/填充的絕對座標與尺寸（來自 template element）。 */
   progressX: number;
   progressY: number;
   progressW: number;
+  progressH: number;
+  progressRadius: number;
   active: boolean;
   shownTicket: number;
   shownRatio: number;
 }
 
+/** 未加入欄的淡化透明度。 */
+const INACTIVE_ALPHA = 0.4;
+
 /**
- * BottomPanel — 下方面板（對照 Unity 底部 4 欄 P1~P4）。
+ * BottomPanel — 下方面板（對照 Unity 底部 4 欄 P1~P4），資料驅動版。
  *
- * 螢幕底部固定（setScrollFactor 0），4 欄橫排置中。每欄：面板底框 /
- * 寶箱 icon（方塊佔位）/ 彩票數（stub）/ 進度條 / 金幣 icon。
- * 目前單人 → P1 完整、P2~P4 佔位淡化（等待加入）。
+ * 螢幕底部固定（setScrollFactor 0），slotCount 欄橫排置中。每欄顯示該 player 的
+ * 寶箱 / 彩票 / 進度 / 金幣。欄內元素座標**讀 uiLayout schema**（相對欄左上）。
  *
- * 純顯示層：數值由 UISystem 傳入（stub），絕不回寫。真美術 icon 之後替換。
+ * 🔴 防漂移（決策 b765cfbf）：所有欄的元素一律用 columns[0].elements（template 欄）
+ * 複製衍生，**不各讀 columns[i].elements**，確保 P1~P4 面板結構恆等。
+ *
+ * per-player：active 欄（i < activeCount）亮、未加入欄淡化。數值由 UISystem 每幀
+ * 依各 player 的 Map（ticket/credit…）傳入。純顯示層，只讀不回寫。
  */
 export class BottomPanel {
   private readonly slots: Slot[] = [];
-  /** 所有建立的顯示物件，供 destroy 一次清除。 */
-  private readonly objects: Phaser.GameObjects.GameObject[] = [];
+  private readonly panel: PanelLayout;
 
-  constructor(scene: Phaser.Scene) {
-    const cfg = BOTTOM_PANEL_LAYOUT;
+  /**
+   * @param scene 場景。
+   * @param panel 面板佈局（讀自 uiLayout schema）。
+   * @param activeCount 目前 active（已加入）的玩家數；i < activeCount 的欄亮，其餘淡化。
+   */
+  constructor(scene: Phaser.Scene, panel: PanelLayout, activeCount: number) {
+    this.panel = panel;
     const totalWidth =
-      cfg.slotCount * cfg.slotWidth + (cfg.slotCount - 1) * cfg.slotGap;
+      panel.slotCount * panel.slotWidth + (panel.slotCount - 1) * panel.slotGap;
     const startX = (GAME_WIDTH - totalWidth) / 2;
-    const y = GAME_HEIGHT - cfg.bottomOffset - cfg.slotHeight;
+    const y = GAME_HEIGHT - panel.bottomOffset - panel.slotHeight;
 
-    for (let i = 0; i < cfg.slotCount; i++) {
-      const slotX = startX + i * (cfg.slotWidth + cfg.slotGap);
-      const active = i === 0; // 單人：只有 P1 加入
-      this.slots.push(this.buildSlot(scene, slotX, y, i + 1, active));
+    // 防漂移：template = columns[0].elements，所有欄共用這份座標。
+    const template = panel.columns[0]?.elements ?? [];
+
+    for (let i = 0; i < panel.slotCount; i++) {
+      const slotX = startX + i * (panel.slotWidth + panel.slotGap);
+      const active = i < activeCount;
+      this.slots.push(this.buildSlot(scene, slotX, y, i, active, template));
     }
+  }
+
+  /** 依 id 從 template 找元素（防漂移：一律用 columns[0] 的 element）。 */
+  private findEl(template: PanelElement[], id: string): PanelElement | undefined {
+    return template.find((e) => e.id === id);
   }
 
   private buildSlot(
     scene: Phaser.Scene,
-    x: number,
-    y: number,
-    playerNo: number,
+    slotX: number,
+    slotY: number,
+    playerIndex: number,
     active: boolean,
+    template: PanelElement[],
   ): Slot {
-    const cfg = BOTTOM_PANEL_LAYOUT;
-    const alpha = active ? 1 : 0.4; // P2~P4 淡化佔位
+    const panel = this.panel;
+    const alpha = active ? 1 : INACTIVE_ALPHA;
+    const objects: Phaser.GameObjects.GameObject[] = [];
     const track = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
-      this.objects.push(o);
+      objects.push(o);
       return o;
     };
 
-    // 面板底框。
+    // 面板底框（用 panel 共用排版參數）。
     const bg = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
     bg.fillStyle(active ? HUD_COLORS.panelFill : HUD_COLORS.slotInactive, active ? HUD_COLORS.panelFillAlpha : 0.35);
-    bg.fillRoundedRect(x, y, cfg.slotWidth, cfg.slotHeight, cfg.cornerRadius);
+    bg.fillRoundedRect(slotX, slotY, panel.slotWidth, panel.slotHeight, panel.cornerRadius);
     bg.lineStyle(3, HUD_COLORS.panelStroke, active ? HUD_COLORS.panelStrokeAlpha : 0.3);
-    bg.strokeRoundedRect(x, y, cfg.slotWidth, cfg.slotHeight, cfg.cornerRadius);
+    bg.strokeRoundedRect(slotX, slotY, panel.slotWidth, panel.slotHeight, panel.cornerRadius);
 
     // 欄標籤 P1~P4。
     track(
       scene.add
-        .text(x + cfg.padding, y + cfg.padding, `P${playerNo}`, {
+        .text(slotX + panel.padding, slotY + panel.padding, `P${playerIndex + 1}`, {
           fontFamily: HUD_FONT_FAMILY,
-          fontSize: cfg.labelFontSize,
+          fontSize: '22px',
           color: HUD_COLORS.text,
           fontStyle: 'bold',
         })
@@ -83,120 +104,139 @@ export class BottomPanel {
         .setDepth(PANEL_DEPTH),
     );
 
-    // 寶箱 icon（chest.png，退回方塊佔位）。
-    const chestX = x + cfg.padding;
-    const chestY = y + cfg.slotHeight - cfg.padding - cfg.chest.size;
-    if (scene.textures.exists(UI_ICONS.chest.key)) {
-      track(scene.add.image(chestX, chestY, UI_ICONS.chest.key))
-        .setOrigin(0, 0)
-        .setDisplaySize(cfg.chest.size, cfg.chest.size)
-        .setAlpha(alpha)
-        .setScrollFactor(0)
-        .setDepth(PANEL_DEPTH);
-    } else {
-      const chest = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
-      chest.fillStyle(HUD_COLORS.chest, alpha);
-      chest.fillRoundedRect(chestX, chestY, cfg.chest.size, cfg.chest.size, 8);
-      chest.lineStyle(2, 0x5d4037, alpha);
-      chest.strokeRoundedRect(chestX, chestY, cfg.chest.size, cfg.chest.size, 8);
-      chest.lineStyle(2, 0x5d4037, alpha);
-      chest.lineBetween(chestX, chestY + cfg.chest.size * 0.35, chestX + cfg.chest.size, chestY + cfg.chest.size * 0.35);
-    }
-
-    // 彩票 icon（ticket.png）+ 數字（寶箱右）。無圖時退回「彩票」文字標籤。
-    const infoX = chestX + cfg.chest.size + 16;
-    if (scene.textures.exists(UI_ICONS.ticket.key)) {
-      const tSize = Number.parseInt(cfg.ticket.labelFontSize, 10) + 6;
-      track(scene.add.image(infoX, chestY + tSize / 2, UI_ICONS.ticket.key))
-        .setOrigin(0, 0.5)
-        .setDisplaySize(tSize, tSize)
-        .setAlpha(alpha)
-        .setScrollFactor(0)
-        .setDepth(PANEL_DEPTH);
-    } else {
-      track(
-        scene.add
-          .text(infoX, chestY, cfg.ticket.label, {
-            fontFamily: HUD_FONT_FAMILY,
-            fontSize: cfg.ticket.labelFontSize,
-            color: HUD_COLORS.textMuted,
-          })
+    // 寶箱（chest.png，退回方塊佔位）。座標=欄左上 + element.x/y。
+    const chestEl = this.findEl(template, 'chest');
+    if (chestEl) {
+      const cx = slotX + chestEl.x;
+      const cy = slotY + chestEl.y;
+      if (scene.textures.exists(UI_ICONS.chest.key)) {
+        track(scene.add.image(cx, cy, UI_ICONS.chest.key))
+          .setOrigin(0, 0)
+          .setDisplaySize(chestEl.width, chestEl.height)
           .setAlpha(alpha)
           .setScrollFactor(0)
-          .setDepth(PANEL_DEPTH),
-      );
+          .setDepth(PANEL_DEPTH);
+      } else {
+        const chest = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
+        chest.fillStyle(HUD_COLORS.chest, alpha);
+        chest.fillRoundedRect(cx, cy, chestEl.width, chestEl.height, 8);
+        chest.lineStyle(2, 0x5d4037, alpha);
+        chest.strokeRoundedRect(cx, cy, chestEl.width, chestEl.height, 8);
+        chest.lineBetween(cx, cy + chestEl.height * 0.35, cx + chestEl.width, cy + chestEl.height * 0.35);
+      }
+    }
+
+    // 彩票（ticket.png icon + 數字）。icon 放 element 左端，數字接右。
+    const ticketEl = this.findEl(template, 'ticket');
+    const tx = slotX + (ticketEl?.x ?? 0);
+    const ty = slotY + (ticketEl?.y ?? 0);
+    const iconSize = 28;
+    if (scene.textures.exists(UI_ICONS.ticket.key)) {
+      track(scene.add.image(tx, ty, UI_ICONS.ticket.key))
+        .setOrigin(0, 0.5)
+        .setDisplaySize(iconSize, iconSize)
+        .setAlpha(alpha)
+        .setScrollFactor(0)
+        .setDepth(PANEL_DEPTH);
     }
     const ticketText = track(
       scene.add
-        .text(infoX, chestY + 22, cfg.ticket.placeholder, {
+        .text(tx + iconSize + 6, ty, '00000', {
           fontFamily: HUD_FONT_FAMILY,
-          fontSize: cfg.ticket.fontSize,
+          fontSize: '30px',
           color: HUD_COLORS.text,
           fontStyle: 'bold',
         })
+        .setOrigin(0, 0.5)
         .setAlpha(alpha)
         .setScrollFactor(0)
         .setDepth(PANEL_DEPTH),
     );
 
-    // 金幣 icon（coin.png，退回右下角圓形佔位）。
-    const coinR = cfg.coin.size / 2;
-    const coinCx = x + cfg.slotWidth - cfg.padding - coinR;
-    const coinCy = y + cfg.slotHeight - cfg.padding - coinR;
-    if (scene.textures.exists(UI_ICONS.coin.key)) {
-      track(scene.add.image(coinCx, coinCy, UI_ICONS.coin.key))
-        .setDisplaySize(cfg.coin.size, cfg.coin.size)
-        .setAlpha(alpha)
-        .setScrollFactor(0)
-        .setDepth(PANEL_DEPTH);
-    } else {
-      const coin = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
-      coin.fillStyle(HUD_COLORS.coin, alpha);
-      coin.fillCircle(coinCx, coinCy, coinR);
-      coin.lineStyle(2, 0x8a6d0f, alpha);
-      coin.strokeCircle(coinCx, coinCy, coinR);
+    // 金幣（coin.png，退回圓形佔位）。
+    const coinEl = this.findEl(template, 'coin');
+    if (coinEl) {
+      const cxc = slotX + coinEl.x + coinEl.width / 2;
+      const cyc = slotY + coinEl.y + coinEl.height / 2;
+      if (scene.textures.exists(UI_ICONS.coin.key)) {
+        track(scene.add.image(cxc, cyc, UI_ICONS.coin.key))
+          .setDisplaySize(coinEl.width, coinEl.height)
+          .setAlpha(alpha)
+          .setScrollFactor(0)
+          .setDepth(PANEL_DEPTH);
+      } else {
+        const coin = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
+        coin.fillStyle(HUD_COLORS.coin, alpha);
+        coin.fillCircle(cxc, cyc, coinEl.width / 2);
+        coin.lineStyle(2, 0x8a6d0f, alpha);
+        coin.strokeCircle(cxc, cyc, coinEl.width / 2);
+      }
     }
 
-    // 進度條（下方，跨欄寬）。
-    const progressX = infoX;
-    const progressW = cfg.slotWidth - (infoX - x) - cfg.padding - cfg.coin.size - 10;
-    const progressY = y + cfg.slotHeight - cfg.padding - cfg.progress.height;
+    // 進度條（底槽 + 填充；填充由 setProgress 動態畫）。
+    const progEl = this.findEl(template, 'progress');
+    const progressX = slotX + (progEl?.x ?? panel.padding);
+    const progressY = slotY + (progEl?.y ?? panel.slotHeight - panel.padding - 16);
+    const progressW = progEl?.width ?? panel.slotWidth - panel.padding * 2;
+    const progressH = progEl?.height ?? 16;
+    const progressRadius = 6;
     const progress = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
     progress.setAlpha(alpha);
 
     const slot: Slot = {
+      playerIndex,
+      objects,
       ticketText,
       progress,
       progressX,
       progressY,
       progressW,
+      progressH,
+      progressRadius,
       active,
       shownTicket: -1,
       shownRatio: -1,
     };
-    this.drawProgress(slot, cfg.progress.placeholderRatio);
+    this.drawProgress(slot, 0);
     return slot;
   }
 
   private drawProgress(slot: Slot, ratio: number): void {
-    const cfg = BOTTOM_PANEL_LAYOUT;
     const clamped = Phaser.Math.Clamp(ratio, 0, 1);
     if (clamped === slot.shownRatio) return;
     slot.shownRatio = clamped;
     const g = slot.progress;
     g.clear();
     g.fillStyle(HUD_COLORS.progressBg, 1);
-    g.fillRoundedRect(slot.progressX, slot.progressY, slot.progressW, cfg.progress.height, cfg.progress.cornerRadius);
+    g.fillRoundedRect(slot.progressX, slot.progressY, slot.progressW, slot.progressH, slot.progressRadius);
     if (clamped > 0) {
       g.fillStyle(HUD_COLORS.progressFill, 1);
-      g.fillRoundedRect(slot.progressX, slot.progressY, slot.progressW * clamped, cfg.progress.height, cfg.progress.cornerRadius);
+      g.fillRoundedRect(slot.progressX, slot.progressY, slot.progressW * clamped, slot.progressH, slot.progressRadius);
     }
   }
 
+  /** 目前欄數（= slotCount）。 */
+  slotCount(): number {
+    return this.slots.length;
+  }
+
   /**
-   * 設定某玩家欄的彩票數（stub）。
-   * @param index 欄索引（0=P1）。
+   * 更新 active 欄數（玩家加入時呼叫）：i < activeCount 的欄轉亮。
+   * 只調整透明度（結構不變，恆等），不重建。
    */
+  setActiveCount(activeCount: number): void {
+    for (const slot of this.slots) {
+      const active = slot.playerIndex < activeCount;
+      if (active === slot.active) continue;
+      slot.active = active;
+      const a = active ? 1 : INACTIVE_ALPHA;
+      for (const o of slot.objects) {
+        (o as unknown as { setAlpha?: (v: number) => void }).setAlpha?.(a);
+      }
+    }
+  }
+
+  /** 設定某玩家欄的彩票數。index=playerIndex（0=P1）。 */
   setTicket(index: number, value: number): void {
     const slot = this.slots[index];
     if (!slot) return;
@@ -206,7 +246,7 @@ export class BottomPanel {
     slot.ticketText.setText(`${n}`.padStart(5, '0'));
   }
 
-  /** 設定某玩家欄的進度條比例（0..1，stub）。 */
+  /** 設定某玩家欄的進度條比例（0..1）。 */
   setProgress(index: number, ratio: number): void {
     const slot = this.slots[index];
     if (!slot) return;
@@ -214,8 +254,9 @@ export class BottomPanel {
   }
 
   destroy(): void {
-    for (const o of this.objects) o.destroy();
-    this.objects.length = 0;
+    for (const slot of this.slots) {
+      for (const o of slot.objects) o.destroy();
+    }
     this.slots.length = 0;
   }
 }

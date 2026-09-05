@@ -82,6 +82,12 @@ export const UI_ICONS = {
   lamp: { key: 'ui-lamp', path: 'assets/images/ui/lamp.png' },
 } as const;
 
+/** UI 佈局 JSON（uiLayoutSchema 格式）：Phaser cache key + 載入路徑。 */
+export const UI_LAYOUT_ASSET = {
+  key: 'ui-layout',
+  path: 'assets/data/uiLayout.json',
+} as const;
+
 /**
  * A. 角色頭上 UI（跟隨玩家，世界座標）。
  * 對照 Unity PlayerUI 200×80。座標皆為「相對容器中心」的 local 值，

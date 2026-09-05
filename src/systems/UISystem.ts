@@ -1,114 +1,123 @@
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import type Phaser from 'phaser';
-import { UI_ICONS } from '@/config/uiConfig';
+import { UI_ICONS, UI_LAYOUT_ASSET } from '@/config/uiConfig';
+import {
+  DEFAULT_UI_LAYOUT,
+  validateUiLayout,
+  type UiLayoutFile,
+} from '@/config/uiLayoutSchema';
 import { BottomPanel } from '@/systems/ui/BottomPanel';
 import { PlayerOverheadUI } from '@/systems/ui/PlayerOverheadUI';
 
 /**
- * UISystem — HUD 系統（見 docs/h5_collab_spec.md）。
+ * UISystem — HUD 系統（見 docs/h5_collab_spec.md），per-player 多份版（S5 ③）。
  *
  * 對照 Unity prefab，HUD 分兩塊，皆為純顯示層（**絕不回寫任何核心狀態**）：
- *  A. PlayerOverheadUI —— 角色頭上 UI，世界座標，每幀跟隨 ctx.player 位置。
- *     元素：玩家編號牌 / 魂力環 / Credit+金幣 / 能量 4 格 / COMBO。
- *  B. BottomPanel —— 螢幕底部固定 4 欄 P1~P4（單人：P1 完整、P2~P4 佔位）。
- *     元素：面板底框 / 寶箱 icon / 彩票數 / 進度條 / 金幣 icon。
+ *  A. PlayerOverheadUI —— 每個 active player 頭上一份，世界座標跟隨各自 player 位置，
+ *     讀各自 playerId 的 Credit / COMBO / 能量 / 魂力。
+ *  B. BottomPanel —— 螢幕底部固定 N 欄，欄內元素座標讀 uiLayout schema（相對欄左上）。
+ *     每欄顯示該 player 的寶箱 / 彩票 / 進度 / 金幣；active 欄亮、未加入欄淡化。
  *
- * 資料來源：
- *  - 已存在狀態：ctx.player.getPosition()（頭上 UI 跟隨）、能量接 getEnergy。
- *  - 尚未實作系統（Credit / 彩票 / 魂力 / COMBO / 能量真值）：走本檔 stub，
- *    目前回佔位值，只排佈局。日後系統做好只換對應 stub 一行，UI 版面不動。
+ * per-player 讀取（系統層皆 Map<playerId>）：
+ *  - 彩票 ctx.ticket.getTickets(pid)、Credit ctx.credit.getCredit(pid)、
+ *    COMBO ctx.combo.getCombo/isWarning/consumeMaxTriggered(pid)、
+ *    能量 ctx.energy.getEnergy(pid)、魂力 ctx.transform.getSoulRatio(pid)。
+ *  - 進度（寶盒）ctx.chest.getProgress() 目前為全域（系統層尚未 per-player kill 歸屬），
+ *    各欄暫顯示同一全域進度；系統層做 per-player 後改成 getProgress(pid) 一行。
  *
- * 邊界：只新增 UI 檔，不改 Player/Enemy/GameScene/config 等他人檔；
- * 註冊（registerSystems）由整合者統一加。
+ * 佈局來源：public/assets/data/uiLayout.json（uiLayoutSchema 驗證）；載不到用 DEFAULT_UI_LAYOUT。
+ * 🔴 防漂移（決策 b765cfbf）：BottomPanel 各欄一律用 columns[0].elements 複製，P1~P4 恆等。
+ *
+ * 邊界：只動 UI 讀取層（本檔 + BottomPanel + PlayerOverheadUI），不碰系統層 / schema / 核心。
  */
 export class UISystem implements GameSystem {
   readonly name = 'UISystem';
 
   /**
-   * 載入 HUD 用的 UI icon 貼圖（對照 EffectSystem.preload 慣例）。
+   * 載入 HUD 用的 UI icon 貼圖 + 佈局 JSON（對照 EffectSystem.preload 慣例）。
    * 由 GameScene.preload() 呼叫一次：UISystem.preload(this)。
-   * 沒載到的 icon，元件會自動退回原本的色塊/圖形佔位（不會壞）。
+   * 沒載到的資源會 graceful fallback（icon 退回色塊、佈局退回 DEFAULT_UI_LAYOUT），不會壞。
    */
   static preload(scene: Phaser.Scene): void {
     for (const icon of Object.values(UI_ICONS)) {
       scene.load.image(icon.key, icon.path);
     }
+    scene.load.json(UI_LAYOUT_ASSET.key, UI_LAYOUT_ASSET.path);
   }
 
   private ctx!: GameContext;
-  private overhead!: PlayerOverheadUI;
+  private layout!: UiLayoutFile;
   private bottomPanel!: BottomPanel;
+  /** 每個 player 一份頭上 UI（index = players[] index）。 */
+  private overheads: PlayerOverheadUI[] = [];
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
     const scene = ctx.scene;
-    this.overhead = new PlayerOverheadUI(scene);
-    this.bottomPanel = new BottomPanel(scene);
+    this.layout = this.loadLayout(scene);
+
+    const activeCount = ctx.players.length;
+    this.bottomPanel = new BottomPanel(scene, this.layout.panel, activeCount);
+
+    // 每個目前存在的 player 各建一份頭上 UI。
+    for (let i = 0; i < ctx.players.length; i++) {
+      this.overheads.push(new PlayerOverheadUI(scene, `P${i + 1}`));
+    }
+  }
+
+  /** 載入並驗證 uiLayout.json；失敗（未載/不合法）退回 DEFAULT_UI_LAYOUT。 */
+  private loadLayout(scene: Phaser.Scene): UiLayoutFile {
+    const raw = scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown;
+    if (raw !== undefined && raw !== null) {
+      const result = validateUiLayout(raw);
+      if (result.ok) return result.data;
+      // 不合法：警告後退回預設（不讓 UI 整個壞掉）。
+      console.warn('[UISystem] uiLayout.json 驗證失敗，改用預設佈局：', result.errors);
+    }
+    return DEFAULT_UI_LAYOUT;
   }
 
   update(dt: number): void {
-    const player = this.ctx.player;
+    const players = this.ctx.players;
 
-    // A. 頭上 UI：跟隨玩家世界座標 + 刷新數值。
-    const pos = player.getPosition();
-    this.overhead.followWorldPosition(pos.x, pos.y);
-    this.overhead.setSoul(this.getSoulRatio());
-    this.overhead.setCredit(this.getCredit());
-    this.overhead.setCombo(this.getCombo());
-    // COMBO 警告閃爍 + 滿檔 MAX!（接 ComboSystem，本地 P1）。
-    const p1 = this.ctx.player.playerId;
-    this.overhead.setComboWarning(this.ctx.combo.isWarning(p1));
-    if (this.ctx.combo.consumeMaxTriggered(p1)) this.overhead.showMaxCombo();
-    this.overhead.setEnergy(this.getEnergy());
-    this.overhead.updateEnergy(dt);
+    // 玩家加入（F2~F4）→ 補建頭上 UI + 亮對應底部欄。
+    if (this.overheads.length < players.length) {
+      for (let i = this.overheads.length; i < players.length; i++) {
+        this.overheads.push(new PlayerOverheadUI(this.ctx.scene, `P${i + 1}`));
+      }
+      this.bottomPanel.setActiveCount(players.length);
+    }
 
-    // B. 下方面板：刷新 P1 stub 數值（P2~P4 佔位不刷新）。
-    this.bottomPanel.setTicket(0, this.getTicket());
-    this.bottomPanel.setProgress(0, this.getProgress());
+    // A. 每個 player 各自頭上 UI：跟隨自己位置 + 讀自己 playerId 的狀態。
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i];
+      const pid = p.playerId;
+      const overhead = this.overheads[i];
+      const pos = p.getPosition();
+      overhead.followWorldPosition(pos.x, pos.y);
+      overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
+      overhead.setCredit(this.ctx.credit.getCredit(pid));
+      overhead.setCombo(this.ctx.combo.getCombo(pid));
+      overhead.setComboWarning(this.ctx.combo.isWarning(pid));
+      if (this.ctx.combo.consumeMaxTriggered(pid)) overhead.showMaxCombo();
+      overhead.setEnergy(this.ctx.energy.getEnergy(pid));
+      overhead.updateEnergy(dt);
+    }
+
+    // B. 下方面板：每個 active player 欄刷新自己的彩票 / 進度。
+    for (let i = 0; i < players.length && i < this.bottomPanel.slotCount(); i++) {
+      const pid = players[i].playerId;
+      this.bottomPanel.setTicket(i, this.ctx.ticket.getTickets(pid));
+      // 進度：系統層尚未 per-player，暫用全域寶盒進度（做好改 getProgress(pid)）。
+      this.bottomPanel.setProgress(i, this.ctx.chest.getProgress());
+    }
   }
 
   destroy(): void {
-    this.overhead.destroy();
+    for (const o of this.overheads) o.destroy();
+    this.overheads = [];
     this.bottomPanel.destroy();
   }
-
-  // ---------------------------------------------------------------------------
-  // 資料來源 stub —— 相依系統（Credit / 彩票 / 魂力 / COMBO / 能量）尚未實作。
-  // 之後接真資料：把對應這一行的回傳改成讀真正的服務即可（UI 版面不需重做）。
-  // 例：能量系統做好後
-  //   private getEnergy(): number { return this.ctx.energy.getCharge(); }
-  // （若需在 GameContext 加欄位，走 spec §4 由 leader 過 additive，不自己加。）
-  // ---------------------------------------------------------------------------
-
-  /** 能量充能格數（0..上限）。接 EnergySystem（本地 P1）。 */
-  private getEnergy(): number {
-    return this.ctx.energy.getEnergy(this.ctx.player.playerId);
-  }
-
-  /** COMBO 連擊數。接 ComboSystem（本地 P1）。 */
-  private getCombo(): number {
-    return this.ctx.combo.getCombo(this.ctx.player.playerId);
-  }
-
-  /** 魂力顯示比例（0..1）。接 TransformSystem（本地 P1）：變身時 soul/max、退變時 0。 */
-  private getSoulRatio(): number {
-    return this.ctx.transform.getSoulRatio(this.ctx.player.playerId);
-  }
-
-  /** Credit 數字。接 CreditSystem（本地 P1）。 */
-  private getCredit(): number {
-    return this.ctx.credit.getCredit(this.ctx.player.playerId);
-  }
-
-  /** 彩票數。接 TicketSystem。 */
-  /** 彩票數。接 TicketSystem（本地 P1；per-player 多欄顯示由界騎讀 columns 之後做）。 */
-  private getTicket(): number {
-    return this.ctx.ticket.getTickets(this.ctx.player.playerId);
-  }
-
-  /** 寶箱進度比例（0..1）。接 ChestSystem（chestCharge/門檻）。 */
-  private getProgress(): number {
-    return this.ctx.chest.getProgress();
-  }
 }
+
