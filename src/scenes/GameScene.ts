@@ -8,6 +8,7 @@ import { BuffSystem } from '@/systems/BuffSystem';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import { splitChestByDamage } from '@/systems/chestAttribution';
 import { P1_ENTRANCE_ON_START, landingX } from '@/systems/entranceMath';
+import { playerColor } from '@/config/playerConfig';
 import { ChestSystem } from '@/systems/ChestSystem';
 import { ComboSystem } from '@/systems/ComboSystem';
 import { CreditSystem } from '@/systems/CreditSystem';
@@ -40,6 +41,8 @@ import { WaveSystem } from '@/systems/WaveSystem';
 export class GameScene extends Phaser.Scene {
   private systems: GameSystem[] = [];
   private ctx!: GameContext;
+  /** UISystem 實例（create 提前建立供擊殺回呼取寶盒錨點；registerSystems 再註冊）。 */
+  private uiSystem!: UISystem;
 
   /** 試玩模式注入的關卡（由 main.ts 經 scene data 傳入）；一般玩家為 undefined。 */
   private previewLevels?: LevelData[];
@@ -132,11 +135,24 @@ export class GameScene extends Phaser.Scene {
       getEnemies: () => spawner.getEnemies(),
     };
 
+    // 能量飛光需在擊殺回呼裡取寶盒 UI 錨點：UISystem 提前建立（存 field，registerSystems 再註冊）。
+    this.uiSystem = new UISystem();
+    const uiSystem = this.uiSystem;
+    const effectsRef = effects;
+
     // 擊殺 → 寶盒能量按「各 player 對這隻的傷害比例」分給各自 chest（決策 c61872a6）。
-    spawner.onEnemyKilled = (enemyKey, damageByPlayer) => {
+    // + 能量飛寶盒表演（第4項，純視覺）：每個有貢獻的 player 從敵人死亡位置飛一道識別色能量光
+    //   到該 player 寶盒 UI 位置。⚠️ addCharge 維持即時加值、飛光只是疊加表演（數值/視覺解耦）。
+    spawner.onEnemyKilled = (enemyKey, damageByPlayer, deathPos) => {
       const total = chestChargeFor(enemyKey);
       const shares = splitChestByDamage(total, damageByPlayer, player.playerId);
-      for (const [pid, amount] of shares) chest.addCharge(pid, amount);
+      for (const [pid, amount] of shares) {
+        chest.addCharge(pid, amount); // 即時加值（不動時機/邏輯）
+        if (amount <= 0) continue;
+        const anchor = uiSystem.getChestAnchor(pid);
+        if (anchor)
+          effectsRef.flyEnergy(deathPos.x, deathPos.y, anchor.x, anchor.y, playerColor(pid));
+      }
     };
     // 防穿透對所有 player（多人）：讓 spawner 讀 players[]。
     spawner.getAllPlayers = () => this.ctx.players;
@@ -178,7 +194,7 @@ export class GameScene extends Phaser.Scene {
     this.register(this.ctx.chest); // 寶盒：擊殺累積能量/自動開箱
     this.register(this.ctx.jp); // JP：幕通關給燈/命中累積倍數/集滿派彩
     this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
-    this.register(new UISystem()); // HUD：唯讀當幀狀態刷新顯示
+    this.register(this.uiSystem); // HUD：唯讀當幀狀態刷新顯示（實例已於 create 提前建立）
     // DebugSystem 需讀玩家/敵人判定圖形；正式版可整包移除這行。
     this.register(new DebugSystem(playerControl, this.ctx.spawner));
   }

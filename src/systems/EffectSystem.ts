@@ -1,7 +1,11 @@
 import Phaser from 'phaser';
 import { VFX_EFFECTS, VFX_FRAME_PAD, type VFXEffectDef } from '@/config/vfxConfig';
+import { ENERGY_FLY, flyAlpha, flyPosition, flyScale } from '@/systems/energyFlyMath';
 
 const BASE_PATH = 'assets/images/vfx';
+
+/** 能量飛光 depth（飛在角色上層；角色 depth 為 0 量級、頭上 UI 900）。 */
+const ENERGY_FLY_DEPTH = 950;
 
 /** 特效單張幀的 texture key，例如 "vfx/attack_03/03"。 */
 function frameKey(effectKey: string, index: number): string {
@@ -88,5 +92,38 @@ export class EffectSystem {
     spr.play(animKey(effectKey));
     // 播完自動銷毀。
     spr.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => spr.destroy());
+  }
+
+  /**
+   * 能量飛寶盒表演（第4項）：一道識別色光點從起點飛到終點（lerp ~0.7s）+ 縮放脈動 + 尾段淡出。
+   * ⚠️ 純視覺疊加：不涉及 chest 數值（addCharge 已在擊殺結算即時加值、與此解耦）。
+   * @param fromX,fromY 起點（敵人死亡位置，世界座標）
+   * @param toX,toY 終點（該 player 寶盒 UI 位置，螢幕座標；面板 scrollFactor 0）
+   * @param color 光點顏色（該 player 識別色 PLAYER_COLORS）
+   */
+  flyEnergy(fromX: number, fromY: number, toX: number, toY: number, color: number): void {
+    const dot = this.scene.add.graphics();
+    dot.fillStyle(color, 1);
+    dot.fillCircle(0, 0, ENERGY_FLY.radiusPx);
+    dot.setDepth(ENERGY_FLY_DEPTH); // 飛在角色上層
+    dot.setScrollFactor(0); // 終點是螢幕座標(面板)，光點也走螢幕空間
+    dot.x = fromX;
+    dot.y = fromY;
+
+    const state = { t: 0 };
+    this.scene.tweens.add({
+      targets: state,
+      t: 1,
+      duration: ENERGY_FLY.durationSec * 1000,
+      ease: 'Sine.easeIn',
+      onUpdate: () => {
+        const p = flyPosition(fromX, fromY, toX, toY, state.t);
+        dot.x = p.x;
+        dot.y = p.y;
+        dot.setScale(flyScale(state.t));
+        dot.setAlpha(flyAlpha(state.t));
+      },
+      onComplete: () => dot.destroy(),
+    });
   }
 }

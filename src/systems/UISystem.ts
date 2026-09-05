@@ -46,6 +46,18 @@ export class UISystem implements GameSystem {
     scene.load.json(UI_LAYOUT_ASSET.key, UI_LAYOUT_ASSET.path);
   }
 
+  /**
+   * 取某 player 寶盒欄的螢幕錨點（能量飛光終點；面板 scrollFactor 0 = 螢幕座標）。
+   * 委派 BottomPanel（權威來源、避免座標漂移，決策 b765cfbf）。BottomPanel 尚未提供
+   * getChestAnchor 時回 undefined（飛光就不觸發），待界騎補上該 getter 即自動生效。
+   */
+  getChestAnchor(playerIndex: number): { x: number; y: number } | undefined {
+    const bp = this.bottomPanel as unknown as {
+      getChestAnchor?: (i: number) => { x: number; y: number } | undefined;
+    };
+    return bp.getChestAnchor?.(playerIndex);
+  }
+
   private ctx!: GameContext;
   private layout!: UiLayoutFile;
   private bottomPanel!: BottomPanel;

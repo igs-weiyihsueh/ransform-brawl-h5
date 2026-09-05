@@ -71,9 +71,10 @@ export class Enemy implements Hittable {
   /** 出手回呼（由場景設定）。 */
   onAttack: ((e: EnemyAttackEvent) => void) | null = null;
 
-  /** 擊殺回呼（由 EnemySpawner 設定），死亡當下觸發一次，帶敵人角色 key + 各 player 對這隻的傷害。 */
-  onKilled: ((enemyKey: string, damageByPlayer: ReadonlyMap<number, number>) => void) | null =
-    null;
+  /** 擊殺回呼（由 EnemySpawner 設定），死亡當下觸發一次，帶敵人角色 key + 各 player 對這隻的傷害 + 死亡位置。 */
+  onKilled:
+    | ((enemyKey: string, damageByPlayer: ReadonlyMap<number, number>, deathPos: Vec2) => void)
+    | null = null;
 
   /** 本隻怪各 player 造成的傷害（寶盒擊殺歸屬按比例分，決策 c61872a6）。 */
   private readonly damageByPlayer = new Map<number, number>();
@@ -370,7 +371,10 @@ export class Enemy implements Hittable {
   private die(): void {
     this.state = 'death';
     this.knockbackVel = { x: 0, y: 0 };
-    this.onKilled?.(this.cfg.characterKey, this.damageByPlayer); // 擊殺事件 + 傷害歸屬
+    this.onKilled?.(this.cfg.characterKey, this.damageByPlayer, {
+      x: this.anim.sprite.x,
+      y: this.anim.sprite.y,
+    }); // 擊殺事件 + 傷害歸屬 + 死亡位置(能量飛光起點)
     this.anim.play('death', {
       force: true,
       onComplete: () => {

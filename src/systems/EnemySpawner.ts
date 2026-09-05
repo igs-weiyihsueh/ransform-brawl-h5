@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { Enemy, type EnemyAttackEvent } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
-import { circleIntersectsCircle } from '@/systems/hitDetection';
+import { circleIntersectsCircle, type Vec2 } from '@/systems/hitDetection';
 import { Projectile } from '@/systems/Projectile';
 
 /**
@@ -33,9 +33,13 @@ export class EnemySpawner {
     this.worldBounds = worldBounds;
   }
 
-  /** 擊殺回呼（由 GameScene 設定）。帶被擊殺敵人的角色 key + 各 player 對這隻的傷害。 */
+  /** 擊殺回呼（由 GameScene 設定）。帶被擊殺敵人的角色 key + 各 player 對這隻的傷害 + 死亡位置。 */
   onEnemyKilled:
-    | ((enemyKey: string, damageByPlayer: ReadonlyMap<number, number>) => void)
+    | ((
+        enemyKey: string,
+        damageByPlayer: ReadonlyMap<number, number>,
+        deathPos: Vec2,
+      ) => void)
     | null = null;
 
   /** 取得全部玩家（由 GameScene 注入）：供防穿透對所有 player 頂開。預設只有 P1。 */
@@ -45,7 +49,8 @@ export class EnemySpawner {
   spawn(type: string, x: number, y: number): Enemy {
     const e = new Enemy(this.scene, x, y, type);
     e.onAttack = (ev) => this.handleEnemyAttack(ev);
-    e.onKilled = (key, dmgByPlayer) => this.onEnemyKilled?.(key, dmgByPlayer);
+    e.onKilled = (key, dmgByPlayer, deathPos) =>
+      this.onEnemyKilled?.(key, dmgByPlayer, deathPos);
     if (this.guardTarget) e.setGuardTarget(this.guardTarget); // 守護波中新生怪也打雕像
     this.enemies.push(e);
     return e;
