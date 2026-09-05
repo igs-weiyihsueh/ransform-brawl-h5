@@ -87,6 +87,27 @@ export function pushOutOfPlayer(
 }
 
 /**
+ * 攻擊出手面向（用戶新#2）：出手瞬間敵人該面向玩家那側。
+ * dx = aimX - posX：明顯右→+1、明顯左→-1、|dx|≤閾值(玩家幾乎正上下)→保留 currentFacing（不亂轉）。
+ * 純函式，給測騎測（攻擊出手 facing 朝玩家 aim 那側）。
+ * @param aimX 瞄準點（玩家/目標）x。
+ * @param posX 敵人 x。
+ * @param currentFacing 目前面向（dx≈0 時保留）。
+ * @param eps 水平判定閾值（預設 0.001）。
+ */
+export function attackFacing(
+  aimX: number,
+  posX: number,
+  currentFacing: number,
+  eps = 0.001,
+): number {
+  const dx = aimX - posX;
+  if (dx > eps) return 1;
+  if (dx < -eps) return -1;
+  return currentFacing; // 幾乎正上下 → 保留最近有效朝向
+}
+
+/**
  * immovable 菁英「像牆」防穿透（用戶試玩 #1：菁英不該推玩家）：
  * 菁英移動撞到玩家時，把**菁英自己**頂回玩家外緣（擋下菁英的前進），**不推玩家**；
  * 但菁英不會被玩家「推著倒退」——修正後位置**不得比移動前(prevPos)離玩家更遠**

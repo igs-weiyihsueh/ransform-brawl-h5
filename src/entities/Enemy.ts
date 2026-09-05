@@ -6,6 +6,7 @@ import { PPU } from '@/config/gameConfig';
 import { MAP_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import {
+  attackFacing,
   blockEliteAdvance,
   calculateSeparation,
   combineWithSeparation,
@@ -445,6 +446,9 @@ export class Enemy implements Hittable {
   }
 
   private fireAttack(playerPos: Vec2): void {
+    // 用戶新#2：出手瞬間強制面向玩家那側（根治蓄力 0.5s 間玩家繞到另一側/dx≈0 卡背對）。
+    // this.facing 供攻擊圓 offset 方向 + setFacing 更新視覺(setFacingEnemy)，兩者一致朝玩家。
+    this.setFacing(attackFacing(playerPos.x, this.anim.sprite.x, this.facing));
     // 播 attack 一次性動畫；播完 → attackAnimDone，讓狀態機進 cooldown。
     this.anim.play('attack', {
       force: true,
