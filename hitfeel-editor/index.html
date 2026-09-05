@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>打擊手感編輯器 — 變身大亂鬥 H5</title>
+    <style>
+      :root {
+        --bg: #1a1a2e; --panel: #23233a; --panel2: #2c2c48; --line: #3a3a5c;
+        --text: #e6e6f0; --muted: #9a9ab5; --accent: #6c8cff; --danger: #ff6c7a; --ok: #59d98e;
+        --stage: #10101c;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
+        font-family: Arial, "Microsoft JhengHei", "Noto Sans TC", sans-serif; font-size: 14px; }
+      header { padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      header h1 { font-size: 16px; margin: 0; }
+      header .spacer { flex: 1; }
+      .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 1px 6px; border-radius: 10px; }
+      button { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+        border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+      button:hover { border-color: var(--accent); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .layout { display: flex; height: calc(100vh - 53px); }
+      .stage-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #14141f; gap: 14px; }
+      #preview { background: var(--stage); outline: 1px solid var(--line); }
+      .preview-controls { display: flex; gap: 10px; }
+      .col-inspector { width: 360px; border-left: 1px solid var(--line); padding: 12px; overflow-y: auto; background: var(--panel); }
+      .section-title { color: var(--muted); font-size: 12px; text-transform: uppercase; margin: 12px 0 8px; letter-spacing: 0.5px; }
+      .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+      .row label { width: 150px; color: var(--muted); }
+      .row input[type="range"] { flex: 1; }
+      .row input[type="number"] { width: 72px; }
+      .row .val { width: 56px; text-align: right; color: var(--muted); }
+      #status { padding: 8px 16px; font-size: 13px; white-space: pre-wrap; border-top: 1px solid var(--line); background: var(--panel); max-height: 120px; overflow-y: auto; }
+      .status-ok { color: var(--ok); } .status-err { color: var(--danger); }
+      .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+      textarea#export-box { width: 100%; height: 160px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-family: monospace; font-size: 12px; padding: 8px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>打擊手感編輯器</h1>
+      <span class="badge">hitFeelConfig · HIT_FEEL</span>
+      <div class="spacer"></div>
+      <button id="btn-reset">重設為預設值</button>
+      <button id="btn-copy" class="primary">複製參數</button>
+      <button id="btn-export">下載 JSON</button>
+    </header>
+
+    <div class="layout">
+      <div class="stage-wrap">
+        <canvas id="preview" width="480" height="420"></canvas>
+        <div class="preview-controls">
+          <button id="btn-hit" class="primary">▶ 觸發受擊（白閃+punch+火花+擊退+頓幀）</button>
+          <button id="btn-death">💀 觸發死亡粒子</button>
+        </div>
+        <div class="hint">按鈕用「當前參數」即時播打擊表演，不用進遊戲。</div>
+      </div>
+
+      <div class="col-inspector">
+        <div class="section-title">總開關</div>
+        <div id="ctrl-enabled"></div>
+        <div class="section-title">受擊白閃</div>
+        <div id="ctrl-flash"></div>
+        <div class="section-title">Punch 彈跳</div>
+        <div id="ctrl-punch"></div>
+        <div class="section-title">命中火花</div>
+        <div id="ctrl-spark"></div>
+        <div class="section-title">局部頓幀</div>
+        <div id="ctrl-freeze"></div>
+        <div class="section-title">擊退（快進快出）</div>
+        <div id="ctrl-knockback"></div>
+        <div class="section-title">死亡粒子</div>
+        <div id="ctrl-death"></div>
+        <div class="section-title">匯出</div>
+        <textarea id="export-box" readonly></textarea>
+      </div>
+    </div>
+
+    <div id="status">就緒。右側調參數，左側按「觸發受擊」即時預覽。調好用「複製參數」貼回 hitFeelConfig。</div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
