@@ -129,6 +129,47 @@ interface Editable {
 
 const stageEl = $('stage');
 
+// ---- 視圖：當前區塊內容置中的編輯畫布 ------------------------------------
+//
+// 不再把小小的 overhead 塞進 1920×1080 大舞台(會被推到角落)。改成：
+// 每個區塊算出「內容邊界矩形 contentRect」，把 #stage 尺寸設成該矩形大小，
+// 所有繪製像素位置減掉 contentRect 左上(viewOffset)→ 內容從 (0,0) 填滿 stage；
+// stage 由 .stage-wrap flex 置中、transform scale 以 transform-origin:center 繞中心縮放。
+// ⚠️ 只影響「呈現像素位置」，元素實際 x/y 資料完全不動(匯出座標不受影響)。
+
+/** 當前區塊的內容邊界矩形（1920×1080 座標系內）。 */
+function contentRect(): Rect {
+  if (currentSection === 'overhead') {
+    const c = overheadContainerRect();
+    const m = 60; // 容器四周留白，讓超出容器的元素(如 combo 在上方)也看得到
+    return { x: c.x - m, y: c.y - m, width: c.width + m * 2, height: c.height + m * 2 };
+  }
+  // panel：4 欄整條的邊界 + 留白
+  const first = slotRect(0);
+  const last = slotRect(layout.panel.slotCount - 1);
+  const m = 40;
+  return {
+    x: first.x - m,
+    y: first.y - m,
+    width: last.x + last.width - first.x + m * 2,
+    height: first.height + m * 2,
+  };
+}
+
+/** 繪製時要扣掉的偏移（= 內容矩形左上），讓內容從 stage (0,0) 起。 */
+function viewOffset(): { x: number; y: number } {
+  const c = contentRect();
+  return { x: c.x, y: c.y };
+}
+
+/** 元素方框在 stage 上的像素左上（已扣 viewOffset）。 */
+function boxLeft(ed: Editable, r: Rect, off: { x: number; y: number }): number {
+  return ed.origin.x + r.x - off.x;
+}
+function boxTop(ed: Editable, r: Rect, off: { x: number; y: number }): number {
+  return ed.origin.y + r.y - off.y;
+}
+
 /** 目前編輯的區塊。兩塊座標系不同，一次只顯示一塊（畫面乾淨、專注）。 */
 type Section = 'overhead' | 'panel';
 let currentSection: Section = 'overhead';
@@ -256,6 +297,8 @@ function panelElLabel(id: string): string {
 // ---- 渲染舞台 -------------------------------------------------------------
 
 let editables: Editable[] = [];
+/** 目前渲染用的視圖偏移（= 內容矩形左上），拖拉/Inspector 更新像素時共用。 */
+let currentOffset: { x: number; y: number } = { x: 0, y: 0 };
 
 function setStatus(msg: string, kind: 'ok' | 'err' | 'info' = 'info'): void {
   const el = $('status');
@@ -272,14 +315,21 @@ function renderStage(): void {
   editables = buildEditables();
   stageEl.innerHTML = '';
 
+  // 把 stage 尺寸設成當前區塊內容矩形大小，內容從 (0,0) 起填滿；由 .stage-wrap 置中。
+  const content = contentRect();
+  const off = viewOffset();
+  currentOffset = off;
+  stageEl.style.width = `${content.width}px`;
+  stageEl.style.height = `${content.height}px`;
+
   if (currentSection === 'panel') {
     // 底部 4 欄底框（遊戲樣式：圓角矩形，底 rgba(16,16,36,0.82)/白框；P2~P4 淡化）
     for (let i = 0; i < layout.panel.slotCount; i += 1) {
       const r = slotRect(i);
       const slot = document.createElement('div');
       slot.className = 'panel-slot-bg' + (i === 0 ? '' : ' inactive');
-      slot.style.left = `${r.x}px`;
-      slot.style.top = `${r.y}px`;
+      slot.style.left = `${r.x - off.x}px`;
+      slot.style.top = `${r.y - off.y}px`;
       slot.style.width = `${r.width}px`;
       slot.style.height = `${r.height}px`;
       slot.style.borderRadius = `${layout.panel.cornerRadius}px`;
@@ -294,8 +344,8 @@ function renderStage(): void {
     const oc = overheadContainerRect();
     const cont = document.createElement('div');
     cont.id = 'overhead-container';
-    cont.style.left = `${oc.x}px`;
-    cont.style.top = `${oc.y}px`;
+    cont.style.left = `${oc.x - off.x}px`;
+    cont.style.top = `${oc.y - off.y}px`;
     cont.style.width = `${oc.width}px`;
     cont.style.height = `${oc.height}px`;
     const clab = document.createElement('div');
@@ -313,8 +363,8 @@ function renderStage(): void {
     const box = document.createElement('div');
     box.className = 'ui-box' + (isSel ? ' selected' : ' dimmed');
     box.dataset.key = ed.key;
-    box.style.left = `${ed.origin.x + r.x}px`;
-    box.style.top = `${ed.origin.y + r.y}px`;
+    box.style.left = `${boxLeft(ed, r, off)}px`;
+    box.style.top = `${boxTop(ed, r, off)}px`;
     box.style.width = `${r.width}px`;
     box.style.height = `${r.height}px`;
     box.title = ed.label;
@@ -339,7 +389,7 @@ function renderStage(): void {
   }
 
   // P2~P4 佔位欄：只在 panel 區塊顯示（淡化複製 P1 template icon，防漂移）。
-  if (currentSection === 'panel') renderPlaceholderColumns();
+  if (currentSection === 'panel') renderPlaceholderColumns(off);
 
   renderTree();
   renderInspector();
@@ -481,24 +531,22 @@ function buildCombo(): HTMLElement {
 }
 
 /** P2~P4 佔位欄：alpha 0.4 複製 P1 欄底框 + P1 template 元素 icon（唯讀，不可拖）。 */
-function renderPlaceholderColumns(): void {
+function renderPlaceholderColumns(off: { x: number; y: number }): void {
   const p1Col = layout.panel.columns.find((c) => c.playerIndex === 0);
   const p1Elements = p1Col ? p1Col.elements : [];
   for (let i = 1; i < layout.panel.slotCount; i += 1) {
     const slot = slotRect(i);
-    const p1 = slotRect(0);
     for (const el of p1Elements) {
       const box = document.createElement('div');
       box.style.cssText =
         `position:absolute;pointer-events:none;opacity:0.4;` +
-        `left:${slot.x + el.x}px;top:${slot.y + el.y}px;width:${el.width}px;height:${el.height}px;`;
+        `left:${slot.x + el.x - off.x}px;top:${slot.y + el.y - off.y}px;width:${el.width}px;height:${el.height}px;`;
       const visual = document.createElement('div');
       visual.className = 'ui-visual';
       visual.appendChild(buildVisual(`panel.${el.id}`));
       box.appendChild(visual);
       stageEl.appendChild(box);
     }
-    void p1; // p1 origin 已用於 el 相對座標（與 active 欄同 template）
   }
 }
 
@@ -525,8 +573,8 @@ function attachDrag(box: HTMLDivElement, ed: Editable): void {
       const { dx, dy } = toStageDelta(ev.clientX - startX, ev.clientY - startY);
       ed.set({ x: Math.round(start.x + dx), y: Math.round(start.y + dy) });
       const r = ed.get();
-      box.style.left = `${ed.origin.x + r.x}px`;
-      box.style.top = `${ed.origin.y + r.y}px`;
+      box.style.left = `${boxLeft(ed, r, currentOffset)}px`;
+      box.style.top = `${boxTop(ed, r, currentOffset)}px`;
       updateInspectorFields(ed);
     };
     const onUp = (ev: PointerEvent): void => {
@@ -664,8 +712,8 @@ function numRow(ed: Editable, field: keyof Rect, label: string, value: number): 
     const box = stageEl.querySelector<HTMLDivElement>(`.ui-box[data-key="${ed.key}"]`);
     if (box) {
       const cur = ed.get();
-      box.style.left = `${ed.origin.x + cur.x}px`;
-      box.style.top = `${ed.origin.y + cur.y}px`;
+      box.style.left = `${boxLeft(ed, cur, currentOffset)}px`;
+      box.style.top = `${boxTop(ed, cur, currentOffset)}px`;
       box.style.width = `${cur.width}px`;
       box.style.height = `${cur.height}px`;
     }

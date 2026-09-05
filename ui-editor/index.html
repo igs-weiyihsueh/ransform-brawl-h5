@@ -49,14 +49,14 @@
       .layout { display: flex; height: calc(100vh - 53px); }
       .stage-wrap {
         flex: 1; overflow: auto; padding: 20px;
-        display: flex; align-items: flex-start; justify-content: center;
+        display: flex; align-items: center; justify-content: center;
         background: #14141f;
       }
-      /* 1920×1080 舞台，用 transform scale 縮放顯示 */
+      /* 舞台尺寸由 JS 依當前區塊內容矩形設定；transform scale 繞中心縮放、flex 置中 */
       #stage {
-        position: relative; width: 1920px; height: 1080px;
-        background: var(--stage); transform-origin: top left;
-        outline: 1px solid var(--line);
+        position: relative; margin: auto;
+        background: var(--stage); transform-origin: center center;
+        outline: 1px solid var(--line); flex: 0 0 auto;
       }
       /* 底部面板欄 */
       .slot {
