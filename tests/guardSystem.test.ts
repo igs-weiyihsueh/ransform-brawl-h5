@@ -2,6 +2,7 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import Phaser from 'phaser';
 import { getGuardPreset, GUARD_FALLBACK, GUARD_PRESETS } from '@/config/guardConfig';
+import { CHEST_OPEN_THRESHOLD } from '@/config/chestConfig';
 import { GuardTarget } from '@/entities/GuardTarget';
 import { GuardEvent } from '@/systems/GuardEvent';
 import type { GameContext } from '@/systems/GameContext';
@@ -146,7 +147,7 @@ afterAll(() => {
   sharedGame?.destroy(true);
 });
 
-/** 建 GuardEvent 用的 fake ctx：抓 spawner 拿到的 target（用來模擬雕像被打）、記 ticket。 */
+/** 建 GuardEvent 用的 fake ctx：抓 spawner 拿到的 target（模擬雕像被打）、記 chest 進度 + ticket。 */
 function makeGuardCtx() {
   const state = {
     guardTarget: null as GuardTarget | null,
@@ -155,6 +156,9 @@ function makeGuardCtx() {
     clearedCalls: 0,
     ticketsAdded: 0,
     addCalls: 0,
+    // 守護成功獎勵改為「加寶盒進度」(用戶決策 76f07f64)：記錄實際加進的 charge 量（可觀察行為）+ 呼叫次數。
+    chestChargeAdded: 0,
+    chestAddCalls: 0,
   };
   const ctx = {
     scene: sharedScene,
@@ -170,6 +174,13 @@ function makeGuardCtx() {
       clearAllEnemies: () => {
         state.clearedCalls += 1;
         state.enemies = [];
+      },
+    },
+    // 寶盒 stub：記「實際加進多少 charge」(維度3：斷言可觀察的加值量，非只 call-count) + 呼叫次數。
+    chest: {
+      addCharge: (amount: number) => {
+        state.chestChargeAdded += amount;
+        state.chestAddCalls += 1;
       },
     },
     ticket: {
@@ -220,45 +231,47 @@ describe('GuardTarget — HP 邊界（1 未敗 / 恰 0 敗 / hpRatio clamp01）'
   });
 });
 
-describe('GuardEvent — 勝敗狀態機 + 獎券', () => {
-  it('撐過時間(timer≤0)且 HP>0 → 勝，獎券 = round(rewardTickets × hpRatio)', () => {
+describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCharge，用戶決策 76f07f64）', () => {
+  it('撐過時間(timer≤0)且 HP>0 → 勝，寶盒進度 += round(165 × hpRatio)（滿血 165）', () => {
     const { ctx, state } = makeGuardCtx();
-    const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']); // timeLimit60 HP100 reward10
-    // 不打雕像（HP 滿）→ 跑滿 60s → 勝、獎券 round(10 × 1.0)=10。
+    const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']); // timeLimit60 HP100
+    // 不打雕像（HP 滿）→ 跑滿 60s → 勝、寶盒進度 +round(165×1.0)=165（=一箱門檻）。
     const done = ev.update(60);
     expect(done).toBe(true);
     expect(ev.isFinished()).toBe(true);
     expect(ev.didWin()).toBe(true);
-    expect(state.ticketsAdded).toBe(10); // 滿 HP → 10
+    expect(state.chestChargeAdded).toBe(CHEST_OPEN_THRESHOLD); // 滿 HP → 165（可觀察加值量）
+    expect(state.ticketsAdded).toBe(0); // 已不再發彩票
   });
 
-  it('勝但半血：獎券 = round(10 × 0.5) = 5', () => {
+  it('勝但半血：寶盒進度 += round(165 × 0.5) = 83', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
     state.guardTarget!.takeDamage(50); // HP 100→50（hpRatio 0.5，仍 >0）
     ev.update(60); // 撐過時間 → 勝
     expect(ev.didWin()).toBe(true);
-    expect(state.ticketsAdded).toBe(5); // round(10×0.5)
+    expect(state.chestChargeAdded).toBe(83); // round(165×0.5)=round(82.5)=83
   });
 
-  it('倒數中 HP≤0 提早結束 → 敗，獎券 0（不給）', () => {
+  it('倒數中 HP≤0 提早結束 → 敗，寶盒進度不加（不給獎勵、addCharge 不被呼叫）', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
     state.guardTarget!.takeDamage(100); // 雕像被打爆
     const done = ev.update(1); // 倒數中就偵測到 defeated → 敗、提早結束
     expect(done).toBe(true);
     expect(ev.didWin()).toBe(false);
-    expect(state.ticketsAdded).toBe(0); // 敗不給獎券
+    expect(state.chestChargeAdded).toBe(0); // 敗不給獎勵
+    expect(state.chestAddCalls).toBe(0); // 敗完全不呼叫 addCharge
   });
 
-  it('邊界：timer 恰 0 且 HP=1 → 勝（撐過且 HP>0），獎券 round(10×0.01)=0', () => {
+  it('邊界：timer 恰 0 且 HP=1 → 勝（撐過且 HP>0），寶盒進度 += round(165×0.01)=2', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
     state.guardTarget!.takeDamage(99); // HP=1
     ev.update(60); // 恰好耗盡時間、HP=1>0 → 勝
     expect(ev.didWin()).toBe(true);
-    // hpRatio=0.01 → round(10×0.01)=round(0.1)=0（撐過但血太低，獎券進位為 0）
-    expect(state.ticketsAdded).toBe(0);
+    // hpRatio=0.01 → round(165×0.01)=round(1.65)=2（撐過、血極低仍給 2 點進度）
+    expect(state.chestChargeAdded).toBe(2);
   });
 
   it('🔴 敗不 GameOver：敗後 cleanup（清回玩家目標/清敵/destroy 雕像）且回報結束讓關卡前進', () => {
@@ -273,8 +286,8 @@ describe('GuardEvent — 勝敗狀態機 + 獎券', () => {
     // cleanup 發生：敵人目標清回（setGuardTarget(null)）、清全部敵人。
     expect(state.guardTarget === null).toBe(true); // 已 setGuardTarget(null)（boolean 斷言）
     expect(state.clearedCalls).toBeGreaterThanOrEqual(1); // clearAllEnemies 被呼叫
-    // 無「扣命/gameover」的呼叫（fake ctx 沒有那種 API，且獎券=0 不誤發）。
-    expect(state.ticketsAdded).toBe(0);
+    // 無「扣命/gameover」的呼叫；敗不給寶盒進度。
+    expect(state.chestChargeAdded).toBe(0);
   });
 
   it('勝也 cleanup（清回目標/清敵）', () => {
@@ -287,18 +300,21 @@ describe('GuardEvent — 勝敗狀態機 + 獎券', () => {
 
   it('查無 preset → fallback，不炸（用未知 preset 名建 GuardEvent 仍可跑完）', () => {
     const { ctx, state } = makeGuardCtx();
-    const ev = new GuardEvent(ctx, 'NoSuchPreset', ['Enemy_Rush']); // fallback 60/100/10
-    ev.update(60); // 撐過 → 勝、reward round(10×1)=10
+    const ev = new GuardEvent(ctx, 'NoSuchPreset', ['Enemy_Rush']); // fallback 60/100
+    ev.update(60); // 撐過 → 勝、寶盒進度 +round(165×1)=165
     expect(ev.didWin()).toBe(true);
-    expect(state.ticketsAdded).toBe(10);
+    expect(state.chestChargeAdded).toBe(CHEST_OPEN_THRESHOLD);
   });
 
-  it('finished 後再 update 恆回 true、不重複結算', () => {
+  it('finished 後再 update 恆回 true、不重複結算（addCharge 只被呼叫一次、進度不重複加）', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
-    ev.update(60); // 勝，發 10
-    const ticketsAfterWin = state.ticketsAdded;
+    ev.update(60); // 勝，+165
+    const chargeAfterWin = state.chestChargeAdded;
+    const callsAfterWin = state.chestAddCalls;
     expect(ev.update(60)).toBe(true); // 已結束
-    expect(state.ticketsAdded).toBe(ticketsAfterWin); // 不重複發獎券
+    expect(state.chestChargeAdded).toBe(chargeAfterWin); // 進度不重複加（可觀察行為）
+    expect(state.chestAddCalls).toBe(callsAfterWin); // 且 addCharge 不再被呼叫（=1 次）
+    expect(callsAfterWin).toBe(1);
   });
 });
