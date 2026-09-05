@@ -21,10 +21,83 @@
         width: 100%;
         height: 100%;
       }
+
+      /* 編輯器入口（右下角固定、可收合、半透明、不擋遊戲）。 */
+      #editor-entry {
+        position: fixed;
+        right: 12px;
+        bottom: 12px;
+        z-index: 1000;
+        font-family: 'Microsoft JhengHei', Arial, sans-serif;
+        user-select: none;
+      }
+      #editor-entry > summary {
+        list-style: none;
+        cursor: pointer;
+        display: inline-block;
+        padding: 8px 14px;
+        border-radius: 20px;
+        background: rgba(20, 20, 40, 0.72);
+        color: #fff;
+        font-size: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        backdrop-filter: blur(2px);
+        transition: background 0.15s, opacity 0.15s;
+        opacity: 0.72;
+      }
+      #editor-entry > summary::-webkit-details-marker {
+        display: none;
+      }
+      #editor-entry > summary:hover {
+        background: rgba(40, 40, 70, 0.92);
+        opacity: 1;
+      }
+      #editor-entry[open] > summary {
+        opacity: 1;
+        border-bottom-left-radius: 6px;
+        border-bottom-right-radius: 6px;
+        margin-bottom: 6px;
+      }
+      #editor-entry .editor-links {
+        position: absolute;
+        right: 0;
+        bottom: 46px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 128px;
+      }
+      #editor-entry .editor-links a {
+        display: block;
+        padding: 8px 14px;
+        border-radius: 8px;
+        background: rgba(20, 20, 40, 0.85);
+        color: #e8e8f0;
+        text-decoration: none;
+        font-size: 14px;
+        text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        transition: background 0.15s, color 0.15s;
+      }
+      #editor-entry .editor-links a:hover {
+        background: rgba(79, 195, 247, 0.9);
+        color: #10203a;
+      }
     </style>
   </head>
   <body>
     <div id="game"></div>
+    <!-- 編輯器入口：右下角一個「⚙ 編輯器」小鈕，點開展開 4 個編輯器連結。
+         連結用相對路徑（editor/ 等），GitHub Pages 子路徑（/ransform-brawl-h5/）下也指得對。 -->
+    <details id="editor-entry">
+      <summary>⚙ 編輯器</summary>
+      <nav class="editor-links">
+        <a href="editor/">關卡編輯器</a>
+        <a href="ui-editor/">UI 編輯器</a>
+        <a href="enemy-editor/">怪物編輯器</a>
+        <a href="skill-editor/">招式編輯器</a>
+      </nav>
+    </details>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
