@@ -29,6 +29,8 @@ const ENEMY_ATTACK_VFX = {
   slash: { key: 'vfx-enemy-slash', path: `${BASE_PATH}/fx_enemy_slash.png` },
   impact: { key: 'vfx-enemy-impact', path: `${BASE_PATH}/fx_enemy_impact.png` },
   charge: { key: 'vfx-enemy-charge', path: `${BASE_PATH}/fx_enemy_charge.png` },
+  /** 守護開場聚焦放射漸層（用戶 #4，中心透明→外圈壓黑；異靈畫，alpha 客觀確認）。 */
+  spotlight: { key: 'vfx-spotlight-radial', path: `${BASE_PATH}/spotlight_radial.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -516,40 +518,49 @@ export class EffectSystem {
    * @param radiusPx spotlight 亮圈半徑。
    */
   /**
-   * 守護開場聚焦壓暗 + spotlight（用戶 #4，對照 Unity GuardIntroFocusUI）：
-   * 全螢幕半透明壓暗遮罩（可靠 fillRect）+ 雕像位置金亮環；呼叫端把雕像 depth 提到遮罩之上＝雕像聚焦不被壓暗。
-   * 回傳 handle，呼叫端 .fadeOut() 收掉遮罩。
-   * @param x,y 雕像螢幕座標（亮環中心）。
-   * @param radiusPx 亮環半徑。
+   * 守護開場聚焦壓暗 + spotlight（用戶 #4，對照 Unity GuardIntroFocusUI / SpotlightRadial）：
+   * 用放射漸層貼圖（spotlight_radial.png：中心 alpha=0 透出雕像 → 外圈近黑壓暗）鋪滿螢幕、中心對準雕像。
+   * 比程式畫的壓暗穩（整張貼圖 alpha 明確）。回傳 handle，呼叫端 .fadeOut() 收掉。
+   * @param x,y 雕像螢幕座標（spotlight 透明中心對準此）。
+   * @param radiusPx 亮圈金環半徑（點綴）。
    */
-  guardSpotlight(x: number, y: number, radiusPx = 180): { fadeOut: () => void } {
+  guardSpotlight(x: number, y: number, radiusPx = 200): { fadeOut: () => void } {
     const depth = ENERGY_FLY_DEPTH + 10; // 960：壓暗蓋住場上角色/敵人/背景（雕像由呼叫端提到此之上）
-    // 全螢幕壓暗遮罩：用 Rectangle GameObject（比 Graphics fillRect 在此場景更可靠地合成）。
-    const dim = this.scene.add
-      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
-      .setScrollFactor(0)
-      .setDepth(depth)
-      .setAlpha(0);
-    this.scene.tweens.add({ targets: dim, alpha: 1, duration: 350, ease: 'Sine.easeOut' });
-    // 雕像亮環（金）+ 柔光暈（雕像在遮罩之上，環標示 spotlight 範圍）。
+    const key = ENEMY_ATTACK_VFX.spotlight.key;
+    const objs: Phaser.GameObjects.GameObject[] = [];
+    if (this.scene.textures.exists(key)) {
+      // 貼圖鋪滿：中心對雕像，縮放到覆蓋整個螢幕（含四角）——貼圖夠大時外圈近黑蓋滿。
+      const spot = this.scene.add.image(x, y, key).setScrollFactor(0).setDepth(depth).setAlpha(0);
+      // 讓透明中心圈≈radiusPx 直徑、外圈延伸蓋滿螢幕：取螢幕對角×2.5 當顯示邊長。
+      const cover = Math.hypot(GAME_WIDTH, GAME_HEIGHT) * 2.5;
+      spot.setDisplaySize(cover, cover);
+      this.scene.tweens.add({ targets: spot, alpha: 1, duration: 350, ease: 'Sine.easeOut' });
+      objs.push(spot);
+    } else {
+      // 後備：貼圖沒載到 → 全螢幕 Rectangle 壓暗（不漏聚焦）。
+      const dim = this.scene.add
+        .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8)
+        .setScrollFactor(0)
+        .setDepth(depth)
+        .setAlpha(0);
+      this.scene.tweens.add({ targets: dim, alpha: 1, duration: 350, ease: 'Sine.easeOut' });
+      objs.push(dim);
+    }
+    // 雕像亮環（金）點綴（雕像在遮罩之上）。
     const ring = this.scene.add.graphics().setScrollFactor(0).setDepth(depth + 2);
-    ring.fillStyle(0xffe64d, 0.12);
-    ring.fillCircle(x, y, radiusPx);
     ring.lineStyle(4, 0xffe64d, 0.55);
     ring.strokeCircle(x, y, radiusPx);
     ring.setAlpha(0);
     this.scene.tweens.add({ targets: ring, alpha: 1, duration: 350 });
+    objs.push(ring);
     return {
       fadeOut: () => {
         this.scene.tweens.add({
-          targets: [dim, ring],
+          targets: objs,
           alpha: 0,
           duration: 350,
           ease: 'Sine.easeIn',
-          onComplete: () => {
-            dim.destroy();
-            ring.destroy();
-          },
+          onComplete: () => objs.forEach((o) => o.destroy()),
         });
       },
     };

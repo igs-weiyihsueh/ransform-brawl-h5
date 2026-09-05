@@ -44,31 +44,22 @@ console.log('[開場早期] 鎖操作 scriptedControl=', early.scriptedControl, 
 await page.screenshot({ path: path.join(__dirname,'..','probe-shot-guard-intro.png') });
 // 抓聚焦壓暗那一刻: 走位到位(~2s)後 reveal(0.45)→focus(1.6)。輪詢等 scriptedControl 仍 true 但雕像已顯 = focus 期, 截圖。
 let focusShot=false;
-for(let i=0;i<60;i++){ // 最多 6s
-  await page.waitForTimeout(100);
+for(let i=0;i<80;i++){ // 最多 8s
+  await page.waitForTimeout(60);
   const s = await page.evaluate(()=>{
     const ctx=window.__ctx; const gs=window.__PHASER_GAME__.scene.getScene('GameScene');
-    let statueVisible=false, dimOverlay=false;
+    let statueVisible=false;
     gs.children.list.forEach((o)=>{ if(o.type==='Container'&&o.visible&&o.list){ o.list.forEach((c)=>{ if(c.texture&&/statue/.test(c.texture.key||'')) statueVisible=true; }); } });
-    // 全螢幕壓暗遮罩: 一個很大的 Graphics(覆蓋全螢幕)。
-    gs.children.list.forEach((o)=>{ if((o.type==='Graphics'||o.type==='Image'||o.type==='Rectangle')&&o.depth>=955) dimOverlay=true; });
-    return { sc: ctx.scriptedControl, statueVisible, dimOverlay };
+    // 找 depth 960 的聚焦遮罩(Image/Rectangle)且 alpha≥0.9 = 聚焦壓暗完全顯示的一刻。
+    let overlayAlpha=0;
+    gs.children.list.forEach((o)=>{ if((o.type==='Image'||o.type==='Rectangle')&&o.depth===960){ overlayAlpha=Math.max(overlayAlpha, o.alpha??0); } });
+    return { sc: ctx.scriptedControl, statueVisible, overlayAlpha };
   });
-  // 聚焦期 = 雕像已顯 + 壓暗遮罩在場。
-  if(s.statueVisible && s.dimOverlay && !focusShot){
-    await page.waitForTimeout(700); // 等壓暗淡入完成(350ms)+穩定, 抓 alpha≈full 的一刻
-    // 診斷: 印出高 depth graphics 的實際 alpha/depth/visible/size。
-    const diag = await page.evaluate(()=>{
-      const gs=window.__PHASER_GAME__.scene.getScene('GameScene');
-      const out=[];
-      gs.children.list.forEach((o)=>{ if((o.type==='Graphics'||o.type==='Image')&&o.depth>=955) out.push({t:o.type,depth:o.depth,alpha:Math.round((o.alpha??1)*100)/100,visible:o.visible,sf:o.scrollFactorX}); });
-      // 相機資訊。
-      const cam=gs.cameras&&gs.cameras.main;
-      return { overlays: out, camZoom: cam?cam.zoom:null, camW: cam?cam.width:null, camH: cam?cam.height:null };
-    });
-    console.log('  [診斷] 高depth物件=', JSON.stringify(diag));
+  // 聚焦壓暗完全顯示(alpha≥0.9) + 仍在聚焦(scriptedControl 未解鎖) → 截這幀。
+  if(s.overlayAlpha>=0.9 && s.sc && s.statueVisible && !focusShot){
     await page.screenshot({ path: path.join(__dirname,'..','probe-shot-guard-focus.png') });
     focusShot=true;
+    console.log('  [聚焦截圖] overlayAlpha=', s.overlayAlpha, ' scriptedControl=', s.sc);
     break;
   }
 }
