@@ -145,6 +145,7 @@ export class GameScene extends Phaser.Scene {
       buff,
       helmet,
       getEnemies: () => spawner.getEnemies(),
+      scriptedControl: false, // 用戶 #4：守護波開場導引走位時設 true 鎖操作
     };
 
     // 能量飛光需在擊殺回呼裡取寶盒 UI 錨點：UISystem 提前建立（存 field，registerSystems 再註冊）。

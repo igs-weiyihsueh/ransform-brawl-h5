@@ -74,4 +74,10 @@ export interface GameContext {
 
   /** 取得目前場上存活的敵人（唯讀快照，供命中查詢/AI 目標）。 */
   getEnemies(): readonly Enemy[];
+
+  /**
+   * 腳本控制旗標（用戶 #4 守護波開場導引走位）：true 時 PlayerControlSystem 跳過玩家輸入，
+   * 由 GuardEvent 導引走位驅動。開場結束設回 false 恢復操作。可變（非 readonly）。
+   */
+  scriptedControl: boolean;
 }

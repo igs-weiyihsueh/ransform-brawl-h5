@@ -95,6 +95,9 @@ export class PlayerControlSystem implements GameSystem {
       return;
     }
 
+    // 用戶 #4：守護波開場導引走位期間鎖操作——不吃玩家輸入（走位由 GuardEvent 驅動 player.move）。
+    if (this.ctx.scriptedControl) return;
+
     // Credit 耗盡倒數歸零 → 回下方面板待機（投幣循環）。投幣可中途解除耗盡（在 CreditSystem）。
     if (typeof credit.consumeJustExpired === 'function' && credit.consumeJustExpired(pid)) {
       const w = this.ctx.getWaitingAnchor(pid);

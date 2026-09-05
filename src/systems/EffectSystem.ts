@@ -467,6 +467,95 @@ export class EffectSystem {
   }
 
   /**
+   * 「限時事件」宣告大字（用戶 #4 守護波開場，對照 Unity TimedEventTextUI）：從右側滑進、顯滿 durationSec、滑出。
+   * 玩家照走不等（非阻塞）。純視覺。
+   * @param durationSec 顯示時長（Unity ≈3s）。
+   */
+  timedEventText(durationSec = 3): void {
+    const cx = GAME_WIDTH * 0.5;
+    const cy = GAME_HEIGHT * 0.3;
+    const bar = this.scene.add.graphics().setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 6);
+    bar.fillStyle(0x8a1a1a, 0.72);
+    bar.fillRect(0, cy - 46, GAME_WIDTH, 92);
+    bar.lineStyle(3, 0xffd24d, 0.9);
+    bar.strokeRect(0, cy - 46, GAME_WIDTH, 92);
+    const txt = this.scene.add
+      .text(cx, cy, '限時事件', {
+        fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+        fontSize: '52px',
+        color: '#ffe64d',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 7,
+      })
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setDepth(ENERGY_FLY_DEPTH + 7);
+    const group: Phaser.GameObjects.GameObject[] = [bar, txt];
+    // 從右滑進。
+    for (const o of group) (o as unknown as { x: number }).x += GAME_WIDTH;
+    this.scene.tweens.add({ targets: group, x: `-=${GAME_WIDTH}`, duration: 400, ease: 'Back.easeOut' });
+    // 顯滿後滑出（往左）+ 淡出。
+    this.scene.time.delayedCall(400 + durationSec * 1000, () => {
+      this.scene.tweens.add({
+        targets: group,
+        x: `-=${GAME_WIDTH}`,
+        alpha: 0,
+        duration: 350,
+        ease: 'Sine.easeIn',
+        onComplete: () => group.forEach((o) => o.destroy()),
+      });
+    });
+  }
+
+  /**
+   * 守護開場聚焦壓暗 + spotlight（用戶 #4，對照 Unity GuardIntroFocusUI）：
+   * 全螢幕壓暗遮罩 + 雕像位置亮圈（放射漸層感：中心透出、外圈壓暗）。回傳 handle，呼叫端 .fadeOut() 收掉。
+   * 用同心圓環由內亮到外暗近似放射漸層（無漸層貼圖時的 graphics 後備）。
+   * @param x,y 雕像螢幕座標（spotlight 中心）。
+   * @param radiusPx spotlight 亮圈半徑。
+   */
+  /**
+   * 守護開場聚焦壓暗 + spotlight（用戶 #4，對照 Unity GuardIntroFocusUI）：
+   * 全螢幕半透明壓暗遮罩（可靠 fillRect）+ 雕像位置金亮環；呼叫端把雕像 depth 提到遮罩之上＝雕像聚焦不被壓暗。
+   * 回傳 handle，呼叫端 .fadeOut() 收掉遮罩。
+   * @param x,y 雕像螢幕座標（亮環中心）。
+   * @param radiusPx 亮環半徑。
+   */
+  guardSpotlight(x: number, y: number, radiusPx = 180): { fadeOut: () => void } {
+    const depth = ENERGY_FLY_DEPTH + 10; // 960：壓暗蓋住場上角色/敵人/背景（雕像由呼叫端提到此之上）
+    // 全螢幕壓暗遮罩：用 Rectangle GameObject（比 Graphics fillRect 在此場景更可靠地合成）。
+    const dim = this.scene.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
+      .setScrollFactor(0)
+      .setDepth(depth)
+      .setAlpha(0);
+    this.scene.tweens.add({ targets: dim, alpha: 1, duration: 350, ease: 'Sine.easeOut' });
+    // 雕像亮環（金）+ 柔光暈（雕像在遮罩之上，環標示 spotlight 範圍）。
+    const ring = this.scene.add.graphics().setScrollFactor(0).setDepth(depth + 2);
+    ring.fillStyle(0xffe64d, 0.12);
+    ring.fillCircle(x, y, radiusPx);
+    ring.lineStyle(4, 0xffe64d, 0.55);
+    ring.strokeCircle(x, y, radiusPx);
+    ring.setAlpha(0);
+    this.scene.tweens.add({ targets: ring, alpha: 1, duration: 350 });
+    return {
+      fadeOut: () => {
+        this.scene.tweens.add({
+          targets: [dim, ring],
+          alpha: 0,
+          duration: 350,
+          ease: 'Sine.easeIn',
+          onComplete: () => {
+            dim.destroy();
+            ring.destroy();
+          },
+        });
+      },
+    };
+  }
+
+  /**
    * 火雨預警紅圈（#10）：落點地上紅色半透明圓（直徑=radius×2），停留 warningTime。
    * @returns Graphics（呼叫端在火柱落下時 destroy）。
    */

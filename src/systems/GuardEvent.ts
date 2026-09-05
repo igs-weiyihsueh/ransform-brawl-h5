@@ -1,8 +1,22 @@
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
+import { PPU } from '@/config/gameConfig';
 import { CHEST_OPEN_THRESHOLD } from '@/config/chestConfig';
+import { PLAYER_CONFIG } from '@/config/combatConfig';
 import { getGuardPreset, pickGuardEnemy, type GuardPreset } from '@/config/guardConfig';
 import { GuardTarget } from '@/entities/GuardTarget';
+import { guardCornerTargets, scriptedMoveStep, allScriptedArrived } from '@/systems/guardIntro';
 import type { GameContext } from '@/systems/GameContext';
+
+/** 守護波開場：導引走位到雕像四角的離中心距離（px）。 */
+const GUARD_CORNER_OFFSET_PX = 150;
+/** 導引走位逾時保底（秒）：超過即 snap 到位防卡。 */
+const GUARD_MOVE_TIMEOUT_SEC = 3.5;
+/** 聚焦壓暗持續（秒，對照 Unity introFocusSeconds）。 */
+const GUARD_FOCUS_SEC = 1.6;
+
+/** 守護波階段：開場導引走位 → 雕像顯現 → 聚焦壓暗 → 守護戰 → 結束。 */
+type GuardPhase = 'introMove' | 'reveal' | 'focus' | 'combat';
+
 
 /**
  * GuardEvent — 一場守護波（Guard Event）的執行狀態機（決策 76f235e4）。
@@ -21,19 +35,31 @@ export class GuardEvent {
   private finished = false;
   private won = false;
 
+  // --- 開場演出（用戶 #4）狀態 ---
+  private phase: GuardPhase = 'introMove';
+  private moveTargets: { x: number; y: number }[] = [];
+  private moveArrived: boolean[] = [];
+  private moveElapsed = 0;
+  private focusElapsed = 0;
+  private spotlight: { fadeOut: () => void } | null = null;
+
   constructor(ctx: GameContext, presetName: string) {
     this.ctx = ctx;
     this.preset = getGuardPreset(presetName);
     this.remaining = this.preset.timeLimit;
 
-    // 生雕像於場中央，敵人攻擊改打雕像。
-    this.target = new GuardTarget(
-      ctx.scene,
-      GAME_WIDTH / 2,
-      GAME_HEIGHT / 2,
-      this.preset.targetHP,
-    );
+    // 生雕像於場中央（先隱藏，開場玩家就定位後才 reveal 顯現）。敵人攻擊改打雕像（在 combat 階段前不 drip）。
+    const sx = GAME_WIDTH / 2;
+    const sy = GAME_HEIGHT / 2;
+    this.target = new GuardTarget(ctx.scene, sx, sy, this.preset.targetHP);
+    this.target.setVisible(false);
     ctx.spawner.setGuardTarget(this.target);
+
+    // 用戶 #4 開場序列：①鎖操作 + 導引走位到四角 + ②「限時事件」大字。
+    ctx.scriptedControl = true; // 鎖玩家操作（PlayerControlSystem 跳過輸入）
+    this.moveTargets = guardCornerTargets(sx, sy, GUARD_CORNER_OFFSET_PX);
+    this.moveArrived = (ctx.players ?? []).map(() => false);
+    ctx.effects?.timedEventText?.(3); // 走位同時滑進大字顯 3s（非阻塞）
   }
 
   isFinished(): boolean {
@@ -44,6 +70,29 @@ export class GuardEvent {
   update(dt: number): boolean {
     if (this.finished) return true;
 
+    // --- 用戶 #4 開場序列（combat 前）---
+    if (this.phase === 'introMove') {
+      this.updateIntroMove(dt);
+      return false; // 開場中不前進節點
+    }
+    if (this.phase === 'reveal') {
+      // 雕像已 reveal（進 reveal 當幀觸發），短暫等顯現動畫後進聚焦。
+      this.focusElapsed += dt;
+      if (this.focusElapsed >= 0.45) {
+        this.focusElapsed = 0;
+        this.beginFocus();
+      }
+      return false;
+    }
+    if (this.phase === 'focus') {
+      this.focusElapsed += dt;
+      if (this.focusElapsed >= GUARD_FOCUS_SEC) {
+        this.endFocus();
+      }
+      return false;
+    }
+
+    // --- combat（守護戰，原本邏輯）---
     // 敗：雕像 HP 歸 0 → 提早結束。
     if (this.target.isDefeated()) {
       this.finish(false);
@@ -72,6 +121,61 @@ export class GuardEvent {
     return false;
   }
 
+  /** ①導引走位：每幀把各玩家朝四角移動（走路動畫+面向），全到位 or 逾時 snap → 進 reveal。 */
+  private updateIntroMove(dt: number): void {
+    this.moveElapsed += dt;
+    const speedPx = PLAYER_CONFIG.moveSpeed * PPU;
+    const timedOut = this.moveElapsed >= GUARD_MOVE_TIMEOUT_SEC;
+    (this.ctx.players ?? []).forEach((p, i) => {
+      if (this.moveArrived[i]) {
+        p.move({ x: 0, y: 0 }, dt); // 到位站定播 idle
+        return;
+      }
+      const cur = p.getPosition();
+      const tgt = this.moveTargets[i] ?? { x: cur.x, y: cur.y };
+      if (timedOut) {
+        p.setPosition(tgt.x, tgt.y); // 逾時保底 snap 到位防卡
+        this.moveArrived[i] = true;
+        p.move({ x: 0, y: 0 }, dt);
+        return;
+      }
+      const step = scriptedMoveStep(cur, tgt, speedPx, dt);
+      if (step.arrived) {
+        p.setPosition(tgt.x, tgt.y);
+        this.moveArrived[i] = true;
+        p.move({ x: 0, y: 0 }, dt);
+      } else {
+        p.move(step.dir, dt); // 單位方向 → player.move 走該速度 + 走路動畫 + 面向
+      }
+    });
+    if (allScriptedArrived(this.moveArrived) || timedOut) {
+      // ②玩家就定位 → 雕像顯現（進度條收/守護量條由 ProgressBarSystem 依 guard active 自動切）。
+      this.moveArrived = this.moveArrived.map(() => true);
+      this.target.reveal(this.ctx.scene);
+      this.phase = 'reveal';
+      this.focusElapsed = 0;
+    }
+  }
+
+  /** ③聚焦壓暗 spotlight（雕像位置亮圈；雕像 depth 提到遮罩之上＝聚焦不被壓暗）。 */
+  private beginFocus(): void {
+    const c = this.target.getPosition();
+    this.target.setDepth(972); // 遮罩(960)+亮環(962) 之上 → 雕像在 spotlight 中被聚焦、不壓暗
+    this.spotlight = this.ctx.effects?.guardSpotlight?.(c.x, c.y, 200) ?? null;
+    this.phase = 'focus';
+    this.focusElapsed = 0;
+  }
+
+  /** ④聚焦結束 → 淡出 + 還原雕像 depth + 解鎖操作 → 守護戰開始（combat）。 */
+  private endFocus(): void {
+    this.spotlight?.fadeOut();
+    this.spotlight = null;
+    this.target.setDepth(15); // 還原一般 depth
+    this.ctx.scriptedControl = false; // 解鎖玩家操作
+    this.spawnCooldown = 0; // combat 立即第一批 drip
+    this.phase = 'combat';
+  }
+
   private spawnAroundTarget(): void {
     const c = this.target.getPosition();
     const ang = Math.random() * Math.PI * 2;
@@ -85,6 +189,10 @@ export class GuardEvent {
   private finish(won: boolean): void {
     this.finished = true;
     this.won = won;
+    // 用戶 #4：保險——結束時確保解鎖操作 + 清 spotlight（避免開場中意外結束殘留鎖定/遮罩）。
+    this.ctx.scriptedControl = false;
+    this.spotlight?.fadeOut();
+    this.spotlight = null;
 
     const hpRatio = this.target.getHpRatio();
     // cleanup：清回玩家目標、清全部敵人、destroy 雕像。

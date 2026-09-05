@@ -68,6 +68,29 @@ export class GuardTarget implements Hittable {
     return { x: this.container.x, y: this.container.y };
   }
 
+  /** 設定 container depth（用戶 #4 聚焦：暫時提到壓暗遮罩之上＝雕像不被壓暗；結束還原）。 */
+  setDepth(d: number): void {
+    this.container.setDepth(d);
+  }
+
+  /** 顯示/隱藏（用戶 #4：開場玩家就定位後才顯雕像；reveal 時淡入放大）。 */
+  setVisible(v: boolean): void {
+    this.container.setVisible(v);
+  }
+
+  /** 顯現動畫（用戶 #4：玩家就定位 → 雕像淡入 + 從小放大到定位）。 */
+  reveal(scene: Phaser.Scene): void {
+    this.container.setVisible(true);
+    this.container.setAlpha(0).setScale(0.6);
+    scene.tweens.add({
+      targets: this.container,
+      alpha: 1,
+      scale: 1,
+      duration: 400,
+      ease: 'Back.easeOut',
+    });
+  }
+
   // Hittable（敵人攻擊判定命中它）
   getHitCenter(): Vec2 {
     return this.getPosition();
