@@ -88,9 +88,10 @@ export class EnemySpawner {
 
     // 防穿透：敵人移動後，對所有 player 頂開（不穿透）。
     // pushOut：immovable 菁英頂不動時，改把玩家本身移到菁英外（玩家被擋、不穿進菁英）。
+    // 真空帶半徑用 getVacuumRadius（=FOOT_GLOW 50，視覺搜索圈一致，用戶試玩#1），非受擊半徑(40)。
     const players = this.getAllPlayers().map((p) => ({
       pos: p.getHitCenter(),
-      hitRadius: p.getHitRadius(),
+      hitRadius: p.getVacuumRadius?.() ?? p.getHitRadius(),
       pushOut: (x: number, y: number) => p.setPosition?.(x, y),
     }));
     for (const e of this.enemies) {
@@ -107,7 +108,8 @@ export class EnemySpawner {
       const er = e.getHitRadius();
       for (const p of this.getAllPlayers()) {
         const ppos = p.getHitCenter();
-        const fixed = pushOutOfPlayer(ppos, ec, er + p.getHitRadius());
+        const vac = p.getVacuumRadius?.() ?? p.getHitRadius();
+        const fixed = pushOutOfPlayer(ppos, ec, er + vac);
         if (fixed.x !== ppos.x || fixed.y !== ppos.y) p.setPosition?.(fixed.x, fixed.y);
       }
     }

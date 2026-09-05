@@ -277,6 +277,15 @@ export class Player implements Hittable {
     return this.hitRadiusPx;
   }
 
+  /**
+   * 真空帶半徑（像素，用戶試玩#1）：敵人被推出玩家的範圍基準 = 腳下視覺搜索圈半徑
+   * （FOOT_GLOW.radiusPx=50），讓「眼見的搜索圈 = 實際推怪真空帶」。
+   * 與 getHitRadius（受擊命中半徑 40）分開：受擊用 40、推怪真空用 50（視覺一致）。
+   */
+  getVacuumRadius(): number {
+    return FOOT_GLOW.radiusPx;
+  }
+
   /** 目前是否處於無敵幀（iFrame 內免疫再次受擊）。 */
   isInvincible(): boolean {
     return this.iFrameRemaining > 0;
