@@ -30,6 +30,12 @@ export const PLAYER_CONFIG = {
   attackCooldown: 0.333,
   /** 佔位色塊尺寸（unit，未乘 scale）。 */
   bodySize: { width: 0.6, height: 1 },
+  /**
+   * 推怪負重（用戶：敵人越多推越有阻力，Unity PlayerController）：
+   * factor = 1/(1 + pushResistance × 推的怪數)，下限 pushMinSpeedFactor。effectiveSpeed = moveSpeed × factor。
+   */
+  pushResistance: 0.35,
+  pushMinSpeedFactor: 0.3,
 } as const;
 
 /** 衝刺（Dash）設定（對齊 Unity PlayerConfig）。單位 unit，判定時 ×PPU。 */

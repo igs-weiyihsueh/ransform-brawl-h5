@@ -9,6 +9,7 @@ import {
 } from '@/config/buffConfig';
 import { COIN_INSERT_AMOUNT } from '@/config/creditConfig';
 import { HIT_FEEL } from '@/config/hitFeelConfig';
+import { pushLoadFactor } from '@/systems/enemySeparation';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
 import { landingX } from '@/systems/entranceMath';
@@ -118,7 +119,11 @@ export class PlayerControlSystem implements GameSystem {
       this.resolveDashHits(player);
     } else {
       if (credit.canAct(pid)) {
-        player.move(src.getMoveVector(), dt);
+        const mv = src.getMoveVector();
+        // 推怪負重（用戶）：有移動意圖才算——數真空圈內可推敵人(非菁英/非grabber)→降速。
+        const moving = mv.x !== 0 || mv.y !== 0;
+        player.setPushLoadMultiplier?.(moving ? this.computePushLoad(player) : 1);
+        player.move(mv, dt);
       }
       if (src.justPressedAttack() && credit.canAttack(pid)) {
         const intent = energy.resolveAttackIntent(pid);
@@ -206,6 +211,23 @@ export class PlayerControlSystem implements GameSystem {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
     return dx * dx + dy * dy;
+  }
+
+  /**
+   * 推怪負重降速倍率（用戶：敵人越多推越有阻力）：數玩家真空圈內「可推敵人」（非菁英immovable/非grabber）
+   * = pushedCount → pushLoadFactor(count, pushResistance, pushMinSpeedFactor)。推越多越慢、下限 0.3。
+   */
+  private computePushLoad(player: GameContext['player']): number {
+    const center = player.getVacuumCenter?.() ?? player.getHitCenter();
+    const vac = player.getVacuumRadius?.() ?? player.getHitRadius();
+    let pushed = 0;
+    for (const e of this.ctx.getEnemies()) {
+      if (e.isDead() || e.isImmovable() || e.isGrabber()) continue; // 菁英/grabber 不算負重
+      const ec = e.getHitCenter();
+      const r = vac + e.getBodyRadius();
+      if (this.dist2(center, ec) <= r * r) pushed += 1;
+    }
+    return pushLoadFactor(pushed, PLAYER_CONFIG.pushResistance, PLAYER_CONFIG.pushMinSpeedFactor);
   }
 
   /**

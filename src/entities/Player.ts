@@ -331,10 +331,17 @@ export class Player implements Hittable {
   private speedMult = 1;
   private dashSpeedMult = 1;
   private shielded = false;
+  /** 推怪負重降速倍率（用戶：推越多越慢，PlayerControlSystem 每幀依真空圈可推敵人數設）。 */
+  private pushLoadMult = 1;
 
   /** 設定移動速度倍率（頭盔 MoveSpeed）。 */
   setSpeedMultiplier(m: number): void {
     this.speedMult = m;
+  }
+
+  /** 設定推怪負重降速倍率（1=無負重、<1=推怪越多越慢；只影響移動不影響衝刺）。 */
+  setPushLoadMultiplier(m: number): void {
+    this.pushLoadMult = m;
   }
 
   /** 設定衝刺速度倍率（頭盔 Dash / 寶盒坐騎）。 */
@@ -384,7 +391,7 @@ export class Player implements Hittable {
   /** 依移動向量更新位置、面向與 idle/move 動畫。 */
   move(moveVec: Vec2, dt: number): void {
     if (this.hitlagRemaining > 0 || this.grabbed) return; // hitlag / 被抓：凍結玩家位移
-    const speedPx = PLAYER_CONFIG.moveSpeed * PPU * this.speedMult;
+    const speedPx = PLAYER_CONFIG.moveSpeed * PPU * this.speedMult * this.pushLoadMult;
     this.anim.sprite.x += moveVec.x * speedPx * dt;
     this.anim.sprite.y += moveVec.y * speedPx * dt;
 

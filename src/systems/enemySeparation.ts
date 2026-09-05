@@ -108,6 +108,25 @@ export function attackFacing(
 }
 
 /**
+ * 推怪負重降速係數（用戶：敵人越多推越有阻力，Unity PlayerController）：
+ * factor = max(minFactor, 1/(1 + resistance × pushedCount))。
+ * 0 隻→1（不降速）；推越多→遞減；夾限 minFactor（不到 0 龜速）。菁英/grabber 不算 pushedCount（呼叫端過濾）。
+ * 純函式，給測騎測。
+ * @param pushedCount 真空圈內正在被推的「可推」敵人數（非菁英/非 grabber/非 dummy）。
+ * @param resistance 每隻降速係數（Unity pushResistance 0.35）。
+ * @param minFactor 降速下限（Unity pushMinSpeedFactor 0.3）。
+ */
+export function pushLoadFactor(
+  pushedCount: number,
+  resistance: number,
+  minFactor: number,
+): number {
+  const n = Math.max(0, pushedCount);
+  const factor = 1 / (1 + resistance * n);
+  return Math.max(minFactor, factor);
+}
+
+/**
  * immovable 菁英「像牆」防穿透（用戶試玩 #1：菁英不該推玩家）：
  * 菁英移動撞到玩家時，把**菁英自己**頂回玩家外緣（擋下菁英的前進），**不推玩家**；
  * 但菁英不會被玩家「推著倒退」——修正後位置**不得比移動前(prevPos)離玩家更遠**
