@@ -7,6 +7,7 @@ import {
   type AnimState,
   type CharacterDef,
 } from '@/config/animationConfig';
+import { enemyFlipForAnim } from '@/systems/enemySeparation';
 
 const BASE_PATH = 'assets/images/characters';
 
@@ -36,6 +37,8 @@ export class CharacterAnimator {
   readonly sprite: Phaser.GameObjects.Sprite;
   private readonly charKey: string;
   private currentState: AnimState | null = null;
+  /** 敵人慣例的最近面向（setFacingEnemy 設）；非 null 表示此 animator 走敵人 flipX 慣例，play() 換動畫時重算 flipX。 */
+  private enemyFacing: number | null = null;
 
   constructor(scene: Phaser.Scene, charKey: string, x: number, y: number) {
     this.charKey = charKey;
@@ -108,6 +111,10 @@ export class CharacterAnimator {
     }
     this.currentState = state;
     this.sprite.play(animKey(this.charKey, state), true);
+    // 敵人：換動畫時依當前動畫重算 flipX（attack 美術基準與 move/idle 相反 → 補償；切回 move/idle 自動回正）。
+    if (this.enemyFacing !== null) {
+      this.sprite.setFlipX(enemyFlipForAnim(this.enemyFacing, state));
+    }
     if (opts?.onComplete) {
       this.attachOnce(opts.onComplete);
     }
@@ -139,12 +146,15 @@ export class CharacterAnimator {
   }
 
   /**
-   * 敵人面向翻轉（用戶試玩#2b 倒著走）：敵人美術預設朝向與玩家(SPUM)相反，
-   * 故 flipX 用相反條件（facing<0 才翻），讓敵人動畫朝向與移動 velocity 方向一致。
+   * 敵人面向翻轉（用戶試玩#2b 倒著走 + 回歸修）：敵人美術預設朝向與玩家(SPUM)相反，
+   * 一般動畫 flipX 用 facing<0；但 **attack 貼圖美術基準又與 move/idle 相反**（預先鏡像），
+   * 故統一交給純函式 enemyFlipForAnim(facing, 當前動畫) 決定，attack 系動畫多翻一次補償。
+   * 記住 enemyFacing，play() 換動畫時會用同一函式重算 flipX（attack↔move 切換朝向都對）。
    * 只給敵人用；玩家仍用 setFacing（勿動，玩家現在是對的）。
    */
   setFacingEnemy(facing: number): void {
-    this.sprite.setFlipX(facing < 0);
+    this.enemyFacing = facing;
+    this.sprite.setFlipX(enemyFlipForAnim(facing, this.currentState ?? 'idle'));
   }
 
   /**

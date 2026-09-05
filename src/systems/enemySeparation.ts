@@ -108,6 +108,21 @@ export function attackFacing(
 }
 
 /**
+ * 敵人視覺 flipX（用戶回歸：敵人 attack 貼圖美術基準與 move/idle 相反，預先鏡像）。
+ * move/idle/其他動畫：flipX = (facing < 0)（現行敵人慣例，正確）。
+ * **attack 系動畫：相反**（flipX = !(facing < 0) = facing >= 0），補償 attack 美術預鏡像。
+ * 診斷（截圖視覺鐵證）：同一 flipX=true 下 move 視覺朝左（對）、attack 視覺朝右（背對），
+ * 故 attack 需多翻一次才與 move 同朝向。純函式，給測騎測（move/idle→facing<0、attack→相反、切換重算）。
+ * @param facing 面向：+1 面右、-1 面左。
+ * @param animKey 當前動畫 state（如 'move' | 'idle' | 'attack'）。
+ */
+export function enemyFlipForAnim(facing: number, animKey: string): boolean {
+  const base = facing < 0; // 敵人一般慣例（move/idle 正確）
+  const isAttack = /attack/i.test(animKey);
+  return isAttack ? !base : base; // attack 美術基準相反 → 多翻一次
+}
+
+/**
  * 推怪負重降速係數（用戶：敵人越多推越有阻力，Unity PlayerController）：
  * factor = max(minFactor, 1/(1 + resistance × pushedCount))。
  * 0 隻→1（不降速）；推越多→遞減；夾限 minFactor（不到 0 龜速）。菁英/grabber 不算 pushedCount（呼叫端過濾）。
