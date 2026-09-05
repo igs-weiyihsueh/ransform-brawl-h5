@@ -182,6 +182,16 @@ export class GameScene extends Phaser.Scene {
       effects.comboReward(pos.x, pos.y, count, tickets, isMax, playerColor(pid));
     };
 
+    // 獎勵節點報獎演出（用戶 #3，純視覺）：進 Reward 節點 → 「恭喜獲獎！」banner + 飛光到 JP 燈 → 到達點亮 JP 燈。
+    // 飛光起點保底：進度條上緣中央（H5 進度條在頂部；取不到精確 marker 用此）。⚠️ 點燈數值由 jp.lightNextReward 負責。
+    wave.onReward = () => {
+      const markerX = GAME_WIDTH * 0.5;
+      const markerY = 120; // 進度條在螢幕頂部區域
+      effects.rewardFanfare(markerX, markerY, () => {
+        jp.lightNextReward(); // 光到達 JP 燈才點亮下一顆（保底：即使無實體 JP UI 也點燈、不漏獎）
+      });
+    };
+
     this.registerSystems();
 
     for (const sys of this.systems) {

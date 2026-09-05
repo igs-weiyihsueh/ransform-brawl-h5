@@ -339,6 +339,126 @@ export class EffectSystem {
   }
 
   /**
+   * 獎勵節點報獎演出（用戶 #3，對照 Unity RewardFanfare + RewardFlowUI）：
+   *  1. 「恭喜獲獎！」+ 燈號圖 banner 從下方浮現到定位。
+   *  2. 停 3s。
+   *  3. banner 退出。
+   *  4. 一道光從 banner 燈號圖飛到 JP 燈錨點（取不到起點 → 用進度條該獎勵節點 marker）。
+   *  5. 光到達 → onArrive()（呼叫端點亮 JP 下一顆燈）。
+   * 純視覺；點燈的數值變更由 onArrive 內的 JpSystem.lightNextReward 負責（與此解耦）。
+   * @param markerX,markerY 進度條該獎勵節點 marker 螢幕座標（飛光起點保底）。
+   * @param onArrive 光到達 JP 燈時的 callback（點燈）。取不到位置時仍會呼叫（不漏獎）。
+   */
+  rewardFanfare(markerX: number, markerY: number, onArrive: () => void): void {
+    const cx = GAME_WIDTH * 0.5;
+    const bannerY = GAME_HEIGHT * 0.62;
+    const hasLamp = this.scene.textures.exists(UI_ICONS.lamp.key);
+    const depth = ENERGY_FLY_DEPTH + 8;
+
+    // banner 容器：底板 + 燈號圖 + 「恭喜獲獎！」。
+    const bar = this.scene.add.graphics().setScrollFactor(0).setDepth(depth);
+    bar.fillStyle(0x1a1030, 0.82);
+    bar.fillRoundedRect(cx - 240, bannerY - 60, 480, 120, 16);
+    bar.lineStyle(3, 0xffd24d, 0.9);
+    bar.strokeRoundedRect(cx - 240, bannerY - 60, 480, 120, 16);
+    const lampIcon = hasLamp
+      ? this.scene.add.image(cx - 150, bannerY, UI_ICONS.lamp.key).setScrollFactor(0).setDepth(depth + 1)
+      : null;
+    lampIcon?.setDisplaySize(72, 72);
+    const txt = this.scene.add
+      .text(cx + 30, bannerY, '恭喜獲獎！', {
+        fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+        fontSize: '44px',
+        color: '#ffe64d',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 6,
+      })
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setDepth(depth + 1);
+
+    const group: Phaser.GameObjects.GameObject[] = [bar, txt];
+    if (lampIcon) group.push(lampIcon);
+    // 初始在下方外、淡入上浮到定位。
+    const riseFrom = 140;
+    for (const o of group) {
+      const s = o as unknown as { y: number; alpha: number };
+      s.y += riseFrom;
+      s.alpha = 0;
+    }
+    this.scene.tweens.add({
+      targets: group,
+      y: `-=${riseFrom}`,
+      alpha: 1,
+      duration: 350,
+      ease: 'Back.easeOut',
+    });
+
+    // 停 3s → banner 退出（往下 + 淡出）→ 飛光。
+    this.scene.time.delayedCall(350 + 3000, () => {
+      // 飛光起點：banner 燈號圖螢幕位置（取不到 → 進度條該獎勵節點 marker）。
+      const lampX = lampIcon ? cx - 150 : markerX;
+      const lampY = lampIcon ? bannerY : markerY;
+      this.scene.tweens.add({
+        targets: group,
+        y: `+=${riseFrom}`,
+        alpha: 0,
+        duration: 300,
+        ease: 'Sine.easeIn',
+        onComplete: () => group.forEach((o) => o.destroy()),
+      });
+      // 飛光 → JP 燈錨點（螢幕上緣中央的 JP 燈位置）。
+      this.flyRewardLight(lampX, lampY, onArrive);
+    });
+  }
+
+  /** JP 燈錨點（螢幕座標，上緣中央；H5 尚無實體 JP 燈 UI，用此當飛光終點+點亮脈動位置）。 */
+  private jpLampAnchor(): { x: number; y: number } {
+    return { x: GAME_WIDTH * 0.5, y: 60 };
+  }
+
+  /**
+   * 獎勵飛光（用戶 #3）：一道金光從起點飛到 JP 燈錨點（~0.7s），到達 → onArrive() + JP 燈點亮脈動。
+   * @param fromX,fromY 起點（banner 燈號圖 or 進度條 marker）。
+   * @param onArrive 到達 callback（點燈）。
+   */
+  private flyRewardLight(fromX: number, fromY: number, onArrive: () => void): void {
+    const to = this.jpLampAnchor();
+    const dot = this.scene.add.graphics().setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 9);
+    dot.fillStyle(0xffe64d, 1);
+    dot.fillCircle(0, 0, 12);
+    dot.x = fromX;
+    dot.y = fromY;
+    this.scene.tweens.add({
+      targets: dot,
+      x: to.x,
+      y: to.y,
+      scale: { from: 1, to: 1.4 },
+      duration: 700,
+      ease: 'Sine.easeInOut',
+      onComplete: () => {
+        dot.destroy();
+        // 到達才點燈（Unity LightNext）+ JP 燈點亮脈動（金色爆閃）。
+        onArrive();
+        const flash = this.scene.add.graphics().setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 9);
+        flash.fillStyle(0xffe64d, 0.9);
+        flash.fillCircle(0, 0, 20);
+        flash.x = to.x;
+        flash.y = to.y;
+        this.scene.tweens.add({
+          targets: flash,
+          scale: { from: 0.6, to: 2.2 },
+          alpha: { from: 0.9, to: 0 },
+          duration: 400,
+          ease: 'Quad.easeOut',
+          onComplete: () => flash.destroy(),
+        });
+      },
+    });
+  }
+
+  /**
    * 火雨預警紅圈（#10）：落點地上紅色半透明圓（直徑=radius×2），停留 warningTime。
    * @returns Graphics（呼叫端在火柱落下時 destroy）。
    */

@@ -21,6 +21,9 @@ import type { GameSystem } from '@/systems/GameSystem';
 import { GuardEvent } from '@/systems/GuardEvent';
 import { waveMessageFor } from '@/systems/waveMessage';
 
+/** 獎勵節點報獎演出保持時間（秒，用戶 #3：banner 浮現 0.35 + 停 3s + 退出/飛光 ≈ 0.35+3+0.3+0.7）。 */
+const REWARD_HOLD_SEC = 4.4;
+
 /**
  * WaveSystem — 波次/關卡系統（Spawn 節點核心，資料由 JSON 驅動）。
  *
@@ -65,6 +68,11 @@ export class WaveSystem implements GameSystem {
 
   /** 一幕通關回呼（本關 nodes 全跑完時觸發，供 JP 給燈）。 */
   onStageClear: (() => void) | null = null;
+
+  /** 獎勵節點回呼（用戶 #3：進 Reward 節點時觸發一次，供 GameScene 播報獎演出+點 JP 燈）。 */
+  onReward: (() => void) | null = null;
+  /** 獎勵演出保持計時（進 Reward 節點時設，倒數完才前進，讓報獎演出播完）。 */
+  private rewardHold = 0;
 
   /** 進行中的守護波（Event 節點）；null 表示非守護波。 */
   private guardEvent: GuardEvent | null = null;
@@ -176,8 +184,16 @@ export class WaveSystem implements GameSystem {
     } else if (node.nodeType === 'Event') {
       this.updateEventNode(node, dt);
     } else {
-      // Reward：stub，直接前進（schema 已定，流程之後接）。
-      this.advanceNode();
+      // Reward（用戶 #3）：進節點時觸發一次報獎演出（onReward），保持一段時間讓演出播完再前進。
+      if (this.rewardHold <= 0) {
+        this.rewardHold = REWARD_HOLD_SEC;
+        this.onReward?.();
+      }
+      this.rewardHold -= dt;
+      if (this.rewardHold <= 0) {
+        this.rewardHold = 0;
+        this.advanceNode();
+      }
     }
   }
 
@@ -228,6 +244,7 @@ export class WaveSystem implements GameSystem {
     this.pendingSpawns = 0; // 換節點清預警帳
     this.fireRainActive = false; // 換節點清火雨狀態
     this.fireRainRemaining = 0;
+    this.rewardHold = 0; // 換節點清獎勵演出計時（用戶 #3）
     this.announceNode();
   }
 
