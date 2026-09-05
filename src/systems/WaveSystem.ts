@@ -79,19 +79,27 @@ export class WaveSystem implements GameSystem {
   }
 
   /**
-   * 目前該不該降火雨 + 用哪組參數（用戶試玩#4，FireRainSystem 讀此驅動）：
-   * - 純火雨 Event 節點（active）→ 該節點火雨 preset。
-   * - 守護波進行中且守護 preset attachFireRain → 標準 FireRain。
+   * 目前該不該降火雨 + 用哪組參數（用戶#2 修正版，FireRainSystem 讀此驅動）：
+   * - 任何 Spawn 節點帶 attachFireRain（火雨 preset 名）→ 該波次進行時降該火雨（附加，取代舊獨立 Event 火雨節點）。
+   * - 守護波進行中且守護 preset 帶 attachFireRain（火雨 preset 名）→ 該火雨（守護+火雨）。
+   * - 舊：純火雨 Event 節點（eventPresetName=火雨 preset）→ 仍相容（resolveFireRainForEvent 認得）。
    * - 否則 → null（不降火雨）。
    */
   getActiveFireRainPreset(): FireRainPreset | null {
     const node = this.currentNode();
-    if (this.fireRainActive && node?.nodeType === 'Event') {
-      return resolveFireRainForEvent((node as { eventPresetName: string }).eventPresetName, false);
+    // 用戶#2：Spawn 節點附加火雨（該波進行中即降）。
+    if (node?.nodeType === 'Spawn') {
+      const attach = (node as { attachFireRain?: string }).attachFireRain;
+      if (attach) return getFireRainPreset(attach);
     }
+    // 舊相容：純火雨 Event 節點（eventPresetName 為火雨 preset）。
+    if (this.fireRainActive && node?.nodeType === 'Event') {
+      return resolveFireRainForEvent((node as { eventPresetName: string }).eventPresetName, undefined);
+    }
+    // 守護波 + 守護 preset 帶火雨 preset 名。
     if (this.guardEvent && !this.guardEvent.isFinished()) {
       const preset = getGuardPreset((node as { eventPresetName?: string })?.eventPresetName);
-      return resolveFireRainForEvent(undefined, preset.attachFireRain === true);
+      return resolveFireRainForEvent(undefined, preset.attachFireRain);
     }
     return null;
   }

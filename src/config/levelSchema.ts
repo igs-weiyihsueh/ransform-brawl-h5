@@ -98,6 +98,15 @@ export interface SpawnNodeData {
   spawnInterval: number;
   /** 敵種權重表。對應 Unity spawns[]。 */
   spawns: SpawnEntry[];
+  /**
+   * 附加火雨（用戶試玩#2，additive optional，§4）：火雨 preset 名（FIRE_RAIN_PRESETS 的 key，
+   * 如 'FireRain'/'FireRainLight'/'FireRainHeavy'）。省略=無火雨。
+   * WaveSystem 讀此欄，該波次進行時觸發對應火雨。
+   * 註：本 schema 零遊戲依賴，不 import FIRE_RAIN_PRESETS 交叉比對——只驗「非空字串」，
+   * preset 名是否存在由編輯器下拉(只給合法)與遊戲端 getFireRainPreset(fallback) 把關，
+   * 跟 eventPresetName 不在此檔交叉驗 GUARD_PRESETS 同慣例。
+   */
+  attachFireRain?: string;
 }
 
 /** Reward 節點：發獎（本階段流程未實作，schema 先定型）。 */
@@ -366,4 +375,9 @@ function validateSpawnNode(
       errors.push(`${eAt} 的「權重 weight」缺少或非正數。`);
     }
   });
+
+  // attachFireRain（optional）：若提供必須是非空字串（火雨 preset 名）。省略=無火雨。
+  if (node.attachFireRain !== undefined && !isNonEmptyString(node.attachFireRain)) {
+    errors.push(`${at} 的「附加火雨 attachFireRain」若提供必須是非空字串（火雨 preset 名）。`);
+  }
 }

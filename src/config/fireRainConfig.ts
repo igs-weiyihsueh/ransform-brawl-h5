@@ -77,16 +77,16 @@ export function getFireRainPreset(name: string | undefined): FireRainPreset {
 /**
  * 決定某 Event 節點該用哪組火雨參數（純函式，抽給測騎）：
  * - eventPresetName 是火雨 preset → 該火雨 preset（純火雨波）。
- * - 否則若守護 preset attachFireRain=true → 標準 FireRain（守護+火雨）。
+ * - 否則若守護 preset 帶 attachFireRain（火雨 preset 名）→ 該 preset（守護+火雨）。
  * - 否則 → null（純守護，不觸發火雨）。
  * @param eventPresetName Event 節點 preset 名。
- * @param guardAttachFireRain 當前為守護 preset 時，其 attachFireRain 旗標。
+ * @param guardAttachFireRain 當前為守護 preset 時，其 attachFireRain 火雨 preset 名（undefined=無）。
  */
 export function resolveFireRainForEvent(
   eventPresetName: string | undefined,
-  guardAttachFireRain: boolean,
+  guardAttachFireRain: string | undefined,
 ): FireRainPreset | null {
   if (isFireRainPreset(eventPresetName)) return getFireRainPreset(eventPresetName);
-  if (guardAttachFireRain) return FIRE_RAIN_PRESETS.FireRain;
+  if (guardAttachFireRain) return getFireRainPreset(guardAttachFireRain);
   return null;
 }
