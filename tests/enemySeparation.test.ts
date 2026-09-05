@@ -104,4 +104,49 @@ describe('pushOutOfPlayer — 防穿透', () => {
     expect(fixed.x).toBe(50);
     expect(fixed.y).toBe(0);
   });
+
+  // 補強：非軸對齊的精確邊緣座標（3-4-5 方向 → 推到 minDist 邊緣，比例精確）。
+  it('斜向穿透（3-4-5）→ 推到 minDist 邊緣、方向精確（保持單位方向 ×minDist）', () => {
+    // enemy 在 player 的 (30,40) 方向、dist=50 < minDist=100 → 推到 (60,80)（方向 (0.6,0.8)×100）。
+    const fixed = pushOutOfPlayer({ x: 30, y: 40 }, { x: 0, y: 0 }, 100);
+    expect(fixed.x).toBeCloseTo(60); // 0.6×100
+    expect(fixed.y).toBeCloseTo(80); // 0.8×100
+    expect(Math.hypot(fixed.x, fixed.y)).toBeCloseTo(100); // 剛好在邊緣
+  });
+
+  it('非原點 player 的穿透 → 修正後與 player 距離恰 minDist、方向不變', () => {
+    const player = { x: 200, y: 100 };
+    const enemy = { x: 210, y: 100 }; // 右側 10px < minDist 40
+    const fixed = pushOutOfPlayer(enemy, player, 40);
+    expect(fixed.x).toBeCloseTo(240); // player.x + 40（方向 +x）
+    expect(fixed.y).toBeCloseTo(100);
+    expect(Math.hypot(fixed.x - player.x, fixed.y - player.y)).toBeCloseTo(40);
+  });
+
+  it('恰好在 minDist（邊界）→ 不推（dist>=minDist 那側）', () => {
+    const p = pushOutOfPlayer({ x: 50, y: 0 }, { x: 0, y: 0 }, 50); // dist=50=minDist
+    expect(p).toEqual({ x: 50, y: 0 }); // >= → 原位
+  });
+});
+
+describe('combineWithSeparation — 補強：分離力主導 / 權重比例', () => {
+  it('分離力遠大於朝目標 → 最終方向偏向分離側', () => {
+    // toTarget 正規化為 (1,0)；separation (0,10)×weight0.8=(0,8) → 疊加 (1,8) → 偏上為主。
+    const d = combineWithSeparation({ x: 1, y: 0 }, { x: 0, y: 10 }, 0.8);
+    expect(d.y).toBeGreaterThan(d.x); // 分離主導 → y 分量 > x
+    expect(Math.hypot(d.x, d.y)).toBeCloseTo(1);
+  });
+
+  it('weight=0 → 完全忽略分離力（純朝目標）', () => {
+    const d = combineWithSeparation({ x: 3, y: 0 }, { x: 0, y: 100 }, 0);
+    expect(d.x).toBeCloseTo(1);
+    expect(d.y).toBeCloseTo(0);
+  });
+
+  it('toTarget 與 separation 完全相反且等量 → 抵銷回 (0,0)', () => {
+    // toTarget 正規化 (1,0)；separation (-1,0)×weight1 → (1,0)+(-1,0)=(0,0)。
+    const d = combineWithSeparation({ x: 5, y: 0 }, { x: -1, y: 0 }, 1);
+    expect(d.x).toBeCloseTo(0);
+    expect(d.y).toBeCloseTo(0);
+  });
 });
