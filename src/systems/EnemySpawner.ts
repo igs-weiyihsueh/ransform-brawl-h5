@@ -82,9 +82,11 @@ export class EnemySpawner {
     }
 
     // 防穿透：敵人移動後，對所有 player 頂開（不穿透）。
+    // pushOut：immovable 菁英頂不動時，改把玩家本身移到菁英外（玩家被擋、不穿進菁英）。
     const players = this.getAllPlayers().map((p) => ({
       pos: p.getHitCenter(),
       hitRadius: p.getHitRadius(),
+      pushOut: (x: number, y: number) => p.setPosition?.(x, y),
     }));
     for (const e of this.enemies) {
       e.resolvePenetration(players);

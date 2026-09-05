@@ -34,6 +34,11 @@ export interface EnemyAIConfig {
   hitStun: number;
   /** 被擊退力道（對應玩家 knockback 語意：unit → 像素/秒等效）。 */
   knockbackForce: number;
+  /**
+   * 防穿透抗性（像牆，用戶 #4）：true = 玩家頂不動這隻（immovable），改成玩家自己被擋在敵人外。
+   * 菁英 Enemy_Elite=true（Unity hitStun=0.05 幾乎不退像牆）；一般敵人省略/false 照舊被頂開。
+   */
+  immovable?: boolean;
 }
 
 /** 近戰圓形攻擊的 AttackData 輔助。 */
@@ -104,5 +109,6 @@ export const ENEMY_AI: Record<string, EnemyAIConfig> = {
     attack: meleeCircle(1.5, 0, 25, 2),
     hitStun: 0.05, // 幾乎不退，像牆
     knockbackForce: 2,
+    immovable: true, // 防穿透豁免：玩家頂不動菁英，改成玩家被擋在菁英外（用戶 #4，對應像牆）
   },
 };

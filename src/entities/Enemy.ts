@@ -106,18 +106,41 @@ export class Enemy implements Hittable {
     return this.radiusPx;
   }
 
-  /** 防穿透：把自己推到「距每個 player 至少 minDist」的邊緣（死亡不頂）。 */
-  resolvePenetration(players: readonly { pos: Vec2; hitRadius: number }[]): void {
+  /**
+   * 防穿透（死亡不頂）：
+   * - 一般敵人：把自己推到「距每個 player 至少 minDist」的邊緣。
+   * - immovable 菁英（用戶 #4，像牆）：自己不動，改把**玩家**推到菁英外（玩家頂不動、被擋），
+   *   維持不重疊；玩家不會穿進菁英體內。
+   * @param players 每個 player 的中心/半徑 + pushOut(x,y)（把該玩家移到界外，菁英用）。
+   */
+  resolvePenetration(
+    players: readonly {
+      pos: Vec2;
+      hitRadius: number;
+      pushOut?: (x: number, y: number) => void;
+    }[],
+  ): void {
     if (this.dead || this.state === 'death') return;
+    const immovable = this.cfg.immovable === true;
     for (const p of players) {
       const minDist = p.hitRadius + this.radiusPx;
-      const fixed = pushOutOfPlayer(
-        { x: this.anim.sprite.x, y: this.anim.sprite.y },
-        p.pos,
-        minDist,
-      );
-      this.anim.sprite.x = fixed.x;
-      this.anim.sprite.y = fixed.y;
+      if (immovable) {
+        // 菁英不動：把玩家頂到菁英外（以菁英為中心把玩家推到 minDist 邊緣）。
+        const selfPos = { x: this.anim.sprite.x, y: this.anim.sprite.y };
+        const fixedPlayer = pushOutOfPlayer(p.pos, selfPos, minDist);
+        if (fixedPlayer.x !== p.pos.x || fixedPlayer.y !== p.pos.y) {
+          p.pushOut?.(fixedPlayer.x, fixedPlayer.y);
+        }
+      } else {
+        // 一般敵人：把自己推開。
+        const fixed = pushOutOfPlayer(
+          { x: this.anim.sprite.x, y: this.anim.sprite.y },
+          p.pos,
+          minDist,
+        );
+        this.anim.sprite.x = fixed.x;
+        this.anim.sprite.y = fixed.y;
+      }
     }
   }
 
