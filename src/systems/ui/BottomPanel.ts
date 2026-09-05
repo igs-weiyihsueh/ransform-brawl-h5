@@ -19,6 +19,9 @@ interface Slot {
   active: boolean;
   shownTicket: number;
   shownRatio: number;
+  /** 寶盒圖示中心的螢幕座標（能量飛光終點；防漂移 template 錨點）。 */
+  chestCenterX: number;
+  chestCenterY: number;
 }
 
 /** 未加入欄的淡化透明度。 */
@@ -106,6 +109,14 @@ export class BottomPanel {
 
     // 寶箱（chest.png，退回方塊佔位）。座標=欄左上 + element.x/y。
     const chestEl = this.findEl(template, 'chest');
+    // 寶盒圖示中心螢幕座標（能量飛光終點）：chest 用 origin(0,0)，故中心 = 左上 + 半寬高。
+    // 無 chestEl 時退回欄中心（不會壞）。防漂移：template=columns[0]，各欄 slotX 不同→各欄各自正確。
+    const chestCenterX = chestEl
+      ? slotX + chestEl.x + chestEl.width / 2
+      : slotX + panel.slotWidth / 2;
+    const chestCenterY = chestEl
+      ? slotY + chestEl.y + chestEl.height / 2
+      : slotY + panel.slotHeight / 2;
     if (chestEl) {
       const cx = slotX + chestEl.x;
       const cy = slotY + chestEl.y;
@@ -196,6 +207,8 @@ export class BottomPanel {
       active,
       shownTicket: -1,
       shownRatio: -1,
+      chestCenterX,
+      chestCenterY,
     };
     this.drawProgress(slot, 0);
     return slot;
@@ -213,6 +226,16 @@ export class BottomPanel {
       g.fillStyle(HUD_COLORS.progressFill, 1);
       g.fillRoundedRect(slot.progressX, slot.progressY, slot.progressW * clamped, slot.progressH, slot.progressRadius);
     }
+  }
+
+  /**
+   * 取某 player 寶盒圖示中心的螢幕座標（能量飛光終點；面板 scrollFactor 0 = 螢幕座標）。
+   * playerIndex 無效回 undefined（呼叫端 optional，飛光不觸發、不會壞）。
+   */
+  getChestAnchor(playerIndex: number): { x: number; y: number } | undefined {
+    const slot = this.slots[playerIndex];
+    if (!slot) return undefined;
+    return { x: slot.chestCenterX, y: slot.chestCenterY };
   }
 
   /** 目前欄數（= slotCount）。 */
