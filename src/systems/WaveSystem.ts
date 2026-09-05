@@ -11,6 +11,7 @@ import type { Enemy } from '@/entities/Enemy';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import { GuardEvent } from '@/systems/GuardEvent';
+import { waveMessageFor } from '@/systems/waveMessage';
 
 /**
  * WaveSystem — 波次/關卡系統（Spawn 節點核心，資料由 JSON 驅動）。
@@ -45,6 +46,8 @@ export class WaveSystem implements GameSystem {
   private nodeIndex = 0;
   /** 本 Spawn 節點已累計的擊殺數。 */
   private kills = 0;
+  /** 累計 Spawn 波序（跨關 1-based，過場提示「第 N 波」用）。 */
+  private spawnWaveNumber = 0;
   /** 距下一次可生怪的倒數（秒）；受 spawnInterval 節流。 */
   private spawnCooldown = 0;
   /** 本系統生出、目前仍追蹤中的敵人（用來偵測擊殺）。 */
@@ -127,6 +130,16 @@ export class WaveSystem implements GameSystem {
     this.kills = 0;
     this.spawnCooldown = 0;
     this.tracked = [];
+    this.announceNode();
+  }
+
+  /** 過場提示（#9，純視覺）：進節點時依類型顯示螢幕中央提示文字。 */
+  private announceNode(): void {
+    const node = this.currentNode();
+    if (!node) return;
+    if (node.nodeType === 'Spawn') this.spawnWaveNumber += 1; // 累計波序（跨關）
+    const text = waveMessageFor(node, this.spawnWaveNumber);
+    this.ctx.effects?.waveMessage(text);
   }
 
   /** 前進到下一節點；本關跑完則進下一關（皆無則停在尾端）。 */

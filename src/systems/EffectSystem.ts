@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { VFX_EFFECTS, VFX_FRAME_PAD, type VFXEffectDef } from '@/config/vfxConfig';
+import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
+import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 import { ENERGY_FLY, flyAlpha, flyPosition, flyScale } from '@/systems/energyFlyMath';
 import {
   CHEST_REWARD_FX,
@@ -262,6 +264,56 @@ export class EffectSystem {
       duration: COMBO_REWARD_FX.durationSec * 1000,
       ease: 'Sine.easeOut',
       onComplete: () => txt.destroy(),
+    });
+  }
+
+  /**
+   * 波次過場提示（#9，純視覺）：螢幕中央醒目文字，淡入放大 → 停留 → 淡出。
+   * @param text 過場文字（空字串不顯示）。
+   */
+  waveMessage(text: string): void {
+    if (!text) return;
+    const cx = GAME_WIDTH * 0.5;
+    const cy = GAME_HEIGHT * 0.42; // 略高於正中，不擋角色
+    // 半透明背景條，讓文字醒目。
+    const bar = this.scene.add.graphics();
+    bar.fillStyle(0x000000, 0.5);
+    bar.fillRect(0, cy - 50, GAME_WIDTH, 100);
+    bar.setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 5);
+    const txt = this.scene.add.text(cx, cy, text, {
+      fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+      fontSize: `${WAVE_MESSAGE_FX.fontSize}px`,
+      color: '#ffffff',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 6,
+    });
+    txt.setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 6).setScale(0.6).setAlpha(0);
+
+    const total = WAVE_MESSAGE_FX.durationSec * 1000;
+    const fadeIn = total * 0.2;
+    const hold = total * WAVE_MESSAGE_FX.holdRatio;
+    const fadeOut = total - fadeIn - hold;
+    // 淡入 + 放大。
+    this.scene.tweens.add({
+      targets: [txt],
+      alpha: 1,
+      scale: 1,
+      duration: fadeIn,
+      ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({ targets: [bar], alpha: { from: 0, to: 1 }, duration: fadeIn });
+    // 停留後淡出（文字+背景一起），完成銷毀。
+    this.scene.tweens.add({
+      targets: [txt, bar],
+      alpha: 0,
+      delay: fadeIn + hold,
+      duration: fadeOut,
+      ease: 'Sine.easeIn',
+      onComplete: () => {
+        txt.destroy();
+        bar.destroy();
+      },
     });
   }
 }
