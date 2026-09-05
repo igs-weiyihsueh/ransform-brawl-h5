@@ -40,6 +40,75 @@ let zoom = 0.45;
 /** 目前選中的元素 key（如 'overhead.credit' / 'panel.chest'）。 */
 let selectedKey: string | null = null;
 
+// ---- Undo / Redo 歷史 -----------------------------------------------------
+//
+// 每次「拖拉結束 / Inspector 數值變更 / 載入 / 重設」前記一份 layout 深拷貝進 undoStack。
+// Ctrl+Z 還原上一步（把當前推進 redoStack）、Ctrl+Y（或 Ctrl+Shift+Z）反向。
+// 拖拉中連續移動不逐幀記，只在手勢開始 beginEdit() 記一次、放開才 commitEdit()。
+
+const HISTORY_CAP = 50;
+let undoStack: UiLayoutFile[] = [];
+let redoStack: UiLayoutFile[] = [];
+/** 手勢/編輯開始時暫存的 layout 快照（beginEdit 記、commitEdit 決定是否入棧）。 */
+let pendingSnapshot: string | null = null;
+
+/** 手勢/編輯開始：記一份當前 layout 的 JSON 快照（尚未入棧）。 */
+function beginEdit(): void {
+  pendingSnapshot = JSON.stringify(layout);
+}
+
+/** 手勢/編輯結束：若 layout 真的變了，把開始時的快照推進 undoStack、清空 redo。 */
+function commitEdit(): void {
+  if (pendingSnapshot === null) return;
+  const now = JSON.stringify(layout);
+  if (now !== pendingSnapshot) {
+    undoStack.push(JSON.parse(pendingSnapshot) as UiLayoutFile);
+    if (undoStack.length > HISTORY_CAP) undoStack.shift();
+    redoStack = [];
+    updateHistoryButtons();
+  }
+  pendingSnapshot = null;
+}
+
+/** 立即記一步（用於載入/重設這種一次性整份變更）。 */
+function pushHistory(): void {
+  undoStack.push(cloneLayout(layout));
+  if (undoStack.length > HISTORY_CAP) undoStack.shift();
+  redoStack = [];
+  updateHistoryButtons();
+}
+
+function undo(): void {
+  const prev = undoStack.pop();
+  if (!prev) return;
+  redoStack.push(cloneLayout(layout));
+  layout = prev;
+  selectedKey = null;
+  renderStage();
+  selectFirstIfNone();
+  updateHistoryButtons();
+  setStatus('已復原（Undo）。', 'info');
+}
+
+function redo(): void {
+  const next = redoStack.pop();
+  if (!next) return;
+  undoStack.push(cloneLayout(layout));
+  layout = next;
+  selectedKey = null;
+  renderStage();
+  selectFirstIfNone();
+  updateHistoryButtons();
+  setStatus('已重做（Redo）。', 'info');
+}
+
+function updateHistoryButtons(): void {
+  const u = document.getElementById('btn-undo') as HTMLButtonElement | null;
+  const r = document.getElementById('btn-redo') as HTMLButtonElement | null;
+  if (u) u.disabled = undoStack.length === 0;
+  if (r) r.disabled = redoStack.length === 0;
+}
+
 // ---- 可編輯元素的統一存取介面 --------------------------------------------
 //
 // 每個可拖拉方框綁一個 accessor：讀/寫其 x/y/w/h（寫回 layout 物件），
@@ -186,15 +255,16 @@ function renderStage(): void {
   editables = buildEditables();
   stageEl.innerHTML = '';
 
-  // 底部 4 欄
+  // 底部 4 欄底框（遊戲樣式：圓角矩形，底 rgba(16,16,36,0.82)/白框；P2~P4 淡化）
   for (let i = 0; i < layout.panel.slotCount; i += 1) {
     const r = slotRect(i);
     const slot = document.createElement('div');
-    slot.className = 'slot' + (i === 0 ? '' : ' inactive');
+    slot.className = 'panel-slot-bg' + (i === 0 ? '' : ' inactive');
     slot.style.left = `${r.x}px`;
     slot.style.top = `${r.y}px`;
     slot.style.width = `${r.width}px`;
     slot.style.height = `${r.height}px`;
+    slot.style.borderRadius = `${layout.panel.cornerRadius}px`;
     const lab = document.createElement('div');
     lab.className = 'slot-label';
     lab.textContent = `P${i + 1}${i === 0 ? '' : '（佔位）'}`;
@@ -216,24 +286,200 @@ function renderStage(): void {
   cont.appendChild(clab);
   stageEl.appendChild(cont);
 
-  // 各可編輯方框
+  // 各元素方框（聚焦模式）：只有「選中」那一個高亮 + 可拖拉/縮放；
+  // 其餘半透明背景參考（不可拖，點一下=切換選中）。
   for (const ed of editables) {
     const r = ed.get();
+    const isSel = ed.key === selectedKey;
     const box = document.createElement('div');
-    box.className = 'ui-box' + (ed.key === selectedKey ? ' selected' : '');
+    box.className = 'ui-box' + (isSel ? ' selected' : ' dimmed');
     box.dataset.key = ed.key;
     box.style.left = `${ed.origin.x + r.x}px`;
     box.style.top = `${ed.origin.y + r.y}px`;
     box.style.width = `${r.width}px`;
     box.style.height = `${r.height}px`;
-    box.textContent = ed.label;
-    attachDrag(box, ed);
-    if (ed.resizable) attachResize(box, ed);
+    box.title = ed.label;
+    const visual = document.createElement('div');
+    visual.className = 'ui-visual';
+    visual.appendChild(buildVisual(ed.key));
+    box.appendChild(visual);
+    if (isSel) {
+      // 選中：可拖拉、可縮放（顯示 handle）。
+      attachDrag(box, ed);
+      if (ed.resizable) attachResize(box, ed);
+    } else {
+      // 未選中：只可點選切換，不拖動（避免誤拖擠在一起的元素）。
+      box.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        selectedKey = ed.key;
+        renderStage(); // 切換選中：重繪讓新選中的掛上拖拉、舊的變 dimmed
+      });
+    }
     stageEl.appendChild(box);
   }
 
+  // P2~P4 佔位欄：淡化(alpha 0.4)複製 P1 template icon（防漂移=顯示也用 columns[0]）。
+  renderPlaceholderColumns();
+
   renderTree();
   renderInspector();
+}
+
+// ---- 視覺（真 icon + 遊戲樣式）--------------------------------------------
+
+/** icon 路徑：編輯器在 /ui-editor/，素材在網站根 assets/images/ui/。 */
+function iconUrl(name: string): string {
+  return `../assets/images/ui/${name}.png`;
+}
+
+/** 建一個 <img>，載入失敗退場成標籤色塊（本機無素材/缺圖也能用）。 */
+function iconImg(name: string, label: string): HTMLElement {
+  const img = document.createElement('img');
+  img.src = iconUrl(name);
+  img.alt = label;
+  img.addEventListener('error', () => {
+    const fb = document.createElement('div');
+    fb.className = 'icon-fallback';
+    fb.textContent = label;
+    img.replaceWith(fb);
+  });
+  return img;
+}
+
+/** 依元素 key 建視覺內容（對照 uiConfig 樣式值）。 */
+function buildVisual(key: string): HTMLElement {
+  switch (key) {
+    case 'panel.chest':
+      return iconImg('chest', '寶箱');
+    case 'panel.coin':
+    case 'overhead.credit':
+      return buildIconWithNumber(key);
+    case 'panel.ticket':
+      return buildTicket();
+    case 'panel.progress':
+      return buildProgressBar();
+    case 'overhead.badge':
+      return buildBadge();
+    case 'overhead.energy':
+      return buildEnergyCells();
+    case 'overhead.combo':
+      return buildCombo();
+    default: {
+      const d = document.createElement('div');
+      d.className = 'icon-fallback';
+      d.textContent = key;
+      return d;
+    }
+  }
+}
+
+/** Credit / coin：金幣 icon + 數字（白）。 */
+function buildIconWithNumber(key: string): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:4px;width:100%;height:100%;';
+  const coin = iconImg('coin', '金幣');
+  coin.style.cssText = 'width:auto;height:100%;object-fit:contain;';
+  wrap.appendChild(coin);
+  if (key === 'overhead.credit') {
+    const num = document.createElement('span');
+    num.textContent = '1234';
+    num.style.cssText = 'color:#fff;font-size:22px;font-weight:bold;white-space:nowrap;';
+    wrap.appendChild(num);
+  }
+  return wrap;
+}
+
+/** 彩票：ticket icon + 數字（30px 白粗體，放右）。 */
+function buildTicket(): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:6px;width:100%;height:100%;';
+  const t = iconImg('ticket', '彩票');
+  t.style.cssText = 'width:auto;height:100%;object-fit:contain;';
+  const num = document.createElement('span');
+  num.textContent = '8';
+  num.style.cssText = 'color:#fff;font-size:30px;font-weight:bold;';
+  wrap.appendChild(t);
+  wrap.appendChild(num);
+  return wrap;
+}
+
+/** 進度條：圓角條，底 #2a2a3a、填 #4caf50 綠半滿。 */
+function buildProgressBar(): HTMLElement {
+  const bar = document.createElement('div');
+  bar.style.cssText =
+    'width:100%;height:100%;background:#2a2a3a;border-radius:6px;overflow:hidden;';
+  const fill = document.createElement('div');
+  fill.style.cssText = 'width:50%;height:100%;background:#4caf50;border-radius:6px;';
+  bar.appendChild(fill);
+  return bar;
+}
+
+/** 魂力環：ring.png 底環 + 中心 P 牌（藍底白字）+ 紫弧示意。 */
+function buildBadge(): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;width:100%;height:100%;';
+  const ring = iconImg('ring', '魂力環');
+  ring.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;';
+  wrap.appendChild(ring);
+  // 紫弧（用 conic-gradient 半圈示意 #ba68c8）
+  const arc = document.createElement('div');
+  arc.style.cssText =
+    'position:absolute;inset:8%;border-radius:50%;background:conic-gradient(#ba68c8 0deg 200deg, transparent 200deg 360deg);opacity:0.85;-webkit-mask:radial-gradient(circle, transparent 62%, #000 64%);mask:radial-gradient(circle, transparent 62%, #000 64%);';
+  wrap.appendChild(arc);
+  // 中心 P 牌
+  const pnum = document.createElement('div');
+  pnum.textContent = layout.overhead.badge.text || 'P1';
+  pnum.style.cssText =
+    'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:56%;height:56%;border-radius:50%;background:#2196f3;color:#fff;font-weight:bold;font-size:14px;display:flex;align-items:center;justify-content:center;';
+  wrap.appendChild(pnum);
+  return wrap;
+}
+
+/** 能量：4 小方格（16×16 gap6 圓角3，金 #ffd54f / 暗 #3a3a5a）。 */
+function buildEnergyCells(): HTMLElement {
+  const e = layout.overhead.energy;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `display:flex;gap:${e.cellGap}px;align-items:center;height:100%;`;
+  for (let i = 0; i < e.cellCount; i += 1) {
+    const cell = document.createElement('div');
+    const filled = i < 2; // 示意半滿
+    cell.style.cssText =
+      `width:${e.cellWidth}px;height:${e.cellHeight}px;border-radius:${e.cornerRadius}px;` +
+      `background:${filled ? '#ffd54f' : '#3a3a5a'};`;
+    wrap.appendChild(cell);
+  }
+  return wrap;
+}
+
+/** COMBO：文字 "12 HIT"（24px 橘 #ffb300）。 */
+function buildCombo(): HTMLElement {
+  const t = document.createElement('div');
+  t.textContent = `12${layout.overhead.combo.suffix || ' HIT'}`;
+  t.style.cssText =
+    'color:#ffb300;font-size:24px;font-weight:bold;white-space:nowrap;display:flex;align-items:center;height:100%;';
+  return t;
+}
+
+/** P2~P4 佔位欄：alpha 0.4 複製 P1 欄底框 + P1 template 元素 icon（唯讀，不可拖）。 */
+function renderPlaceholderColumns(): void {
+  const p1Col = layout.panel.columns.find((c) => c.playerIndex === 0);
+  const p1Elements = p1Col ? p1Col.elements : [];
+  for (let i = 1; i < layout.panel.slotCount; i += 1) {
+    const slot = slotRect(i);
+    const p1 = slotRect(0);
+    for (const el of p1Elements) {
+      const box = document.createElement('div');
+      box.style.cssText =
+        `position:absolute;pointer-events:none;opacity:0.4;` +
+        `left:${slot.x + el.x}px;top:${slot.y + el.y}px;width:${el.width}px;height:${el.height}px;`;
+      const visual = document.createElement('div');
+      visual.className = 'ui-visual';
+      visual.appendChild(buildVisual(`panel.${el.id}`));
+      box.appendChild(visual);
+      stageEl.appendChild(box);
+    }
+    void p1; // p1 origin 已用於 el 相對座標（與 active 欄同 template）
+  }
 }
 
 // ---- 拖拉 / 縮放 ----------------------------------------------------------
@@ -249,6 +495,7 @@ function attachDrag(box: HTMLDivElement, ed: Editable): void {
     e.preventDefault();
     selectedKey = ed.key;
     renderSelectionOnly();
+    beginEdit(); // 記手勢開始前的快照
     const startX = e.clientX;
     const startY = e.clientY;
     const start = ed.get();
@@ -266,6 +513,7 @@ function attachDrag(box: HTMLDivElement, ed: Editable): void {
       box.releasePointerCapture(ev.pointerId);
       box.removeEventListener('pointermove', onMove);
       box.removeEventListener('pointerup', onUp);
+      commitEdit(); // 放開才記一步
       renderStage(); // 重繪（欄座標可能連動）
     };
     box.addEventListener('pointermove', onMove);
@@ -282,6 +530,7 @@ function attachResize(box: HTMLDivElement, ed: Editable): void {
     e.stopPropagation();
     selectedKey = ed.key;
     renderSelectionOnly();
+    beginEdit(); // 記手勢開始前的快照
     const startX = e.clientX;
     const startY = e.clientY;
     const start = ed.get();
@@ -302,6 +551,7 @@ function attachResize(box: HTMLDivElement, ed: Editable): void {
       handle.releasePointerCapture(ev.pointerId);
       handle.removeEventListener('pointermove', onMove);
       handle.removeEventListener('pointerup', onUp);
+      commitEdit(); // 放開才記一步
       renderStage();
     };
     handle.addEventListener('pointermove', onMove);
@@ -338,7 +588,7 @@ function renderTree(): void {
       item.textContent = ed.label;
       item.addEventListener('click', () => {
         selectedKey = ed.key;
-        renderSelectionOnly();
+        renderStage(); // 聚焦模式：切換選中要重掛拖拉到新元素、舊的變 dimmed
       });
       tree.appendChild(item);
     }
@@ -386,6 +636,9 @@ function numRow(ed: Editable, field: keyof Rect, label: string, value: number): 
   input.step = '1';
   input.value = String(value);
   input.dataset.field = field;
+  // 聚焦時記快照，變更提交（change=blur/Enter）時入棧一步，避免逐字記歷史。
+  input.addEventListener('focus', () => beginEdit());
+  input.addEventListener('change', () => commitEdit());
   input.addEventListener('input', () => {
     const v = Number(input.value);
     if (!Number.isFinite(v)) return;
@@ -419,10 +672,20 @@ function updateInspectorFields(ed: Editable): void {
 
 // ---- 載入 / 匯出 / 重設 ---------------------------------------------------
 
-function loadIntoState(file: UiLayoutFile): void {
+function loadIntoState(file: UiLayoutFile, recordHistory = false): void {
+  if (recordHistory) pushHistory(); // 讓載入/重設可被 Undo 還原
   layout = file;
   selectedKey = null;
   renderStage();
+  selectFirstIfNone();
+}
+
+/** 聚焦模式：若目前沒有選中元素，預設選第一個（讓一進來就有可編輯的 active 元素）。 */
+function selectFirstIfNone(): void {
+  if (selectedKey === null && editables.length > 0) {
+    selectedKey = editables[0].key;
+    renderStage();
+  }
 }
 
 async function loadDefault(): Promise<void> {
@@ -431,7 +694,7 @@ async function loadDefault(): Promise<void> {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const raw: unknown = await res.json();
-    loadIntoState(assertValidUiLayout(raw));
+    loadIntoState(assertValidUiLayout(raw), true);
     setStatus(`已載入預設 ${url}。`, 'ok');
   } catch (e) {
     setStatus(`載入預設失敗：${(e as Error).message}`, 'err');
@@ -451,7 +714,7 @@ function loadFromFile(text: string, fileName: string): void {
     setStatus(`檔案 ${fileName} 驗證失敗（${result.errors.length} 項）：\n${result.errors.map((m) => `  - ${m}`).join('\n')}`, 'err');
     return;
   }
-  loadIntoState(result.data);
+  loadIntoState(result.data, true);
   setStatus(`已載入 ${fileName}。`, 'ok');
 }
 
@@ -473,7 +736,7 @@ function exportJson(): void {
 }
 
 function resetDefault(): void {
-  loadIntoState(cloneLayout(DEFAULT_UI_LAYOUT));
+  loadIntoState(cloneLayout(DEFAULT_UI_LAYOUT), true);
   setStatus('已重設為預設值。', 'info');
 }
 
@@ -501,8 +764,29 @@ function bindUI(): void {
     zoom = Number(zoomInput.value) / 100;
     applyZoom();
   });
+
+  // Undo/Redo：按鈕 + 鍵盤。
+  $('btn-undo').addEventListener('click', undo);
+  $('btn-redo').addEventListener('click', redo);
+  window.addEventListener('keydown', (e) => {
+    // 若正在數值輸入框打字，讓瀏覽器/欄位自己處理（不攔）。
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const ctrl = e.ctrlKey || e.metaKey; // 支援 Cmd（Mac）
+    if (!ctrl) return;
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+    } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+      e.preventDefault();
+      redo();
+    }
+  });
+  updateHistoryButtons();
 }
 
 bindUI();
 applyZoom();
 renderStage();
+selectFirstIfNone();

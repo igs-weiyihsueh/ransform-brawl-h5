@@ -40,6 +40,7 @@
         border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px;
       }
       button:hover { border-color: var(--accent); }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
       button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
       .layout { display: flex; height: calc(100vh - 53px); }
       .stage-wrap {
@@ -66,18 +67,43 @@
       #overhead-container {
         position: absolute; border: 1px dashed var(--accent);
       }
+      /* 元素 = 透明拖拉判定框（hit area），視覺 icon/樣式畫在內層 .ui-visual */
       .ui-box {
-        position: absolute; background: var(--box); border: 1px solid var(--box-line);
-        color: #cfd8ff; font-size: 12px; cursor: move; user-select: none;
-        display: flex; align-items: center; justify-content: center; text-align: center;
-        overflow: hidden;
+        position: absolute; user-select: none;
+        background: transparent; border: 1px solid transparent;
+        overflow: visible;
+        font-family: Arial, "Microsoft JhengHei", "Noto Sans TC", sans-serif;
       }
-      .ui-box.selected { background: var(--box-sel); border-color: var(--box-sel-line); color: #d6ffe6; z-index: 5; }
+      /* 聚焦模式：未選中 = 半透明背景參考，點一下切換選中（不可拖） */
+      .ui-box.dimmed { opacity: 0.4; cursor: pointer; }
+      .ui-box.dimmed:hover { opacity: 0.6; border-color: rgba(102,255,204,0.4); }
+      /* 選中 = 高亮外框（亮青）+ 可拖拉 */
+      .ui-box.selected {
+        opacity: 1; cursor: move; z-index: 5;
+        border: 2px solid #66ffcc; box-shadow: 0 0 0 1px rgba(102,255,204,0.3), 0 0 10px rgba(102,255,204,0.35);
+      }
+      .ui-visual {
+        position: absolute; inset: 0; pointer-events: none;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .ui-visual img { width: 100%; height: 100%; object-fit: contain; display: block; }
+      /* icon 載入失敗的退場：顯示標籤色塊 */
+      .icon-fallback {
+        width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+        font-size: 11px; color: #cfd8ff; background: rgba(108,140,255,0.18);
+        border: 1px solid var(--box-line); border-radius: 4px; text-align: center;
+      }
       /* 縮放把手（右下角） */
       .resize-handle {
         position: absolute; right: -5px; bottom: -5px; width: 12px; height: 12px;
         background: var(--box-sel-line); border: 1px solid #0a0a14; cursor: nwse-resize; z-index: 6;
       }
+      /* 底部欄底框（圓角矩形，遊戲樣式） */
+      .panel-slot-bg {
+        position: absolute; border-radius: 14px;
+        background: rgba(16,16,36,0.82); border: 1px solid rgba(255,255,255,0.85);
+      }
+      .panel-slot-bg.inactive { opacity: 0.4; }
       .col-inspector {
         width: 300px; border-left: 1px solid var(--line); padding: 12px; overflow-y: auto;
         background: var(--panel);
@@ -116,6 +142,8 @@
         <span id="zoom-val" class="badge"></span>
       </div>
       <div class="spacer"></div>
+      <button id="btn-undo" title="復原 (Ctrl+Z)" disabled>↶ 復原</button>
+      <button id="btn-redo" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
       <button id="btn-load-default">載入預設</button>
       <button id="btn-load-file">載入 JSON 檔…</button>
       <input id="file-input" type="file" accept="application/json,.json" hidden />
