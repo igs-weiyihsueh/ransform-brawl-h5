@@ -27,6 +27,12 @@ export function playerColor(playerId: number): number {
 export const WAITING_PLATFORM_LIFT = 40;
 
 /**
+ * 待機台座相對待機角色「中心」往下的像素偏移（用戶 #1：平台畫在角色腳下才看得見，非同中心被身體蓋住）。
+ * 角色畫布 256、腳底約在中心下方 ~72px × SPRITE_SCALE(≈0.735) ≈ 53px，取 54 讓台座盤剛好露在腳底。
+ */
+export const PLATFORM_FEET_OFFSET = Math.round(72 * SPRITE_SCALE);
+
+/**
  * 真空環（搜索圈）設定。對照 Unity：
  * - vacuumRadius = 0.5 unit → 50px（環半徑 = 吸取範圍）
  * - ringWidth = 0.05 unit → 5px（環線寬）

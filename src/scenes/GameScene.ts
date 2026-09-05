@@ -8,7 +8,7 @@ import { BuffSystem } from '@/systems/BuffSystem';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import { splitChestByDamage } from '@/systems/chestAttribution';
 import { landingX } from '@/systems/entranceMath';
-import { WAITING_PLATFORM_LIFT, playerColor } from '@/config/playerConfig';
+import { WAITING_PLATFORM_LIFT, PLATFORM_FEET_OFFSET, playerColor } from '@/config/playerConfig';
 import { PANEL_DEPTH, UI_ICONS } from '@/config/uiConfig';
 import { ChestSystem } from '@/systems/ChestSystem';
 import { ComboSystem } from '@/systems/ComboSystem';
@@ -213,10 +213,11 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < maxColumns; i++) {
       const w = this.uiSystem?.getWaitingAnchor(i);
       if (!w) continue; // 該欄無待機點（未啟用）不畫
-      // 台座往上抬，讓橢圓露在下方面板頂緣之上（否則被面板上緣蓋住看不清）；
-      // 角色待機也踩在台座頂面（見 setWaiting 的 lift 對齊）。
+      // 用戶 #1：平台畫在待機角色「腳下」而非同中心，否則被角色身體蓋住看不見（俯視角台座本就在腳底）。
+      // 角色待機中心在 (w.x, w.y - LIFT)；腳底約在中心下方 PLATFORM_FEET_OFFSET，台座擺此處露出、角色像站在上面。
+      const charY = w.y - WAITING_PLATFORM_LIFT;
       const plat = this.add
-        .image(w.x, w.y - WAITING_PLATFORM_LIFT, UI_ICONS.platform.key)
+        .image(w.x, charY + PLATFORM_FEET_OFFSET, UI_ICONS.platform.key)
         .setOrigin(0.5, 0.5)
         .setScrollFactor(0)
         .setDepth(PANEL_DEPTH + 5); // 面板(1000) < 台座(1005) < 待機角色(1010)

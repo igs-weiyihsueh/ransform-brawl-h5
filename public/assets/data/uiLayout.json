@@ -46,6 +46,7 @@
         "playerIndex": 0,
         "active": true,
         "elements": [
+          { "id": "platform", "x": 130, "y": -54, "width": 160, "height": 50 },
           { "id": "chest", "x": 14, "y": 36, "width": 70, "height": 70 },
           { "id": "ticket", "x": 100, "y": 58, "width": 120, "height": 40 },
           { "id": "progress", "x": 14, "y": 98, "width": 392, "height": 16 },

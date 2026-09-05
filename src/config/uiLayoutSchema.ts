@@ -112,7 +112,7 @@ export interface OverheadLayout {
  * 座標基準：相對「該欄左上角」原點，+x 右、+y 下，px。
  */
 export interface PanelElement {
-  /** 元素識別（chest/ticket/progress/coin…）。 */
+  /** 元素識別（chest/ticket/progress/coin/platform…）。 */
   id: string;
   x: number;
   y: number;
@@ -239,6 +239,7 @@ export const DEFAULT_UI_LAYOUT: UiLayoutFile = {
         playerIndex: 0,
         active: true,
         elements: [
+          { id: 'platform', x: 130, y: -54, width: 160, height: 50 }, // 待機平台：欄上方中心（角色站台座）
           { id: 'chest', x: 14, y: 36, width: 70, height: 70 }, // 左下：y=120-14-70
           { id: 'ticket', x: 100, y: 58, width: 120, height: 40 }, // chest 右：x=14+70+16
           { id: 'progress', x: 14, y: 98, width: 392, height: 16 }, // 下方跨欄：width=420-2×14

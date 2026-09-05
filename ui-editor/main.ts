@@ -144,16 +144,24 @@ function contentRect(): Rect {
     const m = 60; // 容器四周留白，讓超出容器的元素(如 combo 在上方)也看得到
     return { x: c.x - m, y: c.y - m, width: c.width + m * 2, height: c.height + m * 2 };
   }
-  // panel：4 欄整條的邊界 + 留白
+  // panel：4 欄整條的邊界，並涵蓋 P1 欄內元素的外擴（如 platform 在欄上方 y<0）+ 留白
   const first = slotRect(0);
   const last = slotRect(layout.panel.slotCount - 1);
   const m = 40;
-  return {
-    x: first.x - m,
-    y: first.y - m,
-    width: last.x + last.width - first.x + m * 2,
-    height: first.height + m * 2,
-  };
+  let minX = first.x;
+  let minY = first.y;
+  let maxX = last.x + last.width;
+  let maxY = first.y + first.height;
+  const p1Col = layout.panel.columns.find((c) => c.playerIndex === 0);
+  if (p1Col) {
+    for (const el of p1Col.elements) {
+      minX = Math.min(minX, first.x + el.x);
+      minY = Math.min(minY, first.y + el.y);
+      maxX = Math.max(maxX, first.x + el.x + el.width);
+      maxY = Math.max(maxY, first.y + el.y + el.height);
+    }
+  }
+  return { x: minX - m, y: minY - m, width: maxX - minX + m * 2, height: maxY - minY + m * 2 };
 }
 
 /** 繪製時要扣掉的偏移（= 內容矩形左上），讓內容從 stage (0,0) 起。 */
@@ -289,7 +297,7 @@ function buildPanelEditables(): Editable[] {
 
 function panelElLabel(id: string): string {
   const map: Record<string, string> = {
-    chest: '寶箱', ticket: '彩票', progress: '寶盒進度條', coin: '金幣',
+    chest: '寶箱', ticket: '彩票', progress: '寶盒進度條', coin: '金幣', platform: '待機平台',
   };
   return map[id] ?? id;
 }
@@ -419,6 +427,8 @@ function iconImg(name: string, label: string): HTMLElement {
 /** 依元素 key 建視覺內容（對照 uiConfig 樣式值）。 */
 function buildVisual(key: string): HTMLElement {
   switch (key) {
+    case 'panel.platform':
+      return iconImg('platform', '待機平台');
     case 'panel.chest':
       return iconImg('chest', '寶箱');
     case 'panel.coin':
