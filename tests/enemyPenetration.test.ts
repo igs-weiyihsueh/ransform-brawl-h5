@@ -4,7 +4,7 @@
  * separation/pushOutOfPlayer 純向量在 enemySeparation.test.ts 測；此檔測 Enemy 整合層：
  *   resolvePenetration(players[]) 對【所有 player】逐一頂開、死亡不頂。
  * ⚠️ 需 Phaser scene（Enemy 建 CharacterAnimator）→ jsdom + HEADLESS 共用 scene，每測 forceDestroy。
- * ⚠️ 菁英 immovable(像牆,用戶 #4 推翻 21976cd3)→ 測「菁英自己不動、反把玩家推到菁英外」;
+ * ⚠️ 菁英 immovable(像真牆,用戶試玩#1 a34476f)→ 菁英撞玩家頂菁英自己(不推玩家/不被玩家推倒退);
  */
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import Phaser from 'phaser';
@@ -94,52 +94,48 @@ describe('Enemy.resolvePenetration — 多人防穿透', () => {
     e.forceDestroy();
   });
 
-  it('菁英 immovable：自己不動（像牆）、反把玩家推到菁英外 minDist 邊緣（用戶 #4，推翻 21976cd3）', () => {
-    // 菁英在原點，玩家穿進菁英體內（距 10 < minDist）。
-    const elite = makeEnemy(0, 0, 'Enemy_Elite');
-    const r = elite.getBodyRadius();
+  it('菁英 immovable(像真牆,用戶試玩#1)：菁英撞玩家→頂菁英【自己】、不再推玩家(pushOut 不呼叫)', () => {
+    // 用戶試玩#1 修:原 #4「菁英不動、反推玩家」造成菁英追→推玩家→再追 玩家被推著跑。
+    // 新行為:菁英像牆→擋下菁英自己前進(菁英被頂回),不推玩家。
+    const elite = makeEnemy(60, 0, 'Enemy_Elite'); // 菁英侵入原點玩家(minDist 內)
     const eliteBefore = elite.getHitCenter();
-    let pushedTo: Vec2 | null = null;
+    let playerPushed = false;
     const p = {
-      pos: { x: 10, y: 0 } as Vec2,
+      pos: { x: 0, y: 0 } as Vec2,
       hitRadius: 60,
-      pushOut: (x: number, y: number) => {
-        pushedTo = { x, y };
+      pushOut: () => {
+        playerPushed = true;
       },
     };
     elite.resolvePenetration([p]);
-    // ① 菁英自己不動（immovable，像牆）。
+    // ① 不再推玩家(修掉「玩家被菁英推著跑」):pushOut 完全不被呼叫。
+    expect(playerPushed).toBe(false);
+    // ② 頂的是菁英【自己】:菁英位置被改動(擋下前進),而非玩家。
     const eliteAfter = elite.getHitCenter();
-    expect(eliteAfter.x).toBeCloseTo(eliteBefore.x);
-    expect(eliteAfter.y).toBeCloseTo(eliteBefore.y);
-    // ② 反把【玩家】推到菁英外 minDist 邊緣（玩家頂不動菁英、被擋在外、不穿進）。
-    expect(pushedTo).not.toBeNull();
-    const pushed = pushedTo as unknown as Vec2;
-    const distPlayerToElite = Math.hypot(pushed.x - eliteAfter.x, pushed.y - eliteAfter.y);
-    expect(distPlayerToElite).toBeCloseTo(60 + r); // 玩家被推到 minDist 邊緣
-    expect(pushed.x).toBeCloseTo(60 + r); // 沿 +x 推出（原本在 +x 側）
+    const moved = eliteAfter.x !== eliteBefore.x || eliteAfter.y !== eliteBefore.y;
+    expect(moved).toBe(true); // 菁英自己被頂(不是推玩家)
     elite.forceDestroy();
   });
 
-  it('菁英 immovable 但玩家未穿透（已在 minDist 外）→ 菁英不動、玩家也不被推（pushOut 不呼叫）', () => {
-    const elite = makeEnemy(0, 0, 'Enemy_Elite');
+  it('菁英 immovable 未重疊(玩家在 minDist 外)→ 菁英照走不被動、玩家不被推', () => {
+    const elite = makeEnemy(100000, 0, 'Enemy_Elite'); // 遠離玩家
+    const before = elite.getHitCenter();
     let pushed = false;
     const p = {
-      pos: { x: 100000, y: 0 } as Vec2, // 極遠，不穿透
+      pos: { x: 0, y: 0 } as Vec2,
       hitRadius: 60,
       pushOut: () => {
         pushed = true;
       },
     };
-    const before = elite.getHitCenter();
     elite.resolvePenetration([p]);
     const after = elite.getHitCenter();
-    expect(after.x).toBeCloseTo(before.x); // 菁英不動
-    expect(pushed).toBe(false); // 沒穿透 → 不推玩家
+    expect(after.x).toBeCloseTo(before.x); // 沒重疊 → 菁英不被頂
+    expect(pushed).toBe(false); // 不推玩家
     elite.forceDestroy();
   });
 
-  it('一般敵人(Rush)照舊被頂開（非 immovable）：與菁英分支相反', () => {
+  it('一般敵人(Rush)照舊被頂開（非 immovable，與菁英牆分支相反）', () => {
     const rush = makeEnemy(10, 0, 'Enemy_Rush');
     const r = rush.getBodyRadius();
     rush.resolvePenetration([player({ x: 0, y: 0 }, 60)]);
