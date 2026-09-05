@@ -39,6 +39,10 @@ export interface HitFeelConfig {
   // --- 死亡粒子 ---
   /** 死亡爆散粒子顏色（Unity deathParticleColor 金黃 (1,0.85,0.3)）。 */
   deathParticleColor: number;
+
+  // --- 玩家側 hitlag（命中敵人瞬間凍結玩家自身動畫+位移，"砍進肉卡住"阻力感） ---
+  /** 玩家 hitlag 時長（秒，Unity hitlagDuration 0.1；0=不做）。 */
+  playerHitlagDuration: number;
 }
 
 /** hitFeel 預設值（對齊 Unity EnemyConfig）。第 2 步編輯器可覆寫這些欄位。 */
@@ -60,6 +64,8 @@ export const HIT_FEEL: HitFeelConfig = {
   knockbackDistance: 1.5,
 
   deathParticleColor: 0xffd94d, // 金黃 (1,0.85,0.3)≈(255,217,77)
+
+  playerHitlagDuration: 0.1, // 玩家命中頓 ~5-6 幀（Unity hitlagDuration）
 };
 
 /**

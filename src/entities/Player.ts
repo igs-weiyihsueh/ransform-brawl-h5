@@ -60,6 +60,9 @@ export class Player implements Hittable {
   /** 受擊硬直剩餘秒數（播 damaged，期間不覆蓋成 move/idle）。 */
   private damagedRemaining = 0;
 
+  /** hitlag 剩餘秒數（>0：命中敵人瞬間凍結玩家自身動畫+位移，"砍進肉卡住"）。 */
+  private hitlagRemaining = 0;
+
   /** 無敵幀剩餘秒數（>0 表示免疫且閃爍）。 */
   private iFrameRemaining = 0;
   /** debug：最近被誰打到。 */
@@ -360,6 +363,7 @@ export class Player implements Hittable {
 
   /** 依移動向量更新位置、面向與 idle/move 動畫。 */
   move(moveVec: Vec2, dt: number): void {
+    if (this.hitlagRemaining > 0) return; // hitlag：凍結玩家位移（砍進肉卡住，不移動）
     const speedPx = PLAYER_CONFIG.moveSpeed * PPU * this.speedMult;
     this.anim.sprite.x += moveVec.x * speedPx * dt;
     this.anim.sprite.y += moveVec.y * speedPx * dt;
@@ -372,6 +376,36 @@ export class Player implements Hittable {
 
     const moving = moveVec.x !== 0 || moveVec.y !== 0;
     this.anim.play(moving ? 'move' : 'idle');
+  }
+
+  // --- hitlag（命中敵人瞬間凍結玩家自身動畫+位移，Unity StartHitlag/TickHitlag） ---
+
+  /** 是否處於 hitlag（PlayerControlSystem 用來凍結移動/衝刺推進）。 */
+  isInHitlag(): boolean {
+    return this.hitlagRemaining > 0;
+  }
+
+  /**
+   * 命中敵人瞬間開始 hitlag：凍結玩家動畫（sprite anim 暫停）+ 位移（由 isInHitlag 擋 move/dash）。
+   * 同幀多命中只觸發一次（已在 hitlag 中則忽略；Unity inHitlag 去重）。0=不做。
+   */
+  startHitlag(seconds: number): void {
+    if (seconds <= 0 || this.hitlagRemaining > 0) return;
+    this.hitlagRemaining = seconds;
+    this.anim.sprite.anims?.pause(); // animator.speed = 0（動畫凍）
+  }
+
+  /**
+   * 每幀推進 hitlag：計時歸零 or 攻擊已結束 → 結束並恢復動畫（Unity 攻擊結束強制恢復防卡）。
+   * @param dt 幀時間。
+   */
+  tickHitlag(dt: number): void {
+    if (this.hitlagRemaining <= 0) return;
+    this.hitlagRemaining -= dt;
+    if (this.hitlagRemaining <= 0 || !this.attacking) {
+      this.hitlagRemaining = 0;
+      this.anim.sprite.anims?.resume(); // animator.speed = 1（恢復）
+    }
   }
 
   private setFacing(dir: number): void {
@@ -430,6 +464,7 @@ export class Player implements Hittable {
    */
   updateDash(dt: number): boolean {
     if (!this.dashing) return false;
+    if (this.hitlagRemaining > 0) return true; // hitlag：凍結衝刺推進（不滑、清前衝感），仍算 dashing
     const speedPx = DASH_CONFIG.speed * PPU * this.dashSpeedMult;
     this.anim.sprite.x += this.dashDir.x * speedPx * dt;
     this.anim.sprite.y += this.dashDir.y * speedPx * dt;

@@ -64,6 +64,12 @@ for (let i = 0; i < 10; i++) {
   peak.spark = Math.max(peak.spark, s.spark);
 }
 console.log('[probe] 受擊前 white/spark=', before, ' 受擊後峰值=', peak);
+
+// 玩家 hitlag 控制項 + 預覽標記（新增 #3）：控制項有「玩家 hitlag」、觸發後攻擊者上方出現 ❄hitlag。
+const hasHitlagCtrl = await page.evaluate(() =>
+  [...document.querySelectorAll('.row label')].some((l) => l.textContent.includes('玩家 hitlag')),
+);
+console.log('[probe] 玩家 hitlag 控制項在?', hasHitlagCtrl);
 await page.screenshot({ path: path.join(path.resolve(__dirname, '..'), 'probe-shot-hitfeel-editor.png') });
 console.log('[probe] screenshot: probe-shot-hitfeel-editor.png');
 await browser.close();

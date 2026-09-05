@@ -8,6 +8,7 @@ import {
   MOUNT_DASH_EXTRA_HITS,
 } from '@/config/buffConfig';
 import { COIN_INSERT_AMOUNT } from '@/config/creditConfig';
+import { HIT_FEEL } from '@/config/hitFeelConfig';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
 import { landingX } from '@/systems/entranceMath';
@@ -102,6 +103,9 @@ export class PlayerControlSystem implements GameSystem {
 
     const src = player.inputSource;
     if (!src) return; // 無 InputSource → 不操控
+
+    // hitFeel 玩家 hitlag 推進：計時歸零 or 攻擊結束 → 恢復（在移動/衝刺前 tick，isInHitlag 期間 move/dash 自會凍結）。
+    if (typeof player.tickHitlag === 'function') player.tickHitlag(dt);
 
     // 衝刺觸發（edge；需可攻擊、非衝刺中）。
     if (src.justPressedDash() && !player.isDashing() && credit.canAttack(pid)) {
@@ -307,6 +311,11 @@ export class PlayerControlSystem implements GameSystem {
       this.ctx.combo.onHit(attackerId);
       this.ctx.jp.notifyCreditSpent(1); // ← 共享池，不加 playerId
       this.ctx.jp.recordDamage(attackerId, dealt); // ← per-player 貢獻（傷害總和）
+      // hitFeel 玩家側 hitlag：命中敵人瞬間凍結玩家自身動畫+位移（"砍進肉卡住"）。
+      // 同幀多命中只觸發一次（startHitlag 內建 inHitlag 去重）；純表演不動數值。
+      if (HIT_FEEL.enabled && typeof player.startHitlag === 'function') {
+        player.startHitlag(HIT_FEEL.playerHitlagDuration);
+      }
     }
   }
 

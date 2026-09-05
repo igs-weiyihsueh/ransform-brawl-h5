@@ -114,7 +114,8 @@ function buildControls(): void {
     colorRow('hitSparkColor', '火花顏色'),
   );
   $('ctrl-freeze').replaceChildren(
-    numberRow({ key: 'microFreezeDuration', label: '頓幀時長(秒)', min: 0, max: 0.3, step: 0.01 }),
+    numberRow({ key: 'microFreezeDuration', label: '敵人頓幀(秒)', min: 0, max: 0.3, step: 0.01 }),
+    numberRow({ key: 'playerHitlagDuration', label: '玩家 hitlag(秒)', min: 0, max: 0.3, step: 0.01 }),
   );
   $('ctrl-knockback').replaceChildren(
     numberRow({ key: 'knockbackDuration', label: '擊退時長(秒)', min: 0, max: 0.6, step: 0.01 }),
@@ -148,6 +149,7 @@ let kbFromX = 0;
 let kbDistPx = 0;
 let kbDur = 0;
 let freezeUntil = 0;
+let playerHitlagUntil = 0;
 let enemyOffsetX = 0;
 let dead = false;
 let deathAt = 0;
@@ -168,6 +170,7 @@ function triggerHit(): void {
   flashUntil = t + cfg.hitFlashDuration;
   punchStart = t;
   freezeUntil = t + cfg.microFreezeDuration;
+  playerHitlagUntil = t + cfg.playerHitlagDuration; // 玩家側 hitlag（攻擊者凍）
   // 擊退：方向 = 遠離攻擊者（攻擊者在左 → 往右退）。距離 = clamp(force×scale, 0, dist)×PPU。
   const force = 3; // 預覽用一個代表性攻擊力道
   const distUnit = Math.min(Math.max(force * cfg.knockbackForceScale, 0), cfg.knockbackDistance);
@@ -252,12 +255,17 @@ function draw(t: number): void {
   g2.fillStyle = '#10101c';
   g2.fillRect(0, 0, W, H);
 
-  // 攻擊者（左，藍方塊）標示方向。
-  g2.fillStyle = '#4f80c0';
+  // 攻擊者（左，藍方塊）標示方向。hitlag 期間高亮 + 標記（玩家自身凍住）。
+  const inPlayerHitlag = t < playerHitlagUntil;
+  g2.fillStyle = inPlayerHitlag ? '#8fb6ff' : '#4f80c0';
   g2.fillRect(attacker.x - 16, attacker.y - 24, 32, 48);
   g2.fillStyle = '#9ab';
   g2.font = '12px sans-serif';
   g2.fillText('攻擊者', attacker.x - 20, attacker.y + 42);
+  if (inPlayerHitlag) {
+    g2.fillStyle = '#fff';
+    g2.fillText('❄hitlag', attacker.x - 24, attacker.y - 32);
+  }
 
   // 敵人 sprite（假：橘方塊）+ punch scale + 白閃 + 擊退位移。
   let scale = 1;
