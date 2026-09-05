@@ -88,6 +88,9 @@ export class Enemy implements Hittable {
   /** 局部頓幀剩餘秒數（hitFeel microFreeze，只凍被打這隻：>0 時 update 早退不動作）。 */
   private freezeRemaining = 0;
 
+  /** grabber（抓人者，用戶試玩#4）：設為 grabber 後由 GrabSystem 驅動追玩家、衝來期間無敵、暫停一般 AI。 */
+  private grabber = false;
+
   /** 擊退快進快出（hitFeel）：剩餘時長 + 每秒位移向量（取代舊 velocity+指數衰減）。 */
   private knockbackRemaining = 0;
   private knockbackPerSec: Vec2 = { x: 0, y: 0 };
@@ -265,6 +268,39 @@ export class Enemy implements Hittable {
     return this.cfg.immovable === true;
   }
 
+  // --- grabber（抓人者，用戶試玩#4，由 GrabSystem 驅動） ---
+
+  /** 設為 grabber（true=開始抓人：暫停一般 AI、無敵、由 GrabSystem 追玩家）。 */
+  setGrabber(on: boolean): void {
+    this.grabber = on;
+  }
+
+  isGrabber(): boolean {
+    return this.grabber;
+  }
+
+  /** GrabSystem 驅動 grabber 移動到指定位置（追玩家用）。 */
+  moveTo(x: number, y: number): void {
+    if (this.dead) return;
+    this.anim.sprite.x = x;
+    this.anim.sprite.y = y;
+    if (x > this.prevPos.x + 0.01) this.setFacing(1);
+    else if (x < this.prevPos.x - 0.01) this.setFacing(-1);
+    this.prevPos = { x, y };
+  }
+
+  /** 掙脫時對 grabber 施加擊退並解除 grabber（GrabSystem 呼叫）。 */
+  releaseGrabberWithKnockback(fromPos: Vec2): void {
+    this.grabber = false;
+    const dx = this.anim.sprite.x - fromPos.x;
+    const dy = this.anim.sprite.y - fromPos.y;
+    const len = Math.hypot(dx, dy) || 1;
+    this.knockbackRemaining = HIT_FEEL.knockbackDuration;
+    const distPx = knockbackDistancePx(2, PPU); // 掙脫擊退固定力道
+    this.knockbackPerSec = { x: (dx / len) * (distPx / HIT_FEEL.knockbackDuration), y: (dy / len) * (distPx / HIT_FEEL.knockbackDuration) };
+    this.state = 'chase'; // 解除後回一般 AI
+  }
+
   getCharacterKey(): string {
     return this.cfg.characterKey;
   }
@@ -292,6 +328,12 @@ export class Enemy implements Hittable {
     // （不影響全場，其他敵人照跑；不動數值，扣血已在 takeHit 當下完成。）
     if (this.freezeRemaining > 0) {
       this.freezeRemaining -= dt;
+      return;
+    }
+
+    // grabber（抓人者）：一般 AI 暫停，改由 GrabSystem 驅動追玩家（moveTo）。只播 move 動畫朝向。
+    if (this.grabber) {
+      this.anim.play('move');
       return;
     }
 
@@ -453,6 +495,7 @@ export class Enemy implements Hittable {
   /** 被玩家攻擊：扣血、hitStun 硬直、擊退。HP 歸 0 播 death 消失。 */
   takeHit(damage: number, knockback: number, fromPos: Vec2): void {
     if (this.dead || this.state === 'death') return;
+    if (this.grabber) return; // grabber 衝來期間無敵（掙脫由 GrabSystem 處理，不走一般傷害）
     this.hp -= damage; // 數值即時（不受 hitFeel 影響）
 
     // 擊退方向：遠離攻擊來源。

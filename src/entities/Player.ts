@@ -63,6 +63,9 @@ export class Player implements Hittable {
   /** hitlag 剩餘秒數（>0：命中敵人瞬間凍結玩家自身動畫+位移，"砍進肉卡住"）。 */
   private hitlagRemaining = 0;
 
+  /** 被抓中（isGrabbed，用戶試玩#4）：不能動、藍閃、倒數掙脫；由 GrabSystem 控制。 */
+  private grabbed = false;
+
   /** 無敵幀剩餘秒數（>0 表示免疫且閃爍）。 */
   private iFrameRemaining = 0;
   /** debug：最近被誰打到。 */
@@ -372,7 +375,7 @@ export class Player implements Hittable {
 
   /** 依移動向量更新位置、面向與 idle/move 動畫。 */
   move(moveVec: Vec2, dt: number): void {
-    if (this.hitlagRemaining > 0) return; // hitlag：凍結玩家位移（砍進肉卡住，不移動）
+    if (this.hitlagRemaining > 0 || this.grabbed) return; // hitlag / 被抓：凍結玩家位移
     const speedPx = PLAYER_CONFIG.moveSpeed * PPU * this.speedMult;
     this.anim.sprite.x += moveVec.x * speedPx * dt;
     this.anim.sprite.y += moveVec.y * speedPx * dt;
@@ -415,6 +418,26 @@ export class Player implements Hittable {
       this.hitlagRemaining = 0;
       this.anim.sprite.anims?.resume(); // animator.speed = 1（恢復）
     }
+  }
+
+  // --- 抓人（被 grabber 抓住，用戶試玩#4） ---
+
+  /** 是否被抓（PlayerControlSystem/GrabSystem 用來凍結操控）。 */
+  isGrabbed(): boolean {
+    return this.grabbed;
+  }
+
+  /** 是否正在攻擊（被抓時偵測攻擊掙脫用）。 */
+  isAttacking(): boolean {
+    return this.attacking;
+  }
+
+  /** 設定被抓狀態：被抓 → 藍閃提示、不能動；解除 → 清 tint。 */
+  setGrabbed(on: boolean): void {
+    if (this.grabbed === on) return;
+    this.grabbed = on;
+    if (on) this.anim.sprite.setTint(0x4488ff); // 藍閃提示
+    else this.anim.sprite.clearTint();
   }
 
   private setFacing(dir: number): void {
