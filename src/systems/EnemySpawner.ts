@@ -94,6 +94,20 @@ export class EnemySpawner {
       e.clampToMapBounds(); // 地圖邊界：敵人不走出場地
     }
 
+    // #1 修正：菁英「像牆」——玩家主動撞 immovable 菁英時，把玩家擋在菁英外緣（玩家穿不進）。
+    // 注意：菁英自己移動撞玩家「不推玩家」由 Enemy.resolvePenetration(blockEliteAdvance) 處理；
+    // 這道只在「玩家侵入菁英」時把玩家頂出，兩道合起來＝真正的牆（雙向都不會被推著走）。
+    for (const e of this.enemies) {
+      if (!e.isImmovable()) continue;
+      const ec = e.getHitCenter();
+      const er = e.getHitRadius();
+      for (const p of this.getAllPlayers()) {
+        const ppos = p.getHitCenter();
+        const fixed = pushOutOfPlayer(ppos, ec, er + p.getHitRadius());
+        if (fixed.x !== ppos.x || fixed.y !== ppos.y) p.setPosition?.(fixed.x, fixed.y);
+      }
+    }
+
     // 守護波雕像實體碰撞（#8 用戶要「原本碰撞」）：雕像 immovable 擋住，玩家/敵人不穿進雕像。
     // 對齊新雕像圖尺寸（getHitRadius 已依 statue 顯示寬設定）。
     if (this.guardTarget) {

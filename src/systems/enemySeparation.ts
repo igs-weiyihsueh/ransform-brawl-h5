@@ -85,3 +85,50 @@ export function pushOutOfPlayer(
   }
   return { x: playerPos.x + (dx / dist) * minDistPx, y: playerPos.y + (dy / dist) * minDistPx };
 }
+
+/**
+ * immovable 菁英「像牆」防穿透（用戶試玩 #1：菁英不該推玩家）：
+ * 菁英移動撞到玩家時，把**菁英自己**頂回玩家外緣（擋下菁英的前進），**不推玩家**；
+ * 但菁英不會被玩家「推著倒退」——修正後位置**不得比移動前(prevPos)離玩家更遠**
+ * （玩家貼著菁英走，菁英停在原地當牆，不會被玩家往後擠）。
+ *
+ * 規則：
+ *  - 無重疊 → 菁英維持現位。
+ *  - 有重疊 → 目標是頂到 minDist 邊緣；但夾限「與玩家距離不超過 prevPos 當時的距離」，
+ *    使菁英最多退回本幀移動前的位置（擋自己前進），不被玩家推得更遠。
+ *
+ * @param elitePos 菁英本幀移動後位置。
+ * @param prevPos  菁英本幀移動前位置。
+ * @param playerPos 玩家位置。
+ * @param minDistPx 最小間距（playerHitRadius + eliteBodyRadius）。
+ * @returns 修正後的菁英位置。
+ */
+export function blockEliteAdvance(
+  elitePos: Vec2,
+  prevPos: Vec2,
+  playerPos: Vec2,
+  minDistPx: number,
+): Vec2 {
+  const dx = elitePos.x - playerPos.x;
+  const dy = elitePos.y - playerPos.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist >= minDistPx) return elitePos; // 沒重疊、菁英照走
+
+  // 菁英移動前與玩家的距離：菁英最多退回這個距離（不被玩家推得比原本更遠）。
+  const prevDist = Math.hypot(prevPos.x - playerPos.x, prevPos.y - playerPos.y);
+  // 目標距離 = 頂到 minDist 邊緣，但不超過移動前距離（擋前進、不被推）。
+  const targetDist = Math.min(minDistPx, Math.max(prevDist, 0));
+
+  if (dist <= 0.0001) {
+    // 完全重疊：沿「移動前→玩家」的反方向退回（沒有方向就往右）。
+    const pdx = prevPos.x - playerPos.x;
+    const pdy = prevPos.y - playerPos.y;
+    const pl = Math.hypot(pdx, pdy);
+    if (pl <= 0.0001) return { x: playerPos.x + targetDist, y: playerPos.y };
+    return { x: playerPos.x + (pdx / pl) * targetDist, y: playerPos.y + (pdy / pl) * targetDist };
+  }
+  return {
+    x: playerPos.x + (dx / dist) * targetDist,
+    y: playerPos.y + (dy / dist) * targetDist,
+  };
+}

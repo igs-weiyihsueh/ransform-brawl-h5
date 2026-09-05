@@ -6,6 +6,7 @@ import { PPU } from '@/config/gameConfig';
 import { MAP_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
 import { CharacterAnimator, FRAME_SIZE } from '@/systems/CharacterAnimator';
 import {
+  blockEliteAdvance,
   calculateSeparation,
   combineWithSeparation,
   pushOutOfPlayer,
@@ -65,6 +66,8 @@ export class Enemy implements Hittable {
 
   private knockbackVel: Vec2 = { x: 0, y: 0 };
   private dead = false;
+  /** 上一幀（本幀 update 移動前）的位置，用於 immovable 菁英「只擋自己前進、不被玩家推」。 */
+  private prevPos: Vec2 = { x: 0, y: 0 };
   /** attack 動畫是否播完（由 onComplete 設定），播完才進 cooldown。 */
   private attackAnimDone = false;
 
@@ -109,9 +112,11 @@ export class Enemy implements Hittable {
   /**
    * 防穿透（死亡不頂）：
    * - 一般敵人：把自己推到「距每個 player 至少 minDist」的邊緣。
-   * - immovable 菁英（用戶 #4，像牆）：自己不動，改把**玩家**推到菁英外（玩家頂不動、被擋），
-   *   維持不重疊；玩家不會穿進菁英體內。
-   * @param players 每個 player 的中心/半徑 + pushOut(x,y)（把該玩家移到界外，菁英用）。
+   * - immovable 菁英（用戶 #4，像牆）：菁英**自己被玩家擋住**——菁英移動撞到玩家時，把
+   *   **菁英自己**頂回玩家外緣（菁英的前進被玩家擋下、停在外緣），**不推玩家**。
+   *   （玩家主動穿進菁英的阻擋，由 EnemySpawner 另一道 pushPlayersOutOfElite 處理，
+   *   兩道合起來＝真正的牆：菁英撞玩家會停、玩家撞菁英被擋，雙向都不會被「推著走」。）
+   * @param players 每個 player 的中心/半徑 + pushOut(x,y)（一般敵人不用；菁英改頂自己）。
    */
   resolvePenetration(
     players: readonly {
@@ -125,12 +130,15 @@ export class Enemy implements Hittable {
     for (const p of players) {
       const minDist = p.hitRadius + this.radiusPx;
       if (immovable) {
-        // 菁英不動：把玩家頂到菁英外（以菁英為中心把玩家推到 minDist 邊緣）。
-        const selfPos = { x: this.anim.sprite.x, y: this.anim.sprite.y };
-        const fixedPlayer = pushOutOfPlayer(p.pos, selfPos, minDist);
-        if (fixedPlayer.x !== p.pos.x || fixedPlayer.y !== p.pos.y) {
-          p.pushOut?.(fixedPlayer.x, fixedPlayer.y);
-        }
+        // 菁英像牆：擋下菁英自己的前進（頂回玩家外緣），但不被玩家推倒退，也不推玩家。
+        const fixed = blockEliteAdvance(
+          { x: this.anim.sprite.x, y: this.anim.sprite.y },
+          this.prevPos,
+          p.pos,
+          minDist,
+        );
+        this.anim.sprite.x = fixed.x;
+        this.anim.sprite.y = fixed.y;
       } else {
         // 一般敵人：把自己推開。
         const fixed = pushOutOfPlayer(
@@ -229,6 +237,11 @@ export class Enemy implements Hittable {
     return this.radiusPx;
   }
 
+  /** 是否為 immovable 菁英（像牆；EnemySpawner 用來決定玩家撞它時把玩家擋在外）。 */
+  isImmovable(): boolean {
+    return this.cfg.immovable === true;
+  }
+
   getCharacterKey(): string {
     return this.cfg.characterKey;
   }
@@ -248,6 +261,9 @@ export class Enemy implements Hittable {
   /** 每幀更新：套擊退殘速 → 跑狀態機 → 更新動畫。 */
   update(playerPos: Vec2, dt: number): void {
     if (this.dead) return;
+
+    // 記錄移動前位置（immovable 菁英防穿透用：只擋自己前進、不被玩家推回）。
+    this.prevPos = { x: this.anim.sprite.x, y: this.anim.sprite.y };
 
     // 擊退殘速（衰減）。
     this.anim.sprite.x += this.knockbackVel.x * dt;
