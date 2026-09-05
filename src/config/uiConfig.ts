@@ -88,6 +88,8 @@ export const UI_ICONS = {
   nodeSpawn: { key: 'ui-node-spawn', path: 'assets/images/ui/node-spawn.png' },
   nodeReward: { key: 'ui-node-reward', path: 'assets/images/ui/node-reward.png' },
   nodeEvent: { key: 'ui-node-event', path: 'assets/images/ui/node-event.png' },
+  /** 召喚法陣（一般波敵人登場預警，#3；256×256 紅色系雙外圈+六芒星+符文，透明底）。 */
+  summonCircle: { key: 'ui-summon-circle', path: 'assets/images/ui/summon-circle.png' },
 } as const;
 
 /** UI 佈局 JSON（uiLayoutSchema 格式）：Phaser cache key + 載入路徑。 */

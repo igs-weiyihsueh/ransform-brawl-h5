@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { VFX_EFFECTS, VFX_FRAME_PAD, type VFXEffectDef } from '@/config/vfxConfig';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
+import { UI_ICONS } from '@/config/uiConfig';
 import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 import { ENERGY_FLY, flyAlpha, flyPosition, flyScale } from '@/systems/energyFlyMath';
 import {
@@ -512,22 +513,55 @@ export class EffectSystem {
   }
 
   /**
-   * 一般波敵人登場預警圈（對應 Unity SpawnEnemyWithWarning warningSprite）：
-   * 生成點畫紅圈，alpha 從 0 淡入到 1（durationSec），depth 低（在地上、怪之下）→ onDone（怪才出現）。
+   * 一般波敵人登場召喚法陣（#3，取代 #1 純紅圈；對應 Unity SpawnEnemyWithWarning warningSprite）：
+   * 生成點放 summon-circle 法陣圖，alpha 0→1 淡入（durationSec）+ 緩慢旋轉（召喚儀式感），
+   * depth 低（在地上、怪之下）→ 淡入完短暫脈動一下 → onDone（怪原地出現）。
+   * 未載到法陣圖時 graceful 退回畫紅圈。
    * @param onDone 淡入完成回呼（WaveSystem 用來在該點生成敵人）。
    */
   spawnWarning(x: number, y: number, durationSec: number, onDone?: () => void): void {
-    const radiusPx = 44;
+    const diameterPx = 150; // 法陣直徑（略大於怪、不蓋整場）
+    if (this.scene.textures.exists(UI_ICONS.summonCircle.key)) {
+      const sprite = this.scene.add.image(x, y, UI_ICONS.summonCircle.key);
+      sprite.setDisplaySize(diameterPx, diameterPx);
+      sprite.setDepth(-6); // 在地上、角色（PLAY_DEPTH=10）之下
+      sprite.setAlpha(0);
+      sprite.setAngle(0);
+      // 淡入 + 緩慢旋轉（召喚感）。
+      this.scene.tweens.add({
+        targets: sprite,
+        alpha: 1,
+        angle: 90, // 淡入期間轉 90°
+        duration: durationSec * 1000,
+        ease: 'Sine.easeIn',
+        onComplete: () => {
+          // 淡入完短暫放大脈動一下 → 銷毀 → 出怪。
+          this.scene.tweens.add({
+            targets: sprite,
+            scaleX: sprite.scaleX * 1.18,
+            scaleY: sprite.scaleY * 1.18,
+            alpha: 0,
+            duration: 180,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+              sprite.destroy();
+              onDone?.();
+            },
+          });
+        },
+      });
+      return;
+    }
+    // graceful 後備：沒法陣圖 → 畫紅圈淡入。
     const g = this.scene.add.graphics();
     g.fillStyle(0xff3322, 0.35);
-    g.fillCircle(0, 0, radiusPx);
+    g.fillCircle(0, 0, diameterPx / 2);
     g.lineStyle(3, 0xff6644, 0.9);
-    g.strokeCircle(0, 0, radiusPx);
+    g.strokeCircle(0, 0, diameterPx / 2);
     g.x = x;
     g.y = y;
-    g.setDepth(-6); // 在地上、角色（PLAY_DEPTH=10）之下
+    g.setDepth(-6);
     g.setAlpha(0);
-    // alpha 0→1 淡入（Unity fadeTimer/duration）。
     this.scene.tweens.add({
       targets: g,
       alpha: 1,

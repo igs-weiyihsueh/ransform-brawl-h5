@@ -29,11 +29,12 @@ await page.evaluate(() => {
 await page.waitForTimeout(1200);
 const early = await page.evaluate(() => {
   const gs = window.__PHASER_GAME__.scene.getScene('GameScene');
-  const warnings = gs.children.list.filter((o) => o.type === 'Graphics' && o.depth === -6);
+  // 召喚法陣 = Image(depth -6, texture ui-summon-circle)。
+  const summons = gs.children.list.filter((o) => o.type === 'Image' && o.depth === -6 && o.texture && o.texture.key === 'ui-summon-circle');
   const enemies = gs.children.list.filter((o) => o.type === 'Sprite' && o.depth === 10);
-  return { warningCircles: warnings.length, warningAlpha: warnings[0] ? Math.round(warnings[0].alpha * 100) / 100 : null, enemyCount: enemies.length };
+  return { summonCircles: summons.length, summonAlpha: summons[0] ? Math.round(summons[0].alpha * 100) / 100 : null, summonAngle: summons[0] ? Math.round(summons[0].angle) : null, summonW: summons[0] ? Math.round(summons[0].displayWidth) : null, enemyCount: enemies.length };
 });
-console.log('[登場 probe] 開場~1.2s(預警淡入中):', JSON.stringify(early));
+console.log('[登場 probe] 開場~1.2s(法陣淡入中):', JSON.stringify(early));
 // 等預警(3s)+緩衝 → 敵人出現。
 await page.waitForTimeout(5000);
 const after = await page.evaluate(() => {
