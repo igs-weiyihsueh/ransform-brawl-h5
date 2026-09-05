@@ -28,6 +28,9 @@ const config: Phaser.Types.Core.GameConfig = {
 
 const game = new Phaser.Game(config);
 
+// debug 掛勾：暴露 game 實例供無頭瀏覽器/E2E 抓 textures/場景狀態自查（不影響玩法）。
+(window as unknown as { __PHASER_GAME__?: Phaser.Game }).__PHASER_GAME__ = game;
+
 // 試玩模式（?preview=1）：建立編輯器交握橋。一般玩家路徑完全不進這分支。
 if (isPreviewMode()) {
   const bridge = new PreviewBridge((levels) => {
