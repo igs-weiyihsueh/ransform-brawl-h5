@@ -74,6 +74,11 @@ export class WaveSystem implements GameSystem {
     return this.currentLevel()?.nodes.length ?? 0;
   }
 
+  /** 目前關卡各節點類型序列（進度條 marker 用：'Spawn'|'Reward'|'Event'）；無關卡時空陣列。 */
+  getNodeTypes(): string[] {
+    return this.currentLevel()?.nodes.map((n) => n.nodeType) ?? [];
+  }
+
   /**
    * @param preloadedLevels 選填：直接注入已驗證的關卡（測試/編輯器預覽用）。
    *   不給時，init() 會自行從 levels.json 載入。
