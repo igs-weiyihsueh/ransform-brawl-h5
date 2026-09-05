@@ -33,8 +33,10 @@ export class EnemySpawner {
     this.worldBounds = worldBounds;
   }
 
-  /** 擊殺回呼（由 GameScene 設定，例如給寶盒能量）。帶被擊殺敵人的角色 key。 */
-  onEnemyKilled: ((enemyKey: string) => void) | null = null;
+  /** 擊殺回呼（由 GameScene 設定）。帶被擊殺敵人的角色 key + 各 player 對這隻的傷害。 */
+  onEnemyKilled:
+    | ((enemyKey: string, damageByPlayer: ReadonlyMap<number, number>) => void)
+    | null = null;
 
   /** 取得全部玩家（由 GameScene 注入）：供防穿透對所有 player 頂開。預設只有 P1。 */
   getAllPlayers: () => readonly Player[] = () => [this.player];
@@ -43,7 +45,7 @@ export class EnemySpawner {
   spawn(type: string, x: number, y: number): Enemy {
     const e = new Enemy(this.scene, x, y, type);
     e.onAttack = (ev) => this.handleEnemyAttack(ev);
-    e.onKilled = (key) => this.onEnemyKilled?.(key);
+    e.onKilled = (key, dmgByPlayer) => this.onEnemyKilled?.(key, dmgByPlayer);
     if (this.guardTarget) e.setGuardTarget(this.guardTarget); // 守護波中新生怪也打雕像
     this.enemies.push(e);
     return e;

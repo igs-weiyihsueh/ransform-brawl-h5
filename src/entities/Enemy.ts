@@ -70,8 +70,18 @@ export class Enemy implements Hittable {
   /** 出手回呼（由場景設定）。 */
   onAttack: ((e: EnemyAttackEvent) => void) | null = null;
 
-  /** 擊殺回呼（由 EnemySpawner 設定），死亡當下觸發一次，帶敵人角色 key。 */
-  onKilled: ((enemyKey: string) => void) | null = null;
+  /** 擊殺回呼（由 EnemySpawner 設定），死亡當下觸發一次，帶敵人角色 key + 各 player 對這隻的傷害。 */
+  onKilled: ((enemyKey: string, damageByPlayer: ReadonlyMap<number, number>) => void) | null =
+    null;
+
+  /** 本隻怪各 player 造成的傷害（寶盒擊殺歸屬按比例分，決策 c61872a6）。 */
+  private readonly damageByPlayer = new Map<number, number>();
+
+  /** 命中時記傷害歸屬（呼叫端帶 attackerId；純函式層 takeHit 簽章不變）。 */
+  recordDamageFrom(attackerId: number, dmg: number): void {
+    if (dmg <= 0) return;
+    this.damageByPlayer.set(attackerId, (this.damageByPlayer.get(attackerId) ?? 0) + dmg);
+  }
 
   /** 守護波目標覆蓋：設定後 AI 追/打此目標而非玩家；清除(null)回玩家。 */
   private guardTarget: { getPosition(): Vec2 } | null = null;
@@ -349,7 +359,7 @@ export class Enemy implements Hittable {
   private die(): void {
     this.state = 'death';
     this.knockbackVel = { x: 0, y: 0 };
-    this.onKilled?.(this.cfg.characterKey); // 擊殺事件（寶盒能量等結算用）
+    this.onKilled?.(this.cfg.characterKey, this.damageByPlayer); // 擊殺事件 + 傷害歸屬
     this.anim.play('death', {
       force: true,
       onComplete: () => {

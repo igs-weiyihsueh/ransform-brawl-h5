@@ -6,6 +6,7 @@ import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { BuffSystem } from '@/systems/BuffSystem';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
+import { splitChestByDamage } from '@/systems/chestAttribution';
 import { ChestSystem } from '@/systems/ChestSystem';
 import { ComboSystem } from '@/systems/ComboSystem';
 import { CreditSystem } from '@/systems/CreditSystem';
@@ -123,8 +124,12 @@ export class GameScene extends Phaser.Scene {
       getEnemies: () => spawner.getEnemies(),
     };
 
-    // 擊殺 → 給寶盒能量（依敵人類型 chestChargeFor）。
-    spawner.onEnemyKilled = (enemyKey) => chest.addCharge(chestChargeFor(enemyKey));
+    // 擊殺 → 寶盒能量按「各 player 對這隻的傷害比例」分給各自 chest（決策 c61872a6）。
+    spawner.onEnemyKilled = (enemyKey, damageByPlayer) => {
+      const total = chestChargeFor(enemyKey);
+      const shares = splitChestByDamage(total, damageByPlayer, player.playerId);
+      for (const [pid, amount] of shares) chest.addCharge(pid, amount);
+    };
     // 防穿透對所有 player（多人）：讓 spawner 讀 players[]。
     spawner.getAllPlayers = () => this.ctx.players;
 

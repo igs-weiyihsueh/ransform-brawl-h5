@@ -18,58 +18,50 @@ export class ChestSystem implements GameSystem {
   readonly name = 'ChestSystem';
   private ctx!: GameContext;
 
-  private charge = 0;
-  /** 累計開箱次數（debug）。 */
+  /** 每玩家寶盒能量（Map<playerId>，決策 c61872a6 傷害貢獻分）。 */
+  private charge = new Map<number, number>();
+  /** 累計開箱次數（全域 debug）。 */
   private opensCount = 0;
-  /** 最近一次開出的獎勵種類（UI/debug 顯示）。 */
+  /** 最近一次開出的獎勵種類（全域 debug）。 */
   private lastReward = '';
 
-  /**
-   * 效果類旗標（保留向後相容 + 無 BuffSystem 時的 fallback）。
-   * 有 ctx.buff 時另外套真 buff（正式效果由 BuffSystem 計時）；
-   * 無 ctx.buff（如純測試 ctx）時用這裡的旗標/倒數。
-   */
   private mountBuffActive = false;
   private secondTransformUntil = 0;
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
+    this.charge.clear();
   }
 
   update(dt: number): void {
-    // fallback 倒數（僅在無 BuffSystem 接管時有意義）。
     if (this.secondTransformUntil > 0) {
       this.secondTransformUntil = Math.max(0, this.secondTransformUntil - dt);
     }
-    // 若有 BuffSystem，旗標以 buff 實際狀態為準。
     if (this.ctx.buff) {
       this.mountBuffActive = this.ctx.buff.isActive('mount');
     }
   }
 
-  /** 擊殺給寶盒能量；達門檻自動連開。 */
-  addCharge(amount: number): void {
+  /** 給某玩家寶盒能量；達門檻自動連開（開箱歸該 player）。 */
+  addCharge(playerId: number, amount: number): void {
     if (amount <= 0) return;
-    this.charge += amount;
-    // 連開：超過門檻就開、扣，剩餘排隊等下次（可一次連開多箱）。
-    while (this.charge >= CHEST_OPEN_THRESHOLD) {
-      this.charge -= CHEST_OPEN_THRESHOLD;
-      this.openChest();
+    let c = (this.charge.get(playerId) ?? 0) + amount;
+    while (c >= CHEST_OPEN_THRESHOLD) {
+      c -= CHEST_OPEN_THRESHOLD;
+      this.openChest(playerId);
     }
+    this.charge.set(playerId, c);
   }
 
-  /** 開一箱：抽選 + 套用獎勵。 */
-  private openChest(): void {
+  /** 開一箱（歸屬 playerId）：抽選 + 套用獎勵。 */
+  private openChest(playerId: number): void {
     this.opensCount += 1;
     const reward = pickChestReward();
     this.lastReward = reward.kind;
 
     if (isTicketReward(reward.kind)) {
-      // 產票歸屬：開箱者（決策 bbe6f8ed）。S5 chest charge 仍共享(擊殺未帶 killer)，
-      // 本地開箱歸 P1；真 per-player chest(kill 歸屬)之後另做時改這裡。
-      this.ctx.ticket.addTickets(this.ctx.player.playerId, reward.tickets);
+      this.ctx.ticket.addTickets(playerId, reward.tickets); // 產票歸開箱 player
     } else if (reward.kind === 'mount') {
-      // 坐騎：20s dashSpeed×1.5 + 衝刺範圍+2。有 BuffSystem → 套真 buff；旗標同步供查詢/測試。
       this.mountBuffActive = true;
       this.ctx.buff?.apply({
         id: 'mount',
@@ -79,7 +71,6 @@ export class ChestSystem implements GameSystem {
         onApply: () => console.info('[Chest] 坐騎啟用（衝刺強化 20s，零式暫定）'),
       });
     } else if (reward.kind === 'secondTransform') {
-      // 二段變身：30s 傷害×1.5 + 被打不斷 COMBO。
       this.secondTransformUntil = BUFF_DURATION.secondTransform;
       this.ctx.buff?.apply({
         id: 'secondTransform',
@@ -93,9 +84,9 @@ export class ChestSystem implements GameSystem {
   }
 
   // --- UI / 狀態查詢 ---
-  /** 目前寶盒能量。 */
-  getCharge(): number {
-    return this.charge;
+  /** 某玩家寶盒能量。 */
+  getCharge(playerId: number): number {
+    return this.charge.get(playerId) ?? 0;
   }
 
   /** 開箱門檻。 */
@@ -103,9 +94,9 @@ export class ChestSystem implements GameSystem {
     return CHEST_OPEN_THRESHOLD;
   }
 
-  /** 進度比例 0..1（charge/門檻）。 */
-  getProgress(): number {
-    return Math.min(1, this.charge / CHEST_OPEN_THRESHOLD);
+  /** 某玩家進度比例 0..1（charge/門檻）。 */
+  getProgress(playerId: number): number {
+    return Math.min(1, this.getCharge(playerId) / CHEST_OPEN_THRESHOLD);
   }
 
   getOpensCount(): number {
@@ -116,12 +107,10 @@ export class ChestSystem implements GameSystem {
     return this.lastReward;
   }
 
-  /** 坐騎效果是否啟用（有 BuffSystem 以其狀態為準，否則用旗標）。 */
   isMountBuffActive(): boolean {
     return this.ctx.buff ? this.ctx.buff.isActive('mount') : this.mountBuffActive;
   }
 
-  /** 二段變身效果是否啟用（有 BuffSystem 以其狀態為準，否則用 fallback 倒數）。 */
   isSecondTransformActive(): boolean {
     return this.ctx.buff
       ? this.ctx.buff.isActive('secondTransform')

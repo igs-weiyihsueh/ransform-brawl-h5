@@ -109,8 +109,8 @@ export class UISystem implements GameSystem {
     for (let i = 0; i < players.length && i < this.bottomPanel.slotCount(); i++) {
       const pid = players[i].playerId;
       this.bottomPanel.setTicket(i, this.ctx.ticket.getTickets(pid));
-      // 進度：系統層尚未 per-player，暫用全域寶盒進度（做好改 getProgress(pid)）。
-      this.bottomPanel.setProgress(i, this.ctx.chest.getProgress());
+      // 寶盒進度 per-player（chest 已 per-player 化，決策 c61872a6）：各欄顯各自進度。
+      this.bottomPanel.setProgress(i, this.ctx.chest.getProgress(pid));
     }
   }
 

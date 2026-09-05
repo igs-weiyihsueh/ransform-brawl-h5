@@ -176,6 +176,7 @@ export class PlayerControlSystem implements GameSystem {
       const fromPos = { x: c.x - lat.x, y: c.y - lat.y };
       e.takeHit(DASH_CONFIG.damage, DASH_CONFIG.knockback, fromPos);
       const attackerId = player.playerId;
+      e.recordDamageFrom(attackerId, DASH_CONFIG.damage); // per-enemy 傷害歸屬
       // 衝刺傷害貢獻（per-player，additive）；衝刺命中不充能（不呼叫 energy.reportHit）。
       this.ctx.jp.recordDamage(attackerId, DASH_CONFIG.damage);
       // Credit 扣 + COMBO + JP 共享池：一次衝刺最多一次。
@@ -229,6 +230,7 @@ export class PlayerControlSystem implements GameSystem {
     let dealt = 0;
     for (const e of hits) {
       e.takeHit(dmg, attack.knockback, pos); // takeHit 契約不變
+      e.recordDamageFrom(attackerId, dmg); // per-enemy 傷害歸屬（寶盒擊殺分）
       dealt += dmg;
     }
     const hitAny = hits.length > 0;

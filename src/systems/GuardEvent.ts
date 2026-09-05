@@ -96,7 +96,8 @@ export class GuardEvent {
       // 守護成功獎勵：佔位用寶盒進度（用戶決策 76f07f64，之後換正式 JP 燈號/彩金）。
       // 滿血=給一箱門檻(165)、半血=半箱。
       const chargeReward = Math.round(CHEST_OPEN_THRESHOLD * hpRatio);
-      this.ctx.chest.addCharge(chargeReward);
+      // 守護獎勵無個別歸屬 → 給本地 P1（多人守護獎勵分配之後另議）。
+      this.ctx.chest.addCharge(this.ctx.player.playerId, chargeReward);
       console.info(
         `[Guard] 勝利！寶盒進度 +${chargeReward}（hpRatio ${hpRatio.toFixed(2)}，佔位）`,
       );
