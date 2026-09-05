@@ -61,6 +61,7 @@ const EXPECTED_SYSTEMS = [
   'JpSystem',
   'WaveSystem',
   'FireRainSystem', // #10 天降火雨波次玩法（排 Wave 後、ProgressBar 前，commit ac730d8）
+  'GrabSystem', // #4 抓人機制（排 FireRain 後、ProgressBar 前，commit 79ba146）
   'ProgressBarSystem', // #7 頂部進度條 HUD（排 Wave 後、UI 前，commit 48289f1）
   'UISystem',
   'DebugSystem',
