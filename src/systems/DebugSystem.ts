@@ -24,9 +24,17 @@ export class DebugSystem implements GameSystem {
   private ctx!: GameContext;
   private gfx!: Phaser.GameObjects.Graphics;
   private infoText!: Phaser.GameObjects.Text;
+  private controlsText!: Phaser.GameObjects.Text;
 
   private playerSkinIndex = 0;
   private enemyTypeIndex = 0;
+
+  /**
+   * debug 疊層是否顯示（#3：玩家正式畫面預設「關」，上方乾淨；開發時按 F1 開）。
+   * 只控制「畫面上的 debug 文字/gizmo」；快捷鍵(T/E/R/G/F2-4)仍可用。
+   */
+  private debugVisible = false;
+  private toggleKey?: Phaser.Input.Keyboard.Key;
 
   /** debug 需要讀這兩個系統的判定圖形。 */
   constructor(
@@ -42,7 +50,7 @@ export class DebugSystem implements GameSystem {
       fontSize: '20px',
       color: '#ffffff',
     });
-    ctx.scene.add
+    this.controlsText = ctx.scene.add
       .text(
         GAME_WIDTH / 2,
         32,
@@ -54,6 +62,19 @@ export class DebugSystem implements GameSystem {
         },
       )
       .setOrigin(0.5, 0);
+
+    // #3：debug 疊層預設隱藏（玩家正式畫面上方乾淨、不擋進度條）；F1 切換供開發用。
+    this.applyDebugVisibility();
+    this.toggleKey = ctx.scene.input.keyboard?.addKey(
+      Phaser.Input.Keyboard.KeyCodes.F1,
+    );
+  }
+
+  /** 套用 debug 疊層顯示/隱藏（文字 + gizmo graphics）。 */
+  private applyDebugVisibility(): void {
+    this.infoText.setVisible(this.debugVisible);
+    this.controlsText.setVisible(this.debugVisible);
+    this.gfx.setVisible(this.debugVisible);
   }
 
   update(_dt: number): void {
@@ -82,6 +103,15 @@ export class DebugSystem implements GameSystem {
     if (joinId > 0) {
       this.joinAiPlayer(joinId);
     }
+
+    // F1：切換 debug 疊層顯示（開發用；玩家畫面預設關）。
+    if (this.toggleKey && Phaser.Input.Keyboard.JustDown(this.toggleKey)) {
+      this.debugVisible = !this.debugVisible;
+      this.applyDebugVisibility();
+    }
+
+    // 隱藏時不繪製 debug（畫面乾淨、省開銷）；快捷鍵上面照常運作。
+    if (!this.debugVisible) return;
 
     this.drawDebug();
     this.updateInfo();
