@@ -22,6 +22,9 @@ interface Slot {
   /** 寶盒圖示中心的螢幕座標（能量飛光終點；防漂移 template 錨點）。 */
   chestCenterX: number;
   chestCenterY: number;
+  /** 待機點螢幕座標（投幣進場起點 / 回待機終點）：欄上方中心。 */
+  waitingX: number;
+  waitingY: number;
 }
 
 /** 未加入欄的淡化透明度。 */
@@ -194,6 +197,10 @@ export class BottomPanel {
     const progress = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
     progress.setAlpha(alpha);
 
+    // 待機點：欄上方中心（角色投幣前站在自己面板欄上方待機；進場從這裡跳出、沒 Credit 回這裡）。
+    const waitingX = slotX + panel.slotWidth / 2;
+    const waitingY = slotY;
+
     const slot: Slot = {
       playerIndex,
       objects,
@@ -209,6 +216,8 @@ export class BottomPanel {
       shownRatio: -1,
       chestCenterX,
       chestCenterY,
+      waitingX,
+      waitingY,
     };
     this.drawProgress(slot, 0);
     return slot;
@@ -236,6 +245,17 @@ export class BottomPanel {
     const slot = this.slots[playerIndex];
     if (!slot) return undefined;
     return { x: slot.chestCenterX, y: slot.chestCenterY };
+  }
+
+  /**
+   * 取某 player 在下方面板的待機點螢幕座標（投幣進場起點 / 回待機終點）。
+   * 待機點 = 該玩家面板欄上方中心（面板 scrollFactor 0 = 螢幕座標）。
+   * playerIndex 無效或該欄未啟用（未加入）回 undefined（呼叫端 optional + fallback）。
+   */
+  getWaitingAnchor(playerIndex: number): { x: number; y: number } | undefined {
+    const slot = this.slots[playerIndex];
+    if (!slot || !slot.active) return undefined;
+    return { x: slot.waitingX, y: slot.waitingY };
   }
 
   /** 目前欄數（= slotCount）。 */
