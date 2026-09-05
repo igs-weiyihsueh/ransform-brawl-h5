@@ -12,9 +12,9 @@ describe('playerConfig — 真空環設定 + 玩家識別色', () => {
     expect(FOOT_GLOW.radiusPx).toBe(50); // vacuumRadius 0.5×PPU
     expect(FOOT_GLOW.ringWidthPx).toBe(5); // ringWidth 0.05×PPU
     expect(FOOT_GLOW.alpha).toBe(0.5); // footGlowAlpha
-    // #6 修:offset 不再沿用 Unity 腳底 pivot 的 -50/50，改校正畫布中心 pivot 的美術偏移。
-    // offsetX 負(往左修美術偏左)、offsetY 正(H5 Y 下為正 → 往下到腳部)。
-    expect(FOOT_GLOW.offsetXPx).toBeCloseTo(-12 * SPRITE_SCALE); // 往左校正
+    // 用戶新#1 修:offsetX 改 0(水平置中於 sprite、flip-safe,面左右都在正下方);
+    // offsetY 維持 72×SPRITE_SCALE(腳底)。
+    expect(FOOT_GLOW.offsetXPx).toBe(0); // 水平置中(不隨面向偏)
     expect(FOOT_GLOW.offsetYPx).toBeCloseTo(72 * SPRITE_SCALE); // 往下到腳部
     expect(FOOT_GLOW.offsetYPx).not.toBe(50); // 非 Unity 舊值
   });
@@ -35,14 +35,14 @@ describe('playerConfig — 真空環設定 + 玩家識別色', () => {
     expect(playerColor(4)).toBe(PLAYER_COLORS[0]); // 循環
   });
 
-  // 🔴 壞版對照：#6 修後環中心在玩家【下方】(腳部 y+offsetY)、x 往左校正。若沿用 Unity -50 往上→頭上(錯)。
-  it('壞版對照：環中心在玩家下方(y+offsetY 到腳部)、x 往左校正、非頭上', () => {
+  // 🔴 壞版對照：#6/#1 修後環中心在玩家【下方】(腳部 y+offsetY)、x 水平置中(flip-safe)。若沿用 Unity -50 往上→頭上(錯)。
+  it('壞版對照：環中心在玩家下方(y+offsetY 到腳部)、x 水平置中、非頭上', () => {
     const c = footGlowCenter(500, 500);
     expect(c.y).toBeGreaterThan(500); // 往下到腳部(非頭上)
     expect(c.y).toBeCloseTo(500 + FOOT_GLOW.offsetYPx);
-    expect(c.x).toBeLessThan(500); // x 往左校正(修偏右)
+    expect(c.x).toBe(500); // x 水平置中於 sprite(offsetX=0,不偏、flip-safe)
     expect(FOOT_GLOW.offsetYPx).toBeGreaterThan(0); // offsetY 正=往下
-    expect(FOOT_GLOW.offsetXPx).toBeLessThan(0); // offsetX 負=往左
+    expect(FOOT_GLOW.offsetXPx).toBe(0); // offsetX=0 水平置中
   });
 
   // 🔴 壞版對照：半徑=吸取範圍，不可為 0（否則環不可見/無範圍）。

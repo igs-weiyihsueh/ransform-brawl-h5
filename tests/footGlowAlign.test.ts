@@ -12,8 +12,8 @@ describe('footGlowCenter — 真空環對齊角色腳部', () => {
     expect(c.y).toBe(500 + FOOT_GLOW.offsetYPx);
   });
 
-  it('offsetX 為負（美術偏左 → 環往左修，修用戶回報的偏右）', () => {
-    expect(FOOT_GLOW.offsetXPx).toBeLessThan(0);
+  it('offsetX = 0（水平置中於 sprite、flip-safe，修用戶新#1 圈沒在正下方）', () => {
+    expect(FOOT_GLOW.offsetXPx).toBe(0);
   });
 
   it('offsetY 為正（H5 Y 下為正 → 從畫布中心往下到腳部，非 Unity 往上 -50）', () => {
@@ -30,9 +30,9 @@ describe('footGlowCenter — 真空環對齊角色腳部', () => {
     expect(c.y).toBeGreaterThan(500); // 往下到腳，非往上到頭
   });
 
-  // 🔴 壞版對照：x 有校正（非直接等於 spriteX），否則環偏右不對齊。
-  it('壞版對照：環 x 有往左校正（非等於 spriteX）', () => {
-    expect(footGlowCenter(500, 500).x).not.toBe(500);
-    expect(footGlowCenter(500, 500).x).toBeLessThan(500);
+  // 🔴 壞版對照：環 x 水平置中於 sprite（flip-safe，面左右都在正下方；offsetX≠0 會偏）。
+  it('壞版對照：環 x = spriteX（水平置中、不偏；offsetX=0 flip-safe）', () => {
+    expect(footGlowCenter(500, 500).x).toBe(500); // 圈中心 x = sprite x
+    expect(footGlowCenter(300, 100).x).toBe(300); // 任意 x 都置中於 sprite
   });
 });
