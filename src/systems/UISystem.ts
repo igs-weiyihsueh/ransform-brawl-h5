@@ -2,6 +2,7 @@ import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import type Phaser from 'phaser';
 import { UI_ICONS, UI_LAYOUT_ASSET } from '@/config/uiConfig';
+import { playerColor } from '@/config/playerConfig';
 import {
   DEFAULT_UI_LAYOUT,
   validateUiLayout,
@@ -90,9 +91,11 @@ export class UISystem implements GameSystem {
     const activeCount = ctx.players.length;
     this.bottomPanel = new BottomPanel(scene, this.layout.panel, activeCount);
 
-    // 每個目前存在的 player 各建一份頭上 UI。
+    // 每個目前存在的 player 各建一份頭上 UI（P 牌底用該 player 識別色 PLAYER_COLORS）。
     for (let i = 0; i < ctx.players.length; i++) {
-      this.overheads.push(new PlayerOverheadUI(scene, `P${i + 1}`));
+      this.overheads.push(
+        new PlayerOverheadUI(scene, `P${i + 1}`, playerColor(ctx.players[i].playerId)),
+      );
     }
   }
 
@@ -114,7 +117,9 @@ export class UISystem implements GameSystem {
     // 玩家加入（F2~F4）→ 補建頭上 UI + 亮對應底部欄。
     if (this.overheads.length < players.length) {
       for (let i = this.overheads.length; i < players.length; i++) {
-        this.overheads.push(new PlayerOverheadUI(this.ctx.scene, `P${i + 1}`));
+        this.overheads.push(
+          new PlayerOverheadUI(this.ctx.scene, `P${i + 1}`, playerColor(players[i].playerId)),
+        );
       }
       this.bottomPanel.setActiveCount(players.length);
     }

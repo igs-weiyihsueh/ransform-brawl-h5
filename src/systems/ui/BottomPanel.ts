@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { HUD_COLORS, HUD_FONT_FAMILY, PANEL_DEPTH, UI_ICONS } from '@/config/uiConfig';
+import { playerColor } from '@/config/playerConfig';
 import type { PanelElement, PanelLayout } from '@/config/uiLayoutSchema';
 
 /** 單一玩家欄：可刷新元素 + 淡化控制。 */
@@ -89,20 +90,22 @@ export class BottomPanel {
       return o;
     };
 
-    // 面板底框（用 panel 共用排版參數）。
+    // 面板底框（用 panel 共用排版參數）。外框一律用該 player 識別色（未加入欄靠 alpha 淡化，
+    // 加入時 setActiveCount 只調 alpha 即轉亮，顏色已是識別色不需重畫）。
     const bg = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
     bg.fillStyle(active ? HUD_COLORS.panelFill : HUD_COLORS.slotInactive, active ? HUD_COLORS.panelFillAlpha : 0.35);
     bg.fillRoundedRect(slotX, slotY, panel.slotWidth, panel.slotHeight, panel.cornerRadius);
-    bg.lineStyle(3, HUD_COLORS.panelStroke, active ? HUD_COLORS.panelStrokeAlpha : 0.3);
+    bg.lineStyle(3, playerColor(playerIndex), active ? HUD_COLORS.panelStrokeAlpha : 0.3);
     bg.strokeRoundedRect(slotX, slotY, panel.slotWidth, panel.slotHeight, panel.cornerRadius);
 
-    // 欄標籤 P1~P4。
+    // 欄標籤 P1~P4（用該 player 識別色，跟外框/頭上 P 牌一致）。
+    const labelColor = `#${playerColor(playerIndex).toString(16).padStart(6, '0')}`;
     track(
       scene.add
         .text(slotX + panel.padding, slotY + panel.padding, `P${playerIndex + 1}`, {
           fontFamily: HUD_FONT_FAMILY,
           fontSize: '22px',
-          color: HUD_COLORS.text,
+          color: labelColor,
           fontStyle: 'bold',
         })
         .setAlpha(alpha)

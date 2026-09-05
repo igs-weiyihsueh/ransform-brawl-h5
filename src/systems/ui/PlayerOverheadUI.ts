@@ -43,7 +43,11 @@ export class PlayerOverheadUI {
   /** 是否已用 ring.png 當魂力環底圖（true 時 setSoul 不再畫底槽環，只畫填充弧）。 */
   private hasRingSprite = false;
 
-  constructor(scene: Phaser.Scene, badgeText: string = OVERHEAD_LAYOUT.badge.text) {
+  constructor(
+    scene: Phaser.Scene,
+    badgeText: string = OVERHEAD_LAYOUT.badge.text,
+    badgeColor: number = HUD_COLORS.pNumBg,
+  ) {
     const cfg = OVERHEAD_LAYOUT;
     this.scene = scene;
     this.container = scene.add.container(0, 0);
@@ -62,7 +66,7 @@ export class PlayerOverheadUI {
     this.container.add(this.soulRing);
 
     const pnum = scene.add.graphics();
-    pnum.fillStyle(HUD_COLORS.pNumBg, 1);
+    pnum.fillStyle(badgeColor, 1);
     pnum.fillCircle(cfg.badge.cx, cfg.badge.cy, cfg.badge.innerRadius);
     pnum.lineStyle(2, HUD_COLORS.panelStroke, 0.9);
     pnum.strokeCircle(cfg.badge.cx, cfg.badge.cy, cfg.badge.innerRadius);
