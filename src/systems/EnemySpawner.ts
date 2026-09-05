@@ -141,6 +141,11 @@ export class EnemySpawner {
       const hit = p.update(target, dt, this.worldBounds);
       if (hit) {
         this.applyAttackDamage(p.damage, p.sourceLabel);
+        // 用戶 #7：射彈命中玩家也播命中爆閃（打雕像不播）。純視覺。
+        if (!this.guardTarget) {
+          const hc = this.player.getHitCenter();
+          this.hitFeelFx?.enemyImpact?.(hc.x, hc.y);
+        }
       }
     }
     this.projectiles = this.projectiles.filter((p) => !p.isDead());
@@ -188,6 +193,11 @@ export class EnemySpawner {
       );
       if (hit) {
         this.applyAttackDamage(ev.damage, ev.sourceName);
+        // 用戶 #7：命中玩家瞬間播命中爆閃（生在受擊點；打雕像不播）。純視覺。
+        if (!this.guardTarget) {
+          const hc = this.player.getHitCenter();
+          this.hitFeelFx?.enemyImpact?.(hc.x, hc.y);
+        }
       }
       this.lastMeleeCircle = ev.meleeCircle;
       this.meleeCircleFlash = 0.15;

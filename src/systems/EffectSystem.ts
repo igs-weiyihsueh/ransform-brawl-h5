@@ -21,6 +21,20 @@ const BASE_PATH = 'assets/images/vfx';
 /** 能量飛光 depth（飛在角色上層；角色 depth 為 0 量級、頭上 UI 900）。 */
 const ENERGY_FLY_DEPTH = 950;
 
+/**
+ * 敵人攻擊特效（用戶 #7，特效 agent 產的單張 PNG，非幀動畫）：以 tween 播 scale/alpha/rotation。
+ * key = Phaser texture key；path 相對 public/。preload 於 EffectSystem.preload 一併載入。
+ */
+const ENEMY_ATTACK_VFX = {
+  slash: { key: 'vfx-enemy-slash', path: `${BASE_PATH}/fx_enemy_slash.png` },
+  impact: { key: 'vfx-enemy-impact', path: `${BASE_PATH}/fx_enemy_impact.png` },
+  charge: { key: 'vfx-enemy-charge', path: `${BASE_PATH}/fx_enemy_charge.png` },
+} as const;
+
+/** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
+const ATTACK_VFX_DEPTH = 950;
+
+
 /** 特效單張幀的 texture key，例如 "vfx/attack_03/03"。 */
 function frameKey(effectKey: string, index: number): string {
   return `vfx/${effectKey}/${String(index).padStart(VFX_FRAME_PAD, '0')}`;
@@ -58,6 +72,12 @@ export class EffectSystem {
         const idx = def.startIndex + i;
         const padded = String(idx).padStart(VFX_FRAME_PAD, '0');
         scene.load.image(frameKey(key, idx), `${BASE_PATH}/${key}/frame_${padded}.png`);
+      }
+    }
+    // 用戶 #7：敵人攻擊單張 PNG 特效（斬光/命中/蓄力）。只在載全部（無指定 key）時一併載入。
+    if (!effectKey) {
+      for (const v of Object.values(ENEMY_ATTACK_VFX)) {
+        if (!scene.textures.exists(v.key)) scene.load.image(v.key, v.path);
       }
     }
   }
@@ -436,6 +456,89 @@ export class EffectSystem {
         onComplete: () => g.destroy(),
       });
     }
+  }
+
+  /**
+   * 敵人揮擊斬光（用戶 #7）：近戰出手當下播。快速放大 + 尾段淡出，rotation 對準攻擊方向。
+   * 純視覺疊加（結算後 hook，不改數值）。
+   * @param x,y 生成位置（敵人與玩家之間、偏敵人手前，世界座標）。
+   * @param angleRad 攻擊朝向弧度（敵人朝玩家 aim 的 atan2）；圖預設開口朝左彎月，直接用此角度轉。
+   * @param scale 依敵人體型微調（0.8~1.2，預設 1）。
+   */
+  enemySlash(x: number, y: number, angleRad: number, scale = 1): void {
+    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.slash.key)) return;
+    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.slash.key);
+    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH).setRotation(angleRad);
+    spr.setScale(0.7 * scale).setAlpha(1);
+    // ~0.18s：scale 0.7→1.15 快速放大（速度感）；後段 alpha→0 淡出。
+    this.scene.tweens.add({
+      targets: spr,
+      scale: 1.15 * scale,
+      duration: 180,
+      ease: 'Cubic.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: spr,
+      alpha: 0,
+      delay: 108, // 後 40% 才淡出（180×0.6）
+      duration: 72,
+      ease: 'Sine.easeIn',
+      onComplete: () => spr.destroy(),
+    });
+  }
+
+  /**
+   * 敵人命中爆閃（用戶 #7）：攻擊命中玩家瞬間播。隨機旋轉、爆開放大、淡出。
+   * 純視覺疊加（受擊結算後 hook）。
+   * @param x,y 玩家受擊點/身體中心（世界座標）。
+   * @param scale 微調（0.9~1.3，預設 1.1）。
+   */
+  enemyImpact(x: number, y: number, scale = 1.1): void {
+    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.impact.key)) return;
+    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.impact.key);
+    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH + 1); // 命中閃在斬光之上
+    spr.setRotation(Phaser.Math.FloatBetween(0, Math.PI * 2)); // 隨機旋轉，不需對方向
+    spr.setScale(0.6 * scale).setAlpha(1);
+    // ~0.15s：scale 0.6→1.2 爆開 + alpha 1→0 淡出。
+    this.scene.tweens.add({
+      targets: spr,
+      scale: 1.2 * scale,
+      alpha: 0,
+      duration: 150,
+      ease: 'Quad.easeOut',
+      onComplete: () => spr.destroy(),
+    });
+  }
+
+  /**
+   * 敵人蓄力預警（用戶 #7）：出手前蓄力期播，給玩家反應時間。脈動；出手時呼叫回傳物件的 destroy 收掉。
+   * 純視覺疊加。回傳 sprite 供呼叫端在出手瞬間銷毀（接 slash）。
+   * @param x,y 生成位置（貼敵人身前/腳下，世界座標）。
+   * @param durationMs 蓄力時長（對應 chargeTime，脈動循環用；預設 500）。
+   * @returns 蓄力特效 sprite（呼叫端出手時 .destroy()）；貼圖沒載則回 null。
+   */
+  enemyCharge(x: number, y: number, durationMs = 500): Phaser.GameObjects.Image | null {
+    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.charge.key)) return null;
+    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.charge.key);
+    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH - 1); // 蓄力在斬光之下（角色上層）
+    spr.setScale(0.85).setAlpha(0.9);
+    // scale 0.85↔1.0 脈動（充能感）+ 緩慢旋轉，直到出手被 destroy。
+    this.scene.tweens.add({
+      targets: spr,
+      scale: 1.0,
+      duration: Math.max(150, durationMs / 2),
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+    this.scene.tweens.add({
+      targets: spr,
+      angle: 360,
+      duration: Math.max(600, durationMs * 1.5),
+      repeat: -1,
+      ease: 'Linear',
+    });
+    return spr;
   }
 
   /**

@@ -30,6 +30,10 @@ export interface HitFeelFx {
   punchScale(sprite: Phaser.GameObjects.Sprite, amount: number): void;
   hitSpark(x: number, y: number, dirX: number, dirY: number, color: number): void;
   deathParticle(x: number, y: number, color: number): void;
+  /** 用戶 #7 敵人攻擊特效（純視覺）。實作於 EffectSystem。 */
+  enemySlash?(x: number, y: number, angleRad: number, scale?: number): void;
+  enemyImpact?(x: number, y: number, scale?: number): void;
+  enemyCharge?(x: number, y: number, durationMs?: number): Phaser.GameObjects.Image | null;
 }
 
 /** 敵人可用的角色美術 key（debug 預覽用循環選擇）。 */
@@ -85,6 +89,8 @@ export class Enemy implements Hittable {
 
   /** hitFeel 表演（由 EnemySpawner 注入 ctx.effects）；null 則不播 juice。 */
   hitFeelFx: HitFeelFx | null = null;
+  /** 用戶 #7：蓄力預警特效 sprite（進 charge 時建、出手/離開時 destroy）。 */
+  private chargeFx: Phaser.GameObjects.Image | null = null;
 
   /** 局部頓幀剩餘秒數（hitFeel microFreeze，只凍被打這隻：>0 時 update 早退不動作）。 */
   private freezeRemaining = 0;
@@ -250,11 +256,20 @@ export class Enemy implements Hittable {
     return this.dead;
   }
 
+  /** 用戶 #7：清掉蓄力預警特效（出手/受擊/死亡時，避免殘留）。 */
+  private clearChargeFx(): void {
+    if (this.chargeFx) {
+      this.chargeFx.destroy();
+      this.chargeFx = null;
+    }
+  }
+
   /** 立即銷毀（守護波 cleanup ClearAllActiveEnemies 用，不播死亡動畫、不觸發 onKilled）。 */
   forceDestroy(): void {
     if (this.dead) return;
     this.dead = true;
     this.state = 'death';
+    this.clearChargeFx();
     this.anim.destroy();
   }
 
@@ -391,6 +406,10 @@ export class Enemy implements Hittable {
           this.state = 'charge';
           this.timer = this.cfg.chargeTime;
           this.anim.play('idle');
+          // 用戶 #7：蓄力預警特效（貼敵人身前/腳下，出手時 destroy 接 slash）。純視覺。
+          const cpos = this.getHitCenter();
+          this.chargeFx =
+            this.hitFeelFx?.enemyCharge?.(cpos.x, cpos.y, this.cfg.chargeTime * 1000) ?? null;
         } else if (dist <= detectPx && dist > 0.001) {
           this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加（含 attackRange 內但形狀外→再逼近，根治空揮）
           this.anim.play('move');
@@ -469,6 +488,13 @@ export class Enemy implements Hittable {
     const pos = this.getHitCenter();
     const a = this.cfg.attack;
 
+    // 用戶 #7：出手當下收掉蓄力預警、播揮擊斬光（rotation 對準玩家 aim 方向、生成偏敵人手前）。純視覺。
+    this.clearChargeFx();
+    const aimAngle = Math.atan2(playerPos.y - pos.y, playerPos.x - pos.x);
+    const slashX = pos.x + Math.cos(aimAngle) * a.offsetX * PPU;
+    const slashY = pos.y + Math.sin(aimAngle) * a.offsetX * PPU;
+    this.hitFeelFx?.enemySlash?.(slashX, slashY, aimAngle, this.scaleFactor);
+
     if (this.cfg.attackKind === 'melee') {
       // 近戰圓形判定：offset 隨 perCharScale 放大（菁英大範圍）。
       const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor);
@@ -510,6 +536,7 @@ export class Enemy implements Hittable {
   takeHit(damage: number, knockback: number, fromPos: Vec2): void {
     if (this.dead || this.state === 'death') return;
     if (this.grabber) return; // grabber 衝來期間無敵（掙脫由 GrabSystem 處理，不走一般傷害）
+    this.clearChargeFx(); // 用戶 #7：受擊中斷蓄力 → 清蓄力預警特效
     this.hp -= damage; // 數值即時（不受 hitFeel 影響）
 
     // 擊退方向：遠離攻擊來源。
