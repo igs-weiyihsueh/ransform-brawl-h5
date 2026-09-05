@@ -111,6 +111,11 @@ export class GuardEvent {
     return Math.ceil(this.remaining);
   }
 
+  /** 守護波時間上限（秒），倒數量條分母（#7 進度條用）。 */
+  getTimeLimit(): number {
+    return this.preset.timeLimit;
+  }
+
   /** 量條 fill = (timeLimit - remaining)/timeLimit（隨時間填滿）。 */
   getGaugeFill(): number {
     return (this.preset.timeLimit - this.remaining) / this.preset.timeLimit;

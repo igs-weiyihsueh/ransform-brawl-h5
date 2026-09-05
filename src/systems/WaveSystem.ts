@@ -64,6 +64,16 @@ export class WaveSystem implements GameSystem {
     return this.guardEvent;
   }
 
+  /** 目前關卡節點索引（0-based，進度條用：已完成節點數）。 */
+  getNodeIndex(): number {
+    return this.nodeIndex;
+  }
+
+  /** 目前關卡總節點數（進度條分母）；無關卡時 0。 */
+  getNodeCount(): number {
+    return this.currentLevel()?.nodes.length ?? 0;
+  }
+
   /**
    * @param preloadedLevels 選填：直接注入已驗證的關卡（測試/編輯器預覽用）。
    *   不給時，init() 會自行從 levels.json 載入。
