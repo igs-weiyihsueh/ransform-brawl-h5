@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
 import { getPerCharScale } from '@/config/animationConfig';
 import { SPRITE_SCALE, PLAYER_HIT_RADIUS } from '@/config/combatConfig';
-import { ENEMY_AI, type EnemyAIConfig } from '@/config/enemyConfig';
+import { ENEMY_AI, ENEMY_BODY_RADIUS_PX, type EnemyAIConfig } from '@/config/enemyConfig';
 import { PPU } from '@/config/gameConfig';
 import { MAP_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
-import { CharacterAnimator, FRAME_SIZE } from '@/systems/CharacterAnimator';
+import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import {
   blockEliteAdvance,
   calculateSeparation,
@@ -240,7 +240,7 @@ export class Enemy implements Hittable {
     this.anim.setScale(SPRITE_SCALE);
     this.hp = this.cfg.hp;
     this.maxHp = this.cfg.hp;
-    this.radiusPx = (FRAME_SIZE * SPRITE_SCALE * this.scaleFactor) / 2;
+    this.radiusPx = ENEMY_BODY_RADIUS_PX * this.scaleFactor; // 可視 body 半徑(用戶#1#2a根治), 取代 256 frame 半徑
   }
 
   isDead(): boolean {
@@ -488,8 +488,8 @@ export class Enemy implements Hittable {
 
   private setFacing(dir: number): void {
     if (dir === this.facing) return;
-    this.facing = dir;
-    this.anim.setFacing(dir);
+    this.facing = dir; // 保留正確 facing（攻擊 offset 方向用此，勿反）
+    this.anim.setFacingEnemy(dir); // 只反轉視覺 flipX（敵人美術朝向相反，修倒著走 #2b）
   }
 
   /** 被玩家攻擊：扣血、hitStun 硬直、擊退。HP 歸 0 播 death 消失。 */

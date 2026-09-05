@@ -88,9 +88,9 @@ export class EnemySpawner {
 
     // 防穿透：敵人移動後，對所有 player 頂開（不穿透）。
     // pushOut：immovable 菁英頂不動時，改把玩家本身移到菁英外（玩家被擋、不穿進菁英）。
-    // 真空帶半徑用 getVacuumRadius（=FOOT_GLOW 50，視覺搜索圈一致，用戶試玩#1），非受擊半徑(40)。
+    // 真空帶半徑用 getVacuumRadius（=FOOT_GLOW 50）、中心用 getVacuumCenter（=視覺圈腳部中心，用戶試玩#1）。
     const players = this.getAllPlayers().map((p) => ({
-      pos: p.getHitCenter(),
+      pos: p.getVacuumCenter?.() ?? p.getHitCenter(),
       hitRadius: p.getVacuumRadius?.() ?? p.getHitRadius(),
       pushOut: (x: number, y: number) => p.setPosition?.(x, y),
     }));
@@ -107,10 +107,16 @@ export class EnemySpawner {
       const ec = e.getHitCenter();
       const er = e.getHitRadius();
       for (const p of this.getAllPlayers()) {
-        const ppos = p.getHitCenter();
+        const pc = p.getVacuumCenter?.() ?? p.getHitCenter();
         const vac = p.getVacuumRadius?.() ?? p.getHitRadius();
-        const fixed = pushOutOfPlayer(ppos, ec, er + vac);
-        if (fixed.x !== ppos.x || fixed.y !== ppos.y) p.setPosition?.(fixed.x, fixed.y);
+        const fixed = pushOutOfPlayer(pc, ec, er + vac);
+        if (fixed.x !== pc.x || fixed.y !== pc.y) {
+          // 修正量施加回玩家 sprite（pushOut 用 setPosition；換算回 sprite 座標＝加上位移）。
+          const dx = fixed.x - pc.x;
+          const dy = fixed.y - pc.y;
+          const cur = p.getHitCenter();
+          p.setPosition?.(cur.x + dx, cur.y + dy);
+        }
       }
     }
 

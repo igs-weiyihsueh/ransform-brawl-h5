@@ -16,6 +16,13 @@ export type EnemyAttackKind = 'melee' | 'projectile';
  */
 export const SPAWN_WARNING_DURATION_SEC = 3;
 
+/**
+ * 敵人碰撞 body 半徑基準（像素，用戶試玩#1#2a 根治）：取代舊「256 frame 半徑」(134px, 含大量透明 padding)。
+ * 量測 Enemy_Rush 非透明 bbox ≈113px 寬（可視半寬 ~56px，×SPRITE_SCALE），取角色核心 body ~45px 當基準
+ * （比全可視半寬略緊、對齊攻擊形狀 reach，讓真空帶=視覺圈、怪停攻擊形狀內能攻擊）。依 perCharScale 縮放（菁英大隻 body 也大）。
+ */
+export const ENEMY_BODY_RADIUS_PX = 45;
+
 export interface EnemyAIConfig {
   /** 對應動畫角色 key（也決定 perCharScale）。 */
   characterKey: string;

@@ -139,6 +139,15 @@ export class CharacterAnimator {
   }
 
   /**
+   * 敵人面向翻轉（用戶試玩#2b 倒著走）：敵人美術預設朝向與玩家(SPUM)相反，
+   * 故 flipX 用相反條件（facing<0 才翻），讓敵人動畫朝向與移動 velocity 方向一致。
+   * 只給敵人用；玩家仍用 setFacing（勿動，玩家現在是對的）。
+   */
+  setFacingEnemy(facing: number): void {
+    this.sprite.setFlipX(facing < 0);
+  }
+
+  /**
    * 設定整體縮放（相對 256×256 畫布）。
    * 會自動乘上該角色的 perCharScale 補償（見 animationConfig.PER_CHAR_SCALE），
    * 所以呼叫端只要傳共用的 SPRITE_SCALE，個別角色大小校正集中在 config。

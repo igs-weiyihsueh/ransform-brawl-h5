@@ -289,6 +289,14 @@ export class Player implements Hittable {
     return FOOT_GLOW.radiusPx;
   }
 
+  /**
+   * 真空帶中心（像素，用戶試玩#1 次因）：= 視覺搜索圈中心 footGlowCenter（腳部，含 offset），
+   * 讓推怪判定中心與視覺圈同一點（不再用身體中心 getHitCenter 差 ~75px），眼見即實際。
+   */
+  getVacuumCenter(): Vec2 {
+    return footGlowCenter(this.anim.sprite.x, this.anim.sprite.y);
+  }
+
   /** 目前是否處於無敵幀（iFrame 內免疫再次受擊）。 */
   isInvincible(): boolean {
     return this.iFrameRemaining > 0;
