@@ -102,8 +102,9 @@ export class UISystem implements GameSystem {
   }
 
   /** 彩票數。接 TicketSystem。 */
+  /** 彩票數。接 TicketSystem（本地 P1；per-player 多欄顯示由界騎讀 columns 之後做）。 */
   private getTicket(): number {
-    return this.ctx.ticket.getTickets();
+    return this.ctx.ticket.getTickets(this.ctx.player.playerId);
   }
 
   /** 寶箱進度比例（0..1）。接 ChestSystem（chestCharge/門檻）。 */

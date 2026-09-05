@@ -124,6 +124,17 @@ export interface PanelElement {
  * 底部面板單一欄（對應一個玩家）。用 playerIndex(0~3) 索引。
  * 第一版單人只 columns[0](P1) active；P2~P4 佔位（active:false）。
  * S5 把 4 欄各自 active，讀同一份 schema，不改結構。
+ *
+ * 🔴 防漂移慣例（顧問定，務必遵守）：
+ *   columns[1..3].elements **從 columns[0]（template 欄）複製衍生**，不獨立編寫。
+ *   本遊戲要求所有玩家面板結構相同（Unity BottomPanel 4 個相同欄），不要 per-player 差異。
+ *   - UI 位置編輯器：只編 columns[0]（P1 template 欄）。
+ *   - S5 做 per-player UI 時：把 columns[0].elements 複製到 columns[1..3]，
+ *     使 P1~P4 面板結構恆等（防漂移）。
+ *   - 例外：未來若真要 per-player UI 差異（目前不要），才解除此慣例——
+ *     columns[] 結構已支援各欄獨立 elements，屆時走 spec §4 決定。
+ *   註：columns[] 把「防漂移」由結構保證（只一份 elements）降為慣例保證
+ *   （每欄各有 elements），故以此註解明訂慣例，避免有人各編各的把面板編歪。
  */
 export interface PanelColumn {
   /** 玩家索引 0~3（= P1~P4）。 */

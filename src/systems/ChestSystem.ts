@@ -65,7 +65,9 @@ export class ChestSystem implements GameSystem {
     this.lastReward = reward.kind;
 
     if (isTicketReward(reward.kind)) {
-      this.ctx.ticket.addTickets(reward.tickets);
+      // 產票歸屬：開箱者（決策 bbe6f8ed）。S5 chest charge 仍共享(擊殺未帶 killer)，
+      // 本地開箱歸 P1；真 per-player chest(kill 歸屬)之後另做時改這裡。
+      this.ctx.ticket.addTickets(this.ctx.player.playerId, reward.tickets);
     } else if (reward.kind === 'mount') {
       // 坐騎：20s dashSpeed×1.5 + 衝刺範圍+2。有 BuffSystem → 套真 buff；旗標同步供查詢/測試。
       this.mountBuffActive = true;

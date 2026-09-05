@@ -152,7 +152,13 @@ export class WaveSystem implements GameSystem {
   private updateSpawnNode(node: SpawnNodeData, dt: number): void {
     this.tallyKills();
 
-    if (this.kills >= node.killQuota) {
+    // 波次×人數（多人遷移 S5）：killQuota/maxAlive 依人數縮放。
+    const scale = this.playerCountScale();
+    const killQuota = Math.round(node.killQuota * scale);
+    const maxAlive = Math.round(node.maxAlive * scale);
+    const spawnThreshold = Math.round(node.spawnThreshold * scale);
+
+    if (this.kills >= killQuota) {
       this.advanceNode();
       return;
     }
@@ -163,10 +169,16 @@ export class WaveSystem implements GameSystem {
 
     const alive = this.tracked.length;
     // 存活 < spawnThreshold 時，滴流補到 maxAlive（每 spawnInterval 生一隻）。
-    if (alive < node.spawnThreshold && this.spawnCooldown <= 0 && alive < node.maxAlive) {
+    if (alive < spawnThreshold && this.spawnCooldown <= 0 && alive < maxAlive) {
       this.spawnOne(node.spawns);
       this.spawnCooldown = node.spawnInterval;
     }
+  }
+
+  /** 依人數的難度係數：1人×1 / 2人×1.5 / 3人×2 / 4人×2.5（playerCount=players[].length）。 */
+  private playerCountScale(): number {
+    const n = Math.max(1, this.ctx.players.length);
+    return 1 + (n - 1) * 0.5;
   }
 
   /**

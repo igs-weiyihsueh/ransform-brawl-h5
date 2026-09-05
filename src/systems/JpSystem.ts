@@ -71,9 +71,10 @@ export class JpSystem implements GameSystem {
   }
 
   /**
-   * per-player 傷害貢獻 hook（多人遷移 S3）：累進該玩家對所有命中敵人打出的傷害總和。
-   * 🔴 與 notifyCreditSpent（共享池、不加 playerId）分開：這裡是「記誰貢獻」，為 S5 加權派彩埋。
-   * S3 只記不用（派彩仍現狀）。
+   * per-player 傷害貢獻 hook：累進該玩家對所有命中敵人打出的傷害總和。
+   * 🔴 與 notifyCreditSpent（共享池、不加 playerId）分開：這裡是「記誰貢獻」。
+   * 🔴 加權派彩（讀 recordDamage 依貢獻分配）= 之後另一個任務；**S5 派彩為平分、不讀 recordDamage**。
+   *    recordDamage 為未來加權派彩埋，目前 inert（只記不影響派彩）。
    */
   recordDamage(attackerId: number, dealt: number): void {
     if (dealt <= 0) return;
@@ -104,12 +105,20 @@ export class JpSystem implements GameSystem {
     this.payout(g);
   }
 
-  /** 派彩：獎金 = 當前倍數 × 30 張 → 灌 ticket；該組歸零重累積、燈歸零。 */
+  /**
+   * 派彩：獎金 = 當前倍數 × 30 張 → **平分**給所有 active player 的彩票帳本；該組歸零重累積、燈歸零。
+   * 🔴 S5 = 平分（用戶裁示：貢獻加權延後、先簡單）。不管誰貢獻、不讀 recordDamage。
+   *    加權派彩（依 recordDamage 貢獻分配）= 之後另一個任務，非 S5。
+   */
   private payout(g: JpGroup): void {
     const st = this.groups[g];
     const prize = Math.round(st.multiplier * JP_TICKET_FACE);
-    this.ctx.ticket.addTickets(prize);
-    this.lastPayout = `${g}:${prize}`;
+    const players = this.ctx.players;
+    const share = Math.floor(prize / Math.max(1, players.length)); // 平分（取整）
+    for (const p of players) {
+      this.ctx.ticket.addTickets(p.playerId, share);
+    }
+    this.lastPayout = `${g}:${prize}(平分${players.length}人×${share})`;
     st.multiplier = JP_GROUP_CONFIG[g].startMultiplier;
     st.lights = 0;
   }

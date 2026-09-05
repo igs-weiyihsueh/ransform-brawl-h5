@@ -181,7 +181,7 @@ export class DebugSystem implements GameSystem {
     const creditInfo = credit.isOutOfCredit(p1)
       ? `Credit 0 [耗盡! 按C投幣, 倒數${credit.getCountdown(p1).toFixed(1)}s]`
       : `Credit ${credit.getCredit(p1)}`;
-    const comboInfo = `COMBO ${combo.getCombo(p1)}${combo.isWarning(p1) ? '(警告!)' : ''}  彩票 ${ticket.getTickets()}`;
+    const comboInfo = `COMBO ${combo.getCombo(p1)}${combo.isWarning(p1) ? '(警告!)' : ''}  彩票 ${ticket.getTickets(p1)}`;
     const chestInfo = `寶盒 ${chest.getCharge()}/${chest.getThreshold()}(開${chest.getOpensCount()}${chest.getLastReward() ? ' 最近:' + chest.getLastReward() : ''})`;
     const jpInfo = `JP 紅${jp.getLights('red')}燈×${jp.getMultiplier('red').toFixed(1)} 藍${jp.getLights('blue')}燈×${jp.getMultiplier('blue').toFixed(1)} 紫${jp.getLights('purple')}燈×${jp.getMultiplier('purple').toFixed(1)}${jp.getLastPayout() ? ' 派:' + jp.getLastPayout() : ''}`;
     const guardInfo = guard

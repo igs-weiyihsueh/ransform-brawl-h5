@@ -60,12 +60,12 @@ export class ComboSystem implements GameSystem {
     }
   }
 
-  /** 結算：算彩票灌入 TicketSystem、歸零。 */
+  /** 結算：算彩票灌入 settle 的那個 player 帳本、歸零。 */
   private settle(playerId: number, isMax = false): void {
     const s = this.stateOf(playerId);
     if (s.count <= 0) return;
     const tickets = ticketsForCombo(s.count);
-    this.ctx.ticket.addTickets(tickets);
+    this.ctx.ticket.addTickets(playerId, tickets); // 產票歸屬：settle 的 player
     if (isMax) s.maxTriggered = true;
     s.count = 0;
     s.timer = 0;
