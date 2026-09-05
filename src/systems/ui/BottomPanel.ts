@@ -146,9 +146,19 @@ export class BottomPanel {
     const ty = slotY + (ticketEl?.y ?? 0);
     const iconSize = 28;
     if (scene.textures.exists(UI_ICONS.ticket.key)) {
-      track(scene.add.image(tx, ty, UI_ICONS.ticket.key))
+      const img = track(scene.add.image(tx, ty, UI_ICONS.ticket.key));
+      // 等比縮放到 iconSize 見方的框內（不拉伸變形）：票券圖是直式(116×144)，
+      // 若直接 setDisplaySize(28,28) 會壓扁。取原圖長寬比、fit 進 iconSize 方框。
+      const src = scene.textures.get(UI_ICONS.ticket.key).getSourceImage() as {
+        width: number;
+        height: number;
+      };
+      const ratio = src.width && src.height ? src.width / src.height : 1;
+      const w = ratio >= 1 ? iconSize : iconSize * ratio;
+      const h = ratio >= 1 ? iconSize / ratio : iconSize;
+      img
         .setOrigin(0, 0.5)
-        .setDisplaySize(iconSize, iconSize)
+        .setDisplaySize(w, h)
         .setAlpha(alpha)
         .setScrollFactor(0)
         .setDepth(PANEL_DEPTH);
