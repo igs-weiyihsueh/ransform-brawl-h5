@@ -163,6 +163,14 @@ function makeGuardCtx() {
   const ctx = {
     scene: sharedScene,
     player: { playerId: 0 }, // S5 chest per-player：GuardEvent.finish 讀 ctx.player.playerId
+    // 用戶 #4 開場相位需要：players（導引走位，空陣列=無走位、逾時 snap 進 reveal）、
+    // effects（大字/spotlight，皆 optional-chain 呼叫、可缺）、scriptedControl（鎖操作旗標）。
+    players: [] as unknown[],
+    effects: {
+      timedEventText: () => {},
+      guardSpotlight: () => ({ fadeOut: () => {} }),
+    },
+    scriptedControl: false,
     getEnemies: () => state.enemies,
     spawner: {
       setGuardTarget: (t: GuardTarget | null) => {
@@ -234,9 +242,21 @@ describe('GuardTarget — HP 邊界（1 未敗 / 恰 0 敗 / hpRatio clamp01）'
 });
 
 describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCharge，用戶決策 76f07f64）', () => {
+  /**
+   * 用戶 #4：GuardEvent 現在 combat 前有開場相位（introMove→reveal→focus）。
+   * 快轉過開場（players=[] → introMove 逾時 3.5s snap 進 reveal→0.45s→focus→1.6s→combat），
+   * 之後 update 才走 combat 勝敗邏輯。小 dt 分段推進、不消耗 combat 的 remaining。
+   */
+  function fastForwardIntro(ev: GuardEvent): void {
+    ev.update(3.5); // introMove 逾時(GUARD_MOVE_TIMEOUT_SEC) → reveal（回 false）
+    ev.update(0.45); // reveal 顯現等待 → focus（回 false）
+    ev.update(1.6); // focus 聚焦(GUARD_FOCUS_SEC) → combat（回 false）
+  }
+
   it('撐過時間(timer≤0)且 HP>0 → 勝，寶盒進度 += round(165 × hpRatio)（滿血 165）', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']); // timeLimit60 HP100
+    fastForwardIntro(ev); // 快轉開場相位 → combat
     // 不打雕像（HP 滿）→ 跑滿 60s → 勝、寶盒進度 +round(165×1.0)=165（=一箱門檻）。
     const done = ev.update(60);
     expect(done).toBe(true);
@@ -250,6 +270,7 @@ describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCha
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
     state.guardTarget!.takeDamage(50); // HP 100→50（hpRatio 0.5，仍 >0）
+    fastForwardIntro(ev); // 快轉開場 → combat
     ev.update(60); // 撐過時間 → 勝
     expect(ev.didWin()).toBe(true);
     expect(state.chestChargeAdded).toBe(83); // round(165×0.5)=round(82.5)=83
@@ -259,6 +280,7 @@ describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCha
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
     state.guardTarget!.takeDamage(100); // 雕像被打爆
+    fastForwardIntro(ev); // 快轉開場 → combat（開場相位不檢查敗）
     const done = ev.update(1); // 倒數中就偵測到 defeated → 敗、提早結束
     expect(done).toBe(true);
     expect(ev.didWin()).toBe(false);
@@ -270,6 +292,7 @@ describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCha
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
     state.guardTarget!.takeDamage(99); // HP=1
+    fastForwardIntro(ev); // 快轉開場 → combat
     ev.update(60); // 恰好耗盡時間、HP=1>0 → 勝
     expect(ev.didWin()).toBe(true);
     // hpRatio=0.01 → round(165×0.01)=round(1.65)=2（撐過、血極低仍給 2 點進度）
@@ -281,6 +304,7 @@ describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCha
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
     expect(state.guardTarget !== null).toBe(true); // 開場設了雕像為目標（用 boolean 避免 diff Phaser 物件）
     state.guardTarget!.takeDamage(100); // 敗
+    fastForwardIntro(ev); // 快轉開場 → combat
     const done = ev.update(1);
     // 語意：敗也結束（done=true 讓 WaveSystem advanceNode 前進），不是 gameover/不卡住。
     expect(done).toBe(true);
@@ -295,6 +319,7 @@ describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCha
   it('勝也 cleanup（清回目標/清敵）', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
+    fastForwardIntro(ev); // 快轉開場 → combat
     ev.update(60); // 勝
     expect(state.guardTarget === null).toBe(true); // 清回玩家目標（boolean 斷言）
     expect(state.clearedCalls).toBeGreaterThanOrEqual(1);
@@ -303,6 +328,7 @@ describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCha
   it('查無 preset → fallback，不炸（用未知 preset 名建 GuardEvent 仍可跑完）', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'NoSuchPreset', ['Enemy_Rush']); // fallback 60/100
+    fastForwardIntro(ev); // 快轉開場 → combat
     ev.update(60); // 撐過 → 勝、寶盒進度 +round(165×1)=165
     expect(ev.didWin()).toBe(true);
     expect(state.chestChargeAdded).toBe(CHEST_OPEN_THRESHOLD);
@@ -311,6 +337,7 @@ describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCha
   it('finished 後再 update 恆回 true、不重複結算（addCharge 只被呼叫一次、進度不重複加）', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
+    fastForwardIntro(ev); // 快轉開場 → combat
     ev.update(60); // 勝，+165
     const chargeAfterWin = state.chestChargeAdded;
     const callsAfterWin = state.chestAddCalls;
