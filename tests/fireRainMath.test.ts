@@ -64,4 +64,26 @@ describe('fireRainMath — 傷害判定（只傷玩家）', () => {
     expect(playersInStrike({ x: 0, y: 0 }, [{ x: 100, y: 0 }])).toEqual([0]); // =100 中
     expect(playersInStrike({ x: 0, y: 0 }, [{ x: 101, y: 0 }])).toEqual([]); // >100 不中
   });
+
+  // 只傷玩家契約（#10 核心）：傷害函式只吃 players；即使敵人/雕像幾何上在圈內，
+  // 也因「不在傳入的 players 清單」而不被判傷。維度3 斷「回傳的命中 index 只涵蓋玩家」。
+  it('只傷玩家：圈內敵人/雕像不受傷（只有 players 清單被判定）', () => {
+    const center = { x: 500, y: 500 };
+    // players[0] 在圈內、players[1] 在圈外。
+    const players = [{ x: 500, y: 500 }, { x: 5000, y: 500 }];
+    const hit = playersInStrike(center, players);
+    expect(hit).toEqual([0]); // 只回玩家 index
+    // 敵人/雕像即使座標在圈內（例如 (500,530) 距 30<100），也不在 players 清單 → 不會出現在回傳。
+    // 契約由「函式只吃 players」保證：回傳最大 index 不超過 players 範圍。
+    expect(Math.max(...hit)).toBeLessThan(players.length);
+    // 對照：把同一個「敵人座標」當 players 傳才會中 → 證明是清單成員資格、非全場判定。
+    expect(playersInStrike(center, [{ x: 500, y: 530 }])).toEqual([0]);
+  });
+
+  it('maxConcurrent 邊界：在途數 = 上限-1 仍可選、= 上限回 null', () => {
+    const two = [{ x: 300, y: 300 }, { x: 700, y: 700 }];
+    expect(pickFireRainPoint(two, () => 0.5, FIRE_RAIN.radiusPx, 0, 3)).not.toBeNull(); // 2<3 可選
+    const three = [...two, { x: 1100, y: 300 }];
+    expect(pickFireRainPoint(three, () => 0.5, FIRE_RAIN.radiusPx, 0, 3)).toBeNull(); // 3>=3 滿
+  });
 });
