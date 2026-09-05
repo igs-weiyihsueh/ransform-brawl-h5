@@ -1,5 +1,9 @@
 import Phaser from 'phaser';
+import { UI_ICONS } from '@/config/uiConfig';
 import type { Hittable, Vec2 } from '@/systems/hitDetection';
+
+/** 守護波雕像貼圖 key。 */
+const STATUE_KEY = UI_ICONS.statue.key;
 
 /**
  * GuardTarget — 守護波要保護的雕像（新 entity）。
@@ -21,8 +25,24 @@ export class GuardTarget implements Hittable {
     this.maxHp = maxHp;
     this.hp = maxHp;
 
-    const body = scene.add.rectangle(0, 0, 90, 120, 0x9c8f6a);
-    body.setStrokeStyle(3, 0xffffff);
+    // 雕像本體：優先用 Unity 原圖 statue.png（148×292 直式），等比縮到視覺高度 ~150px（不變形）；
+    // 未載到則退回原方塊佔位（不壞）。origin 中心對齊 container，配合上方 label/下方血條位置。
+    let body: Phaser.GameObjects.GameObject;
+    if (scene.textures.exists(STATUE_KEY)) {
+      const img = scene.add.image(0, 0, STATUE_KEY).setOrigin(0.5, 0.5);
+      const src = scene.textures.get(STATUE_KEY).getSourceImage() as {
+        width: number;
+        height: number;
+      };
+      const targetH = 150;
+      const ratio = src.width && src.height ? src.width / src.height : 0.5;
+      img.setDisplaySize(targetH * ratio, targetH); // 等比：高 150、寬按 148:292 比例(~76)
+      body = img;
+    } else {
+      const rect = scene.add.rectangle(0, 0, 90, 120, 0x9c8f6a);
+      rect.setStrokeStyle(3, 0xffffff);
+      body = rect;
+    }
     const label = scene.add
       .text(0, -80, '守護目標', {
         fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',

@@ -49,7 +49,7 @@ await page.waitForTimeout(4000);
 const result = await page.evaluate(() => {
   const g = window.__PHASER_GAME__ || (window.Phaser && window.Phaser.GAMES && window.Phaser.GAMES[0]);
   if (!g) return { error: 'no game instance found on window' };
-  const keys = ['ui-ticket', 'ui-coin', 'ui-ring', 'ui-chest', 'ui-lamp', 'ui-platform'];
+  const keys = ['ui-ticket', 'ui-coin', 'ui-ring', 'ui-chest', 'ui-lamp', 'ui-platform', 'ui-statue'];
   const charSample = ['Human/idle/00', 'Enemy_Rush/idle/00'];
   const exists = {};
   for (const k of [...keys, ...charSample]) {

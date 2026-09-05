@@ -82,6 +82,8 @@ export const UI_ICONS = {
   lamp: { key: 'ui-lamp', path: 'assets/images/ui/lamp.png' },
   /** 待機台座（角色待機時站在上面的立足平台）。 */
   platform: { key: 'ui-platform', path: 'assets/images/ui/platform.png' },
+  /** 守護波雕像（GuardTarget，Unity Cainos TX Props Statue 切圖）。 */
+  statue: { key: 'ui-statue', path: 'assets/images/ui/statue.png' },
 } as const;
 
 /** UI 佈局 JSON（uiLayoutSchema 格式）：Phaser cache key + 載入路徑。 */
