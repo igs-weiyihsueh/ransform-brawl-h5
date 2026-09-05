@@ -434,3 +434,54 @@ describe('assertValidLevels — 大聲失敗', () => {
     expect((caught as LevelValidationError).errors.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// SpawnNodeData.attachFireRain（用戶#2 火雨波次事件，翼騎 a73b05d）：
+//   一般 Spawn 節點可 optional 附加火雨 preset 名。
+//   ⚠️ 零遊戲依賴慣例：validateSpawnNode 只驗「非空字串」，【不】驗 preset 名存不存在
+//      （不 import FIRE_RAIN_PRESETS，同 eventPresetName 不在此檔驗 GUARD_PRESETS 的慣例）。
+//      存在性交遊戲端 fallback（resolveFireRainForEvent / getFireRainPreset）。
+// ---------------------------------------------------------------------------
+describe('validateLevels — SpawnNode.attachFireRain（optional 附加火雨）', () => {
+  it('有值 = 非空字串（FireRain / FireRainHeavy）→ 過', () => {
+    const f = makeValidFile();
+    firstSpawnNode(f).attachFireRain = 'FireRain';
+    expect(validateLevels(f).ok).toBe(true);
+    const f2 = makeValidFile();
+    firstSpawnNode(f2).attachFireRain = 'FireRainHeavy';
+    expect(validateLevels(f2).ok).toBe(true);
+  });
+
+  it('省略（undefined）→ 過（optional，無火雨、不強制）', () => {
+    const f = makeValidFile();
+    // makeValidFile 的 Spawn 節點本來就沒帶 attachFireRain
+    delete firstSpawnNode(f).attachFireRain;
+    expect(validateLevels(f).ok).toBe(true);
+  });
+
+  it('★ 零遊戲依賴：亂填的非空字串（不存在的 preset 名）也【過】（只驗非空字串、不驗存在性）', () => {
+    const f = makeValidFile();
+    firstSpawnNode(f).attachFireRain = '不存在的火雨名亂填';
+    // 存在性交遊戲端 fallback，schema 層不 import FIRE_RAIN_PRESETS。別誤斷亂名要擋。
+    expect(validateLevels(f).ok).toBe(true);
+  });
+
+  // 🔴 壞版對照：空字串（有欄位但空）→ 擋。這條專抓「漏驗空字串、把 '' 當有效」。
+  it('壞版對照：空字串 "" → 擋（有欄位但空、不合法）', () => {
+    const f = makeValidFile();
+    firstSpawnNode(f).attachFireRain = '';
+    const errs = errorsOf(f);
+    expect(errs.length).toBeGreaterThan(0);
+    expect(mentionsField(errs, 'attachFireRain')).toBe(true);
+  });
+
+  // 🔴 壞版對照：非字串（數字 / null）→ 擋。
+  it('壞版對照：非字串（數字 / null）→ 擋', () => {
+    const f = makeValidFile();
+    firstSpawnNode(f).attachFireRain = 123;
+    expect(mentionsField(errorsOf(f), 'attachFireRain')).toBe(true);
+    const f2 = makeValidFile();
+    firstSpawnNode(f2).attachFireRain = null;
+    expect(mentionsField(errorsOf(f2), 'attachFireRain')).toBe(true);
+  });
+});

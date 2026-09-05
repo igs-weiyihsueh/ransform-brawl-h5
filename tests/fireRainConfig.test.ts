@@ -13,7 +13,7 @@ import {
  * Event 節點 eventPresetName 填火雨 preset 名→純火雨波;守護 preset 帶 attachFireRain→守護+火雨;
  * 純守護→不觸發。照 guardConfig preset 模式,不動凍結 levelSchema。含壞版必紅。
  * ⚠️ FireRainSystem/WaveSystem.getActiveFireRainPreset 每幀讀取入口屬 entity/狀態機層(需 boot)，
- *    見末段評估;決策核心 resolveFireRainForEvent 純函式完整鑑別。維度3 斷實際 preset/bool。
+ *    見末段評估;決策核心 resolveFireRainForEvent 純函式完整鑑別。維度3 斷實際 preset。
  */
 
 describe('isFireRainPreset — 火雨 preset 名判斷', () => {
@@ -46,36 +46,53 @@ describe('getFireRainPreset — 依名取 preset（查無 fallback）', () => {
   });
 });
 
-describe('resolveFireRainForEvent — Event 節點該用哪組火雨（三分支）', () => {
-  it('火雨 preset 名 → 該火雨 preset（純火雨波，不管 attach 旗標）', () => {
-    expect(resolveFireRainForEvent('FireRain', false)).toBe(FIRE_RAIN_PRESETS.FireRain);
-    expect(resolveFireRainForEvent('FireRainHeavy', false)).toBe(FIRE_RAIN_PRESETS.FireRainHeavy);
-    // 火雨名優先於 attach（火雨名本身就決定，不看守護旗標）。
-    expect(resolveFireRainForEvent('FireRainLight', true)).toBe(FIRE_RAIN_PRESETS.FireRainLight);
+describe('resolveFireRainForEvent — Event 節點該用哪組火雨（三分支，第二參數 string|undefined）', () => {
+  it('火雨 preset 名 → 該火雨 preset（純火雨波，不管守護 attach）', () => {
+    expect(resolveFireRainForEvent('FireRain', undefined)).toBe(FIRE_RAIN_PRESETS.FireRain);
+    expect(resolveFireRainForEvent('FireRainHeavy', undefined)).toBe(FIRE_RAIN_PRESETS.FireRainHeavy);
+    // 火雨名優先於守護 attach（火雨名本身就決定，不看守護的 attachFireRain）。
+    expect(resolveFireRainForEvent('FireRainLight', 'FireRainHeavy')).toBe(
+      FIRE_RAIN_PRESETS.FireRainLight,
+    );
   });
 
-  it('純守護名 + attach=false → null（不觸發火雨）', () => {
-    expect(resolveFireRainForEvent('Guard60', false)).toBeNull();
-    expect(resolveFireRainForEvent(undefined, false)).toBeNull();
+  it('純守護名 + attach=undefined（無附加火雨）→ null（不觸發火雨）', () => {
+    expect(resolveFireRainForEvent('Guard60', undefined)).toBeNull();
+    expect(resolveFireRainForEvent(undefined, undefined)).toBeNull();
+    // 空字串也是 falsy → 不觸發。
+    expect(resolveFireRainForEvent('Guard60', '')).toBeNull();
   });
 
-  it('守護名 + attach=true → 標準 FireRain（守護+火雨）', () => {
-    expect(resolveFireRainForEvent('Guard60', true)).toBe(FIRE_RAIN_PRESETS.FireRain);
-    expect(resolveFireRainForEvent(undefined, true)).toBe(FIRE_RAIN_PRESETS.FireRain);
+  it('★ 守護名 + attachFireRain = preset 名字串 → 回【該】preset（新簽章：string 決定哪組，非固定 FireRain）', () => {
+    // 舊 boolean true 語意=標準 FireRain；新 string 可指定任一 preset。
+    expect(resolveFireRainForEvent('Guard60', 'FireRain')).toBe(FIRE_RAIN_PRESETS.FireRain);
+    expect(resolveFireRainForEvent('Guard60', 'FireRainHeavy')).toBe(
+      FIRE_RAIN_PRESETS.FireRainHeavy,
+    );
+    expect(resolveFireRainForEvent('Guard60', 'FireRainLight')).toBe(
+      FIRE_RAIN_PRESETS.FireRainLight,
+    );
+    expect(resolveFireRainForEvent(undefined, 'FireRainHeavy')).toBe(
+      FIRE_RAIN_PRESETS.FireRainHeavy,
+    );
   });
 
   // 🔴 壞版對照：火雨名沒判 → 純火雨 Event 不觸發火雨（回 null，火雨波失效）。
   it('壞版對照：火雨名 FireRain 必回非 null（純火雨波要觸發）', () => {
-    expect(resolveFireRainForEvent('FireRain', false)).not.toBeNull();
+    expect(resolveFireRainForEvent('FireRain', undefined)).not.toBeNull();
   });
 
-  // 🔴 壞版對照：attach 沒判 → 守護+火雨（attach=true）漏觸發火雨（回 null）。
-  it('壞版對照：守護 attach=true 必回非 null（守護+火雨要觸發）', () => {
-    expect(resolveFireRainForEvent('Guard60', true)).not.toBeNull();
+  // 🔴 壞版對照：守護 attach = preset 名字串沒接 → 守護+火雨漏觸發（回 null），
+  //    且必須回【對應】preset（新簽章：Heavy 要回 Heavy，非固定 FireRain）。
+  it('壞版對照：守護 attach="FireRainHeavy" 必回 FireRainHeavy（沒接 string=回 null 或回錯 preset）', () => {
+    expect(resolveFireRainForEvent('Guard60', 'FireRainHeavy')).not.toBeNull();
+    expect(resolveFireRainForEvent('Guard60', 'FireRainHeavy')).toBe(
+      FIRE_RAIN_PRESETS.FireRainHeavy,
+    );
   });
 
-  // 🔴 壞版對照：純守護（attach=false）不得誤觸發火雨（必 null）。
-  it('壞版對照：純守護 attach=false 必回 null（不誤觸發）', () => {
-    expect(resolveFireRainForEvent('Guard60', false)).toBeNull();
+  // 🔴 壞版對照：純守護（無附加火雨 undefined/空）不得誤觸發火雨（必 null）。
+  it('壞版對照：純守護 attach=undefined 必回 null（不誤觸發）', () => {
+    expect(resolveFireRainForEvent('Guard60', undefined)).toBeNull();
   });
 });
