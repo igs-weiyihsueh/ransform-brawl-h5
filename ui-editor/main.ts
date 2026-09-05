@@ -36,7 +36,7 @@ function cloneLayout(src: UiLayoutFile): UiLayoutFile {
 }
 
 let layout: UiLayoutFile = cloneLayout(DEFAULT_UI_LAYOUT);
-let zoom = 0.45;
+let zoom = 2.0; // 預設從頭上 UI 區塊開始，放大看清 local 小尺寸；panel 切換時降到 0.45
 /** 目前選中的元素 key（如 'overhead.credit' / 'panel.chest'）。 */
 let selectedKey: string | null = null;
 
@@ -129,12 +129,21 @@ interface Editable {
 
 const stageEl = $('stage');
 
-/** 舞台上「頭上 UI 容器」編輯錨點：水平置中、上方 200px 處。 */
+/** 目前編輯的區塊。兩塊座標系不同，一次只顯示一塊（畫面乾淨、專注）。 */
+type Section = 'overhead' | 'panel';
+let currentSection: Section = 'overhead';
+/** 記住各區塊各自的選中元素（切換區塊時還原）。 */
+const selectedBySection: Record<Section, string | null> = { overhead: null, panel: null };
+
+/**
+ * 頭上 UI 容器編輯錨點：置中於舞台（此區塊單獨顯示，放大看清 local 相對位置）。
+ * local 座標基準=容器中心；容器 200×80 置中，四周留白供 zoom 放大檢視。
+ */
 function overheadContainerRect(): Rect {
   const ov = layout.overhead;
   const cx = layout.design.width / 2;
-  const topY = 200;
-  return { x: cx - ov.width / 2, y: topY, width: ov.width, height: ov.height };
+  const cy = layout.design.height / 2;
+  return { x: cx - ov.width / 2, y: cy - ov.height / 2, width: ov.width, height: ov.height };
 }
 
 /** 頭上容器中心（local 原點）在舞台的像素座標。 */
@@ -153,8 +162,12 @@ function slotRect(i: number): Rect {
   return { x, y, width: p.slotWidth, height: p.slotHeight };
 }
 
-/** 建立目前佈局的所有可編輯元素清單。 */
+/** 建立「目前區塊」的可編輯元素清單（一次只一塊）。 */
 function buildEditables(): Editable[] {
+  return currentSection === 'overhead' ? buildOverheadEditables() : buildPanelEditables();
+}
+
+function buildOverheadEditables(): Editable[] {
   const list: Editable[] = [];
   const ov = layout.overhead;
   const oOrigin = overheadOrigin();
@@ -207,7 +220,11 @@ function buildEditables(): Editable[] {
       if (r.y !== undefined) ov.energy.y = r.y;
     },
   });
+  return list;
+}
 
+function buildPanelEditables(): Editable[] {
+  const list: Editable[] = [];
   // panel 元素（第一版單人：編 P1 = columns[playerIndex 0] 的元素，相對 P1 欄左上）
   const p1 = slotRect(0);
   const pOrigin = { x: p1.x, y: p1.y };
@@ -255,36 +272,38 @@ function renderStage(): void {
   editables = buildEditables();
   stageEl.innerHTML = '';
 
-  // 底部 4 欄底框（遊戲樣式：圓角矩形，底 rgba(16,16,36,0.82)/白框；P2~P4 淡化）
-  for (let i = 0; i < layout.panel.slotCount; i += 1) {
-    const r = slotRect(i);
-    const slot = document.createElement('div');
-    slot.className = 'panel-slot-bg' + (i === 0 ? '' : ' inactive');
-    slot.style.left = `${r.x}px`;
-    slot.style.top = `${r.y}px`;
-    slot.style.width = `${r.width}px`;
-    slot.style.height = `${r.height}px`;
-    slot.style.borderRadius = `${layout.panel.cornerRadius}px`;
-    const lab = document.createElement('div');
-    lab.className = 'slot-label';
-    lab.textContent = `P${i + 1}${i === 0 ? '' : '（佔位）'}`;
-    slot.appendChild(lab);
-    stageEl.appendChild(slot);
+  if (currentSection === 'panel') {
+    // 底部 4 欄底框（遊戲樣式：圓角矩形，底 rgba(16,16,36,0.82)/白框；P2~P4 淡化）
+    for (let i = 0; i < layout.panel.slotCount; i += 1) {
+      const r = slotRect(i);
+      const slot = document.createElement('div');
+      slot.className = 'panel-slot-bg' + (i === 0 ? '' : ' inactive');
+      slot.style.left = `${r.x}px`;
+      slot.style.top = `${r.y}px`;
+      slot.style.width = `${r.width}px`;
+      slot.style.height = `${r.height}px`;
+      slot.style.borderRadius = `${layout.panel.cornerRadius}px`;
+      const lab = document.createElement('div');
+      lab.className = 'slot-label';
+      lab.textContent = `P${i + 1}${i === 0 ? '' : '（佔位）'}`;
+      slot.appendChild(lab);
+      stageEl.appendChild(slot);
+    }
+  } else {
+    // 頭上 UI 容器框（此區塊單獨顯示，置中放大檢視）
+    const oc = overheadContainerRect();
+    const cont = document.createElement('div');
+    cont.id = 'overhead-container';
+    cont.style.left = `${oc.x}px`;
+    cont.style.top = `${oc.y}px`;
+    cont.style.width = `${oc.width}px`;
+    cont.style.height = `${oc.height}px`;
+    const clab = document.createElement('div');
+    clab.className = 'slot-label';
+    clab.textContent = '頭上 UI 容器（跟隨玩家，local 相對中心）';
+    cont.appendChild(clab);
+    stageEl.appendChild(cont);
   }
-
-  // 頭上 UI 容器框
-  const oc = overheadContainerRect();
-  const cont = document.createElement('div');
-  cont.id = 'overhead-container';
-  cont.style.left = `${oc.x}px`;
-  cont.style.top = `${oc.y}px`;
-  cont.style.width = `${oc.width}px`;
-  cont.style.height = `${oc.height}px`;
-  const clab = document.createElement('div');
-  clab.className = 'slot-label';
-  clab.textContent = '頭上 UI（跟隨玩家）';
-  cont.appendChild(clab);
-  stageEl.appendChild(cont);
 
   // 各元素方框（聚焦模式）：只有「選中」那一個高亮 + 可拖拉/縮放；
   // 其餘半透明背景參考（不可拖，點一下=切換選中）。
@@ -312,14 +331,15 @@ function renderStage(): void {
       box.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         selectedKey = ed.key;
+        selectedBySection[currentSection] = ed.key;
         renderStage(); // 切換選中：重繪讓新選中的掛上拖拉、舊的變 dimmed
       });
     }
     stageEl.appendChild(box);
   }
 
-  // P2~P4 佔位欄：淡化(alpha 0.4)複製 P1 template icon（防漂移=顯示也用 columns[0]）。
-  renderPlaceholderColumns();
+  // P2~P4 佔位欄：只在 panel 區塊顯示（淡化複製 P1 template icon，防漂移）。
+  if (currentSection === 'panel') renderPlaceholderColumns();
 
   renderTree();
   renderInspector();
@@ -573,25 +593,22 @@ function renderSelectionOnly(): void {
 function renderTree(): void {
   const tree = $('tree');
   tree.innerHTML = '';
-  const groups: Array<{ name: string; prefix: string }> = [
-    { name: '頭上 UI', prefix: 'overhead.' },
-    { name: '底部面板（P1）', prefix: 'panel.' },
-  ];
-  for (const g of groups) {
-    const gl = document.createElement('div');
-    gl.className = 'tree-group';
-    gl.textContent = g.name;
-    tree.appendChild(gl);
-    for (const ed of editables.filter((e) => e.key.startsWith(g.prefix))) {
-      const item = document.createElement('div');
-      item.className = 'tree-item' + (ed.key === selectedKey ? ' selected' : '');
-      item.textContent = ed.label;
-      item.addEventListener('click', () => {
-        selectedKey = ed.key;
-        renderStage(); // 聚焦模式：切換選中要重掛拖拉到新元素、舊的變 dimmed
-      });
-      tree.appendChild(item);
-    }
+  // 只列目前區塊的元素（一次一塊）。
+  const groupName = currentSection === 'overhead' ? '頭上 UI' : '底部面板（P1）';
+  const gl = document.createElement('div');
+  gl.className = 'tree-group';
+  gl.textContent = groupName;
+  tree.appendChild(gl);
+  for (const ed of editables) {
+    const item = document.createElement('div');
+    item.className = 'tree-item' + (ed.key === selectedKey ? ' selected' : '');
+    item.textContent = ed.label;
+    item.addEventListener('click', () => {
+      selectedKey = ed.key;
+      selectedBySection[currentSection] = ed.key;
+      renderStage(); // 聚焦模式：切換選中要重掛拖拉到新元素、舊的變 dimmed
+    });
+    tree.appendChild(item);
   }
 }
 
@@ -684,8 +701,29 @@ function loadIntoState(file: UiLayoutFile, recordHistory = false): void {
 function selectFirstIfNone(): void {
   if (selectedKey === null && editables.length > 0) {
     selectedKey = editables[0].key;
+    selectedBySection[currentSection] = selectedKey;
     renderStage();
   }
+}
+
+/** 切換編輯區塊（頭上 UI / 下方面板）：一次只顯示一塊，還原該塊上次的選中。 */
+function switchSection(section: Section): void {
+  if (section === currentSection) return;
+  currentSection = section;
+  selectedKey = selectedBySection[section]; // 還原該塊上次選中（可能為 null）
+  // 更新 tab 樣式。
+  const tOv = document.getElementById('tab-overhead');
+  const tPn = document.getElementById('tab-panel');
+  if (tOv) tOv.classList.toggle('active', section === 'overhead');
+  if (tPn) tPn.classList.toggle('active', section === 'panel');
+  // 各塊預設 zoom：頭上塊小尺寸放大看(200%)、面板大尺寸縮小看全欄(45%)。同步滑桿。
+  zoom = section === 'overhead' ? 2.0 : 0.45;
+  const zoomInput = document.getElementById('zoom') as HTMLInputElement | null;
+  if (zoomInput) zoomInput.value = String(Math.round(zoom * 100));
+  applyZoom();
+  renderStage();
+  selectFirstIfNone();
+  setStatus(section === 'overhead' ? '編輯：頭上 UI（跟隨玩家）。' : '編輯：下方面板（P1）。', 'info');
 }
 
 async function loadDefault(): Promise<void> {
@@ -744,6 +782,8 @@ function resetDefault(): void {
 
 function bindUI(): void {
   $('schema-version').textContent = `schema v${UI_LAYOUT_SCHEMA_VERSION}`;
+  $('tab-overhead').addEventListener('click', () => switchSection('overhead'));
+  $('tab-panel').addEventListener('click', () => switchSection('panel'));
   $('btn-load-default').addEventListener('click', () => void loadDefault());
   $('btn-export').addEventListener('click', exportJson);
   $('btn-reset').addEventListener('click', resetDefault);

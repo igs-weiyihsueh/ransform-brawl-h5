@@ -41,6 +41,10 @@
       }
       button:hover { border-color: var(--accent); }
       button:disabled { opacity: 0.4; cursor: not-allowed; }
+      .tab-group { display: inline-flex; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+      .tab { border: 0; border-radius: 0; background: var(--panel2); padding: 6px 14px; }
+      .tab.active { background: var(--accent); color: #fff; }
+      .tab:hover { border-color: transparent; }
       button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
       .layout { display: flex; height: calc(100vh - 53px); }
       .stage-wrap {
@@ -135,10 +139,13 @@
     <header>
       <h1>UI 位置編輯器</h1>
       <span class="badge" id="schema-version"></span>
-      <span class="badge">1920 × 1080</span>
+      <span class="tab-group">
+        <button id="tab-overhead" class="tab active">頭上 UI</button>
+        <button id="tab-panel" class="tab">下方面板</button>
+      </span>
       <div class="row" style="margin:0; gap:6px;">
         <label style="width:auto;color:var(--muted)">縮放</label>
-        <input id="zoom" type="range" min="20" max="80" value="45" style="width:120px" />
+        <input id="zoom" type="range" min="20" max="300" value="200" style="width:120px" />
         <span id="zoom-val" class="badge"></span>
       </div>
       <div class="spacer"></div>
