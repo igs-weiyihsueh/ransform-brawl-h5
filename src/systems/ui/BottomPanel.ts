@@ -23,9 +23,12 @@ interface Slot {
   /** 寶盒圖示中心的螢幕座標（能量飛光終點；防漂移 template 錨點）。 */
   chestCenterX: number;
   chestCenterY: number;
-  /** 待機點螢幕座標（投幣進場起點 / 回待機終點）：欄上方中心。 */
+  /** 待機點螢幕座標（投幣進場起點 / 回待機終點）＝ layout 'platform' element 中心（可 ui-editor 調）。 */
   waitingX: number;
   waitingY: number;
+  /** 待機台座顯示尺寸（來自 layout 'platform' element；GameScene 畫台座時 setDisplaySize 用）。 */
+  waitingW: number;
+  waitingH: number;
 }
 
 /** 未加入欄的淡化透明度。 */
@@ -192,9 +195,15 @@ export class BottomPanel {
     const progress = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
     progress.setAlpha(alpha);
 
-    // 待機點：欄上方中心（角色投幣前站在自己面板欄上方待機；進場從這裡跳出、沒 Credit 回這裡）。
-    const waitingX = slotX + panel.slotWidth / 2;
-    const waitingY = slotY;
+    // 用戶 #1：待機平台移進下方面板 + 可 ui-editor 調位置。
+    // 待機站位改讀 layout element 'platform'（波騎 schema 同步中；沒有則 fallback 欄上方中心，schema 上了自動讀到）。
+    // 平台圖由 GameScene.drawWaitingPlatforms 在此 anchor 畫（已有、depth 面板<台座<角色），
+    // 待機角色也站此 anchor → 調 layout platform 位置，平台+待機角色一起動。此處只定 anchor，不重複畫圖。
+    const platEl = this.findEl(template, 'platform');
+    const waitingX = platEl ? slotX + platEl.x + platEl.width / 2 : slotX + panel.slotWidth / 2;
+    const waitingY = platEl ? slotY + platEl.y + platEl.height / 2 : slotY;
+    const waitingW = platEl?.width ?? 0; // 0 = 用 platform.png 原生尺寸（fallback，schema 未加時）
+    const waitingH = platEl?.height ?? 0;
 
     const slot: Slot = {
       playerIndex,
@@ -213,6 +222,8 @@ export class BottomPanel {
       chestCenterY,
       waitingX,
       waitingY,
+      waitingW,
+      waitingH,
     };
     this.drawProgress(slot, 0);
     return slot;
@@ -247,10 +258,10 @@ export class BottomPanel {
    * 待機點 = 該玩家面板欄上方中心（面板 scrollFactor 0 = 螢幕座標）。
    * playerIndex 無效或該欄未啟用（未加入）回 undefined（呼叫端 optional + fallback）。
    */
-  getWaitingAnchor(playerIndex: number): { x: number; y: number } | undefined {
+  getWaitingAnchor(playerIndex: number): { x: number; y: number; w: number; h: number } | undefined {
     const slot = this.slots[playerIndex];
     if (!slot || !slot.active) return undefined;
-    return { x: slot.waitingX, y: slot.waitingY };
+    return { x: slot.waitingX, y: slot.waitingY, w: slot.waitingW, h: slot.waitingH };
   }
 
   /** 目前欄數（= slotCount）。 */

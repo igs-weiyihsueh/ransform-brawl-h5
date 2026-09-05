@@ -64,9 +64,9 @@ export class UISystem implements GameSystem {
    * 委派 BottomPanel.getWaitingAnchor（界騎提供，權威來源）；未提供時回 undefined，
    * 呼叫端(GameScene)再 fallback，不阻塞。
    */
-  getWaitingAnchor(playerIndex: number): { x: number; y: number } | undefined {
+  getWaitingAnchor(playerIndex: number): { x: number; y: number; w?: number; h?: number } | undefined {
     const bp = this.bottomPanel as unknown as {
-      getWaitingAnchor?: (i: number) => { x: number; y: number } | undefined;
+      getWaitingAnchor?: (i: number) => { x: number; y: number; w?: number; h?: number } | undefined;
     };
     return bp.getWaitingAnchor?.(playerIndex);
   }

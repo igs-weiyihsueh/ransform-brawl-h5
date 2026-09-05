@@ -215,11 +215,13 @@ export class GameScene extends Phaser.Scene {
       if (!w) continue; // 該欄無待機點（未啟用）不畫
       // 台座往上抬，讓橢圓露在下方面板頂緣之上（否則被面板上緣蓋住看不清）；
       // 角色待機也踩在台座頂面（見 setWaiting 的 lift 對齊）。
-      this.add
+      const plat = this.add
         .image(w.x, w.y - WAITING_PLATFORM_LIFT, UI_ICONS.platform.key)
         .setOrigin(0.5, 0.5)
         .setScrollFactor(0)
         .setDepth(PANEL_DEPTH + 5); // 面板(1000) < 台座(1005) < 待機角色(1010)
+      // 用戶 #1：layout 'platform' element 有給尺寸則套（ui-editor 可調大小）；沒給用原生尺寸。
+      if (w.w && w.h) plat.setDisplaySize(w.w, w.h);
     }
   }
 
