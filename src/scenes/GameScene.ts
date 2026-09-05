@@ -125,6 +125,8 @@ export class GameScene extends Phaser.Scene {
 
     // 擊殺 → 給寶盒能量（依敵人類型 chestChargeFor）。
     spawner.onEnemyKilled = (enemyKey) => chest.addCharge(chestChargeFor(enemyKey));
+    // 防穿透對所有 player（多人）：讓 spawner 讀 players[]。
+    spawner.getAllPlayers = () => this.ctx.players;
 
     this.registerSystems();
 

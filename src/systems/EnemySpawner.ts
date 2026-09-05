@@ -36,6 +36,9 @@ export class EnemySpawner {
   /** 擊殺回呼（由 GameScene 設定，例如給寶盒能量）。帶被擊殺敵人的角色 key。 */
   onEnemyKilled: ((enemyKey: string) => void) | null = null;
 
+  /** 取得全部玩家（由 GameScene 注入）：供防穿透對所有 player 頂開。預設只有 P1。 */
+  getAllPlayers: () => readonly Player[] = () => [this.player];
+
   /** 生怪 API：生成一隻指定類型的敵人於 (x,y)，回傳該敵人。 */
   spawn(type: string, x: number, y: number): Enemy {
     const e = new Enemy(this.scene, x, y, type);
@@ -63,8 +66,21 @@ export class EnemySpawner {
     if (this.meleeCircleFlash > 0) this.meleeCircleFlash -= dt;
 
     const playerPos = this.player.getPosition();
-    for (const e of this.enemies) {
+    // separation：每幀給每個敵人「其他敵人位置」清單。
+    const positions = this.enemies.map((e) => e.getHitCenter());
+    for (let i = 0; i < this.enemies.length; i += 1) {
+      const e = this.enemies[i];
+      e.setNeighbors(positions.filter((_, j) => j !== i));
       e.update(playerPos, dt);
+    }
+
+    // 防穿透：敵人移動後，對所有 player 頂開（不穿透）。
+    const players = this.getAllPlayers().map((p) => ({
+      pos: p.getHitCenter(),
+      hitRadius: p.getHitRadius(),
+    }));
+    for (const e of this.enemies) {
+      e.resolvePenetration(players);
     }
 
     // 守護波：射彈打雕像；否則打玩家。

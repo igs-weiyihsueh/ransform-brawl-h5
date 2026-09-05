@@ -5,6 +5,11 @@ import { ENEMY_AI, type EnemyAIConfig } from '@/config/enemyConfig';
 import { PPU } from '@/config/gameConfig';
 import { CharacterAnimator, FRAME_SIZE } from '@/systems/CharacterAnimator';
 import {
+  calculateSeparation,
+  combineWithSeparation,
+  pushOutOfPlayer,
+} from '@/systems/enemySeparation';
+import {
   buildAttackCircle,
   type Hittable,
   type Vec2,
@@ -74,6 +79,46 @@ export class Enemy implements Hittable {
   /** 設定/清除守護目標覆蓋（守護波開始設雕像、結束清回玩家）。 */
   setGuardTarget(target: { getPosition(): Vec2 } | null): void {
     this.guardTarget = target;
+  }
+
+  /** 本幀其他敵人位置（EnemySpawner 每幀在 update 前設；供 separation 用）。 */
+  private neighbors: readonly Vec2[] = [];
+
+  /** 設定本幀鄰居（其他存活敵人位置，不含自己）。 */
+  setNeighbors(others: readonly Vec2[]): void {
+    this.neighbors = others;
+  }
+
+  /** 敵人 body 半徑（像素）：用碰撞半徑當 body 半徑（含 perCharScale 放大）。 */
+  getBodyRadius(): number {
+    return this.radiusPx;
+  }
+
+  /** 防穿透：把自己推到「距每個 player 至少 minDist」的邊緣（死亡不頂）。 */
+  resolvePenetration(players: readonly { pos: Vec2; hitRadius: number }[]): void {
+    if (this.dead || this.state === 'death') return;
+    for (const p of players) {
+      const minDist = p.hitRadius + this.radiusPx;
+      const fixed = pushOutOfPlayer(
+        { x: this.anim.sprite.x, y: this.anim.sprite.y },
+        p.pos,
+        minDist,
+      );
+      this.anim.sprite.x = fixed.x;
+      this.anim.sprite.y = fixed.y;
+    }
+  }
+
+  /** 追擊移動：朝 aim 疊加分離力後正規化、按速度位移。 */
+  private moveChase(aimDx: number, aimDy: number, dt: number): void {
+    const speedPx = this.cfg.moveSpeed * PPU;
+    const sep = calculateSeparation(
+      { x: this.anim.sprite.x, y: this.anim.sprite.y },
+      this.neighbors,
+    );
+    const dir = combineWithSeparation({ x: aimDx, y: aimDy }, sep);
+    this.anim.sprite.x += dir.x * speedPx * dt;
+    this.anim.sprite.y += dir.y * speedPx * dt;
   }
 
   /** 定身（麻痺/凍結）剩餘秒數：>0 時 update 停止行動（移動/攻擊）。 */
@@ -183,9 +228,7 @@ export class Enemy implements Hittable {
           this.timer = this.cfg.chargeTime;
           this.anim.play('idle');
         } else if (dist <= detectPx && dist > 0.001) {
-          const speedPx = this.cfg.moveSpeed * PPU;
-          this.anim.sprite.x += (dx / dist) * speedPx * dt;
-          this.anim.sprite.y += (dy / dist) * speedPx * dt;
+          this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加
           this.anim.play('move');
         } else {
           this.anim.play('idle');
@@ -217,9 +260,7 @@ export class Enemy implements Hittable {
         this.timer -= dt;
         // 冷卻期間仍會追（若玩家跑出攻擊距離）。
         if (dist > attackPx && dist <= detectPx && dist > 0.001) {
-          const speedPx = this.cfg.moveSpeed * PPU;
-          this.anim.sprite.x += (dx / dist) * speedPx * dt;
-          this.anim.sprite.y += (dy / dist) * speedPx * dt;
+          this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加
           this.anim.play('move');
         } else {
           this.anim.play('idle');
