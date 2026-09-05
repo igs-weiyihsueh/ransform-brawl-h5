@@ -108,18 +108,18 @@ export function attackFacing(
 }
 
 /**
- * 敵人視覺 flipX（用戶回歸：敵人 attack 貼圖美術基準與 move/idle 相反，預先鏡像）。
- * move/idle/其他動畫：flipX = (facing < 0)（現行敵人慣例，正確）。
- * **attack 系動畫：相反**（flipX = !(facing < 0) = facing >= 0），補償 attack 美術預鏡像。
- * 診斷（截圖視覺鐵證）：同一 flipX=true 下 move 視覺朝左（對）、attack 視覺朝右（背對），
- * 故 attack 需多翻一次才與 move 同朝向。純函式，給測騎測（move/idle→facing<0、attack→相反、切換重算）。
+ * 敵人視覺 flipX（用戶 #8 根治）：敵人美術**天生朝左**（放大原始幀地基真相：Rush/Ranged/Elite × idle/move 全朝左、0 例外），
+ * 與玩家美術同朝向，故用**與玩家一致的慣例** flipX = (facing > 0)：
+ *   facing=+1（面右）→ flipX=true（翻成朝右）；facing=-1（面左）→ flipX=false（不翻＝朝左）。
+ * 全動作統一（idle/move/attack 同式）——先前以為 attack 美術基準相反（0dbdd18 特例），
+ * 更深診斷推翻：真因是敵人 base 慣例整個反了（原 facing<0），attack 特例只是碰巧等於正確慣例。
+ * 此處統一成 facing>0 後所有動作都朝玩家、移除 attack 特例。animKey 保留於簽名（給測騎契約穩定，現不影響結果）。
+ * 純函式，給測騎測（全動作 facing>0：面右→true、面左→false，idle/move/attack 一致）。
  * @param facing 面向：+1 面右、-1 面左。
- * @param animKey 當前動畫 state（如 'move' | 'idle' | 'attack'）。
+ * @param _animKey 當前動畫 state（現不影響結果；保留簽名相容）。
  */
-export function enemyFlipForAnim(facing: number, animKey: string): boolean {
-  const base = facing < 0; // 敵人一般慣例（move/idle 正確）
-  const isAttack = /attack/i.test(animKey);
-  return isAttack ? !base : base; // attack 美術基準相反 → 多翻一次
+export function enemyFlipForAnim(facing: number, _animKey?: string): boolean {
+  return facing > 0; // 敵人美術朝左、與玩家同慣例：面右才翻
 }
 
 /**
