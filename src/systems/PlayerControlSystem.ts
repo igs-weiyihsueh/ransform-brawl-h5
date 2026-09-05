@@ -105,7 +105,12 @@ export class PlayerControlSystem implements GameSystem {
 
     // 地圖邊界夾限（LateUpdate 性質：移動/衝刺後才修正）。
     // 進場中(isJumping)不夾限（從場外跳進來，項目 3 待機區進場鉤子）；只在真超界才寫回。
-    if (!player.isJumping) {
+    // 防呆：若 player 未提供 getPosition/setPosition（如精簡測試 stub）則跳過（對應 Unity 的 null-guard）。
+    if (
+      !player.isJumping &&
+      typeof player.getPosition === 'function' &&
+      typeof player.setPosition === 'function'
+    ) {
       const pos = player.getPosition();
       const c = clampToBounds(pos.x, pos.y);
       if (c.changed) player.setPosition(c.x, c.y);
