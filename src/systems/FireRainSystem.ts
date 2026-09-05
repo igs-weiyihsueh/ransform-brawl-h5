@@ -26,6 +26,8 @@ export class FireRainSystem implements GameSystem {
   private active = false;
   private spawnCooldown = 0;
   private strikes: Strike[] = [];
+  /** 宣告字播放中（Unity FireRainTextUI 序列：演完才落第一道火雨）。 */
+  private announcing = false;
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
@@ -38,6 +40,9 @@ export class FireRainSystem implements GameSystem {
     if (shouldRun && !this.active) this.start();
     else if (!shouldRun && this.active) this.stop();
     if (!this.active) return;
+
+    // 宣告字「天降火雨！」演出中：先不落火雨（Unity 序列：演完才降）。
+    if (this.announcing) return;
 
     // 每 interval 齊落 burstCount 道。
     this.spawnCooldown -= dt;
@@ -60,10 +65,21 @@ export class FireRainSystem implements GameSystem {
     this.active = true;
     this.spawnCooldown = 0; // 立即第一批
     this.strikes = [];
+    // 火雨宣告字（只在每場守護波火雨開始這一次）：左滑進→停3s→右滑出，演完才落第一道火雨。
+    if (typeof this.ctx.effects.fireRainAnnounce === 'function') {
+      this.announcing = true;
+      this.ctx.effects.fireRainAnnounce(() => {
+        this.announcing = false;
+        this.spawnCooldown = 0; // 宣告演完 → 立刻落第一批
+      });
+    } else {
+      this.announcing = false; // 無宣告字 API（後備）→ 直接開始火雨
+    }
   }
 
   private stop(): void {
     this.active = false;
+    this.announcing = false;
     for (const s of this.strikes) s.ring.destroy();
     this.strikes = [];
   }

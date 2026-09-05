@@ -464,4 +464,50 @@ export class EffectSystem {
       });
     }
   }
+
+  /**
+   * 火雨宣告字（對應 Unity FireRainTextUI）：大字「天降火雨！」
+   * 左外滑進中央(0.4s) → 停留 3s → 右滑出畫面(0.4s) → onDone（火雨才開始）。
+   * 深度最上層（蓋遊戲但在最上）；置中略偏上（y+60）。純視覺。
+   * @param onDone 右滑出完成後回呼（FireRainSystem 用來延遲第一道火雨）。
+   */
+  fireRainAnnounce(onDone?: () => void): void {
+    const cx = GAME_WIDTH / 2;
+    const cy = GAME_HEIGHT / 2 - 60; // 略偏上（Unity y+60，畫面中央往上）
+    const txt = this.scene.add.text(cx, cy, '天降火雨！', {
+      fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+      fontSize: '96px',
+      color: '#ffdd44',
+      fontStyle: 'bold',
+      stroke: '#7a1500',
+      strokeThickness: 10,
+    });
+    txt.setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 20);
+    const startX = -GAME_WIDTH * 0.5; // 左外
+    const endX = GAME_WIDTH * 1.5; // 右外
+    txt.x = startX;
+    const slideMs = 400; // Unity SlideDuration 0.4s
+    const holdMs = 3000; // 停留 3s
+    // 左滑進中央。
+    this.scene.tweens.add({
+      targets: txt,
+      x: cx,
+      duration: slideMs,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        // 停留後右滑出 → 銷毀 → onDone（火雨才開始）。
+        this.scene.tweens.add({
+          targets: txt,
+          x: endX,
+          delay: holdMs,
+          duration: slideMs,
+          ease: 'Cubic.easeIn',
+          onComplete: () => {
+            txt.destroy();
+            onDone?.();
+          },
+        });
+      },
+    });
+  }
 }
