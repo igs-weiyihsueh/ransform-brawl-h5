@@ -23,6 +23,8 @@ import type { GameSystem } from '@/systems/GameSystem';
 import { HelmetSystem } from '@/systems/HelmetSystem';
 import { InputSystem } from '@/systems/InputSystem';
 import { JpSystem } from '@/systems/JpSystem';
+import { JpLampHud } from '@/systems/ui/JpLampHud';
+import { pickLightGroup } from '@/config/jpConfig';
 import { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import { TransformSystem } from '@/systems/TransformSystem';
 import { TicketSystem } from '@/systems/TicketSystem';
@@ -47,6 +49,8 @@ export class GameScene extends Phaser.Scene {
   private ctx!: GameContext;
   /** UISystem 實例（create 提前建立供擊殺回呼取寶盒錨點；registerSystems 再註冊）。 */
   private uiSystem!: UISystem;
+  /** 用戶 #3：JP 燈 HUD（3組×5顆，飛光終點+反映 JpSystem litCount）。 */
+  private jpLampHud?: JpLampHud;
 
   /** 試玩模式注入的關卡（由 main.ts 經 scene data 傳入）；一般玩家為 undefined。 */
   private previewLevels?: LevelData[];
@@ -182,13 +186,20 @@ export class GameScene extends Phaser.Scene {
       effects.comboReward(pos.x, pos.y, count, tickets, isMax, playerColor(pid));
     };
 
-    // 獎勵節點報獎演出（用戶 #3，純視覺）：進 Reward 節點 → 「恭喜獲獎！」banner + 飛光到 JP 燈 → 到達點亮 JP 燈。
-    // 飛光起點保底：進度條上緣中央（H5 進度條在頂部；取不到精確 marker 用此）。⚠️ 點燈數值由 jp.lightNextReward 負責。
+    // 用戶 #3 收尾：JP 燈 HUD（3組×5顆，機台 jackpot 三層感），每幀反映 JpSystem litCount。
+    this.jpLampHud = new JpLampHud(this);
+
+    // 獎勵節點報獎演出（用戶 #3，純視覺）：進 Reward 節點 → 「恭喜獲獎！」banner + 飛光到「該組下一顆 JP 燈」→ 到達點亮該燈。
+    // 先 pickLightGroup 決定要點哪組 → 飛光飛向該組真燈位置 → 到達 jp.addRewardLight(該組) 點亮（看得到燈號增加）。
     wave.onReward = () => {
       const markerX = GAME_WIDTH * 0.5;
-      const markerY = 120; // 進度條在螢幕頂部區域
-      effects.rewardFanfare(markerX, markerY, () => {
-        jp.lightNextReward(); // 光到達 JP 燈才點亮下一顆（保底：即使無實體 JP UI 也點燈、不漏獎）
+      const markerY = 120;
+      const group = pickLightGroup(); // 先決定點哪組，飛光才能飛向該組真燈
+      const anchor = this.jpLampHud?.getNextLampAnchor(group, jp.getLights(group));
+      const toX = anchor?.x ?? markerX;
+      const toY = anchor?.y ?? 60;
+      effects.rewardFanfare(markerX, markerY, toX, toY, () => {
+        jp.addRewardLight(group); // 光到達該組下一顆燈才點亮（HUD 下一幀反映）；集滿派彩+循環
       });
     };
 
@@ -284,6 +295,8 @@ export class GameScene extends Phaser.Scene {
     for (const sys of this.systems) {
       sys.update(dt);
     }
+    // 用戶 #3：JP 燈 HUD 反映 JpSystem 各組 litCount（純顯示，僅變動時重繪）。
+    this.jpLampHud?.update((g) => this.ctx.jp.getLights(g));
   }
 
   /** 場景關閉：依序清理每個 system，清空 registry。由 SHUTDOWN 事件觸發。 */

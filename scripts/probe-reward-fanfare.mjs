@@ -21,10 +21,12 @@ const ready = await page.evaluate(()=>{
 });
 const before = await page.evaluate(()=>{ const j=window.__ctx.jp; return j.getLights('red')+j.getLights('blue')+j.getLights('purple'); });
 console.log('ctx 可達?', ready, '| JP 燈總數 before =', before);
-// 觸發報獎演出(等同進 Reward 節點的 onReward)。
+// 觸發報獎演出(等同進 Reward 節點的 onReward)。先讀哪組會被點(這裡直接模擬 GameScene 的 onReward 完整流程)。
 await page.evaluate(()=>{
   const ctx=window.__ctx;
-  ctx.effects.rewardFanfare(640, 120, ()=> ctx.jp.lightNextReward());
+  const gs=window.__PHASER_GAME__.scene.getScene('GameScene');
+  // 直接呼 GameScene 綁的 wave.onReward(它內部 pickLightGroup+飛向真燈+addRewardLight)。
+  if (ctx.wave.onReward) ctx.wave.onReward();
 });
 // banner 出現期(浮現後)截圖 + 檢查文字。
 await page.waitForTimeout(600);
@@ -38,5 +40,13 @@ await page.waitForTimeout(4200);
 const after = await page.evaluate(()=>{ const j=window.__ctx.jp; return j.getLights('red')+j.getLights('blue')+j.getLights('purple'); });
 console.log('[#3 驗] 恭喜獲獎 banner 出現=', bannerSeen, ' | JP 燈總數 after =', after, ' (before', before, ')');
 console.log('  banner:', bannerSeen?'PASS':'FAIL', '| 飛光到達點亮 JP 燈(+1):', after===before+1?'PASS':`注意 (${before}→${after})`);
+// JP 燈 HUD: 應有 3組×5顆=15 顆燈 graphics + JP1/JP2/JP3 標籤。
+const hud = await page.evaluate(()=>{
+  const gs=window.__PHASER_GAME__.scene.getScene('GameScene');
+  let labels=0; const walk=(l)=>l.forEach((o)=>{ if(o.type==='Text'&&/^JP[123]$/.test((o.text||'').trim())) labels++; if(o.list) walk(o.list); }); walk(gs.children.list);
+  return { jpLabels: labels };
+});
+console.log('  JP 燈 HUD 標籤(JP1/JP2/JP3):', hud.jpLabels, hud.jpLabels===3?'PASS 3組':'注意');
+await page.screenshot({ path: path.join(__dirname,'..','probe-shot-reward-final.png') }); // 點燈後
 await browser.close(); server.close();
 console.log('DONE');

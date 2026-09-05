@@ -98,17 +98,26 @@ export class JpSystem implements GameSystem {
 
   /**
    * 獎勵節點點亮下一顆 JP 燈（用戶 #3，對應 Unity JPLampController.LightNext(rewardJpGroup)）。
-   * 由獎勵演出「飛光到達 JP 燈」時呼叫。隨機一組 +1（與 onStageClear 同 pickLightGroup 慣例），集滿派彩。
+   * 隨機挑一組後點亮該組下一顆（同 onStageClear pickLightGroup 慣例）。集滿(5)→派彩+歸零(循環回第1顆)。
    * @returns 點亮的組別（供演出/HUD 顯示）。
    */
   lightNextReward(): JpGroup {
     const g = pickLightGroup();
+    this.addRewardLight(g);
+    return g;
+  }
+
+  /**
+   * 點亮指定組的下一顆 JP 燈（用戶 #3：飛光到達該組真燈時呼叫，看得到燈號增加）。
+   * +1 燈；集滿(JP_LIGHTS_TO_TRIGGER=5)→派彩並歸零（Unity 5 顆全亮→循環回第 1 顆）。
+   * @param g 目標組（GameScene 先 pickLightGroup 決定、飛光飛向該組真燈）。
+   */
+  addRewardLight(g: JpGroup): void {
     const st = this.groups[g];
     st.lights += 1;
     if (st.lights >= JP_LIGHTS_TO_TRIGGER) {
-      this.trigger(g);
+      this.trigger(g); // 集滿派彩（payout 內歸零＝循環回第 1 顆）
     }
-    return g;
   }
 
   /** 觸發某組：BOSS 閘門（H5 先直接派彩）→ 派彩 → 歸零重累積。 */

@@ -345,11 +345,18 @@ export class EffectSystem {
    *  3. banner 退出。
    *  4. 一道光從 banner 燈號圖飛到 JP 燈錨點（取不到起點 → 用進度條該獎勵節點 marker）。
    *  5. 光到達 → onArrive()（呼叫端點亮 JP 下一顆燈）。
-   * 純視覺；點燈的數值變更由 onArrive 內的 JpSystem.lightNextReward 負責（與此解耦）。
-   * @param markerX,markerY 進度條該獎勵節點 marker 螢幕座標（飛光起點保底）。
+   * 純視覺；點燈的數值變更由 onArrive 內的 JpSystem.addRewardLight 負責（與此解耦）。
+   * @param markerX,markerY 進度條該獎勵節點 marker 螢幕座標（飛光起點保底，banner 燈號圖取不到時用）。
+   * @param jpX,jpY 飛光終點＝該組下一顆 JP 燈的螢幕座標（HUD 提供；取不到時呼叫端給保底）。
    * @param onArrive 光到達 JP 燈時的 callback（點燈）。取不到位置時仍會呼叫（不漏獎）。
    */
-  rewardFanfare(markerX: number, markerY: number, onArrive: () => void): void {
+  rewardFanfare(
+    markerX: number,
+    markerY: number,
+    jpX: number,
+    jpY: number,
+    onArrive: () => void,
+  ): void {
     const cx = GAME_WIDTH * 0.5;
     const bannerY = GAME_HEIGHT * 0.62;
     const hasLamp = this.scene.textures.exists(UI_ICONS.lamp.key);
@@ -408,23 +415,24 @@ export class EffectSystem {
         ease: 'Sine.easeIn',
         onComplete: () => group.forEach((o) => o.destroy()),
       });
-      // 飛光 → JP 燈錨點（螢幕上緣中央的 JP 燈位置）。
-      this.flyRewardLight(lampX, lampY, onArrive);
+      // 飛光 → 該組下一顆 JP 燈（HUD 提供的真燈座標）。
+      this.flyRewardLight(lampX, lampY, jpX, jpY, onArrive);
     });
   }
 
-  /** JP 燈錨點（螢幕座標，上緣中央；H5 尚無實體 JP 燈 UI，用此當飛光終點+點亮脈動位置）。 */
-  private jpLampAnchor(): { x: number; y: number } {
-    return { x: GAME_WIDTH * 0.5, y: 60 };
-  }
-
   /**
-   * 獎勵飛光（用戶 #3）：一道金光從起點飛到 JP 燈錨點（~0.7s），到達 → onArrive() + JP 燈點亮脈動。
+   * 獎勵飛光（用戶 #3）：一道金光從起點飛到 JP 燈（~0.7s），到達 → onArrive() + 該燈點亮脈動。
    * @param fromX,fromY 起點（banner 燈號圖 or 進度條 marker）。
+   * @param toX,toY 終點（該組下一顆 JP 燈螢幕座標）。
    * @param onArrive 到達 callback（點燈）。
    */
-  private flyRewardLight(fromX: number, fromY: number, onArrive: () => void): void {
-    const to = this.jpLampAnchor();
+  private flyRewardLight(
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    onArrive: () => void,
+  ): void {
     const dot = this.scene.add.graphics().setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 9);
     dot.fillStyle(0xffe64d, 1);
     dot.fillCircle(0, 0, 12);
@@ -432,8 +440,8 @@ export class EffectSystem {
     dot.y = fromY;
     this.scene.tweens.add({
       targets: dot,
-      x: to.x,
-      y: to.y,
+      x: toX,
+      y: toY,
       scale: { from: 1, to: 1.4 },
       duration: 700,
       ease: 'Sine.easeInOut',
@@ -444,8 +452,8 @@ export class EffectSystem {
         const flash = this.scene.add.graphics().setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 9);
         flash.fillStyle(0xffe64d, 0.9);
         flash.fillCircle(0, 0, 20);
-        flash.x = to.x;
-        flash.y = to.y;
+        flash.x = toX;
+        flash.y = toY;
         this.scene.tweens.add({
           targets: flash,
           scale: { from: 0.6, to: 2.2 },
