@@ -510,4 +510,33 @@ export class EffectSystem {
       },
     });
   }
+
+  /**
+   * 一般波敵人登場預警圈（對應 Unity SpawnEnemyWithWarning warningSprite）：
+   * 生成點畫紅圈，alpha 從 0 淡入到 1（durationSec），depth 低（在地上、怪之下）→ onDone（怪才出現）。
+   * @param onDone 淡入完成回呼（WaveSystem 用來在該點生成敵人）。
+   */
+  spawnWarning(x: number, y: number, durationSec: number, onDone?: () => void): void {
+    const radiusPx = 44;
+    const g = this.scene.add.graphics();
+    g.fillStyle(0xff3322, 0.35);
+    g.fillCircle(0, 0, radiusPx);
+    g.lineStyle(3, 0xff6644, 0.9);
+    g.strokeCircle(0, 0, radiusPx);
+    g.x = x;
+    g.y = y;
+    g.setDepth(-6); // 在地上、角色（PLAY_DEPTH=10）之下
+    g.setAlpha(0);
+    // alpha 0→1 淡入（Unity fadeTimer/duration）。
+    this.scene.tweens.add({
+      targets: g,
+      alpha: 1,
+      duration: durationSec * 1000,
+      ease: 'Linear',
+      onComplete: () => {
+        g.destroy();
+        onDone?.();
+      },
+    });
+  }
 }

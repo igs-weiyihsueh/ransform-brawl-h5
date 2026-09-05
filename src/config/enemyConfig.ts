@@ -10,6 +10,12 @@ import type { AttackData } from '@/systems/AttackData';
 /** 敵人攻擊方式：近戰圓形判定 or 射出射彈。 */
 export type EnemyAttackKind = 'melee' | 'projectile';
 
+/**
+ * 一般波敵人登場預警時間（秒，對應 Unity spawnWarningDuration=3）：
+ * 生成點先冒預警圈淡入這麼久 → 怪才原地出現（非場邊走進）。守護波不用（維持場邊走進）。
+ */
+export const SPAWN_WARNING_DURATION_SEC = 3;
+
 export interface EnemyAIConfig {
   /** 對應動畫角色 key（也決定 perCharScale）。 */
   characterKey: string;

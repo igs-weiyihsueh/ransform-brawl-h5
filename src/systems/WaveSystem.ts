@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { loadLevels } from '@/config/levelLoader';
+import { SPAWN_WARNING_DURATION_SEC } from '@/config/enemyConfig';
 import type {
   EnemyType,
   LevelData,
@@ -52,6 +53,8 @@ export class WaveSystem implements GameSystem {
   private spawnCooldown = 0;
   /** 本系統生出、目前仍追蹤中的敵人（用來偵測擊殺）。 */
   private tracked: Enemy[] = [];
+  /** 預警中（登場預警圈淡入中、敵人尚未生成）的數量：計入 alive，避免預警期間超生。 */
+  private pendingSpawns = 0;
 
   /** 一幕通關回呼（本關 nodes 全跑完時觸發，供 JP 給燈）。 */
   onStageClear: (() => void) | null = null;
@@ -170,6 +173,7 @@ export class WaveSystem implements GameSystem {
     this.kills = 0;
     this.spawnCooldown = 0;
     this.tracked = [];
+    this.pendingSpawns = 0; // 換節點清預警帳
     this.announceNode();
   }
 
@@ -220,7 +224,7 @@ export class WaveSystem implements GameSystem {
       this.spawnCooldown -= dt;
     }
 
-    const alive = this.tracked.length;
+    const alive = this.tracked.length + this.pendingSpawns; // 含預警中(pending)避免超生
     // 存活 < spawnThreshold 時，滴流補到 maxAlive（每 spawnInterval 生一隻）。
     if (alive < spawnThreshold && this.spawnCooldown <= 0 && alive < maxAlive) {
       this.spawnOne(node.spawns);
@@ -255,8 +259,20 @@ export class WaveSystem implements GameSystem {
     const type = this.pickWeighted(spawns);
     if (!type) return;
     const { x, y } = this.pickSpawnPosition();
-    const enemy = this.ctx.spawner.spawn(type, x, y);
-    this.tracked.push(enemy);
+    // 一般波 Unity 登場：生成點先冒預警圈淡入 spawnWarningDuration → 怪才原地出現（非場邊走進）。
+    // 預警期間計入 pendingSpawns（維持 maxAlive 帳），淡入完才真正 spawn + 移入 tracked。
+    this.pendingSpawns += 1;
+    const doSpawn = (): void => {
+      this.pendingSpawns = Math.max(0, this.pendingSpawns - 1);
+      // 若關卡已離開此節點/系統重置，pending 已在 enterNode 清零；仍生也無害（追蹤即可）。
+      const enemy = this.ctx.spawner.spawn(type, x, y);
+      this.tracked.push(enemy);
+    };
+    if (this.ctx.effects && typeof this.ctx.effects.spawnWarning === 'function') {
+      this.ctx.effects.spawnWarning(x, y, SPAWN_WARNING_DURATION_SEC, doSpawn);
+    } else {
+      doSpawn(); // 無預警 API（後備）→ 直接生成
+    }
   }
 
   /** 輪盤法：依相對權重挑一個敵種。 */
