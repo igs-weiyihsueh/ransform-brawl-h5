@@ -1,8 +1,10 @@
+import Phaser from 'phaser';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import type { Enemy } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import type { Vec2 } from '@/systems/hitDetection';
+import { PANEL_DEPTH } from '@/config/uiConfig';
 import {
   GRAB,
   GRABBER_SPEED_PX,
@@ -21,6 +23,7 @@ interface GrabState {
   grabbed: boolean; // 已被抓（倒數中）
   countdown: number; // 被抓倒數剩餘
   wasAttacking: boolean; // 上幀是否攻擊中（偵測攻擊掙脫）
+  hint: Phaser.GameObjects.Text | null; // 被抓 UI 提示（按攻擊掙脫! + 倒數）
 }
 
 /**
@@ -40,7 +43,7 @@ export class GrabSystem implements GameSystem {
   private stateOf(pid: number): GrabState {
     let s = this.states.get(pid);
     if (!s) {
-      s = { idle: 0, prevCombo: 0, grabber: null, grabbed: false, countdown: 0, wasAttacking: false };
+      s = { idle: 0, prevCombo: 0, grabber: null, grabbed: false, countdown: 0, wasAttacking: false, hint: null };
       this.states.set(pid, s);
     }
     return s;
@@ -102,10 +105,12 @@ export class GrabSystem implements GameSystem {
       s.grabbed = true;
       s.countdown = GRAB.grabCountdownSeconds;
       player.setGrabbed(true);
+      grabber.setGrabberLocked?.(true); // 抓住→grabber 站著維持 idle（用戶新#5）
+      s.wasAttacking = true; // 觸碰當幀若玩家正攻擊，不立即誤判為掙脫（等下一次新起攻擊）
     }
   }
 
-  /** 被抓：倒數；攻擊掙脫 or 倒數到自動掙脫。 */
+  /** 被抓：顯示掙脫提示+倒數；攻擊掙脫 or 倒數到自動掙脫。 */
   private updateGrabbed(player: Player, s: GrabState, dt: number): void {
     const attackingNow = typeof player.isAttacking === 'function' ? player.isAttacking() : false;
     const attackEdge = attackingNow && !s.wasAttacking; // 本幀新起攻擊 = 掙脫
@@ -114,17 +119,39 @@ export class GrabSystem implements GameSystem {
     const { remaining, autoEscape } = tickGrabCountdown(s.countdown, dt);
     s.countdown = remaining;
 
+    // 用戶新#3：被抓 UI 提示 + 倒數秒數（per-player，跟隨玩家頭上）。
+    const pc = player.getHitCenter();
+    const secs = Math.ceil(remaining);
+    if (!s.hint) {
+      s.hint = this.ctx.scene.add
+        .text(pc.x, pc.y - 90, '', {
+          fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+          fontSize: '22px',
+          color: '#ffe64d',
+          fontStyle: 'bold',
+          stroke: '#000000',
+          strokeThickness: 5,
+          align: 'center',
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(PANEL_DEPTH + 20);
+    }
+    s.hint.setPosition(pc.x, pc.y - 90);
+    s.hint.setText(`按攻擊掙脫！\n${secs}`);
+    s.hint.setVisible(true);
+
     if (attackEdge || autoEscape) {
       this.escape(player, s);
     }
   }
 
-  /** 掙脫：解除被抓、grabber 被擊退回一般 AI。 */
+  /** 掙脫：解除被抓、grabber 被擊退回一般 AI、清 UI。 */
   private escape(player: Player, s: GrabState): void {
     player.setGrabbed(false);
     if (s.grabber && !s.grabber.isDead()) {
       s.grabber.releaseGrabberWithKnockback(player.getHitCenter());
     }
+    if (s.hint) { s.hint.destroy(); s.hint = null; } // 清掙脫 UI
     s.grabber = null;
     s.grabbed = false;
     s.countdown = 0;

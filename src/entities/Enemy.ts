@@ -91,6 +91,8 @@ export class Enemy implements Hittable {
 
   /** grabber（抓人者，用戶試玩#4）：設為 grabber 後由 GrabSystem 驅動追玩家、衝來期間無敵、暫停一般 AI。 */
   private grabber = false;
+  /** grabber 已抓住玩家（鎖定）：站著維持 idle（用戶新#5），非追擊 move。 */
+  private grabberLocked = false;
 
   /** 擊退快進快出（hitFeel）：剩餘時長 + 每秒位移向量（取代舊 velocity+指數衰減）。 */
   private knockbackRemaining = 0;
@@ -274,10 +276,16 @@ export class Enemy implements Hittable {
   /** 設為 grabber（true=開始抓人：暫停一般 AI、無敵、由 GrabSystem 追玩家）。 */
   setGrabber(on: boolean): void {
     this.grabber = on;
+    if (!on) this.grabberLocked = false;
   }
 
   isGrabber(): boolean {
     return this.grabber;
+  }
+
+  /** grabber 抓住玩家後鎖定（用戶新#5）：站著維持 idle（GrabSystem 觸碰鎖定時呼叫 true）。 */
+  setGrabberLocked(locked: boolean): void {
+    this.grabberLocked = locked;
   }
 
   /** GrabSystem 驅動 grabber 移動到指定位置（追玩家用）。 */
@@ -293,6 +301,7 @@ export class Enemy implements Hittable {
   /** 掙脫時對 grabber 施加擊退並解除 grabber（GrabSystem 呼叫）。 */
   releaseGrabberWithKnockback(fromPos: Vec2): void {
     this.grabber = false;
+    this.grabberLocked = false;
     const dx = this.anim.sprite.x - fromPos.x;
     const dy = this.anim.sprite.y - fromPos.y;
     const len = Math.hypot(dx, dy) || 1;
@@ -332,9 +341,10 @@ export class Enemy implements Hittable {
       return;
     }
 
-    // grabber（抓人者）：一般 AI 暫停，改由 GrabSystem 驅動追玩家（moveTo）。只播 move 動畫朝向。
+    // grabber（抓人者）：一般 AI 暫停，由 GrabSystem 驅動。
+    // 追玩家中→播 move；已抓住玩家(locked)→站著維持 idle（用戶新#5），直到掙脫。
     if (this.grabber) {
-      this.anim.play('move');
+      this.anim.play(this.grabberLocked ? 'idle' : 'move');
       return;
     }
 
