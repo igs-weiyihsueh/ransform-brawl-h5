@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FOOT_GLOW, PLAYER_COLORS, playerColor } from '@/config/playerConfig';
+import { FOOT_GLOW, PLAYER_COLORS, footGlowCenter, playerColor } from '@/config/playerConfig';
+import { SPRITE_SCALE } from '@/config/combatConfig';
 
 /**
  * 腳下真空環（搜索圈）設定測試（項目 2）。
@@ -7,11 +8,15 @@ import { FOOT_GLOW, PLAYER_COLORS, playerColor } from '@/config/playerConfig';
  * 半徑/偏移/線寬換算、多人各自識別色。含壞版必紅。
  */
 describe('playerConfig — 真空環設定 + 玩家識別色', () => {
-  it('真空環數值對照 Unity(×PPU=100)：半徑50/偏移50/線寬5/alpha0.5', () => {
-    expect(FOOT_GLOW.radiusPx).toBe(50); // vacuumRadius 0.5
-    expect(FOOT_GLOW.offsetYPx).toBe(50); // vacuumVisualOffsetY 0.5
-    expect(FOOT_GLOW.ringWidthPx).toBe(5); // ringWidth 0.05
+  it('真空環數值對照：半徑50/線寬5/alpha0.5(同 Unity)；offset 改為 #6 校正值(非 Unity 50)', () => {
+    expect(FOOT_GLOW.radiusPx).toBe(50); // vacuumRadius 0.5×PPU
+    expect(FOOT_GLOW.ringWidthPx).toBe(5); // ringWidth 0.05×PPU
     expect(FOOT_GLOW.alpha).toBe(0.5); // footGlowAlpha
+    // #6 修:offset 不再沿用 Unity 腳底 pivot 的 -50/50，改校正畫布中心 pivot 的美術偏移。
+    // offsetX 負(往左修美術偏左)、offsetY 正(H5 Y 下為正 → 往下到腳部)。
+    expect(FOOT_GLOW.offsetXPx).toBeCloseTo(-12 * SPRITE_SCALE); // 往左校正
+    expect(FOOT_GLOW.offsetYPx).toBeCloseTo(72 * SPRITE_SCALE); // 往下到腳部
+    expect(FOOT_GLOW.offsetYPx).not.toBe(50); // 非 Unity 舊值
   });
 
   it('depth = -10（壓角色腳下不擋，對應 sortingOrder=-10）', () => {
@@ -30,13 +35,14 @@ describe('playerConfig — 真空環設定 + 玩家識別色', () => {
     expect(playerColor(4)).toBe(PLAYER_COLORS[0]); // 循環
   });
 
-  // 🔴 壞版對照：環中心偏移 = 玩家 y - offsetY（往上）。若偏移方向弄反(加)環會跑到腳下方。
-  it('壞版對照：H5 環中心在玩家上方（y - offsetY），offset 為正值', () => {
-    const playerY = 500;
-    const ringCenterY = playerY - FOOT_GLOW.offsetYPx;
-    expect(ringCenterY).toBe(450); // 上方
-    expect(ringCenterY).toBeLessThan(playerY); // 確在上方(非下方)
-    expect(FOOT_GLOW.offsetYPx).toBeGreaterThan(0);
+  // 🔴 壞版對照：#6 修後環中心在玩家【下方】(腳部 y+offsetY)、x 往左校正。若沿用 Unity -50 往上→頭上(錯)。
+  it('壞版對照：環中心在玩家下方(y+offsetY 到腳部)、x 往左校正、非頭上', () => {
+    const c = footGlowCenter(500, 500);
+    expect(c.y).toBeGreaterThan(500); // 往下到腳部(非頭上)
+    expect(c.y).toBeCloseTo(500 + FOOT_GLOW.offsetYPx);
+    expect(c.x).toBeLessThan(500); // x 往左校正(修偏右)
+    expect(FOOT_GLOW.offsetYPx).toBeGreaterThan(0); // offsetY 正=往下
+    expect(FOOT_GLOW.offsetXPx).toBeLessThan(0); // offsetX 負=往左
   });
 
   // 🔴 壞版對照：半徑=吸取範圍，不可為 0（否則環不可見/無範圍）。
