@@ -26,6 +26,14 @@ export class ComboSystem implements GameSystem {
 
   private states = new Map<number, ComboState>();
 
+  /**
+   * COMBO 報獎表演回呼（第3項，純視覺）：settle 尾段發，遊戲層(GameScene)接做演出。
+   * 數值(addTickets)已在 settle 即時套用，此回呼不涉及數值。isMax=滿檔連段(更華麗)。
+   */
+  onComboSettled:
+    | ((playerId: number, count: number, tickets: number, isMax: boolean) => void)
+    | null = null;
+
   init(ctx: GameContext): void {
     this.ctx = ctx;
     this.states.clear();
@@ -64,11 +72,15 @@ export class ComboSystem implements GameSystem {
   private settle(playerId: number, isMax = false): void {
     const s = this.stateOf(playerId);
     if (s.count <= 0) return;
-    const tickets = ticketsForCombo(s.count);
+    const count = s.count; // 快照（報獎表演用；下面歸零）
+    const tickets = ticketsForCombo(count);
     this.ctx.ticket.addTickets(playerId, tickets); // 產票歸屬：settle 的 player
     if (isMax) s.maxTriggered = true;
     s.count = 0;
     s.timer = 0;
+    // COMBO 報獎表演 hook（第3項，純視覺）：數值已即時結算（addTickets），此回呼只通知演出。
+    // ⚠️ 不涉及數值、與 combo 邏輯解耦（不破測試）。
+    this.onComboSettled?.(playerId, count, tickets, isMax);
   }
 
   /** 凍結判斷：過場/無戰鬥。近似＝場上無敵人（全域共享）。 */

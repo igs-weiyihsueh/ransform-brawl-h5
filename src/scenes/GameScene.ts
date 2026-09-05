@@ -168,6 +168,14 @@ export class GameScene extends Phaser.Scene {
       if (anchor) effects.chestReward(anchor.x, anchor.y, reward.kind, reward.tickets, playerColor(pid));
     };
 
+    // COMBO 結算報獎表演（第3項，純視覺）：settle 尾段回呼 → 在該玩家頭上演出。
+    // ⚠️ combo 數值(addTickets)已在 settle 即時結算、此處只做視覺、與數值解耦。
+    combo.onComboSettled = (pid, count, tickets, isMax) => {
+      const p = this.ctx.players.find((pl) => pl.playerId === pid);
+      const pos = p?.getPosition() ?? { x: GAME_WIDTH * 0.5, y: GAME_HEIGHT * 0.5 };
+      effects.comboReward(pos.x, pos.y, count, tickets, isMax, playerColor(pid));
+    };
+
     this.registerSystems();
 
     for (const sys of this.systems) {

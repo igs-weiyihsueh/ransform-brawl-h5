@@ -6,6 +6,11 @@ import {
   chestRewardIsTicket,
   chestRewardLabel,
 } from '@/systems/chestRewardDisplay';
+import {
+  COMBO_REWARD_FX,
+  comboRewardFontSize,
+  comboRewardLabel,
+} from '@/systems/comboRewardDisplay';
 import type { ChestRewardKind } from '@/config/chestConfig';
 
 const BASE_PATH = 'assets/images/vfx';
@@ -187,6 +192,74 @@ export class EffectSystem {
       y: y - CHEST_REWARD_FX.risePx,
       alpha: { from: 1, to: 0 },
       duration: CHEST_REWARD_FX.durationSec * 1000,
+      ease: 'Sine.easeOut',
+      onComplete: () => txt.destroy(),
+    });
+  }
+
+  /**
+   * COMBO 結算報獎表演（第3項，純視覺）：玩家頭上顯示「COMBO xN +M」放大彈跳 + 上飄淡出。
+   * isMax(滿檔) 更華麗（更大字 + 識別色爆發光環）。世界座標（跟隨玩家，非螢幕空間）。
+   * ⚠️ 純視覺疊加：combo 數值(addTickets)已即時結算、與此解耦。
+   * @param x,y 玩家世界座標；報獎顯示在其上方
+   * @param count COMBO 數；tickets 結算彩票數；isMax 是否滿檔；color 該玩家識別色
+   */
+  comboReward(
+    x: number,
+    y: number,
+    count: number,
+    tickets: number,
+    isMax: boolean,
+    color: number,
+  ): void {
+    const topY = y - COMBO_REWARD_FX.offsetYPx;
+
+    // 滿檔：識別色爆發光環（世界座標）。
+    if (isMax) {
+      const burst = this.scene.add.graphics();
+      burst.lineStyle(5, color, 1);
+      burst.strokeCircle(0, 0, 40);
+      burst.setDepth(ENERGY_FLY_DEPTH);
+      burst.x = x;
+      burst.y = topY;
+      burst.setScale(0.3);
+      this.scene.tweens.add({
+        targets: burst,
+        scale: 2.4,
+        alpha: 0,
+        duration: 500,
+        ease: 'Cubic.easeOut',
+        onComplete: () => burst.destroy(),
+      });
+    }
+
+    // 報獎文字：放大彈跳 → 上飄淡出。滿檔用識別色，一般用金色。
+    const label = comboRewardLabel(count, tickets, isMax);
+    const textColor = isMax ? `#${color.toString(16).padStart(6, '0')}` : '#ffd54f';
+    const txt = this.scene.add.text(x, topY, label, {
+      fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+      fontSize: `${comboRewardFontSize(isMax)}px`,
+      color: textColor,
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 6,
+    });
+    txt.setOrigin(0.5, 1);
+    txt.setDepth(ENERGY_FLY_DEPTH + 1);
+    txt.setScale(0.5);
+    // 起手放大彈跳。
+    this.scene.tweens.add({
+      targets: txt,
+      scale: COMBO_REWARD_FX.popScale,
+      duration: COMBO_REWARD_FX.popSec * 1000,
+      ease: 'Back.easeOut',
+    });
+    // 上飄 + 淡出（整段時長）。
+    this.scene.tweens.add({
+      targets: txt,
+      y: topY - COMBO_REWARD_FX.risePx,
+      alpha: { from: 1, to: 0 },
+      duration: COMBO_REWARD_FX.durationSec * 1000,
       ease: 'Sine.easeOut',
       onComplete: () => txt.destroy(),
     });
