@@ -84,6 +84,10 @@ export const UI_ICONS = {
   platform: { key: 'ui-platform', path: 'assets/images/ui/platform.png' },
   /** 守護波雕像（GuardTarget，Unity Cainos TX Props Statue 切圖）。 */
   statue: { key: 'ui-statue', path: 'assets/images/ui/statue.png' },
+  /** 進度條節點圖標（#2，Unity LevelProgressUI 64×64 白 picto，染狀態色）。 */
+  nodeSpawn: { key: 'ui-node-spawn', path: 'assets/images/ui/node-spawn.png' },
+  nodeReward: { key: 'ui-node-reward', path: 'assets/images/ui/node-reward.png' },
+  nodeEvent: { key: 'ui-node-event', path: 'assets/images/ui/node-event.png' },
 } as const;
 
 /** UI 佈局 JSON（uiLayoutSchema 格式）：Phaser cache key + 載入路徑。 */

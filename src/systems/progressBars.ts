@@ -1,17 +1,40 @@
 /**
- * progressBars — 進度條純比例計算（#7）。關卡進度 + 守護波倒數。純函式，可測。
- * 純視覺讀取；不改 WaveSystem/GuardEvent 邏輯。
+ * progressBars — 進度條純比例/佈局計算（#7/#2，對應 Unity LevelProgressUI 珠子串繩節點條）。
+ * 關卡進度 + 節點 marker 佈局 + 守護波倒數。純函式，可測。純視覺讀取；不改 WaveSystem/GuardEvent 邏輯。
  */
 
-/** 進度條表演/佈局參數（螢幕座標）。 */
+/** 進度條表演/佈局參數（螢幕座標，對照 Unity LevelProgressUI）。 */
 export const PROGRESS_BAR = {
-  /** 關卡進度條（頂部橫條；#2 用戶反映太上面 → 往下移到 y=70）。 */
-  level: { x: 460, y: 70, width: 1000, height: 18 },
-  /** 守護波倒數條（關卡條下方，錯開不重疊）。 */
-  guard: { x: 660, y: 104, width: 600, height: 16 },
-  /** 節點 marker 半徑（當前節點放大）。 */
-  markerRadius: 9,
-  markerRadiusCurrent: 13,
+  /** 每節點寬（Unity perNodeWidth=160）：bar 寬 = 節點數 × 這個。 */
+  perNodeWidth: 160,
+  /** 進度條中心 X（bar 依節點數以此置中）。 */
+  centerX: 960,
+  /** 顯示時 bar 的 Y（頂部合理位置；守護/結束往上滑走）。 */
+  shownY: 96,
+  /** 隱藏時往上滑出的位移（Unity slideHideOffsetY=400，往 JP/上方滑走）。 */
+  slideHideOffsetY: 160,
+  /** 滑動速度（每秒趨近比例；Unity slideSpeed8）。 */
+  slideSpeed: 8,
+  /** bar 高（底槽/填充繩）。 */
+  barHeight: 16,
+  /** 節點圓半徑 / 當前節點放大半徑。 */
+  nodeRadius: 22,
+  nodeRadiusCurrent: 28,
+  /** icon 顯示尺寸（Unity 64×64 picto）。 */
+  iconSize: 32,
+  /** 當前節點脈動（Unity pulseSpeed5 / pulseAmount0.25，段進度>0.75 才脈）。 */
+  pulseSpeed: 5,
+  pulseAmount: 0.25,
+  pulseThreshold: 0.75,
+  /** 守護波倒數條（bar 下方，錯開不重疊）。 */
+  guard: { width: 600, height: 16, offsetY: 46 },
+} as const;
+
+/** 三態節點染色（對照 Unity）。 */
+export const NODE_COLORS = {
+  past: 0x4dd9ff, // 已過＝亮青 rgb(0.3,0.85,1)
+  current: 0xfff24d, // 當前＝亮黃 rgb(1,0.95,0.3)
+  future: 0x595959, // 未到＝暗灰 rgb(0.35,0.35,0.35)
 } as const;
 
 /**
@@ -30,23 +53,27 @@ export function guardTimeRatio(remaining: number, timeLimit: number): number {
   return Math.min(1, Math.max(0, remaining / timeLimit));
 }
 
+/** 進度條總寬 = 節點數 × perNodeWidth（Unity）。 */
+export function barWidth(total: number): number {
+  return Math.max(0, total) * PROGRESS_BAR.perNodeWidth;
+}
+
+/** 進度條左緣 X（以 centerX 置中）。 */
+export function barLeftX(total: number, centerX: number = PROGRESS_BAR.centerX): number {
+  return centerX - barWidth(total) / 2;
+}
+
 /**
- * 節點 marker 在進度條上的 X 座標（沿條等距分佈）。
- * total=1 時置中；否則第 index 個落在 [barX, barX+barWidth] 等距點。
- * @param index 節點索引（0-based）。
- * @param total 總節點數。
- * @param barX 進度條左緣 X。
- * @param barWidth 進度條寬。
+ * 節點 marker 的中心 X（沿 bar 均分，每節點佔 perNodeWidth、置於格中央）。
+ * 對照 Unity：第 i 個節點中心 = left + (i + 0.5) × perNodeWidth。
  */
 export function nodeMarkerX(
   index: number,
   total: number,
-  barX: number,
-  barWidth: number,
+  centerX: number = PROGRESS_BAR.centerX,
 ): number {
-  if (total <= 1) return barX + barWidth / 2;
-  const t = index / (total - 1); // 0..1（首節點在左端、尾節點在右端）
-  return barX + t * barWidth;
+  const left = barLeftX(total, centerX);
+  return left + (index + 0.5) * PROGRESS_BAR.perNodeWidth;
 }
 
 /** 節點在進度中的狀態（marker 視覺區分用）。 */
@@ -60,4 +87,27 @@ export function nodeMarkerState(index: number, nodeIndex: number): NodeMarkerSta
   if (index < nodeIndex) return 'past';
   if (index === nodeIndex) return 'current';
   return 'future';
+}
+
+/**
+ * 珠子串繩：第 i 段（節點 i → i+1 之間空隙）的填充比例（0..1）。
+ * - 段完全在已過區（i+1 <= nodeIndex）→ 1（整段亮）。
+ * - 段完全在未來（i >= nodeIndex）→ 0。
+ * - 當前段（i == nodeIndex，正從當前節點走向下一節點）→ segmentRatio（0..1，走了多少）。
+ * @param i 段索引（0..total-2）。
+ * @param nodeIndex 目前節點。
+ * @param segmentRatio 當前節點內的推進比例（0..1；WaveSystem 若無細分可傳 0）。
+ */
+export function segmentFill(i: number, nodeIndex: number, segmentRatio: number): number {
+  if (i + 1 <= nodeIndex) return 1; // 整段已過
+  if (i < nodeIndex) return 1; // 保險（i === nodeIndex-? ）
+  if (i === nodeIndex) return Math.min(1, Math.max(0, segmentRatio)); // 當前段推進
+  return 0; // 未來段
+}
+
+/** 節點類型（Unity LevelNodeType）→ icon 資源 key 尾綴（'spawn'|'reward'|'event'）。 */
+export function nodeIconKind(nodeType: string | undefined): 'spawn' | 'reward' | 'event' {
+  if (nodeType === 'Reward') return 'reward';
+  if (nodeType === 'Event') return 'event';
+  return 'spawn';
 }
