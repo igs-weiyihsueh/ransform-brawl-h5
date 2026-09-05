@@ -28,8 +28,13 @@ export interface GameContext {
   readonly scene: Phaser.Scene;
   readonly worldBounds: Phaser.Geom.Rectangle;
 
-  /** 玩家實體。 */
+  /**
+   * 本地人類玩家 P1（= players[0]）。現有讀取 ctx.player 的碼皆指向本地 P1。
+   * per-player 迭代（多人）未來用 players[]；ctx.player === ctx.players[0] 恆真。
+   */
   readonly player: Player;
+  /** 玩家陣列（多人遷移 S1 骨架；目前只有 P1）。 */
+  readonly players: readonly Player[];
   /** 輸入抽象。 */
   readonly input: InputSystem;
   /** 可重用特效系統。 */

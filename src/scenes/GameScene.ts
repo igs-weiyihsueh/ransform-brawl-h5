@@ -95,7 +95,11 @@ export class GameScene extends Phaser.Scene {
     this.ctx = {
       scene: this,
       worldBounds,
-      player,
+      players: [player], // 多人遷移 S1：player 實體當 players[0]
+      // player = 本地人類 P1 = players[0]（getter alias，現有讀 ctx.player 的碼不動）。
+      get player(): Player {
+        return this.players[0];
+      },
       input,
       effects,
       spawner,

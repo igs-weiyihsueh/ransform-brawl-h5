@@ -28,6 +28,11 @@ const AFTER_IMAGE_FADE = 0.3;
  * 命中「自己的攻擊」判定不在此（交給 hitDetection + GameScene）。
  */
 export class Player implements Hittable {
+  /** 玩家編號（0-3；多人遷移 S1 目前只有 P1=0）。 */
+  readonly playerId: number;
+  /** 玩家種類（S1 目前只有 human）。 */
+  readonly kind: 'human' | 'ai';
+
   private anim: CharacterAnimator;
   private charKey: string;
 
@@ -59,9 +64,18 @@ export class Player implements Hittable {
 
   private readonly hitRadiusPx: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, charKey: string = PLAYER_CHARACTERS[0]) {
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    charKey: string = PLAYER_CHARACTERS[0],
+    playerId = 0,
+    kind: 'human' | 'ai' = 'human',
+  ) {
     this.scene = scene;
     this.charKey = charKey;
+    this.playerId = playerId;
+    this.kind = kind;
     this.anim = new CharacterAnimator(scene, charKey, x, y);
     this.anim.setScale(SPRITE_SCALE);
     this.anim.setFacing(this.facing);
