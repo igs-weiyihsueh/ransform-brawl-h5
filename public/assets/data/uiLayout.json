@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "design": { "width": 1920, "height": 1080 },
+  "overhead": {
+    "offsetX": 0,
+    "offsetY": -140,
+    "width": 200,
+    "height": 80,
+    "badge": {
+      "cx": -66,
+      "cy": -2,
+      "innerRadius": 18,
+      "ringRadius": 26,
+      "ringThickness": 7,
+      "text": "P1"
+    },
+    "credit": { "x": 4, "y": -14, "width": 120, "height": 34, "coinSize": 22 },
+    "energy": {
+      "x": -20,
+      "y": 22,
+      "cellCount": 4,
+      "cellWidth": 16,
+      "cellHeight": 16,
+      "cellGap": 6,
+      "cornerRadius": 3
+    },
+    "combo": {
+      "x": 0,
+      "y": -52,
+      "suffix": " HIT",
+      "hideWhenZero": true,
+      "warning": true,
+      "maxOffsetY": -34
+    }
+  },
+  "panel": {
+    "slotCount": 4,
+    "slotWidth": 420,
+    "slotHeight": 120,
+    "slotGap": 20,
+    "bottomOffset": 16,
+    "padding": 14,
+    "cornerRadius": 14,
+    "columns": [
+      {
+        "playerIndex": 0,
+        "active": true,
+        "elements": [
+          { "id": "chest", "x": 14, "y": 36, "width": 70, "height": 70 },
+          { "id": "ticket", "x": 100, "y": 58, "width": 120, "height": 40 },
+          { "id": "progress", "x": 14, "y": 98, "width": 392, "height": 16 },
+          { "id": "coin", "x": 380, "y": 80, "width": 26, "height": 26 }
+        ]
+      },
+      { "playerIndex": 1, "active": false, "elements": [] },
+      { "playerIndex": 2, "active": false, "elements": [] },
+      { "playerIndex": 3, "active": false, "elements": [] }
+    ]
+  }
+}

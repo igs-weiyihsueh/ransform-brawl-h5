@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UI 位置編輯器 — 變身大亂鬥 H5</title>
+    <style>
+      :root {
+        --bg: #1a1a2e;
+        --panel: #23233a;
+        --panel2: #2c2c48;
+        --line: #3a3a5c;
+        --text: #e6e6f0;
+        --muted: #9a9ab5;
+        --accent: #6c8cff;
+        --danger: #ff6c7a;
+        --ok: #59d98e;
+        --stage: #10101c;
+        --box: rgba(108, 140, 255, 0.18);
+        --box-line: #6c8cff;
+        --box-sel: rgba(89, 217, 142, 0.22);
+        --box-sel-line: #59d98e;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; padding: 0; height: 100%;
+        background: var(--bg); color: var(--text);
+        font-family: Arial, "Microsoft JhengHei", sans-serif; font-size: 14px;
+      }
+      header {
+        padding: 10px 16px; background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      }
+      header h1 { font-size: 16px; margin: 0; }
+      header .spacer { flex: 1; }
+      .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 1px 6px; border-radius: 10px; }
+      button {
+        background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+        border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px;
+      }
+      button:hover { border-color: var(--accent); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .layout { display: flex; height: calc(100vh - 53px); }
+      .stage-wrap {
+        flex: 1; overflow: auto; padding: 20px;
+        display: flex; align-items: flex-start; justify-content: center;
+        background: #14141f;
+      }
+      /* 1920×1080 舞台，用 transform scale 縮放顯示 */
+      #stage {
+        position: relative; width: 1920px; height: 1080px;
+        background: var(--stage); transform-origin: top left;
+        outline: 1px solid var(--line);
+      }
+      /* 底部面板欄 */
+      .slot {
+        position: absolute; border: 1px dashed var(--line);
+        background: rgba(255,255,255,0.02);
+      }
+      .slot.inactive { opacity: 0.4; }
+      .slot-label {
+        position: absolute; top: 4px; left: 6px; font-size: 12px; color: var(--muted);
+      }
+      /* 頭上 UI 容器（示意放中央上方） */
+      #overhead-container {
+        position: absolute; border: 1px dashed var(--accent);
+      }
+      .ui-box {
+        position: absolute; background: var(--box); border: 1px solid var(--box-line);
+        color: #cfd8ff; font-size: 12px; cursor: move; user-select: none;
+        display: flex; align-items: center; justify-content: center; text-align: center;
+        overflow: hidden;
+      }
+      .ui-box.selected { background: var(--box-sel); border-color: var(--box-sel-line); color: #d6ffe6; z-index: 5; }
+      /* 縮放把手（右下角） */
+      .resize-handle {
+        position: absolute; right: -5px; bottom: -5px; width: 12px; height: 12px;
+        background: var(--box-sel-line); border: 1px solid #0a0a14; cursor: nwse-resize; z-index: 6;
+      }
+      .col-inspector {
+        width: 300px; border-left: 1px solid var(--line); padding: 12px; overflow-y: auto;
+        background: var(--panel);
+      }
+      .section-title { color: var(--muted); font-size: 12px; text-transform: uppercase; margin: 8px 0; letter-spacing: 0.5px; }
+      .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .row label { width: 92px; color: var(--muted); }
+      .row input {
+        flex: 1; background: var(--bg); color: var(--text);
+        border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px;
+      }
+      .tree-item {
+        padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+        margin-bottom: 5px; cursor: pointer; background: var(--panel2);
+      }
+      .tree-item.selected { border-color: var(--accent); background: #34345a; }
+      .tree-group { color: var(--muted); font-size: 12px; margin: 8px 0 4px; }
+      #status {
+        padding: 8px 16px; font-size: 13px; white-space: pre-wrap;
+        border-top: 1px solid var(--line); background: var(--panel);
+        max-height: 140px; overflow-y: auto;
+      }
+      .status-ok { color: var(--ok); }
+      .status-err { color: var(--danger); }
+      .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>UI 位置編輯器</h1>
+      <span class="badge" id="schema-version"></span>
+      <span class="badge">1920 × 1080</span>
+      <div class="row" style="margin:0; gap:6px;">
+        <label style="width:auto;color:var(--muted)">縮放</label>
+        <input id="zoom" type="range" min="20" max="80" value="45" style="width:120px" />
+        <span id="zoom-val" class="badge"></span>
+      </div>
+      <div class="spacer"></div>
+      <button id="btn-load-default">載入預設</button>
+      <button id="btn-load-file">載入 JSON 檔…</button>
+      <input id="file-input" type="file" accept="application/json,.json" hidden />
+      <button id="btn-reset">重設為預設值</button>
+      <button id="btn-export" class="primary">驗證並下載 JSON</button>
+    </header>
+
+    <div class="layout">
+      <div class="stage-wrap">
+        <div id="stage"></div>
+      </div>
+      <div class="col-inspector">
+        <div class="section-title">元素</div>
+        <div id="tree"></div>
+        <div class="section-title">Inspector</div>
+        <div id="inspector"><div class="hint">在畫面點選一個 UI 元素以編輯座標/尺寸。</div></div>
+      </div>
+    </div>
+
+    <div id="status">就緒。拖拉畫面上的方框調整位置，拖右下角把手改大小；右側可微調數值。</div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
