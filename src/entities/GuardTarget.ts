@@ -18,7 +18,8 @@ export class GuardTarget implements Hittable {
   private readonly barFill: Phaser.GameObjects.Rectangle;
   private hp: number;
   private readonly maxHp: number;
-  private readonly radiusPx = 60;
+  /** 碰撞/命中半徑（像素）：換雕像圖後對齊新圖尺寸（非舊方塊 90×120）。constructor 依實際 body 設定。 */
+  private radiusPx = 60;
   private defeated = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number, maxHp: number) {
@@ -36,12 +37,17 @@ export class GuardTarget implements Hittable {
       };
       const targetH = 150;
       const ratio = src.width && src.height ? src.width / src.height : 0.5;
-      img.setDisplaySize(targetH * ratio, targetH); // 等比：高 150、寬按 148:292 比例(~76)
+      const dispW = targetH * ratio;
+      img.setDisplaySize(dispW, targetH); // 等比：高 150、寬按 148:292 比例(~76)
       body = img;
+      // 命中/碰撞半徑對齊新雕像圖尺寸（非舊方塊）：取顯示寬的一半當身體圓半徑
+      // （直式雕像的立足/身體足跡；命中判定與防穿透共用此圓）。
+      this.radiusPx = dispW / 2; // ≈ 38
     } else {
       const rect = scene.add.rectangle(0, 0, 90, 120, 0x9c8f6a);
       rect.setStrokeStyle(3, 0xffffff);
       body = rect;
+      this.radiusPx = 60; // 方塊 fallback 用舊半徑
     }
     const label = scene.add
       .text(0, -80, '守護目標', {

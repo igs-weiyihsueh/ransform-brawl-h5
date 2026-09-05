@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { Enemy, type EnemyAttackEvent } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import { circleIntersectsCircle, type Vec2 } from '@/systems/hitDetection';
+import { pushOutOfPlayer } from '@/systems/enemySeparation';
 import { Projectile } from '@/systems/Projectile';
 
 /**
@@ -91,6 +92,21 @@ export class EnemySpawner {
     for (const e of this.enemies) {
       e.resolvePenetration(players);
       e.clampToMapBounds(); // 地圖邊界：敵人不走出場地
+    }
+
+    // 守護波雕像實體碰撞（#8 用戶要「原本碰撞」）：雕像 immovable 擋住，玩家/敵人不穿進雕像。
+    // 對齊新雕像圖尺寸（getHitRadius 已依 statue 顯示寬設定）。
+    if (this.guardTarget) {
+      const sc = this.guardTarget.getHitCenter();
+      const sr = this.guardTarget.getHitRadius();
+      // 玩家不穿進雕像：把玩家頂到雕像外緣。
+      for (const p of this.getAllPlayers()) {
+        const ppos = p.getHitCenter();
+        const fixed = pushOutOfPlayer(ppos, sc, sr + p.getHitRadius());
+        if (fixed.x !== ppos.x || fixed.y !== ppos.y) p.setPosition?.(fixed.x, fixed.y);
+      }
+      // 敵人不穿進雕像：把敵人頂到雕像外緣（守護波敵人圍攻雕像時不重疊進體內）。
+      for (const e of this.enemies) e.pushOutOfObstacle(sc, sr);
     }
 
     // 守護波：射彈打雕像；否則打玩家。

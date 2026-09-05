@@ -32,20 +32,27 @@ const r = await page.evaluate(async () => {
   g.scene.start('GameScene', { previewLevels: [level] });
   await new Promise((res) => setTimeout(res, 2500)); // 等 create + Guard 生 GuardTarget
   const gs = g.scene.getScene('GameScene');
+  await new Promise((res) => setTimeout(res, 1500)); // 再等敵人生成靠近雕像
   const kids = gs.children.list;
   // GuardTarget 是 Container(depth 15) 內含雕像 image；找 depth 15 的 Container
   const containers = kids.filter((o) => o.type === 'Container' && o.depth === 15);
   let statueInfo = 'no-guard-container';
+  let collision = 'n/a';
   if (containers.length) {
-    const imgs = containers[0].list.filter((o) => o.type === 'Image');
+    const c = containers[0];
+    const imgs = c.list.filter((o) => o.type === 'Image');
     if (imgs.length) {
       const im = imgs[0];
       statueInfo = { texture: im.texture?.key, displayW: Math.round(im.displayWidth), displayH: Math.round(im.displayHeight) };
     } else {
       statueInfo = 'container-no-image(fallback rectangle?)';
     }
+    // 碰撞驗證：場上敵人 sprite 與雕像中心距離，應 >= 雕像半徑(不穿進體內)。
+    const sprites = kids.filter((o) => o.type === 'Sprite' && o.depth !== 10 && o.depth !== 900);
+    const dists = sprites.map((s) => Math.round(Math.hypot(s.x - c.x, s.y - c.y)));
+    collision = { enemyCount: sprites.length, distsToStatue: dists.slice(0, 6) };
   }
-  return { containers: containers.length, statueInfo, statueExists: g.textures.exists('ui-statue') };
+  return { containers: containers.length, statueInfo, collision, statueExists: g.textures.exists('ui-statue') };
 });
 console.log('[#8 probe]', JSON.stringify(r));
 await page.screenshot({ path: path.join(__dirname, '..', 'probe-statue.png') });

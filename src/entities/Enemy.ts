@@ -156,6 +156,23 @@ export class Enemy implements Hittable {
     }
   }
 
+  /**
+   * 防穿透 immovable 障礙（守護波雕像，#8）：把自己頂到障礙外緣（不穿進雕像體內）。
+   * @param center 障礙中心（雕像 getHitCenter）。
+   * @param radiusPx 障礙半徑（雕像 getHitRadius）。死亡不頂。
+   */
+  pushOutOfObstacle(center: Vec2, radiusPx: number): void {
+    if (this.dead || this.state === 'death') return;
+    const minDist = radiusPx + this.radiusPx;
+    const fixed = pushOutOfPlayer(
+      { x: this.anim.sprite.x, y: this.anim.sprite.y },
+      center,
+      minDist,
+    );
+    this.anim.sprite.x = fixed.x;
+    this.anim.sprite.y = fixed.y;
+  }
+
   /** 追擊移動：朝 aim 疊加分離力後正規化、按速度位移。 */
   private moveChase(aimDx: number, aimDy: number, dt: number): void {
     const speedPx = this.cfg.moveSpeed * PPU;
