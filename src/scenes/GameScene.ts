@@ -28,6 +28,7 @@ import { TransformSystem } from '@/systems/TransformSystem';
 import { TicketSystem } from '@/systems/TicketSystem';
 import { UISystem } from '@/systems/UISystem';
 import { ProgressBarSystem } from '@/systems/ProgressBarSystem';
+import { FireRainSystem } from '@/systems/FireRainSystem';
 import { WaveSystem } from '@/systems/WaveSystem';
 
 /**
@@ -250,6 +251,7 @@ export class GameScene extends Phaser.Scene {
     this.register(this.ctx.chest); // 寶盒：擊殺累積能量/自動開箱
     this.register(this.ctx.jp); // JP：幕通關給燈/命中累積倍數/集滿派彩
     this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
+    this.register(new FireRainSystem()); // 天降火雨（守護波進行中觸發，只傷玩家）
     this.register(new ProgressBarSystem()); // 頂部進度條 HUD：關卡進度 + 守護波倒數（讀 wave/guard）
     this.register(this.uiSystem); // HUD：唯讀當幀狀態刷新顯示（實例已於 create 提前建立）
     // DebugSystem 需讀玩家/敵人判定圖形；正式版可整包移除這行。

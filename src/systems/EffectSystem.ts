@@ -316,4 +316,49 @@ export class EffectSystem {
       },
     });
   }
+
+  /**
+   * 火雨預警紅圈（#10）：落點地上紅色半透明圓（直徑=radius×2），停留 warningTime。
+   * @returns Graphics（呼叫端在火柱落下時 destroy）。
+   */
+  fireWarningRing(x: number, y: number, radiusPx: number): Phaser.GameObjects.Graphics {
+    const g = this.scene.add.graphics();
+    g.fillStyle(0xff3300, 0.25);
+    g.fillCircle(0, 0, radiusPx);
+    g.lineStyle(3, 0xff5522, 0.9);
+    g.strokeCircle(0, 0, radiusPx);
+    g.x = x;
+    g.y = y;
+    g.setDepth(-5); // 在地上、角色之下（角色 PLAY_DEPTH=10）
+    // 預警脈動（呼吸）提示即將落下。
+    this.scene.tweens.add({
+      targets: g,
+      alpha: { from: 0.6, to: 1 },
+      duration: 250,
+      yoyo: true,
+      repeat: -1,
+    });
+    return g;
+  }
+
+  /**
+   * 火柱落下閃光（#10）：落點一道橘紅擴散閃光 + 快速淡出（純視覺，傷害判定在 FireRainSystem）。
+   */
+  fireStrikeFlash(x: number, y: number, radiusPx: number): void {
+    const g = this.scene.add.graphics();
+    g.fillStyle(0xffaa22, 0.85);
+    g.fillCircle(0, 0, radiusPx);
+    g.x = x;
+    g.y = y;
+    g.setDepth(ENERGY_FLY_DEPTH); // 火柱在角色上層一閃
+    g.setScale(0.5);
+    this.scene.tweens.add({
+      targets: g,
+      scale: 1.15,
+      alpha: 0,
+      duration: 350,
+      ease: 'Cubic.easeOut',
+      onComplete: () => g.destroy(),
+    });
+  }
 }
