@@ -40,6 +40,11 @@ export interface GameContext {
    * 不讓外部隨意 push players[]，保持增減有單一入口。
    */
   addPlayer(player: Player): void;
+  /**
+   * 待機點解析器（投幣進場循環）：回某 player 下方面板待機點螢幕座標。
+   * 由 GameScene 設定（委派 UISystem.getWaitingAnchor + fallback）。純視覺/流程用。
+   */
+  getWaitingAnchor(playerIndex: number): { x: number; y: number };
   /** 輸入抽象。 */
   readonly input: InputSystem;
   /** 可重用特效系統。 */

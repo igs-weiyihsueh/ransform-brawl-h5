@@ -7,8 +7,10 @@ import {
   LIGHTNING_PARALYZE_SEC,
   MOUNT_DASH_EXTRA_HITS,
 } from '@/config/buffConfig';
-import { PPU } from '@/config/gameConfig';
+import { COIN_INSERT_AMOUNT } from '@/config/creditConfig';
+import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { clampToBounds } from '@/config/mapConfig';
+import { landingX } from '@/systems/entranceMath';
 import type { AttackData } from '@/systems/AttackData';
 import { lateralKnockbackDir } from '@/systems/dashMath';
 import { EnergySystem, type AttackIntent } from '@/systems/EnergySystem';
@@ -70,6 +72,20 @@ export class PlayerControlSystem implements GameSystem {
   /** 單一 player 的操控主迴圈（人類/AI 皆同，只差 InputSource）。 */
   private updatePlayer(player: GameContext['player'], dt: number): void {
     const { energy, credit } = this.ctx;
+    const pid = player.playerId;
+
+    // 投幣（C 鍵，Unity: 最先判斷不被任何狀態擋）：若在待機則進場。
+    // Credit +100 由 CreditSystem.update 處理（順序在本系統前）；此處只負責 waiting→EnterGame。
+    // C 綁本地 P1；AI 加入即自動投幣進場。
+    if (typeof player.isWaiting === 'function' && player.isWaiting()) {
+      const coinPressed = pid === this.ctx.player.playerId && this.ctx.input.justPressedCoin();
+      const aiAutoCoin = player.kind === 'ai'; // AI 加入即自動投幣進場
+      if (coinPressed || aiAutoCoin) {
+        if (aiAutoCoin) credit.addCredit(pid, COIN_INSERT_AMOUNT); // AI 自投幣(P1 由 CreditSystem 加)
+        this.enterGame(player); // 從待機點拋物線進場
+      }
+      return; // 待機中不可移動/攻擊
+    }
 
     // 進場跳躍中：只推進進場動畫，跳過一般操控/攻擊/夾限（isJumping 已豁免夾限）。
     if (typeof player.isEntering === 'function' && player.isEntering()) {
@@ -77,10 +93,15 @@ export class PlayerControlSystem implements GameSystem {
       return;
     }
 
+    // Credit 耗盡倒數歸零 → 回下方面板待機（投幣循環）。投幣可中途解除耗盡（在 CreditSystem）。
+    if (typeof credit.consumeJustExpired === 'function' && credit.consumeJustExpired(pid)) {
+      const w = this.ctx.getWaitingAnchor(pid);
+      player.setWaiting(w.x, w.y);
+      return;
+    }
+
     const src = player.inputSource;
     if (!src) return; // 無 InputSource → 不操控
-
-    const pid = player.playerId;
 
     // 衝刺觸發（edge；需可攻擊、非衝刺中）。
     if (src.justPressedDash() && !player.isDashing() && credit.canAttack(pid)) {
@@ -125,6 +146,17 @@ export class PlayerControlSystem implements GameSystem {
 
     // 腳下真空環（搜索圈）跟隨玩家位置（夾限後才同步，環中心=玩家 y-offset）。
     if (typeof player.syncFootGlow === 'function') player.syncFootGlow();
+  }
+
+  /**
+   * EnterGame（投幣進場）：從待機點（下方面板）拋物線跳進場落點。
+   * setFootGlowVisible(true) 在 startEntrance 內；isJumping 進場中免夾限；落地顯頭上 UI。
+   */
+  private enterGame(player: GameContext['player']): void {
+    const start = this.ctx.getWaitingAnchor(player.playerId);
+    const endX = landingX(player.playerId, GAME_WIDTH * 0.5);
+    const endY = GAME_HEIGHT * 0.5;
+    player.startEntrance(start.x, start.y, endX, endY);
   }
 
   /** 依 BuffSystem 聚合倍率設定玩家 stat 倍率/護盾（同 stat 多來源已相乘+clamp）。 */

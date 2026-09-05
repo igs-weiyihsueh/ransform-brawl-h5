@@ -12,13 +12,6 @@ export const ENTRANCE = {
 } as const;
 
 /**
- * P1 開場是否也跳進場（Unity 是所有玩家待機→進場）。
- * 保守預設 false：P1 維持一開始就在場玩，不改開場體驗。
- * 用戶回來確認要不要改 P1 開場後，設 true 即可讓 P1 也 startEntrance（機制已就緒）。
- */
-export const P1_ENTRANCE_ON_START = false;
-
-/**
  * 落點水平位置：endPos.x = (playerId - 1.5) × spacing + centerX。
  * 對應 Unity ((playerIndex - 1.5) × landingSpacing)，四人分散不疊中央：
  * P0→-2.25、P1→-0.75、P2→0.75、P3→2.25 unit（×PPU）再加畫面中心。

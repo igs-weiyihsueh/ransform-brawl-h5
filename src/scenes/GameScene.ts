@@ -7,7 +7,7 @@ import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { BuffSystem } from '@/systems/BuffSystem';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import { splitChestByDamage } from '@/systems/chestAttribution';
-import { P1_ENTRANCE_ON_START, landingX } from '@/systems/entranceMath';
+import { landingX } from '@/systems/entranceMath';
 import { playerColor } from '@/config/playerConfig';
 import { ChestSystem } from '@/systems/ChestSystem';
 import { ComboSystem } from '@/systems/ComboSystem';
@@ -88,12 +88,8 @@ export class GameScene extends Phaser.Scene {
     // S2：P1 的操控意圖來源 = 現有 InputSystem（同一實例，行為完全同舊）。
     player.inputSource = input;
 
-    // 項目3：P1 開場進場（flag 預設關，維持 P1 一開始就在場玩，不改開場體驗）。
-    // 用戶確認要 P1 也跳進場後，把 P1_ENTRANCE_ON_START 設 true 即啟用（機制已就緒）。
-    if (P1_ENTRANCE_ON_START) {
-      const endX = landingX(0, GAME_WIDTH * 0.5);
-      player.startEntrance(endX, -120, endX, GAME_HEIGHT * 0.5);
-    }
+    // 項目3（投幣進場循環）：所有玩家（含 P1）開場都在下方面板待機、按 C 投幣才進場。
+    // 待機初始化在 systems.init 之後做（需 UISystem/BottomPanel 待機點就緒），見下方。
     const energy = new EnergySystem();
     const transform = new TransformSystem();
     const credit = new CreditSystem();
@@ -107,6 +103,7 @@ export class GameScene extends Phaser.Scene {
 
     // 多人遷移 S4：players 用可變後備陣列，增減只透過 addPlayer 受控入口。
     const playerList: Player[] = [player]; // players[0] = 本地人類 P1
+    const scene = this; // 供 ctx 內 arrow 取 scene 服務（uiSystem 待機點）
     // 共用 context（各 system 只透過它取服務/狀態）。
     this.ctx = {
       scene: this,
@@ -118,6 +115,13 @@ export class GameScene extends Phaser.Scene {
       },
       addPlayer(p: Player): void {
         playerList.push(p);
+      },
+      getWaitingAnchor: (playerIndex: number): { x: number; y: number } => {
+        // 委派 UISystem→BottomPanel（界騎 getWaitingAnchor 權威）；未提供時 fallback：
+        // 下方面板一帶、按 playerId 水平分散（對齊 landing 分散語意）。
+        const precise = scene.getWaitingAnchor(playerIndex);
+        if (precise) return precise;
+        return { x: landingX(playerIndex, GAME_WIDTH * 0.5), y: GAME_HEIGHT - 60 };
       },
       input,
       effects,
@@ -163,9 +167,21 @@ export class GameScene extends Phaser.Scene {
       sys.init(this.ctx);
     }
 
+    // 項目3 投幣進場循環：所有玩家（含 P1）開場站下方面板待機點、真空環隱藏、不可操控。
+    // 需在 systems.init 之後（UISystem/BottomPanel 待機點就緒）。按 C 投幣才 EnterGame。
+    for (const p of this.ctx.players) {
+      const w = this.ctx.getWaitingAnchor(p.playerId);
+      p.setWaiting(w.x, w.y);
+    }
+
     // 場景 shutdown（stop/restart/切場景）時，依序呼叫各 system.destroy()，
     // 釋放事件監聽/計時器，避免場景重啟累積殘留。
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown, this);
+  }
+
+  /** 待機點解析（委派 UISystem→BottomPanel）；未就緒回 undefined，由 ctx.getWaitingAnchor fallback。 */
+  getWaitingAnchor(playerIndex: number): { x: number; y: number } | undefined {
+    return this.uiSystem?.getWaitingAnchor(playerIndex);
   }
 
   /**

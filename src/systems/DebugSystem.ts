@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { MAP_BOUNDS } from '@/config/mapConfig';
-import { landingX } from '@/systems/entranceMath';
 import { ENEMY_CHARACTERS } from '@/entities/Enemy';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { AIController } from '@/systems/AIController';
@@ -90,17 +89,14 @@ export class DebugSystem implements GameSystem {
   /** 加入一個 AI 玩家（playerId=1/2/3；已存在則略過）。走 GameContext 受控 addPlayer 入口。 */
   private joinAiPlayer(playerId: number): void {
     if (this.ctx.players.some((p) => p.playerId === playerId)) return; // 已加入
-    // 進場（對應 Unity JoinGame→EnterGame→JumpToField）：AI 從場外（畫面上方待機區）
-    // 跳進場，落點按 playerId 水平分散，而非直接出現在場上。
-    const endX = landingX(playerId, GAME_WIDTH * 0.5);
-    const endY = GAME_HEIGHT * 0.5;
-    const startX = endX; // 起點對齊落點正上方
-    const startY = -120; // 場外（畫面上方待機區）
-    const ai = new Player(this.ctx.scene, startX, startY, PLAYER_CHARACTERS[0], playerId, 'ai');
+    // 投幣進場循環：AI 加入後先站下方面板待機點，PlayerControl 的待機分支會自動投幣→進場
+    // （AI 自動投幣，對應 Unity JoinGame）。起點/進場落點由待機點 + landingX 決定。
+    const wait = this.ctx.getWaitingAnchor(playerId);
+    const ai = new Player(this.ctx.scene, wait.x, wait.y, PLAYER_CHARACTERS[0], playerId, 'ai');
     ai.inputSource = new AIController(this.ctx, ai); // AI 的 InputSource（各自目標狀態）
-    ai.startEntrance(startX, startY, endX, endY); // 進場跳躍（isJumping 免夾限、真空環進場後顯）
+    ai.setWaiting(wait.x, wait.y); // 開場待機（真空環隱藏、不可操控），下一幀自動投幣進場
     this.ctx.addPlayer(ai);
-    console.info(`[Debug] AI 玩家 P${playerId + 1}(id=${playerId}) 進場跳躍 → 落點 x=${endX}`);
+    console.info(`[Debug] AI 玩家 P${playerId + 1}(id=${playerId}) 加入 → 待機→自動投幣進場`);
   }
 
   private spawnCurrentType(): void {

@@ -80,6 +80,8 @@ export class Player implements Hittable {
   private entranceT = 0;
   private entranceStart: Vec2 = { x: 0, y: 0 };
   private entranceEnd: Vec2 = { x: 0, y: 0 };
+  /** 待機狀態（投幣進場循環）：開場/耗盡回待機時 true，投幣進場後 false。 */
+  private waiting = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -165,11 +167,32 @@ export class Player implements Hittable {
   // --- 進場跳躍（JumpToField，項目3） ---
 
   /**
+   * 進入待機狀態（投幣進場循環）：站待機點、隱藏真空環、不可操控。
+   * 開場所有玩家 waiting；Credit 耗盡倒數歸零也回 waiting。
+   * @param waitX/waitY 待機點（下方面板該欄，界騎 getWaitingAnchor / fallback）
+   */
+  setWaiting(waitX: number, waitY: number): void {
+    this.waiting = true;
+    this.entranceActive = false;
+    this.isJumping = false;
+    this.setPosition(waitX, waitY);
+    this.setFootGlowVisible(false); // 待機隱藏真空環（項目2鉤子）
+    this.syncFootGlow();
+    this.anim.play('idle');
+  }
+
+  /** 是否在待機狀態（不可操控/攻擊；投幣才進場）。 */
+  isWaiting(): boolean {
+    return this.waiting;
+  }
+
+  /**
    * 開始從待機區進場跳躍到落點。進場中 isJumping=true（免疫地圖夾限）、真空環先隱藏。
    * @param startX/startY 起點（待機區，通常場外）
    * @param endX/endY 落點（按 playerId 分散）
    */
   startEntrance(startX: number, startY: number, endX: number, endY: number): void {
+    this.waiting = false; // 離開待機（投幣進場）
     this.entranceActive = true;
     this.entranceT = 0;
     this.entranceStart = { x: startX, y: startY };

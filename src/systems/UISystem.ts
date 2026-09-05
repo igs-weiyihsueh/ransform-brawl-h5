@@ -58,6 +58,18 @@ export class UISystem implements GameSystem {
     return bp.getChestAnchor?.(playerIndex);
   }
 
+  /**
+   * 取某 player 下方面板待機點螢幕座標（投幣進場循環的待機位置/進場起點）。
+   * 委派 BottomPanel.getWaitingAnchor（界騎提供，權威來源）；未提供時回 undefined，
+   * 呼叫端(GameScene)再 fallback，不阻塞。
+   */
+  getWaitingAnchor(playerIndex: number): { x: number; y: number } | undefined {
+    const bp = this.bottomPanel as unknown as {
+      getWaitingAnchor?: (i: number) => { x: number; y: number } | undefined;
+    };
+    return bp.getWaitingAnchor?.(playerIndex);
+  }
+
   private ctx!: GameContext;
   private layout!: UiLayoutFile;
   private bottomPanel!: BottomPanel;

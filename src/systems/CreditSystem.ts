@@ -6,12 +6,15 @@ import {
 } from '@/config/creditConfig';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
+import { tickOutOfCreditCountdown } from '@/systems/playerLifecycle';
 
 /** 單一玩家的 Credit 狀態。 */
 interface CreditState {
   credit: number;
   outOfCredit: boolean;
   countdown: number;
+  /** 本幀倒數剛歸零（供 PlayerControl 觸發 ReturnToWaiting，讀後清）。 */
+  justExpired: boolean;
 }
 
 /**
@@ -35,25 +38,35 @@ export class CreditSystem implements GameSystem {
   private stateOf(playerId: number): CreditState {
     let s = this.states.get(playerId);
     if (!s) {
-      s = { credit: STARTING_CREDIT, outOfCredit: false, countdown: 0 };
+      s = { credit: STARTING_CREDIT, outOfCredit: false, countdown: 0, justExpired: false };
       this.states.set(playerId, s);
     }
     return s;
   }
 
   update(dt: number): void {
-    // S3：只處理 P1（本地玩家）。投幣（C 鍵）：+100，若耗盡則解除。
+    // 投幣（C 鍵）：本地 P1 +100；若耗盡則解除（既有行為保留）。
+    // 進場觸發（waiting→EnterGame）由 PlayerControl 讀 justPressedCoin 判斷，不在此重複加值。
     const p1 = this.ctx.player.playerId;
     if (this.ctx.input.justPressedCoin()) {
       this.addCredit(p1, COIN_INSERT_AMOUNT);
     }
-    const s = this.stateOf(p1);
-    if (s.outOfCredit) {
-      s.countdown -= dt;
-      const blink = Math.floor(s.countdown / 0.25) % 2 === 0;
-      this.ctx.player.setOutOfCreditTint(blink);
-      if (s.countdown <= 0) {
-        this.resetCredit(p1);
+    // 耗盡倒數：對所有玩家跑（多人各自耗盡各自倒數）。ctx.players 缺時退回 [ctx.player]（精簡測試 stub）。
+    const players = this.ctx.players ?? [this.ctx.player];
+    for (const player of players) {
+      const s = this.stateOf(player.playerId);
+      if (s.outOfCredit) {
+        s.countdown = tickOutOfCreditCountdown(s.countdown, dt);
+        const blink = Math.floor(s.countdown / 0.25) % 2 === 0;
+        player.setOutOfCreditTint(blink);
+        if (s.countdown <= 0) {
+          // 倒數歸零 → 標記本幀過期（PlayerControl 讀後做 ReturnToWaiting）。
+          // ⚠️ 不再自動補 Credit：回待機、需重新投幣才進場（用戶定的投幣循環）。
+          s.outOfCredit = false;
+          s.countdown = 0;
+          s.justExpired = true;
+          player.setOutOfCreditTint(false);
+        }
       }
     }
   }
@@ -93,14 +106,23 @@ export class CreditSystem implements GameSystem {
     const s = this.stateOf(playerId);
     s.outOfCredit = false;
     s.countdown = 0;
-    this.ctx.player.setOutOfCreditTint(false);
+    this.playerOf(playerId)?.setOutOfCreditTint(false);
   }
 
-  /** 倒數到 0 的 H5 簡化處理：重置到起始值並解除耗盡。 */
-  private resetCredit(playerId: number): void {
+  private playerOf(playerId: number) {
+    const players = this.ctx.players ?? [this.ctx.player];
+    return players.find((p) => p.playerId === playerId) ?? this.ctx.player ?? null;
+  }
+
+  /**
+   * 讀取並清除「本幀倒數剛歸零」旗標（PlayerControl 用來觸發 ReturnToWaiting）。
+   * @returns true 表示這幀該回待機。
+   */
+  consumeJustExpired(playerId: number): boolean {
     const s = this.stateOf(playerId);
-    s.credit = STARTING_CREDIT;
-    this.exitOutOfCredit(playerId);
+    if (!s.justExpired) return false;
+    s.justExpired = false;
+    return true;
   }
 
   // --- UI / 狀態查詢 ---
