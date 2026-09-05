@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { getPerCharScale } from '@/config/animationConfig';
-import { SPRITE_SCALE } from '@/config/combatConfig';
+import { SPRITE_SCALE, PLAYER_HIT_RADIUS } from '@/config/combatConfig';
 import { ENEMY_AI, type EnemyAIConfig } from '@/config/enemyConfig';
 import { PPU } from '@/config/gameConfig';
 import { MAP_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
@@ -13,6 +13,7 @@ import {
 } from '@/systems/enemySeparation';
 import {
   buildAttackCircle,
+  isPlayerInEnemyAttackShape,
   type Hittable,
   type Vec2,
 } from '@/systems/hitDetection';
@@ -332,13 +333,13 @@ export class Enemy implements Hittable {
         break;
 
       case 'chase': {
-        if (dist <= attackPx) {
-          // 進入攻擊距離 → 開始蓄力。
+        if (dist <= attackPx && this.canReachTarget(aim)) {
+          // 進入攻擊距離 + 攻擊形狀確認搆得到 → 開始蓄力（否則不揮，繼續逼近/面向等下一幀）。
           this.state = 'charge';
           this.timer = this.cfg.chargeTime;
           this.anim.play('idle');
         } else if (dist <= detectPx && dist > 0.001) {
-          this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加
+          this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加（含 attackRange 內但形狀外→再逼近，根治空揮）
           this.anim.play('move');
         } else {
           this.anim.play('idle');
@@ -384,6 +385,23 @@ export class Enemy implements Hittable {
   }
 
   /** 出手：播 attack 動畫（一次性）並發出攻擊事件（近戰命中圓 / 射彈生成參數）。 */
+  /** 揮前攻擊形狀確認：目標是否真在攻擊形狀內才揮，否則不揮（根治空揮，用戶試玩#2）。
+   *  - 射彈敵人：朝目標拋射、無「短形狀搆不到」問題 → dist 已足夠，直接可揮。
+   *  - 守護波打雕像：雕像大且不動、敵人圍攻、非空揮情境 → 直接可揮（不用玩家半徑低估）。
+   *  - 近戰打玩家：用與實際命中同一套形狀（isPlayerInEnemyAttackShape）預判，形狀內才揮。 */
+  private canReachTarget(aim: Vec2): boolean {
+    if (this.cfg.attackKind !== 'melee') return true; // 射彈不受形狀短影響
+    if (this.guardTarget) return true; // 打雕像不做玩家半徑低估
+    return isPlayerInEnemyAttackShape(
+      this.cfg.attack,
+      this.getHitCenter(),
+      this.facing,
+      this.scaleFactor,
+      aim,
+      PLAYER_HIT_RADIUS * PPU,
+    );
+  }
+
   private fireAttack(playerPos: Vec2): void {
     // 播 attack 一次性動畫；播完 → attackAnimDone，讓狀態機進 cooldown。
     this.anim.play('attack', {

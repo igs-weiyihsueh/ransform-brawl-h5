@@ -228,3 +228,37 @@ export function queryHitsFan<T extends Hittable>(
 function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
 }
+
+/**
+ * 揮前攻擊形狀確認（用戶試玩#2 敵人空揮，對齊 Unity IsPlayerInAttackShape）：
+ * 用**跟實際敵人攻擊命中判定同一套形狀/基準**（buildAttackOBB/Circle/Fan + 對應 intersect），
+ * 預判玩家是否真的在攻擊形狀內——是才揮、否則不揮（不對空氣揮）。
+ *
+ * 與實際命中同基準（同 builder、同 offset×scale×PPU、同 intersect），避免「兩套判定」誤差。
+ * @param attack 敵人的 AttackData（enemy-editor 編的形狀：rectangle/circle/fan + offset/radius/angle/width/length）。
+ * @param enemyPos 敵人位置（getHitCenter）。
+ * @param facing 敵人面向（+1/-1）。
+ * @param scale 角色 scale（perCharScale，菁英放大）。
+ * @param playerPos 玩家位置。
+ * @param playerRadius 玩家碰撞半徑（像素）——與命中查詢一致，把玩家當圓判定。
+ * @returns 玩家是否在攻擊形狀內（true=可揮）。
+ */
+export function isPlayerInEnemyAttackShape(
+  attack: AttackData,
+  enemyPos: Vec2,
+  facing: number,
+  scale: number,
+  playerPos: Vec2,
+  playerRadius: number,
+): boolean {
+  if (attack.shapeType === 'circle') {
+    const circle = buildAttackCircle(attack, enemyPos, facing, scale);
+    return circleIntersectsCircle(circle, playerPos, playerRadius);
+  }
+  if (attack.shapeType === 'fan') {
+    const fan = buildAttackFan(attack, enemyPos, facing, scale);
+    return fanIntersectsCircle(fan, playerPos, playerRadius);
+  }
+  const obb = buildAttackOBB(attack, enemyPos, facing, scale);
+  return obbIntersectsCircle(obb, playerPos, playerRadius);
+}
