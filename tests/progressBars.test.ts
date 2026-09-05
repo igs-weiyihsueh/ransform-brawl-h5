@@ -10,6 +10,7 @@ import {
   nodeMarkerState,
   nodeMarkerX,
   segmentFill,
+  shouldPulse,
 } from '@/systems/progressBars';
 
 /**
@@ -79,20 +80,28 @@ describe('progressBars — 珠串佈局座標', () => {
     expect(mid).toBeCloseTo(960);
   });
 
-  it('nodeMarkerX：首節點最左、尾節點最右、等距遞增（(i+0.5)×perNodeWidth + left）', () => {
+  it('nodeMarkerX：兩端分佈（首=barLeftX最左、尾=barLeftX+barWidth最右、等距 barWidth/(total-1)）', () => {
+    // #2 公式改：barLeftX + i/(total-1)×barWidth（i=0 最左、i=total-1 最右）。
     const total = 4;
+    const left = barLeftX(total, 960);
+    const w = barWidth(total);
     const xs = [0, 1, 2, 3].map((i) => nodeMarkerX(i, total, 960));
     // 遞增。
     for (let i = 1; i < xs.length; i += 1) expect(xs[i]).toBeGreaterThan(xs[i - 1]);
-    // 等距 = perNodeWidth。
-    expect(xs[1] - xs[0]).toBeCloseTo(PROGRESS_BAR.perNodeWidth);
-    expect(xs[3] - xs[2]).toBeCloseTo(PROGRESS_BAR.perNodeWidth);
-    // 首節點 = left + 0.5×perNodeWidth；尾 = left + (total-0.5)×perNodeWidth。
-    const left = barLeftX(total, 960);
-    expect(xs[0]).toBeCloseTo(left + 0.5 * PROGRESS_BAR.perNodeWidth);
-    expect(xs[3]).toBeCloseTo(left + 3.5 * PROGRESS_BAR.perNodeWidth);
+    // 首節點 = barLeftX（最左端）、尾節點 = barLeftX + barWidth（最右端）。
+    expect(xs[0]).toBeCloseTo(left);
+    expect(xs[3]).toBeCloseTo(left + w);
+    // 等距 = barWidth/(total-1)。
+    const step = w / (total - 1);
+    expect(xs[1] - xs[0]).toBeCloseTo(step);
+    expect(xs[3] - xs[2]).toBeCloseTo(step);
     // 整體對稱於 centerX（首+尾中點=centerX）。
     expect((xs[0] + xs[3]) / 2).toBeCloseTo(960);
+  });
+
+  it('nodeMarkerX：單節點(total<=1) 置中防除0（回 barLeftX + barWidth/2）', () => {
+    expect(nodeMarkerX(0, 1, 960)).toBeCloseTo(barLeftX(1, 960) + barWidth(1) / 2);
+    expect(Number.isNaN(nodeMarkerX(0, 1, 960))).toBe(false); // 不除0爆 NaN
   });
 });
 
@@ -132,5 +141,22 @@ describe('progressBars — 節點狀態 / 段填充 / icon 類型', () => {
     expect(nodeIconKind('Spawn')).toBe('spawn');
     expect(nodeIconKind(undefined)).toBe('spawn'); // 防呆預設
     expect(nodeIconKind('隨便')).toBe('spawn');
+  });
+});
+
+describe('progressBars — shouldPulse（#2 變黃≠放大：快完成才脈動放大）', () => {
+  it('當前節點 且 段進度 > 0.75 → true（快完成才放大）', () => {
+    expect(shouldPulse(2, 2, 0.8)).toBe(true);
+    expect(shouldPulse(2, 2, 0.76)).toBe(true);
+  });
+
+  it('當前節點 但 段進度 <= 0.75 → false（變黃但不放大）', () => {
+    expect(shouldPulse(2, 2, 0.3)).toBe(false);
+    expect(shouldPulse(2, 2, 0.75)).toBe(false); // 邊界不含
+  });
+
+  it('非當前節點 → false（已過/未到都不脈動）', () => {
+    expect(shouldPulse(1, 2, 0.9)).toBe(false); // 已過
+    expect(shouldPulse(3, 2, 0.9)).toBe(false); // 未到
   });
 });
