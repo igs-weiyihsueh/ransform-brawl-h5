@@ -3,60 +3,54 @@ import { describe, expect, it } from 'vitest';
 import { enemyFlipForAnim } from '@/systems/enemySeparation';
 
 /**
- * enemyFlipForAnim 純函式（敵人背對攻擊回歸根治，翼騎 0dbdd18）。
- * 真因：attack 貼圖美術基準跟 move/idle 相反(預先鏡像)——同一 flipX 下 move 視覺朝左(對)、attack 朝右(背對)。
- * 修：對 attack 系動畫多翻一次補償。base=(facing<0)＝敵人慣例(move/idle 對);attack 系 → !base(相反)。
- * animKey 含 "attack"(不分大小寫、含子串前綴如 Enemy_Rush__attack)算 attack;damaged 算 move 類。
- * 維度3 斷實際 flipX 值,非 call-count。含壞版必紅(attack 沒補償=正是這次回歸的 bug)。
- * ⚠️ CharacterAnimator 記 enemyFacing / play 時重算 flipX 屬 entity 層(需 boot)不補;enemyFlipForAnim 純函式補足。
+ * enemyFlipForAnim 純函式（用戶#8 待機/移動背對根治，翼騎 41d6bae）。
+ * 真因更深：全 3 種敵人 idle+move 原始美術都天生朝左（放大 384px 原始幀確認），
+ * 敵人 base flipX 慣例整個反了 → 根治：敵人慣例改成【跟玩家一致 flipX=(facing>0)】，全動作統一、移除 attack 特例。
+ *   - +1(面右) → true、-1(面左) → false（與玩家 setFacing 同式）。
+ *   - idle/move/attack/前綴 key 全動作同式：animKey 不再影響結果。
+ * 維度3 斷實際 flipX 值,非 call-count。含壞版必紅(改回 facing<0/恢復 attack 特例=背對回歸)。
+ * ⚠️ 這是把上次(aef91bc)為 0dbdd18 測的「attack→相反」斷言【反轉】成全動作 facing>0——行為改了,斷言跟著改對(非等價保留)。
+ * ⚠️ CharacterAnimator 記 enemyFacing / play 重算 flipX 屬 entity 層(需 boot)不補;enemyFlipForAnim 純函式補足。
  */
-describe('enemyFlipForAnim — 依動畫決定 flipX（attack 美術相反補償）', () => {
-  it('move/idle：flipX = (facing<0)（現行慣例，對）', () => {
-    expect(enemyFlipForAnim(-1, 'Enemy_Rush__move')).toBe(true); // 朝左 → true
-    expect(enemyFlipForAnim(1, 'Enemy_Rush__move')).toBe(false); // 朝右 → false
-    expect(enemyFlipForAnim(-1, 'idle')).toBe(true);
-    expect(enemyFlipForAnim(1, 'idle')).toBe(false);
+describe('enemyFlipForAnim — 全動作 flipX=facing>0（與玩家一致，#8 根治）', () => {
+  it('facing>0(面右) → true、facing<0(面左) → false（與玩家 setFacing 一致）', () => {
+    expect(enemyFlipForAnim(1, 'Enemy_Rush__move')).toBe(true); // 面右 → true
+    expect(enemyFlipForAnim(-1, 'Enemy_Rush__move')).toBe(false); // 面左 → false
+    expect(enemyFlipForAnim(1, 'idle')).toBe(true);
+    expect(enemyFlipForAnim(-1, 'idle')).toBe(false);
   });
 
-  it('★ attack 系：相反（補償 attack 美術預鏡像）— 根治核心', () => {
-    // 這正是回歸的反例：move facing<0=true，attack facing<0 必須 false(相反)。
-    // 用 exact "attack" key（不涉前綴判定），純測「補償方向」本身。
-    expect(enemyFlipForAnim(-1, 'attack')).toBe(false); // 朝左 → false(相反)
-    expect(enemyFlipForAnim(1, 'attack')).toBe(true); // 朝右 → true(相反)
-  });
-
-  it('★ attack 與 move 在同 facing 下 flipX 相反（沒補償=回歸)', () => {
-    // 同 facing<0：move=true、attack=false → 兩者相反才對。
-    expect(enemyFlipForAnim(-1, 'Enemy_Rush__move')).not.toBe(
-      enemyFlipForAnim(-1, 'Enemy_Rush__attack'),
+  it('★ 全動作統一：idle/move/attack/前綴 key 同 facing 下 flipX 相同（animKey 不再影響、無 attack 特例）', () => {
+    // 同 facing=+1：所有動畫都 true（不再有 attack 相反分支）。
+    const keys = ['idle', 'Enemy_Rush__move', 'attack', 'Enemy_Rush__attack', 'Enemy_Boss__attack_02', 'Enemy_Rush__damaged'];
+    for (const k of keys) {
+      expect(enemyFlipForAnim(1, k)).toBe(true); // 面右統一 true
+      expect(enemyFlipForAnim(-1, k)).toBe(false); // 面左統一 false
+    }
+    // attack 與 move 同 facing 下【相同】（#8 前是相反，現在統一）。
+    expect(enemyFlipForAnim(1, 'Enemy_Rush__attack')).toBe(
+      enemyFlipForAnim(1, 'Enemy_Rush__move'),
     );
-    expect(enemyFlipForAnim(1, 'Enemy_Rush__move')).not.toBe(
-      enemyFlipForAnim(1, 'Enemy_Rush__attack'),
+    expect(enemyFlipForAnim(-1, 'Enemy_Rush__attack')).toBe(
+      enemyFlipForAnim(-1, 'Enemy_Rush__move'),
     );
   });
 
-  it('animKey 判定：含 "attack" 子串/前綴 key 算 attack 系（Enemy_XXX__attack）', () => {
-    // 前綴 key 也要算 attack（含子串）— 這條專抓「只認 exact attack、前綴沒算」的漏。
-    // 對照組：純 "attack" key（exact）也是 attack，用來跟前綴分家。
-    const exactAttackNeg0 = enemyFlipForAnim(-1, 'attack'); // exact
-    const prefixAttackNeg0 = enemyFlipForAnim(-1, 'Enemy_Boss__attack'); // 前綴
-    expect(exactAttackNeg0).toBe(false); // exact attack → 補償 false
-    expect(prefixAttackNeg0).toBe(false); // ★ 前綴 attack 也要 → false（漏認會變 true）
-    expect(prefixAttackNeg0).toBe(exactAttackNeg0); // 前綴與 exact 同待遇
-    expect(enemyFlipForAnim(-1, 'Enemy_Rush__attack_02')).toBe(false); // 後綴變體
-    // 不分大小寫。
-    expect(enemyFlipForAnim(-1, 'Enemy_Rush__Attack')).toBe(false);
+  it('★ 與玩家慣例一致：面右 flipX=true（敵人美術也朝左，慣例該跟玩家同，非相反）', () => {
+    // 這是 #8 根治核心：敵人不再是「相反慣例」，面右就 true（跟玩家 setFacing 同式）。
+    expect(enemyFlipForAnim(1)).toBe(true); // 不帶 animKey 也一樣（animKey 選填）
+    expect(enemyFlipForAnim(-1)).toBe(false);
   });
 
-  it('damaged 算 move 類（非 attack，不補償）', () => {
-    expect(enemyFlipForAnim(-1, 'Enemy_Rush__damaged')).toBe(true); // 同 move
-    expect(enemyFlipForAnim(1, 'Enemy_Rush__damaged')).toBe(false);
+  // 🔴 壞版對照：敵人若改回舊慣例 facing<0（或恢復 attack 相反特例）→ 背對回歸。
+  it('壞版對照：面右(facing>0) 必須 true（改回 facing<0=背對回歸）', () => {
+    expect(enemyFlipForAnim(1, 'Enemy_Rush__move')).toBe(true);
+    expect(enemyFlipForAnim(-1, 'Enemy_Rush__move')).toBe(false);
   });
 
-  // 🔴 壞版對照：attack 若沒補償(跟 move 一樣用 facing<0) → 正是本次回歸的 bug（全背對）。
-  // 用 exact "attack" key 專測補償方向（不涉前綴判定），對準 A 型回歸。
-  it('壞版對照：attack facing<0 必須 false（沒補償會回 true=回歸全背對）', () => {
-    expect(enemyFlipForAnim(-1, 'attack')).toBe(false);
-    expect(enemyFlipForAnim(-1, 'attack')).not.toBe(enemyFlipForAnim(-1, 'move'));
+  // 🔴 壞版對照：attack 若殘留相反特例 → 與 move 不一致（全動作一致被破壞）。
+  it('壞版對照：attack 與 idle/move 一致（殘留 attack 特例會不一致）', () => {
+    expect(enemyFlipForAnim(1, 'Enemy_Rush__attack')).toBe(true); // 跟 move 同（非相反）
+    expect(enemyFlipForAnim(-1, 'Enemy_Rush__attack')).toBe(false);
   });
 });

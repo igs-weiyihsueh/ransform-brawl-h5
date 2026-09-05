@@ -3,7 +3,7 @@
  * 用戶試玩新#1#2 回歸 bug 根治整合鎖（翼騎 92c3dc9）。
  * 根因：敵人 body 半徑原用 256 透明 frame 半徑(134px 大半 padding) → 推怪太遠(真空帶大)+
  * 怪被推到攻擊形狀外(搆不到不攻擊)。修：ENEMY_BODY_RADIUS_PX=45(可視半徑)、推怪對齊視覺圈、
- * 敵人 setFacingEnemy(flipX 相反,修倒著走)。pushOutOfPlayer/isPlayerInEnemyAttackShape 簽章沒動。
+ * 敵人 setFacingEnemy(flipX 與玩家一致 facing>0,用戶#8 待機/移動背對根治)。pushOutOfPlayer/isPlayerInEnemyAttackShape 簽章沒動。
  * 維度3 斷實際近邊/攻擊 bool/flipX，非 call-count。
  * ⚠️ jsdom + HEADLESS 共用 scene，每測 forceDestroy/destroy。純視覺(召喚陣/facing 動畫)不補。
  */
@@ -97,26 +97,26 @@ describe('回歸根治 — 停 95 能攻擊 vs 舊 body134 停 184 搆不到（#
   });
 });
 
-describe('回歸根治 — 敵人 setFacingEnemy flipX 反向（修倒著走 #2b）', () => {
-  it('敵人面右(f>0) → flipX=false、面左(f<0) → flipX=true（與玩家 setFacing 相反）', () => {
+describe('回歸根治 — 敵人 setFacingEnemy flipX 與玩家一致（用戶#8 待機/移動背對根治）', () => {
+  it('敵人面右(f>0) → flipX=true、面左(f<0) → flipX=false（與玩家 setFacing 一致）', () => {
     const anim = new CharacterAnimator(scene, 'Enemy_Rush', 0, 0);
     anim.setFacingEnemy(1); // 面右
-    expect(anim.sprite.flipX).toBe(false);
-    anim.setFacingEnemy(-1); // 面左
     expect(anim.sprite.flipX).toBe(true);
+    anim.setFacingEnemy(-1); // 面左
+    expect(anim.sprite.flipX).toBe(false);
     anim.destroy();
   });
 
-  it('對照玩家 setFacing：面右→flipX=true、面左→flipX=false（敵人與玩家相反，證反轉）', () => {
+  it('對照玩家 setFacing：敵人與玩家【同】慣例（都 面右→flipX=true，證慣例統一）', () => {
     const anim = new CharacterAnimator(scene, 'Enemy_Rush', 0, 0);
     // 玩家式 setFacing：flipX = f>0。
     anim.setFacing(1);
     const playerFlipRight = anim.sprite.flipX; // true
     anim.setFacingEnemy(1);
-    const enemyFlipRight = anim.sprite.flipX; // false
+    const enemyFlipRight = anim.sprite.flipX; // true（與玩家同）
     expect(playerFlipRight).toBe(true);
-    expect(enemyFlipRight).toBe(false);
-    expect(enemyFlipRight).not.toBe(playerFlipRight); // 敵人與玩家相反
+    expect(enemyFlipRight).toBe(true);
+    expect(enemyFlipRight).toBe(playerFlipRight); // 敵人與玩家同慣例（#8 根治：敵人美術也朝左）
     anim.destroy();
   });
 });
