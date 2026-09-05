@@ -80,6 +80,31 @@ export class WaveSystem implements GameSystem {
   }
 
   /**
+   * 目前節點內的完成進度（0..1，進度條珠子串繩「當前段填充」用）。
+   * - Spawn：kills / killQuota（隨擊殺往前；開場 kills=0 → 0）。
+   * - Event（守護波）：已過時間 / timeLimit（守護進行中往前；未開始 → 0）。
+   * - Reward / 其他 / 無節點：0（不預填）。
+   * 開場 kills=0、守護未開始 → 回 0，修正「開場就有進度」。
+   */
+  getNodeProgress(): number {
+    const node = this.currentNode();
+    if (!node) return 0;
+    if (node.nodeType === 'Spawn') {
+      const quota = Math.round((node as SpawnNodeData).killQuota * this.playerCountScale());
+      if (quota <= 0) return 0;
+      return Math.min(1, Math.max(0, this.kills / quota));
+    }
+    if (node.nodeType === 'Event') {
+      const g = this.guardEvent;
+      if (!g) return 0;
+      const limit = g.getTimeLimit();
+      if (limit <= 0) return 0;
+      return Math.min(1, Math.max(0, 1 - g.getRemaining() / limit));
+    }
+    return 0;
+  }
+
+  /**
    * @param preloadedLevels 選填：直接注入已驗證的關卡（測試/編輯器預覽用）。
    *   不給時，init() 會自行從 levels.json 載入。
    */

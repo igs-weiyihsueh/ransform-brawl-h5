@@ -12,6 +12,7 @@ import {
   nodeMarkerState,
   nodeMarkerX,
   segmentFill,
+  shouldPulse,
 } from '@/systems/progressBars';
 
 /** 節點類型 → 已載入的 icon key（graceful：沒載到則不放 icon）。 */
@@ -123,13 +124,14 @@ export class ProgressBarSystem implements GameSystem {
     this.gfx.fillRoundedRect(left, cy - h / 2, w, h, h / 2);
 
     // N-1 段填充繩：節點 i 右緣 → i+1 左緣。
+    const segRatio = this.currentSegmentRatio();
     const segH = h * 0.9;
     for (let i = 0; i < total - 1; i += 1) {
       const xi = nodeMarkerX(i, total) + nodeR; // 節點 i 右緣
       const xj = nodeMarkerX(i + 1, total) - nodeR; // 節點 i+1 左緣
       const segW = Math.max(0, xj - xi);
       if (segW <= 0) continue;
-      const fill = segmentFill(i, nodeIndex, this.currentSegmentRatio());
+      const fill = segmentFill(i, nodeIndex, segRatio);
       if (fill <= 0) continue;
       this.gfx.fillStyle(NODE_COLORS.past, 1);
       this.gfx.fillRect(xi, cy - segH / 2, segW * fill, segH);
@@ -142,12 +144,12 @@ export class ProgressBarSystem implements GameSystem {
       const state = nodeMarkerState(i, nodeIndex);
       const color =
         state === 'past' ? NODE_COLORS.past : state === 'current' ? NODE_COLORS.current : NODE_COLORS.future;
-      let r = state === 'current' ? PROGRESS_BAR.nodeRadiusCurrent : nodeR;
+      // 變黃≠放大：當前節點平常維持一般大小（只變黃），只有「快完成」(shouldPulse) 才放大脈動。
+      let r = nodeR;
       let scale = 1;
-      // 當前節點：段進度>閾值時脈動（Unity）。
-      if (state === 'current' && this.currentSegmentRatio() > PROGRESS_BAR.pulseThreshold) {
+      if (shouldPulse(i, nodeIndex, segRatio)) {
         scale = 1 + Math.sin(this.pulseT * PROGRESS_BAR.pulseSpeed) * PROGRESS_BAR.pulseAmount;
-        r *= scale;
+        r = PROGRESS_BAR.nodeRadiusCurrent * scale;
       }
       // 深灰圓底 + 狀態色外圈。
       this.gfx.fillStyle(0x1a1a2a, state === 'future' ? 0.8 : 1);
@@ -168,12 +170,11 @@ export class ProgressBarSystem implements GameSystem {
   }
 
   /**
-   * 當前節點內的推進比例（0..1）。WaveSystem 沒暴露節點內細分，先用簡化：
-   * 進行中一律回 1（當前段填滿到下一節點前緣、節點抵達即整段亮）——視覺上「已抵達當前節點」。
-   * 之後 WaveSystem 若提供節點內 progress，改讀真值即可（純視覺，不影響數值）。
+   * 當前節點內的推進比例（0..1）：讀 WaveSystem.getNodeProgress（Spawn=kills/quota、
+   * Event=時間比例、其他=0）。開場 kills=0 → 0（修正「開場就有進度」）；隨擊殺/時間往前填（修「不前進」）。
    */
   private currentSegmentRatio(): number {
-    return 1;
+    return this.ctx.wave.getNodeProgress?.() ?? 0;
   }
 
   destroy(): void {

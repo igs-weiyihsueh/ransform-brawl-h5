@@ -65,7 +65,8 @@ export function barLeftX(total: number, centerX: number = PROGRESS_BAR.centerX):
 
 /**
  * 節點 marker 的中心 X（沿 bar 均分，每節點佔 perNodeWidth、置於格中央）。
- * 對照 Unity：第 i 個節點中心 = left + (i + 0.5) × perNodeWidth。
+ * 節點 marker 中心 X（用戶改：首節點貼左盡頭、尾節點貼右盡頭，均分到兩端）。
+ * 第 i 個 = barLeftX + i/(count-1) × barWidth（i=0→最左、i=count-1→最右）；count<=1 置中防除0。
  */
 export function nodeMarkerX(
   index: number,
@@ -73,7 +74,9 @@ export function nodeMarkerX(
   centerX: number = PROGRESS_BAR.centerX,
 ): number {
   const left = barLeftX(total, centerX);
-  return left + (index + 0.5) * PROGRESS_BAR.perNodeWidth;
+  const w = barWidth(total);
+  if (total <= 1) return left + w / 2; // 特例：單節點置中
+  return left + (index / (total - 1)) * w;
 }
 
 /** 節點在進度中的狀態（marker 視覺區分用）。 */
@@ -87,6 +90,14 @@ export function nodeMarkerState(index: number, nodeIndex: number): NodeMarkerSta
   if (index < nodeIndex) return 'past';
   if (index === nodeIndex) return 'current';
   return 'future';
+}
+
+/**
+ * 當前節點是否該「放大脈動」（用戶改：變黃≠放大，只有快完成才放大）。
+ * 僅當前節點(index===nodeIndex) 且 當前段進度 > pulseThreshold(0.75) 才 true。
+ */
+export function shouldPulse(index: number, nodeIndex: number, segmentRatio: number): boolean {
+  return index === nodeIndex && segmentRatio > PROGRESS_BAR.pulseThreshold;
 }
 
 /**
