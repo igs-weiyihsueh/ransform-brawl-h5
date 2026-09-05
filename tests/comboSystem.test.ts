@@ -20,7 +20,7 @@ function makeSystem(opts?: { outOfCredit?: boolean; enemies?: number }) {
   };
   const ctx = {
     credit: { isOutOfCredit: () => state.outOfCredit },
-    ticket: { addTickets: (n: number) => (state.ticketsAdded += n) },
+    ticket: { addTickets: (_playerId: number, n: number) => (state.ticketsAdded += n) },
     getEnemies: () => new Array(state.enemies).fill(null),
   } as unknown as GameContext;
   const sys = new ComboSystem();
@@ -110,7 +110,7 @@ function makeControllable() {
   const ctx = {
     credit: { isOutOfCredit: () => state.outOfCredit },
     ticket: {
-      addTickets: (n: number) => {
+      addTickets: (_playerId: number, n: number) => {
         state.ticketsAdded += n;
         state.maxAddCalls += 1;
       },
@@ -241,30 +241,87 @@ describe('ComboSystem — 警告窗 isWarning', () => {
   });
 });
 
-describe('TicketSystem — 純帳本累積', () => {
-  it('addTickets 累積、getTickets 讀取；多次累加正確', () => {
+describe('TicketSystem — per-player 帳本累積（S5 keying）', () => {
+  it('addTickets(0,n) 累積、getTickets(0) 讀取；多次累加正確', () => {
     const t = new TicketSystem();
     t.init({} as unknown as GameContext);
-    expect(t.getTickets()).toBe(0);
-    t.addTickets(3);
-    t.addTickets(2);
-    expect(t.getTickets()).toBe(5);
+    expect(t.getTickets(0)).toBe(0);
+    t.addTickets(0, 3);
+    t.addTickets(0, 2);
+    expect(t.getTickets(0)).toBe(5);
   });
 
-  it('addTickets(0) / 負數 → 不改變（守 n>0）', () => {
+  it('addTickets(0, 0/負) → 不改變（守 n>0）', () => {
     const t = new TicketSystem();
     t.init({} as unknown as GameContext);
-    t.addTickets(5);
-    t.addTickets(0);
-    t.addTickets(-3);
-    expect(t.getTickets()).toBe(5);
+    t.addTickets(0, 5);
+    t.addTickets(0, 0);
+    t.addTickets(0, -3);
+    expect(t.getTickets(0)).toBe(5);
   });
 
   it('update 不改變彩票（純計數器，無每幀邏輯）', () => {
     const t = new TicketSystem();
     t.init({} as unknown as GameContext);
-    t.addTickets(4);
+    t.addTickets(0, 4);
     t.update(999);
-    expect(t.getTickets()).toBe(4);
+    expect(t.getTickets(0)).toBe(4);
+  });
+
+  // S5 ② per-player keying 鑑別：各自一本、互不汙染。
+  it('per-player 各自一本：addTickets(0,n) 只加 P0、getTickets(1) 不變', () => {
+    const t = new TicketSystem();
+    t.init({} as unknown as GameContext);
+    t.addTickets(0, 10);
+    expect(t.getTickets(0)).toBe(10);
+    expect(t.getTickets(1)).toBe(0); // P1 獨立
+    t.addTickets(1, 7);
+    expect(t.getTickets(0)).toBe(10); // P0 不受 P1 影響
+    expect(t.getTickets(1)).toBe(7);
+  });
+
+  it('未記錄的 playerId → 0', () => {
+    const t = new TicketSystem();
+    t.init({} as unknown as GameContext);
+    expect(t.getTickets(3)).toBe(0);
+  });
+});
+
+// ===========================================================================
+// S5 ②：COMBO 結算的彩票歸屬 = settle 的那個 player（用真 TicketSystem 觀察 per-player 歸屬）。
+// 🔴 壞版必紅：settle 忽略 playerId、把票灌進 P0（別人 combo 結算灌到 P1 票）→ 這裡紅。
+// ===========================================================================
+describe('ComboSystem — S5 ② 結算彩票歸屬 settle 的 player', () => {
+  function makeWithTicket() {
+    const ticket = new TicketSystem();
+    ticket.init({} as unknown as GameContext);
+    const sys = new ComboSystem();
+    const ctx = {
+      credit: { isOutOfCredit: () => false },
+      ticket,
+      getEnemies: () => [null], // 非凍結
+    } as unknown as GameContext;
+    sys.init(ctx);
+    return { sys, ticket };
+  }
+
+  it('P1(id1) 累段後超時結算 → 票灌進 P1(getTickets(1))，P0 不得票', () => {
+    const { sys, ticket } = makeWithTicket();
+    sys.onHit(1);
+    sys.onHit(1);
+    sys.onHit(1); // count=3
+    sys.update(999); // 超時結算 → ceil(3×0.5)=2 灌給 P1
+    expect(ticket.getTickets(1)).toBe(2); // 歸屬正確
+    expect(ticket.getTickets(0)).toBe(0); // P0 沒被灌別人的結算
+  });
+
+  it('P0 與 P1 各自結算各自得票（不互灌）', () => {
+    const { sys, ticket } = makeWithTicket();
+    sys.onHit(0); // P0 count=1
+    sys.onHit(1);
+    sys.onHit(1); // P1 count=2
+    sys.update(999); // 兩人都超時結算：P0 ceil(1×0.5)=1、P1 ceil(2×0.5)=1
+    expect(ticket.getTickets(0)).toBe(1);
+    expect(ticket.getTickets(1)).toBe(1);
   });
 });

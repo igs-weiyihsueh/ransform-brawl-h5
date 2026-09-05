@@ -20,7 +20,8 @@ import { TicketSystem } from '@/systems/TicketSystem';
 function makeSystem() {
   const state = { ticketsAdded: 0, stageClear: null as null | (() => void) };
   const ctx = {
-    ticket: { addTickets: (n: number) => (state.ticketsAdded += n) },
+    players: [{ playerId: 0 }],
+    ticket: { addTickets: (_playerId: number, n: number) => (state.ticketsAdded += n) },
     wave: {
       set onStageClear(cb: () => void) {
         state.stageClear = cb;
@@ -119,8 +120,9 @@ describe('JpSystem — 累積/燈/派彩', () => {
 function makeJp() {
   const state = { ticketsAdded: 0, addCalls: 0, stageClear: null as null | (() => void) };
   const ctx = {
+    players: [{ playerId: 0 }],
     ticket: {
-      addTickets: (n: number) => {
+      addTickets: (_playerId: number, n: number) => {
         state.ticketsAdded += n;
         state.addCalls += 1;
       },
@@ -273,6 +275,7 @@ describe('JpSystem — 派彩公式 + 歸零(只該組) + ticket 生產者', () 
     ticket.init({} as unknown as GameContext);
     const state = { stageClear: null as null | (() => void) };
     const ctx = {
+      players: [{ playerId: 0 }], // S5：payout 平分需 iterate ctx.players（單人=全給 P0）
       ticket,
       wave: {
         set onStageClear(cb: () => void) {
@@ -282,12 +285,12 @@ describe('JpSystem — 派彩公式 + 歸零(只該組) + ticket 生產者', () 
     } as unknown as GameContext;
     const sys = new JpSystem();
     sys.init(ctx);
-    clearStagesForGroup(state, 'red', 5); // red 起始 5×30=150
-    expect(ticket.getTickets()).toBe(150);
-    // 純帳本：再手動 addTickets(7) 精確 +7（JP 沒塞別的邏輯進 ticket）。
-    const before = ticket.getTickets();
-    ticket.addTickets(7);
-    expect(ticket.getTickets()).toBe(before + 7);
+    clearStagesForGroup(state, 'red', 5); // red 起始 5×30=150；單人平分 floor(150/1)=150 全給 P0
+    expect(ticket.getTickets(0)).toBe(150);
+    // 純帳本：再手動 addTickets(0, 7) 精確 +7（JP 沒塞別的邏輯進 ticket）。
+    const before = ticket.getTickets(0);
+    ticket.addTickets(0, 7);
+    expect(ticket.getTickets(0)).toBe(before + 7);
   });
 });
 
@@ -339,4 +342,59 @@ describe('JpSystem — recordDamage per-player 傷害貢獻（S3 記對量，可
     expect(sys.getDamageContribution(0)).toBe(10); // 只有正量累進
   });
   // ⚠️ S3 仍只 P1：測不了「P1/P2 貢獻各自 Map 不互汙」(per-player 獨立鑑別留 S4，那時有 P2-P4)。
+});
+
+// ===========================================================================
+// S5 ①：JP 派彩「平分」給所有 active player（floor 均分）。
+// 🔴 平分【不讀 recordDamage、不管貢獻】(顧問明示：改貢獻比例派彩不變 → 別測「貢獻影響派彩」)。
+//   用真 TicketSystem 觀察各 player 實際拿到多少票（可觀察行為，非 call-count）。
+// ===========================================================================
+
+
+/** 建 JpSystem + 真 TicketSystem + N 個 player（觀察平分結果）。 */
+function makeJpSplit(playerCount: number) {
+  const ticket = new TicketSystem();
+  ticket.init({} as unknown as GameContext);
+  const players = Array.from({ length: playerCount }, (_v, i) => ({ playerId: i }));
+  const state = { stageClear: null as null | (() => void) };
+  const ctx = {
+    players,
+    ticket,
+    wave: {
+      set onStageClear(cb: () => void) {
+        state.stageClear = cb;
+      },
+    },
+  } as unknown as GameContext;
+  const sys = new JpSystem();
+  sys.init(ctx);
+  return { sys, ticket, state };
+}
+
+describe('JpSystem — S5 ① 派彩平分給所有 active player（floor 均分）', () => {
+  it('單人：獎金全給 P0（red 起始 5×30=150 → P0 得 150）', () => {
+    const { ticket, state } = makeJpSplit(1);
+    clearStagesForGroup(state, 'red', 5);
+    expect(ticket.getTickets(0)).toBe(150);
+  });
+
+  it('2 人：150 平分 → 各 floor(150/2)=75（P0、P1 各 75）', () => {
+    const { ticket, state } = makeJpSplit(2);
+    clearStagesForGroup(state, 'red', 5); // prize=150
+    expect(ticket.getTickets(0)).toBe(75);
+    expect(ticket.getTickets(1)).toBe(75);
+  });
+
+  it('4 人：150 平分 → 各 floor(150/4)=37（餘數捨去，非某人多拿）', () => {
+    const { ticket, state } = makeJpSplit(4);
+    clearStagesForGroup(state, 'red', 5); // prize=150
+    for (let id = 0; id < 4; id += 1) expect(ticket.getTickets(id)).toBe(37); // floor(37.5)=37
+  });
+
+  it('3 人：150 平分 → 各 floor(150/3)=50（整除）', () => {
+    const { ticket, state } = makeJpSplit(3);
+    clearStagesForGroup(state, 'red', 5);
+    for (let id = 0; id < 3; id += 1) expect(ticket.getTickets(id)).toBe(50);
+  });
+  // ⚠️ 不寫「貢獻影響派彩」：S5 平分不讀 recordDamage，改貢獻比例派彩不變＝測不出（顧問明示）。
 });

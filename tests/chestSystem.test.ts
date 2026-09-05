@@ -16,7 +16,8 @@ import type { GameContext } from '@/systems/GameContext';
 function makeSystem() {
   const state = { ticketsAdded: 0 };
   const ctx = {
-    ticket: { addTickets: (n: number) => (state.ticketsAdded += n) },
+    player: { playerId: 0 },
+    ticket: { addTickets: (_playerId: number, n: number) => (state.ticketsAdded += n) },
   } as unknown as GameContext;
   const sys = new ChestSystem();
   sys.init(ctx);
@@ -108,8 +109,9 @@ describe('ChestSystem — 累積/開箱/連開', () => {
 function makeSys() {
   const state = { ticketsAdded: 0, addCalls: 0 };
   const ctx = {
+    player: { playerId: 0 },
     ticket: {
-      addTickets: (n: number) => {
+      addTickets: (_playerId: number, n: number) => {
         state.ticketsAdded += n;
         state.addCalls += 1;
       },
@@ -252,19 +254,19 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
     // 這裡驗「開箱→彩票類→ticket.addTickets」的接線：用真的 TicketSystem 當 ctx.ticket。
     const ticket = new TicketSystem();
     ticket.init({} as unknown as GameContext);
-    const ctx = { ticket } as unknown as GameContext;
+    const ctx = { player: { playerId: 0 }, ticket } as unknown as GameContext;
     const sys = new ChestSystem();
     sys.init(ctx);
     // 連開多箱後，ticket 只會被 addTickets 灌入（純帳本，不被 chest 塞別的邏輯）。
     sys.addCharge(CHEST_OPEN_THRESHOLD * 3); // 開 3 箱
     expect(sys.getOpensCount()).toBe(3);
     // ticket 數 = 3 箱各自彩票類的和（效果類 +0）。至少為 0、且只由 addTickets 累積。
-    expect(ticket.getTickets()).toBeGreaterThanOrEqual(0);
+    expect(ticket.getTickets(0)).toBeGreaterThanOrEqual(0);
     // 帳本性質：getTickets 等於歷次 addTickets 的累加（無別的來源）。
     // （用一個已知票數驗純帳本：手動再 addTickets(7) 後應精確 +7）
-    const before = ticket.getTickets();
-    ticket.addTickets(7);
-    expect(ticket.getTickets()).toBe(before + 7);
+    const before = ticket.getTickets(0);
+    ticket.addTickets(0, 7);
+    expect(ticket.getTickets(0)).toBe(before + 7);
   });
 
   it('效果類開箱（坐騎）不灌票、設 mountBuff 旗標（用 stub Math.random 強制抽到坐騎）', () => {
@@ -272,7 +274,7 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
     const ticket = new TicketSystem();
     ticket.init({} as unknown as GameContext);
     const sys = new ChestSystem();
-    sys.init({ ticket } as unknown as GameContext);
+    sys.init({ player: { playerId: 0 }, ticket } as unknown as GameContext);
 
     const realRandom = Math.random;
     Math.random = () => 0.8; // 落坐騎
@@ -283,14 +285,14 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
     }
     expect(sys.getLastReward()).toBe('mount');
     expect(sys.isMountBuffActive()).toBe(true); // 設旗標
-    expect(ticket.getTickets()).toBe(0); // 效果類不灌票
+    expect(ticket.getTickets(0)).toBe(0); // 效果類不灌票
   });
 
   it('效果類開箱（二段變身）不灌票、設倒數旗標，且 update 後 30s 內為 active', () => {
     const ticket = new TicketSystem();
     ticket.init({} as unknown as GameContext);
     const sys = new ChestSystem();
-    sys.init({ ticket } as unknown as GameContext);
+    sys.init({ player: { playerId: 0 }, ticket } as unknown as GameContext);
 
     const realRandom = Math.random;
     Math.random = () => 0.95; // 落二段變身 [0.90,1.0)
@@ -301,7 +303,7 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
     }
     expect(sys.getLastReward()).toBe('secondTransform');
     expect(sys.isSecondTransformActive()).toBe(true);
-    expect(ticket.getTickets()).toBe(0);
+    expect(ticket.getTickets(0)).toBe(0);
     // 倒數 30s 內仍 active、超過後關閉。
     sys.update(29);
     expect(sys.isSecondTransformActive()).toBe(true);
@@ -313,7 +315,7 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
     const ticket = new TicketSystem();
     ticket.init({} as unknown as GameContext);
     const sys = new ChestSystem();
-    sys.init({ ticket } as unknown as GameContext);
+    sys.init({ player: { playerId: 0 }, ticket } as unknown as GameContext);
 
     const realRandom = Math.random;
     Math.random = () => 0; // 落小票
@@ -323,7 +325,7 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
       Math.random = realRandom;
     }
     expect(sys.getLastReward()).toBe('ticketSmall');
-    expect(ticket.getTickets()).toBe(50); // 小票 +50
+    expect(ticket.getTickets(0)).toBe(50); // 小票 +50
     expect(sys.isMountBuffActive()).toBe(false);
     expect(sys.isSecondTransformActive()).toBe(false);
   });
