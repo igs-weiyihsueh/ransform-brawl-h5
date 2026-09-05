@@ -162,6 +162,7 @@ function makeGuardCtx() {
   };
   const ctx = {
     scene: sharedScene,
+    player: { playerId: 0 }, // S5 chest per-player：GuardEvent.finish 讀 ctx.player.playerId
     getEnemies: () => state.enemies,
     spawner: {
       setGuardTarget: (t: GuardTarget | null) => {
@@ -177,14 +178,15 @@ function makeGuardCtx() {
       },
     },
     // 寶盒 stub：記「實際加進多少 charge」(維度3：斷言可觀察的加值量，非只 call-count) + 呼叫次數。
+    // S5：addCharge(playerId, amount) → 記第 2 參的量。
     chest: {
-      addCharge: (amount: number) => {
+      addCharge: (_playerId: number, amount: number) => {
         state.chestChargeAdded += amount;
         state.chestAddCalls += 1;
       },
     },
     ticket: {
-      addTickets: (n: number) => {
+      addTickets: (_playerId: number, n: number) => {
         state.ticketsAdded += n;
         state.addCalls += 1;
       },

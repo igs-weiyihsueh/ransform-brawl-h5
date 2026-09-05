@@ -7,6 +7,7 @@ import {
 import { ChestSystem } from '@/systems/ChestSystem';
 import { TicketSystem } from '@/systems/TicketSystem';
 import { pickChestReward } from '@/systems/chestLoot';
+import { splitChestByDamage } from '@/systems/chestAttribution';
 import type { GameContext } from '@/systems/GameContext';
 
 /**
@@ -63,29 +64,29 @@ describe('pickChestReward — 加權抽選', () => {
 describe('ChestSystem — 累積/開箱/連開', () => {
   it('擊殺累積 charge，未達 165 不開箱', () => {
     const { sys } = makeSystem();
-    sys.addCharge(5);
-    sys.addCharge(5);
-    expect(sys.getCharge()).toBe(10);
+    sys.addCharge(0, 5);
+    sys.addCharge(0, 5);
+    expect(sys.getCharge(0)).toBe(10);
     expect(sys.getOpensCount()).toBe(0);
   });
 
   it('charge ≥ 165 自動開箱、扣 165', () => {
     const { sys } = makeSystem();
-    sys.addCharge(165);
+    sys.addCharge(0, 165);
     expect(sys.getOpensCount()).toBe(1);
-    expect(sys.getCharge()).toBe(0);
+    expect(sys.getCharge(0)).toBe(0);
   });
 
   it('超過 165 → 開箱後餘數排隊（連開多箱）', () => {
     const { sys } = makeSystem();
-    sys.addCharge(CHEST_OPEN_THRESHOLD * 2 + 30); // 兩箱 + 餘 30
+    sys.addCharge(0, CHEST_OPEN_THRESHOLD * 2 + 30); // 兩箱 + 餘 30
     expect(sys.getOpensCount()).toBe(2);
-    expect(sys.getCharge()).toBe(30);
+    expect(sys.getCharge(0)).toBe(30);
   });
 
   it('開箱抽到彩票類會灌 ticket（一次大量 charge 連開，彩票數 > 0）', () => {
     const { sys, state } = makeSystem();
-    sys.addCharge(CHEST_OPEN_THRESHOLD * 5); // 連開 5 箱
+    sys.addCharge(0, CHEST_OPEN_THRESHOLD * 5); // 連開 5 箱
     expect(sys.getOpensCount()).toBe(5);
     // 抽選表 75% 是彩票類，5 箱幾乎必有彩票灌入（統計上）；至少 opens 正確。
     expect(state.ticketsAdded).toBeGreaterThanOrEqual(0);
@@ -93,8 +94,8 @@ describe('ChestSystem — 累積/開箱/連開', () => {
 
   it('進度比例 = charge/門檻（clamp 1）', () => {
     const { sys } = makeSystem();
-    sys.addCharge(82); // ~0.497
-    expect(sys.getProgress()).toBeCloseTo(82 / CHEST_OPEN_THRESHOLD);
+    sys.addCharge(0, 82); // ~0.497
+    expect(sys.getProgress(0)).toBeCloseTo(82 / CHEST_OPEN_THRESHOLD);
   });
 });
 
@@ -125,16 +126,16 @@ function makeSys() {
 describe('chestChargeFor — 擊殺累加（多隻）', () => {
   it('多隻不同敵人擊殺 charge 累加：Rush+Ranged+Elite=1+2+5=8', () => {
     const { sys } = makeSys();
-    sys.addCharge(chestChargeFor('Enemy_Rush'));
-    sys.addCharge(chestChargeFor('Enemy_Ranged'));
-    sys.addCharge(chestChargeFor('Enemy_Elite'));
-    expect(sys.getCharge()).toBe(8);
+    sys.addCharge(0, chestChargeFor('Enemy_Rush'));
+    sys.addCharge(0, chestChargeFor('Enemy_Ranged'));
+    sys.addCharge(0, chestChargeFor('Enemy_Elite'));
+    expect(sys.getCharge(0)).toBe(8);
   });
 
   it('未知敵人 charge=0 → addCharge(0) 不改變、不開箱（守 amount>0）', () => {
     const { sys } = makeSys();
-    sys.addCharge(chestChargeFor('Enemy_Unknown')); // 0
-    expect(sys.getCharge()).toBe(0);
+    sys.addCharge(0, chestChargeFor('Enemy_Unknown')); // 0
+    expect(sys.getCharge(0)).toBe(0);
     expect(sys.getOpensCount()).toBe(0);
   });
 
@@ -144,12 +145,12 @@ describe('chestChargeFor — 擊殺累加（多隻）', () => {
   // （對齊 jpSystem 的 notifyCreditSpent(負) 測試；顧問定調：定義域上寫得出鑑別測試就寫測試。）
   it('防禦契約：addCharge(負量) 為 no-op（不減 charge、不誤觸開箱）', () => {
     const { sys } = makeSys();
-    sys.addCharge(100); // 先累到 100（未達門檻 165）
-    sys.addCharge(-50); // 負量：契約為 no-op
-    expect(sys.getCharge()).toBe(100); // 不被扣、不變
+    sys.addCharge(0, 100); // 先累到 100（未達門檻 165）
+    sys.addCharge(0, -50); // 負量：契約為 no-op
+    expect(sys.getCharge(0)).toBe(100); // 不被扣、不變
     expect(sys.getOpensCount()).toBe(0); // 不誤觸開箱
-    sys.addCharge(-9999); // 大負量也不下溢、不亂開
-    expect(sys.getCharge()).toBe(100);
+    sys.addCharge(0, -9999); // 大負量也不下溢、不亂開
+    expect(sys.getCharge(0)).toBe(100);
     expect(sys.getOpensCount()).toBe(0);
   });
 });
@@ -157,46 +158,46 @@ describe('chestChargeFor — 擊殺累加（多隻）', () => {
 describe('ChestSystem — 165 門檻邊界 & 連開排隊餘數', () => {
   it('charge=164 → 不開（<門檻）', () => {
     const { sys } = makeSys();
-    sys.addCharge(164);
+    sys.addCharge(0, 164);
     expect(sys.getOpensCount()).toBe(0);
-    expect(sys.getCharge()).toBe(164);
+    expect(sys.getCharge(0)).toBe(164);
   });
 
   it('charge=165 → 開 1 箱、扣 165 歸 0（=門檻邊界這一側）', () => {
     const { sys } = makeSys();
-    sys.addCharge(165);
+    sys.addCharge(0, 165);
     expect(sys.getOpensCount()).toBe(1);
-    expect(sys.getCharge()).toBe(0);
+    expect(sys.getCharge(0)).toBe(0);
   });
 
   it('charge=166 → 開 1 箱、餘 1（門檻另一側，餘數正確）', () => {
     const { sys } = makeSys();
-    sys.addCharge(166);
+    sys.addCharge(0, 166);
     expect(sys.getOpensCount()).toBe(1);
-    expect(sys.getCharge()).toBe(1);
+    expect(sys.getCharge(0)).toBe(1);
   });
 
   it('charge=350 → 連開 2 箱、餘 20（350-330=20 排隊）', () => {
     const { sys } = makeSys();
-    sys.addCharge(350);
+    sys.addCharge(0, 350);
     expect(sys.getOpensCount()).toBe(2);
-    expect(sys.getCharge()).toBe(20);
+    expect(sys.getCharge(0)).toBe(20);
   });
 
   it('charge=330（恰兩倍門檻）→ 連開 2 箱、餘 0', () => {
     const { sys } = makeSys();
-    sys.addCharge(330);
+    sys.addCharge(0, 330);
     expect(sys.getOpensCount()).toBe(2);
-    expect(sys.getCharge()).toBe(0);
+    expect(sys.getCharge(0)).toBe(0);
   });
 
   it('分次累加跨門檻：160 + 10 → 到 170 時開 1 箱、餘 5', () => {
     const { sys } = makeSys();
-    sys.addCharge(160); // 未達
+    sys.addCharge(0, 160); // 未達
     expect(sys.getOpensCount()).toBe(0);
-    sys.addCharge(10); // 170 → 開 1、餘 5
+    sys.addCharge(0, 10); // 170 → 開 1、餘 5
     expect(sys.getOpensCount()).toBe(1);
-    expect(sys.getCharge()).toBe(5);
+    expect(sys.getCharge(0)).toBe(5);
   });
 });
 
@@ -258,7 +259,7 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
     const sys = new ChestSystem();
     sys.init(ctx);
     // 連開多箱後，ticket 只會被 addTickets 灌入（純帳本，不被 chest 塞別的邏輯）。
-    sys.addCharge(CHEST_OPEN_THRESHOLD * 3); // 開 3 箱
+    sys.addCharge(0, CHEST_OPEN_THRESHOLD * 3); // 開 3 箱
     expect(sys.getOpensCount()).toBe(3);
     // ticket 數 = 3 箱各自彩票類的和（效果類 +0）。至少為 0、且只由 addTickets 累積。
     expect(ticket.getTickets(0)).toBeGreaterThanOrEqual(0);
@@ -279,7 +280,7 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
     const realRandom = Math.random;
     Math.random = () => 0.8; // 落坐騎
     try {
-      sys.addCharge(CHEST_OPEN_THRESHOLD); // 開 1 箱 → 坐騎
+      sys.addCharge(0, CHEST_OPEN_THRESHOLD); // 開 1 箱 → 坐騎
     } finally {
       Math.random = realRandom;
     }
@@ -297,7 +298,7 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
     const realRandom = Math.random;
     Math.random = () => 0.95; // 落二段變身 [0.90,1.0)
     try {
-      sys.addCharge(CHEST_OPEN_THRESHOLD);
+      sys.addCharge(0, CHEST_OPEN_THRESHOLD);
     } finally {
       Math.random = realRandom;
     }
@@ -320,7 +321,7 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
     const realRandom = Math.random;
     Math.random = () => 0; // 落小票
     try {
-      sys.addCharge(CHEST_OPEN_THRESHOLD);
+      sys.addCharge(0, CHEST_OPEN_THRESHOLD);
     } finally {
       Math.random = realRandom;
     }
@@ -328,5 +329,85 @@ describe('ChestSystem × TicketSystem — 灌票與純帳本關係', () => {
     expect(ticket.getTickets(0)).toBe(50); // 小票 +50
     expect(sys.isMountBuffActive()).toBe(false);
     expect(sys.isSecondTransformActive()).toBe(false);
+  });
+});
+
+// ===========================================================================
+// per-player chest 獨立（決策 c61872a6：寶盒能量各自 Map）+ 傷害貢獻分整合。
+// 維度3：斷各 player 實際 chest 值 / 分到的 charge 量（可觀察），非 call-count。
+// ⚠️ 用 per-enemy splitChestByDamage（怪死清），不碰 #6 JP 全局 recordDamage。
+// ===========================================================================
+describe('ChestSystem — per-player chest 獨立', () => {
+  function makeSysPP() {
+    const ticket = new TicketSystem();
+    ticket.init({} as unknown as GameContext);
+    const sys = new ChestSystem();
+    sys.init({ player: { playerId: 0 }, ticket } as unknown as GameContext);
+    return { sys, ticket };
+  }
+
+  it('addCharge(0,x) 只加 P0 chest、getCharge(1) 不變（各自 Map）', () => {
+    const { sys } = makeSysPP();
+    sys.addCharge(0, 50);
+    expect(sys.getCharge(0)).toBe(50);
+    expect(sys.getCharge(1)).toBe(0); // P1 獨立
+    sys.addCharge(1, 30);
+    expect(sys.getCharge(0)).toBe(50); // P0 不受 P1 影響
+    expect(sys.getCharge(1)).toBe(30);
+  });
+
+  it('P0 開箱(彩票類, stub Math.random=0)→ 票灌 getTickets(0)、P1 票不變', () => {
+    const { sys, ticket } = makeSysPP();
+    const real = Math.random;
+    Math.random = () => 0; // 小票
+    try {
+      sys.addCharge(0, CHEST_OPEN_THRESHOLD); // P0 開一箱
+    } finally {
+      Math.random = real;
+    }
+    expect(ticket.getTickets(0)).toBe(50); // 小票 +50 歸 P0
+    expect(ticket.getTickets(1)).toBe(0); // P1 沒被灌
+  });
+
+  it('P1 開箱 → 票灌 getTickets(1)（開箱歸該 player，不是恆 P0）', () => {
+    const { sys, ticket } = makeSysPP();
+    const real = Math.random;
+    Math.random = () => 0;
+    try {
+      sys.addCharge(1, CHEST_OPEN_THRESHOLD); // P1 開一箱
+    } finally {
+      Math.random = real;
+    }
+    expect(ticket.getTickets(1)).toBe(50); // 歸 P1
+    expect(ticket.getTickets(0)).toBe(0);
+  });
+});
+
+describe('ChestSystem × splitChestByDamage — 多人傷害貢獻分整合', () => {
+  it('兩 player 打同一隻怪（P1傷7/P2傷3, total10）→ split 分別進各自 chest(P0=7、P1=3)', () => {
+    const ticket = new TicketSystem();
+    ticket.init({} as unknown as GameContext);
+    const sys = new ChestSystem();
+    sys.init({ player: { playerId: 0 }, ticket } as unknown as GameContext);
+    // 怪死：splitChestByDamage(total=10, {P0:7,P1:3}) → {0:7, 1:3}。
+    const share = splitChestByDamage(10, new Map([[0, 7], [1, 3]]));
+    for (const [pid, amt] of share) sys.addCharge(pid, amt);
+    expect(sys.getCharge(0)).toBe(7); // P1(id0) 得 7 進自己 chest
+    expect(sys.getCharge(1)).toBe(3); // P2(id1) 得 3 進自己 chest
+  });
+
+  it('多隻怪累積：P0 主打累到門檻自動開箱、P1 少打不到門檻（各自累積各自開）', () => {
+    const ticket = new TicketSystem();
+    ticket.init({} as unknown as GameContext);
+    const sys = new ChestSystem();
+    sys.init({ player: { playerId: 0 }, ticket } as unknown as GameContext);
+    // 25 隻怪 total10、P0 全打 → P0 累 250 → 開 1 箱餘 85；P1 都沒打 → 0。
+    for (let i = 0; i < 25; i += 1) {
+      const share = splitChestByDamage(10, new Map([[0, 10]])); // P0 獨拿
+      for (const [pid, amt] of share) sys.addCharge(pid, amt);
+    }
+    expect(sys.getOpensCount()).toBe(1); // 250/165 → 開 1
+    expect(sys.getCharge(0)).toBe(250 - CHEST_OPEN_THRESHOLD); // 餘 85
+    expect(sys.getCharge(1)).toBe(0); // P1 沒分到
   });
 });
