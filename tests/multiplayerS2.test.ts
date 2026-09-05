@@ -86,6 +86,7 @@ function fakePlayer(inputSource: InputSource | null) {
 function makePcs(player: unknown) {
   const ctx = {
     player,
+    players: [player], // S4：PlayerControl.update 改 iterate ctx.players（P1 那次 = 舊 update）
     credit: { canAct: () => true, canAttack: () => true },
     buff: { getStatMultiplier: () => 1, isActive: () => false },
     energy: {
