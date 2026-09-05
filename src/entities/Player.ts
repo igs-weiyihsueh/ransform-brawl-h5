@@ -7,6 +7,7 @@ import {
   SPRITE_SCALE,
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
+import { FOOT_GLOW, playerColor } from '@/config/playerConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import type { InputSource } from '@/systems/InputSource';
 import type { Hittable, Vec2 } from '@/systems/hitDetection';
@@ -68,6 +69,11 @@ export class Player implements Hittable {
 
   private readonly hitRadiusPx: number;
 
+  /** 腳下真空環（搜索圈）圖形；識別色圓環，depth 低於角色。 */
+  private readonly footGlow!: Phaser.GameObjects.Graphics;
+  /** 真空環顯示旗標（項目3 進場鉤子：待機隱藏、進場顯示；現預設顯示）。 */
+  private footGlowVisible = true;
+
   constructor(
     scene: Phaser.Scene,
     x: number,
@@ -84,6 +90,12 @@ export class Player implements Hittable {
     this.anim.setScale(SPRITE_SCALE);
     this.anim.setFacing(this.facing);
     this.hitRadiusPx = PLAYER_HIT_RADIUS * PPU;
+
+    // 腳下真空環（搜索圈）：玩家識別色圓環，depth 低於角色不擋，每幀跟隨位置。
+    this.footGlow = scene.add.graphics();
+    this.footGlow.setDepth(FOOT_GLOW.depth);
+    this.drawFootGlow();
+    this.syncFootGlow();
   }
 
   private readonly scene: Phaser.Scene;
@@ -110,6 +122,37 @@ export class Player implements Hittable {
 
   getPosition(): Vec2 {
     return { x: this.anim.sprite.x, y: this.anim.sprite.y };
+  }
+
+  // --- 腳下真空環（搜索圈） ---
+
+  /** 重畫真空環（識別色、半徑、線寬固定；只在建立/顯示切換時呼叫）。 */
+  private drawFootGlow(): void {
+    const color = playerColor(this.playerId);
+    this.footGlow.clear();
+    this.footGlow.lineStyle(FOOT_GLOW.ringWidthPx, color, FOOT_GLOW.alpha);
+    this.footGlow.strokeCircle(0, 0, FOOT_GLOW.radiusPx); // 圓心設在 graphics 原點，位置靠 syncFootGlow
+    this.footGlow.setVisible(this.footGlowVisible);
+  }
+
+  /** 每幀更新真空環中心 = 玩家位置往上偏 offsetY（H5 Y 下為正 → 減）。 */
+  syncFootGlow(): void {
+    this.footGlow.x = this.anim.sprite.x;
+    this.footGlow.y = this.anim.sprite.y - FOOT_GLOW.offsetYPx;
+  }
+
+  /**
+   * 顯示/隱藏真空環（項目3 進場鉤子：待機隱藏、EnterGame 顯示）。
+   * 現預設顯示，項目3 做進場流程時呼叫此切換。
+   */
+  setFootGlowVisible(visible: boolean): void {
+    this.footGlowVisible = visible;
+    this.footGlow.setVisible(visible);
+  }
+
+  /** 真空環目前是否顯示（測試/查詢用）。 */
+  isFootGlowVisible(): boolean {
+    return this.footGlowVisible;
   }
 
   /** 直接設定位置（地圖邊界 clamp 寫回用）。 */

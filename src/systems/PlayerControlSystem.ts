@@ -115,6 +115,9 @@ export class PlayerControlSystem implements GameSystem {
       const c = clampToBounds(pos.x, pos.y);
       if (c.changed) player.setPosition(c.x, c.y);
     }
+
+    // 腳下真空環（搜索圈）跟隨玩家位置（夾限後才同步，環中心=玩家 y-offset）。
+    if (typeof player.syncFootGlow === 'function') player.syncFootGlow();
   }
 
   /** 依 BuffSystem 聚合倍率設定玩家 stat 倍率/護盾（同 stat 多來源已相乘+clamp）。 */
