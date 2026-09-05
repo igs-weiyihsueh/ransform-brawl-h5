@@ -33,18 +33,17 @@ export const WAITING_PLATFORM_LIFT = 40;
  * - footGlowAlpha = 0.5（半透明）
  * - sortingOrder = -10 → depth 低於角色 sprite，壓在腳下不擋角色
  *
- * ⚠️ offset（#6 修）：H5 CharacterAnimator sprite origin=(0.5,0.5)=256畫布中心，
- * 但角色美術在畫布內非置中（實測 Human idle：opaque bbox x[61-172] 中心≈116、腳底 y≈200；
- * 畫布中心=128）。所以 sprite.x/y（畫布中心）≠ 角色視覺中心/腳部：
- *   - 水平：美術中心 x≈116 比畫布中心 128 偏左 ~12px（未乘 scale）→ 環要往左修，否則偏右（用戶回報）。
- *   - 垂直：腳底 y≈200 比畫布中心 128 偏下 ~72px → 環要往下到腳部。
- * offset 以「畫布 px × SPRITE_SCALE」換成顯示 px。Unity 的 vacuumVisualOffsetY(-50 往上) 不適用
- * （那是腳底 pivot；H5 是畫布中心 pivot）。
+ * ⚠️ offset（#6 修 → 用戶新#1 再修）：H5 CharacterAnimator sprite origin=(0.5,0.5)=256畫布中心。
+ * 垂直：角色腳底 y≈200 比畫布中心 128 偏下 ~72px → 環往下到腳部（×SPRITE_SCALE 換顯示 px）。
+ * 水平：**offsetX=0（環水平置中於 sprite）**。原本 -12 是對齊 opaque bbox 中心(≈116)，但那含不對稱四肢、
+ * 且 sprite 面右時 setFlipX(true) 會水平翻轉美術 → 固定 -12 offset 不跟著翻 → 面右時環偏到另一側 ~25px
+ * （用戶新#1「圈沒在角色正下方」真因）。角色身體/腳中線 ≈ 畫布中心，故 offsetX=0 讓環恆在角色正下方、
+ * 且 flip-safe（面左面右都置中）。
  */
 export const FOOT_GLOW = {
   radiusPx: 0.5 * PPU, // 50
-  // 顯示偏移（畫布 px × SPRITE_SCALE(≈1.05)）：往左修美術偏移 + 往下到腳部。
-  offsetXPx: -12 * SPRITE_SCALE, // ≈ -12.6：修正美術在畫布內偏左
+  // 顯示偏移（畫布 px × SPRITE_SCALE(≈1.05)）：水平置中(0, flip-safe) + 往下到腳部。
+  offsetXPx: 0, // 環水平置中於角色（不隨面向偏移；修用戶新#1 圈沒在正下方）
   offsetYPx: 72 * SPRITE_SCALE, // ≈ 75.6：從畫布中心往下到腳底
   ringWidthPx: 0.05 * PPU, // 5
   alpha: 0.5,
