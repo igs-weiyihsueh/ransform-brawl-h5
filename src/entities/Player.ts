@@ -7,7 +7,7 @@ import {
   SPRITE_SCALE,
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
-import { FOOT_GLOW, playerColor } from '@/config/playerConfig';
+import { FOOT_GLOW, footGlowCenter, playerColor } from '@/config/playerConfig';
 import { PANEL_DEPTH } from '@/config/uiConfig';
 import { ENTRANCE, entrancePosition } from '@/systems/entranceMath';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
@@ -150,10 +150,14 @@ export class Player implements Hittable {
     this.footGlow.setVisible(this.footGlowVisible);
   }
 
-  /** 每幀更新真空環中心 = 玩家位置往上偏 offsetY（H5 Y 下為正 → 減）。 */
+  /**
+   * 每幀更新真空環中心 = 角色身體中心（sprite origin=中心）往下偏到腳下（#6 修：origin 已是中心，
+   * 不再是 Unity 的 -50 往上，改用 footGlowCenter 往下貼腳部）。
+   */
   syncFootGlow(): void {
-    this.footGlow.x = this.anim.sprite.x;
-    this.footGlow.y = this.anim.sprite.y - FOOT_GLOW.offsetYPx;
+    const c = footGlowCenter(this.anim.sprite.x, this.anim.sprite.y);
+    this.footGlow.x = c.x;
+    this.footGlow.y = c.y;
   }
 
   /**
