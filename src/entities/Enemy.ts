@@ -3,7 +3,7 @@ import { getPerCharScale } from '@/config/animationConfig';
 import { SPRITE_SCALE } from '@/config/combatConfig';
 import { ENEMY_AI, type EnemyAIConfig } from '@/config/enemyConfig';
 import { PPU } from '@/config/gameConfig';
-import { clampToBounds } from '@/config/mapConfig';
+import { MAP_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
 import { CharacterAnimator, FRAME_SIZE } from '@/systems/CharacterAnimator';
 import {
   calculateSeparation,
@@ -121,10 +121,12 @@ export class Enemy implements Hittable {
     }
   }
 
-  /** 地圖邊界夾限：把自己夾回場地內（死亡不夾；只在真超界才寫回）。 */
+  /** 地圖邊界夾限：把「整個 body」夾回場地內（body 半徑內縮，死亡不夾；只在真超界才寫回）。 */
   clampToMapBounds(): void {
     if (this.dead || this.state === 'death') return;
-    const c = clampToBounds(this.anim.sprite.x, this.anim.sprite.y);
+    // 用 body 半徑內縮邊界，確保敵人整個身體都在界內、不會被推擠推到邊界外露出。
+    const bounds = insetBounds(MAP_BOUNDS, this.radiusPx);
+    const c = clampToBounds(this.anim.sprite.x, this.anim.sprite.y, bounds);
     if (c.changed) {
       this.anim.sprite.x = c.x;
       this.anim.sprite.y = c.y;

@@ -8,6 +8,7 @@ import {
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
 import { FOOT_GLOW, playerColor } from '@/config/playerConfig';
+import { PANEL_DEPTH } from '@/config/uiConfig';
 import { ENTRANCE, entrancePosition } from '@/systems/entranceMath';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import type { InputSource } from '@/systems/InputSource';
@@ -21,6 +22,11 @@ const AFTER_IMAGE_INTERVAL = 0.05;
 const AFTER_IMAGE_TINT = 0x8080ff; // ≈ (0.5, 0.5, 1)
 const AFTER_IMAGE_ALPHA = 0.5;
 const AFTER_IMAGE_FADE = 0.3;
+
+/** 待機/進場中角色 depth：提到下方面板(PANEL_DEPTH=1000)之上，站在介面上看得見。 */
+const WAITING_DEPTH = PANEL_DEPTH + 10;
+/** 遊玩中角色 depth：正常地面層（面板之下、真空環 -10 之上）。 */
+const PLAY_DEPTH = 10;
 
 /**
  * Player — 玩家實體（Human 逐幀動畫）。
@@ -177,6 +183,8 @@ export class Player implements Hittable {
     this.isJumping = false;
     this.setPosition(waitX, waitY);
     this.setFootGlowVisible(false); // 待機隱藏真空環（項目2鉤子）
+    // 待機時角色 depth 提到下方面板之上，才「站在介面上」看得到（否則被 PANEL_DEPTH 蓋住）。
+    this.anim.sprite.setDepth(WAITING_DEPTH);
     this.syncFootGlow();
     this.anim.play('idle');
   }
@@ -194,6 +202,8 @@ export class Player implements Hittable {
   startEntrance(startX: number, startY: number, endX: number, endY: number): void {
     this.waiting = false; // 離開待機（投幣進場）
     this.entranceActive = true;
+    // 進場飛行中維持在面板之上（從面板跳出、飛越 UI 時可見）。
+    this.anim.sprite.setDepth(WAITING_DEPTH);
     this.entranceT = 0;
     this.entranceStart = { x: startX, y: startY };
     this.entranceEnd = { x: endX, y: endY };
@@ -222,6 +232,7 @@ export class Player implements Hittable {
       this.isJumping = false;
       this.setPosition(this.entranceEnd.x, this.entranceEnd.y);
       this.setFootGlowVisible(true); // 進場後顯真空環（OnLanded）
+      this.anim.sprite.setDepth(PLAY_DEPTH); // 落地回正常遊玩 depth（面板之下、地面之上）
       this.syncFootGlow();
       this.anim.play('idle');
       return false;

@@ -9,7 +9,7 @@ import {
 } from '@/config/buffConfig';
 import { COIN_INSERT_AMOUNT } from '@/config/creditConfig';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
-import { clampToBounds } from '@/config/mapConfig';
+import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
 import { landingX } from '@/systems/entranceMath';
 import type { AttackData } from '@/systems/AttackData';
 import { lateralKnockbackDir } from '@/systems/dashMath';
@@ -140,7 +140,7 @@ export class PlayerControlSystem implements GameSystem {
       typeof player.setPosition === 'function'
     ) {
       const pos = player.getPosition();
-      const c = clampToBounds(pos.x, pos.y);
+      const c = clampToBounds(pos.x, pos.y, PLAYER_BOUNDS); // 下界收到面板上緣之上（不進下方面板）
       if (c.changed) player.setPosition(c.x, c.y);
     }
 
