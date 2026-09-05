@@ -70,6 +70,12 @@ export class UISystem implements GameSystem {
     return bp.getWaitingAnchor?.(playerIndex);
   }
 
+  /** 面板欄數（供待機台座逐欄繪製）。 */
+  getSlotCount(): number {
+    const bp = this.bottomPanel as unknown as { slotCount?: () => number };
+    return bp.slotCount?.() ?? 0;
+  }
+
   private ctx!: GameContext;
   private layout!: UiLayoutFile;
   private bottomPanel!: BottomPanel;

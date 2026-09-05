@@ -8,7 +8,8 @@ import { BuffSystem } from '@/systems/BuffSystem';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import { splitChestByDamage } from '@/systems/chestAttribution';
 import { landingX } from '@/systems/entranceMath';
-import { playerColor } from '@/config/playerConfig';
+import { WAITING_PLATFORM_LIFT, playerColor } from '@/config/playerConfig';
+import { PANEL_DEPTH, UI_ICONS } from '@/config/uiConfig';
 import { ChestSystem } from '@/systems/ChestSystem';
 import { ComboSystem } from '@/systems/ComboSystem';
 import { CreditSystem } from '@/systems/CreditSystem';
@@ -186,12 +187,35 @@ export class GameScene extends Phaser.Scene {
     // 需在 systems.init 之後（UISystem/BottomPanel 待機點就緒）。按 C 投幣才 EnterGame。
     for (const p of this.ctx.players) {
       const w = this.ctx.getWaitingAnchor(p.playerId);
-      p.setWaiting(w.x, w.y);
+      // 待機角色也抬同高度，站在台座頂面（跟台座 lift 對齊）。
+      p.setWaiting(w.x, w.y - WAITING_PLATFORM_LIFT);
     }
+
+    // 待機台座（立足平台）：每個有待機點的欄位畫一張台座 image（常駐）。
+    // depth 介於面板(PANEL_DEPTH=1000)與待機角色(PANEL_DEPTH+10)之間 → 面板<台座<角色，
+    // 台座看得見、角色站在台座上不被蓋。台座中心對齊待機點（角色腳踩台座頂面）。
+    this.drawWaitingPlatforms();
 
     // 場景 shutdown（stop/restart/切場景）時，依序呼叫各 system.destroy()，
     // 釋放事件監聽/計時器，避免場景重啟累積殘留。
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.onShutdown, this);
+  }
+
+  /** 在每個有待機點的欄位畫待機台座（介於面板與待機角色之間的 depth）。 */
+  private drawWaitingPlatforms(): void {
+    if (!this.textures.exists(UI_ICONS.platform.key)) return; // 未載到台座圖則不畫（graceful）
+    const maxColumns = this.uiSystem?.getSlotCount?.() ?? this.ctx.players.length;
+    for (let i = 0; i < maxColumns; i++) {
+      const w = this.uiSystem?.getWaitingAnchor(i);
+      if (!w) continue; // 該欄無待機點（未啟用）不畫
+      // 台座往上抬，讓橢圓露在下方面板頂緣之上（否則被面板上緣蓋住看不清）；
+      // 角色待機也踩在台座頂面（見 setWaiting 的 lift 對齊）。
+      this.add
+        .image(w.x, w.y - WAITING_PLATFORM_LIFT, UI_ICONS.platform.key)
+        .setOrigin(0.5, 0.5)
+        .setScrollFactor(0)
+        .setDepth(PANEL_DEPTH + 5); // 面板(1000) < 台座(1005) < 待機角色(1010)
+    }
   }
 
   /** 待機點解析（委派 UISystem→BottomPanel）；未就緒回 undefined，由 ctx.getWaitingAnchor fallback。 */

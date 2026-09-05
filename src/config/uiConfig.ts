@@ -80,6 +80,8 @@ export const UI_ICONS = {
   chest: { key: 'ui-chest', path: 'assets/images/ui/chest.png' },
   /** JP 燈（未來 JP UI 用，先備著 preload）。 */
   lamp: { key: 'ui-lamp', path: 'assets/images/ui/lamp.png' },
+  /** 待機台座（角色待機時站在上面的立足平台）。 */
+  platform: { key: 'ui-platform', path: 'assets/images/ui/platform.png' },
 } as const;
 
 /** UI 佈局 JSON（uiLayoutSchema 格式）：Phaser cache key + 載入路徑。 */

@@ -3,6 +3,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { MAP_BOUNDS } from '@/config/mapConfig';
 import { ENEMY_CHARACTERS } from '@/entities/Enemy';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
+import { WAITING_PLATFORM_LIFT } from '@/config/playerConfig';
 import { AIController } from '@/systems/AIController';
 import type { EnemySpawner } from '@/systems/EnemySpawner';
 import type { GameContext } from '@/systems/GameContext';
@@ -92,9 +93,10 @@ export class DebugSystem implements GameSystem {
     // 投幣進場循環：AI 加入後先站下方面板待機點，PlayerControl 的待機分支會自動投幣→進場
     // （AI 自動投幣，對應 Unity JoinGame）。起點/進場落點由待機點 + landingX 決定。
     const wait = this.ctx.getWaitingAnchor(playerId);
-    const ai = new Player(this.ctx.scene, wait.x, wait.y, PLAYER_CHARACTERS[0], playerId, 'ai');
+    const wy = wait.y - WAITING_PLATFORM_LIFT; // 站台座頂面（跟 GameScene 待機 lift 一致）
+    const ai = new Player(this.ctx.scene, wait.x, wy, PLAYER_CHARACTERS[0], playerId, 'ai');
     ai.inputSource = new AIController(this.ctx, ai); // AI 的 InputSource（各自目標狀態）
-    ai.setWaiting(wait.x, wait.y); // 開場待機（真空環隱藏、不可操控），下一幀自動投幣進場
+    ai.setWaiting(wait.x, wy); // 開場待機（真空環隱藏、不可操控），下一幀自動投幣進場
     this.ctx.addPlayer(ai);
     console.info(`[Debug] AI 玩家 P${playerId + 1}(id=${playerId}) 加入 → 待機→自動投幣進場`);
   }

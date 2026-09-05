@@ -22,6 +22,9 @@ export function playerColor(playerId: number): number {
   return PLAYER_COLORS[playerId % PLAYER_COLORS.length];
 }
 
+/** 待機台座/角色相對待機點（下方面板欄）往上抬的像素，讓台座露在面板頂緣之上、角色站台座頂面。 */
+export const WAITING_PLATFORM_LIFT = 40;
+
 /**
  * 真空環（搜索圈）設定。對照 Unity：
  * - vacuumRadius = 0.5 unit → 50px（環半徑 = 吸取範圍）
