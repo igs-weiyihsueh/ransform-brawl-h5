@@ -70,13 +70,22 @@ describe('CreditSystem — Credit 資源 / 耗盡 / 投幣', () => {
     expect(sys.getCredit(0)).toBe(before + COIN_INSERT_AMOUNT);
   });
 
-  it('耗盡倒數到 0 → 重置到起始值、解除耗盡（H5 簡化，不卡死）', () => {
+  it('耗盡倒數到 0 → 回待機(justExpired)、Credit 不自動補、需重投幣才再可玩（投幣循環，用戶決策）', () => {
     const sys = makeSystem();
     for (let i = 0; i < STARTING_CREDIT; i += 1) sys.consumeOnHit(0);
     expect(sys.isOutOfCredit(0)).toBe(true);
     sys.update(OUT_OF_CREDIT_COUNTDOWN + 0.1); // 倒數走完
-    expect(sys.isOutOfCredit(0)).toBe(false);
-    expect(sys.getCredit(0)).toBe(STARTING_CREDIT);
+    expect(sys.isOutOfCredit(0)).toBe(false); // 解除耗盡
+    // ⚠️ 新行為：Credit 沒被自動補回起始值，維持 0（沒錢→回待機）。
+    expect(sys.getCredit(0)).toBe(0);
+    // 本幀丟出「回待機」信號（PlayerControl 讀後做 ReturnToWaiting）。
+    expect(sys.consumeJustExpired(0)).toBe(true);
+    expect(sys.consumeJustExpired(0)).toBe(false); // 只觸發一次
+    // 沒錢仍不能攻擊（credit=0）；需重新投幣才恢復。
+    expect(sys.canAttack(0)).toBe(false);
+    sys.addCredit(0, COIN_INSERT_AMOUNT); // 重投幣
+    expect(sys.getCredit(0)).toBe(COIN_INSERT_AMOUNT);
+    expect(sys.canAttack(0)).toBe(true);
   });
 
   // 🔴 壞版必紅對照：canAttack 若沒把耗盡納入（只看 credit>0）在剛好 0 的一瞬仍會誤放。
@@ -212,14 +221,16 @@ describe('CreditSystem — 耗盡倒數', () => {
     expect(sys.getCountdown(0)).toBeCloseTo(OUT_OF_CREDIT_COUNTDOWN - 3);
   });
 
-  it('倒數恰好走完 → 重置到起始值 + 解除耗盡（不卡死）', () => {
+  it('倒數恰好走完 → 回待機(justExpired)、Credit 不自動補（維持0）、解除耗盡（投幣循環）', () => {
     const { sys } = makeControllable();
     consumeTo(sys, 1);
     sys.consumeOnHit(0); // 耗盡
     sys.update(OUT_OF_CREDIT_COUNTDOWN); // 恰好走完
     expect(sys.isOutOfCredit(0)).toBe(false);
-    expect(sys.getCredit(0)).toBe(STARTING_CREDIT);
+    // ⚠️ 新行為：不自動補回起始值，credit 維持 0。
+    expect(sys.getCredit(0)).toBe(0);
     expect(sys.getCountdown(0)).toBe(0);
+    expect(sys.consumeJustExpired(0)).toBe(true); // 回待機信號
   });
 
   it('倒數中途投幣 → 立即解除（不必等倒數完）', () => {
@@ -289,17 +300,22 @@ describe('CreditSystem — 帳本不變量：倒數期間互動', () => {
     expect(sys.isOutOfCredit(0)).toBe(false);
   });
 
-  it('不變量：倒數歸零重置後，credit=起始值且完全解鎖、後續命中正常扣（狀態乾淨）', () => {
+  it('不變量：倒數歸零回待機後，credit=0（不自動補）、投幣後完全解鎖、後續命中正常扣（狀態乾淨）', () => {
     const { sys } = makeControllable();
     consumeTo(sys, 1);
     sys.consumeOnHit(0);
     sys.update(OUT_OF_CREDIT_COUNTDOWN);
     expect(sys.isOutOfCredit(0)).toBe(false);
-    expect(sys.getCredit(0)).toBe(STARTING_CREDIT);
+    // ⚠️ 新行為：歸零回待機、credit 維持 0（沒錢），canAct 因非耗盡=true 但沒錢不能攻擊。
+    expect(sys.getCredit(0)).toBe(0);
+    expect(sys.canAttack(0)).toBe(false); // 沒錢
+    expect(sys.consumeJustExpired(0)).toBe(true); // 回待機信號
+    // 重新投幣 → 完全解鎖、後續命中正常扣（狀態乾淨、無殘留耗盡/倒數）。
+    sys.addCredit(0, COIN_INSERT_AMOUNT);
     expect(sys.canAttack(0)).toBe(true);
     expect(sys.canAct(0)).toBe(true);
     sys.consumeOnHit(0);
-    expect(sys.getCredit(0)).toBe(STARTING_CREDIT - 1);
+    expect(sys.getCredit(0)).toBe(COIN_INSERT_AMOUNT - 1);
     expect(sys.isOutOfCredit(0)).toBe(false);
   });
 });
