@@ -56,9 +56,10 @@ export class UISystem implements GameSystem {
     this.overhead.setSoul(this.getSoulRatio());
     this.overhead.setCredit(this.getCredit());
     this.overhead.setCombo(this.getCombo());
-    // COMBO 警告閃爍 + 滿檔 MAX!（接 ComboSystem）。
-    this.overhead.setComboWarning(this.ctx.combo.isWarning());
-    if (this.ctx.combo.consumeMaxTriggered()) this.overhead.showMaxCombo();
+    // COMBO 警告閃爍 + 滿檔 MAX!（接 ComboSystem，本地 P1）。
+    const p1 = this.ctx.player.playerId;
+    this.overhead.setComboWarning(this.ctx.combo.isWarning(p1));
+    if (this.ctx.combo.consumeMaxTriggered(p1)) this.overhead.showMaxCombo();
     this.overhead.setEnergy(this.getEnergy());
     this.overhead.updateEnergy(dt);
 
@@ -80,24 +81,24 @@ export class UISystem implements GameSystem {
   // （若需在 GameContext 加欄位，走 spec §4 由 leader 過 additive，不自己加。）
   // ---------------------------------------------------------------------------
 
-  /** 能量充能格數（0..上限）。接 EnergySystem（決策 15fec2a4）。 */
+  /** 能量充能格數（0..上限）。接 EnergySystem（本地 P1）。 */
   private getEnergy(): number {
-    return this.ctx.energy.getEnergy();
+    return this.ctx.energy.getEnergy(this.ctx.player.playerId);
   }
 
-  /** COMBO 連擊數。接 ComboSystem。 */
+  /** COMBO 連擊數。接 ComboSystem（本地 P1）。 */
   private getCombo(): number {
-    return this.ctx.combo.getCombo();
+    return this.ctx.combo.getCombo(this.ctx.player.playerId);
   }
 
-  /** 魂力顯示比例（0..1）。接 TransformSystem：變身時 soul/max、退變時 0。 */
+  /** 魂力顯示比例（0..1）。接 TransformSystem（本地 P1）：變身時 soul/max、退變時 0。 */
   private getSoulRatio(): number {
-    return this.ctx.transform.getSoulRatio();
+    return this.ctx.transform.getSoulRatio(this.ctx.player.playerId);
   }
 
-  /** Credit 數字。接 CreditSystem。 */
+  /** Credit 數字。接 CreditSystem（本地 P1）。 */
   private getCredit(): number {
-    return this.ctx.credit.getCredit();
+    return this.ctx.credit.getCredit(this.ctx.player.playerId);
   }
 
   /** 彩票數。接 TicketSystem。 */

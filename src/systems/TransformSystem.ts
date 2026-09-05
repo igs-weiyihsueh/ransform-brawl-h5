@@ -29,30 +29,39 @@ export class TransformSystem implements GameSystem {
   readonly name = 'TransformSystem';
   private ctx!: GameContext;
 
-  private transformed = false;
-  private soul = 0;
+  /** 每玩家變身狀態（Map<playerId>）。S3 只有 P1，一筆退化成舊單一 state。 */
+  private states = new Map<number, { transformed: boolean; soul: number }>();
   private items: TransformItem[] = [];
   private spawnTimer = 0;
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
     this.spawnTimer = ITEM_SPAWN_INTERVAL;
+    this.states.clear();
+  }
+
+  private stateOf(playerId: number): { transformed: boolean; soul: number } {
+    let s = this.states.get(playerId);
+    if (!s) {
+      s = { transformed: false, soul: 0 };
+      this.states.set(playerId, s);
+    }
+    return s;
   }
 
   update(dt: number): void {
-    // debug 鍵：手動生一個道具（沿用 InputSystem 的切敵人鍵之外，這裡用 respawn? 不行——用專屬 API）。
-    // 為不佔用既有 debug 鍵，週期生成為主；DebugSystem 之後可加鍵呼叫 spawnItem()。
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnItem();
       this.spawnTimer = ITEM_SPAWN_INTERVAL;
     }
 
-    // 撿取判定（距離）。
-    const playerPos = this.ctx.player.getPosition();
+    // 撿取判定（距離）。S3：只 P1 撿。
+    const player = this.ctx.player;
+    const playerPos = player.getPosition();
     for (const item of this.items) {
       if (!item.isPicked() && item.isInPickupRange(playerPos)) {
-        this.onPickup(item);
+        this.onPickup(item, player);
       }
     }
     this.items = this.items.filter((it) => !it.isPicked());
@@ -67,43 +76,43 @@ export class TransformSystem implements GameSystem {
     this.items.push(new TransformItem(this.ctx.scene, x, y));
   }
 
-  private onPickup(item: TransformItem): void {
+  private onPickup(item: TransformItem, player: GameContext['player']): void {
     item.pickUp();
-    if (this.transformed) {
-      // 已變身：回復魂力（clamp）。
-      this.soul = Math.min(MAX_SOUL_POWER, this.soul + RECOVER_SOUL);
+    const s = this.stateOf(player.playerId);
+    if (s.transformed) {
+      s.soul = Math.min(MAX_SOUL_POWER, s.soul + RECOVER_SOUL);
     } else {
-      this.transform();
+      this.transform(player);
     }
   }
 
   /** 變身：凡人 → 悟空。 */
-  private transform(): void {
-    this.transformed = true;
-    this.soul = MAX_SOUL_POWER;
-    const player = this.ctx.player;
-    player.switchCharacter(SUNWUKONG_KEY); // EnergySystem 自動切 Full + 倍率 1.0
+  private transform(player: GameContext['player']): void {
+    const s = this.stateOf(player.playerId);
+    s.transformed = true;
+    s.soul = MAX_SOUL_POWER;
+    player.switchCharacter(SUNWUKONG_KEY);
     player.playTransformFlash(TRANSFORM_IFRAME);
-    // 掛受擊扣魂力鉤子：變身中被打改扣魂力。
-    player.setSoulDamageSink((dmg) => this.takeSoulDamage(dmg));
+    player.setSoulDamageSink((dmg) => this.takeSoulDamage(player, dmg));
   }
 
   /** 退變：悟空 → 凡人（魂力歸 0 觸發）。 */
-  private detransform(): void {
-    this.transformed = false;
-    this.soul = 0;
-    const player = this.ctx.player;
-    player.setSoulDamageSink(null); // 清鉤子
-    player.switchCharacter(HUMAN_KEY); // EnergySystem 自動回 HumanSimple + 倍率 0.5
+  private detransform(player: GameContext['player']): void {
+    const s = this.stateOf(player.playerId);
+    s.transformed = false;
+    s.soul = 0;
+    player.setSoulDamageSink(null);
+    player.switchCharacter(HUMAN_KEY);
     player.playTransformFlash(TRANSFORM_IFRAME);
   }
 
   /** 變身中受敵人攻擊：扣魂力；歸 0 → 退變。 */
-  private takeSoulDamage(damage: number): void {
-    if (!this.transformed) return;
-    this.soul = Math.max(0, this.soul - damage);
-    if (this.soul <= 0) {
-      this.detransform();
+  private takeSoulDamage(player: GameContext['player'], damage: number): void {
+    const s = this.stateOf(player.playerId);
+    if (!s.transformed) return;
+    s.soul = Math.max(0, s.soul - damage);
+    if (s.soul <= 0) {
+      this.detransform(player);
     }
   }
 
@@ -114,16 +123,17 @@ export class TransformSystem implements GameSystem {
   }
 
   // --- UI / 狀態查詢 ---
-  isTransformed(): boolean {
-    return this.transformed;
+  isTransformed(playerId: number): boolean {
+    return this.stateOf(playerId).transformed;
   }
 
-  getSoul(): number {
-    return this.soul;
+  getSoul(playerId: number): number {
+    return this.stateOf(playerId).soul;
   }
 
   /** 魂力顯示比例 0..1（退變時 0）。 */
-  getSoulRatio(): number {
-    return this.transformed ? this.soul / MAX_SOUL_POWER : 0;
+  getSoulRatio(playerId: number): number {
+    const s = this.stateOf(playerId);
+    return s.transformed ? s.soul / MAX_SOUL_POWER : 0;
   }
 }

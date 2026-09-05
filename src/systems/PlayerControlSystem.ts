@@ -68,7 +68,7 @@ export class PlayerControlSystem implements GameSystem {
     if (!src) return;
 
     // 衝刺觸發（X，edge；需可攻擊(credit>0且非耗盡)、非衝刺中）。
-    if (src.justPressedDash() && !player.isDashing() && credit.canAttack()) {
+    if (src.justPressedDash() && !player.isDashing() && credit.canAttack(player.playerId)) {
       const move = src.getMoveVector();
       player.startDash(move); // 有移動往移動方向；否則 startDash 內用面向
       this.dashConsumedCredit = false; // 新衝刺：重置「本次衝刺是否已扣 credit」
@@ -80,13 +80,13 @@ export class PlayerControlSystem implements GameSystem {
       this.resolveDashHits();
     } else {
       // 一般移動（耗盡狀態不能移動）。
-      if (credit.canAct()) {
+      if (credit.canAct(player.playerId)) {
         player.move(src.getMoveVector(), dt);
       }
 
       // 攻擊輸入 → 決定普攻或放招 → 用該 AttackData 的 hitDelay 起前搖（需 CanAttack 閘門）
-      if (src.justPressedAttack() && credit.canAttack()) {
-        const intent = energy.resolveAttackIntent();
+      if (src.justPressedAttack() && credit.canAttack(player.playerId)) {
+        const intent = energy.resolveAttackIntent(player.playerId);
         if (player.tryStartAttack(intent.attack.hitDelay, PLAYER_CONFIG.attackCooldown)) {
           this.pendingIntent = intent;
         }
@@ -175,11 +175,14 @@ export class PlayerControlSystem implements GameSystem {
       // Enemy.takeHit 以 (enemy - fromPos) 為擊退方向：令 fromPos = enemy - lat → 沿 lat 推。
       const fromPos = { x: c.x - lat.x, y: c.y - lat.y };
       e.takeHit(DASH_CONFIG.damage, DASH_CONFIG.knockback, fromPos);
-      // 衝刺命中不充能（不呼叫 energy.reportHit）；但 Credit 扣 + COMBO + JP 累積，一次衝刺最多一次。
+      const attackerId = player.playerId;
+      // 衝刺傷害貢獻（per-player，additive）；衝刺命中不充能（不呼叫 energy.reportHit）。
+      this.ctx.jp.recordDamage(attackerId, DASH_CONFIG.damage);
+      // Credit 扣 + COMBO + JP 共享池：一次衝刺最多一次。
       if (!this.dashConsumedCredit) {
         this.dashConsumedCredit = true;
-        this.ctx.credit.consumeOnHit();
-        this.ctx.combo.onHit();
+        this.ctx.credit.consumeOnHit(attackerId);
+        this.ctx.combo.onHit(attackerId);
         this.ctx.jp.notifyCreditSpent(1);
       }
     }
@@ -222,7 +225,12 @@ export class PlayerControlSystem implements GameSystem {
       effectCenter = obb.center;
     }
 
-    for (const e of hits) e.takeHit(dmg, attack.knockback, pos);
+    const attackerId = player.playerId;
+    let dealt = 0;
+    for (const e of hits) {
+      e.takeHit(dmg, attack.knockback, pos); // takeHit 契約不變
+      dealt += dmg;
+    }
     const hitAny = hits.length > 0;
 
     // 頭盔命中效果：Lightning(麻痺+連鎖) / Freeze(凍結)。
@@ -235,12 +243,12 @@ export class PlayerControlSystem implements GameSystem {
     }
 
     // 充能回報：普攻打到人才 +1（招式命中不充）。
-    energy.reportHit(intent.isSkill, hitAny);
-    // Credit：所有命中都扣 1（普攻/招式一次命中扣一次）；COMBO 累積；JP 累積倍數。
+    energy.reportHit(attackerId, intent.isSkill, hitAny);
     if (hitAny) {
-      this.ctx.credit.consumeOnHit();
-      this.ctx.combo.onHit();
-      this.ctx.jp.notifyCreditSpent(1);
+      this.ctx.credit.consumeOnHit(attackerId);
+      this.ctx.combo.onHit(attackerId);
+      this.ctx.jp.notifyCreditSpent(1); // ← 共享池，不加 playerId
+      this.ctx.jp.recordDamage(attackerId, dealt); // ← per-player 貢獻（傷害總和）
     }
   }
 

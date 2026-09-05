@@ -42,6 +42,9 @@ export class JpSystem implements GameSystem {
   private creditSpentAccum = 0;
   private lastPayout = '';
 
+  /** per-player 傷害貢獻累進（S5 加權派彩用；S3 只記不用）。 */
+  private damageByPlayer = new Map<number, number>();
+
   init(ctx: GameContext): void {
     this.ctx = ctx;
     // 接一幕通關事件：隨機給一組 +1 燈。
@@ -65,6 +68,21 @@ export class JpSystem implements GameSystem {
       const st = this.groups[g];
       st.multiplier = Math.min(cfg.capMultiplier, st.multiplier + multiplierStepPerCoin(g) * coins);
     }
+  }
+
+  /**
+   * per-player 傷害貢獻 hook（多人遷移 S3）：累進該玩家對所有命中敵人打出的傷害總和。
+   * 🔴 與 notifyCreditSpent（共享池、不加 playerId）分開：這裡是「記誰貢獻」，為 S5 加權派彩埋。
+   * S3 只記不用（派彩仍現狀）。
+   */
+  recordDamage(attackerId: number, dealt: number): void {
+    if (dealt <= 0) return;
+    this.damageByPlayer.set(attackerId, (this.damageByPlayer.get(attackerId) ?? 0) + dealt);
+  }
+
+  /** 某玩家累計貢獻傷害（S5 加權派彩讀；S3 debug 可看）。 */
+  getDamageContribution(attackerId: number): number {
+    return this.damageByPlayer.get(attackerId) ?? 0;
   }
 
   /** 一幕通關：隨機給一組 +1 燈；集滿觸發派彩。 */

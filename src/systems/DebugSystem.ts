@@ -156,14 +156,15 @@ export class DebugSystem implements GameSystem {
     const nextEnemy = ENEMY_CHARACTERS[this.enemyTypeIndex];
     const hitInfo = player.getLastHitBy() ? `最近被 ${player.getLastHitBy()} 打` : '未被打';
     const iframe = player.isInvincible() ? ' [iFrame無敵中]' : '';
-    const energyInfo = `能量 ${energy.getEnergy()}/${energy.getMax()}${energy.isReady() ? '(READY放招)' : ''}`;
-    const soulInfo = transform.isTransformed()
-      ? `變身中 魂力 ${transform.getSoul()}/100`
+    const p1 = player.playerId;
+    const energyInfo = `能量 ${energy.getEnergy(p1)}/${energy.getMax(p1)}${energy.isReady(p1) ? '(READY放招)' : ''}`;
+    const soulInfo = transform.isTransformed(p1)
+      ? `變身中 魂力 ${transform.getSoul(p1)}/100`
       : '凡人';
-    const creditInfo = credit.isOutOfCredit()
-      ? `Credit 0 [耗盡! 按C投幣, 倒數${credit.getCountdown().toFixed(1)}s]`
-      : `Credit ${credit.getCredit()}`;
-    const comboInfo = `COMBO ${combo.getCombo()}${combo.isWarning() ? '(警告!)' : ''}  彩票 ${ticket.getTickets()}`;
+    const creditInfo = credit.isOutOfCredit(p1)
+      ? `Credit 0 [耗盡! 按C投幣, 倒數${credit.getCountdown(p1).toFixed(1)}s]`
+      : `Credit ${credit.getCredit(p1)}`;
+    const comboInfo = `COMBO ${combo.getCombo(p1)}${combo.isWarning(p1) ? '(警告!)' : ''}  彩票 ${ticket.getTickets()}`;
     const chestInfo = `寶盒 ${chest.getCharge()}/${chest.getThreshold()}(開${chest.getOpensCount()}${chest.getLastReward() ? ' 最近:' + chest.getLastReward() : ''})`;
     const jpInfo = `JP 紅${jp.getLights('red')}燈×${jp.getMultiplier('red').toFixed(1)} 藍${jp.getLights('blue')}燈×${jp.getMultiplier('blue').toFixed(1)} 紫${jp.getLights('purple')}燈×${jp.getMultiplier('purple').toFixed(1)}${jp.getLastPayout() ? ' 派:' + jp.getLastPayout() : ''}`;
     const guardInfo = guard
