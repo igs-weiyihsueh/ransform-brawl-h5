@@ -93,14 +93,19 @@ export class GameScene extends Phaser.Scene {
     const buff = new BuffSystem();
     const helmet = new HelmetSystem();
 
+    // 多人遷移 S4：players 用可變後備陣列，增減只透過 addPlayer 受控入口。
+    const playerList: Player[] = [player]; // players[0] = 本地人類 P1
     // 共用 context（各 system 只透過它取服務/狀態）。
     this.ctx = {
       scene: this,
       worldBounds,
-      players: [player], // 多人遷移 S1：player 實體當 players[0]
+      players: playerList,
       // player = 本地人類 P1 = players[0]（getter alias，現有讀 ctx.player 的碼不動）。
       get player(): Player {
         return this.players[0];
+      },
+      addPlayer(p: Player): void {
+        playerList.push(p);
       },
       input,
       effects,

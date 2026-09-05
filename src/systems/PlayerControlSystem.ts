@@ -40,13 +40,13 @@ export class PlayerControlSystem implements GameSystem {
   readonly name = 'PlayerControlSystem';
   private ctx!: GameContext;
 
-  /** 本次攻擊的意圖（按鍵當下決定，hitDelay 到期時據此結算）。 */
-  private pendingIntent: AttackIntent | null = null;
+  /** 每玩家本次攻擊意圖（按鍵當下決定，hitDelay 到期據此結算）。 */
+  private pendingIntent = new Map<number, AttackIntent | null>();
 
-  /** 本次衝刺是否已扣過 Credit（一次衝刺最多扣 1）。 */
-  private dashConsumedCredit = false;
+  /** 每玩家本次衝刺是否已扣過 Credit（一次衝刺最多扣 1）。 */
+  private dashConsumedCredit = new Map<number, boolean>();
 
-  /** debug 繪製用：最近判定形狀。 */
+  /** debug 繪製用：最近判定形狀（P1）。 */
   private lastOBB: OBB | null = null;
   private lastCircle: AttackCircle | null = null;
   private lastFan: AttackFan | null = null;
@@ -57,49 +57,50 @@ export class PlayerControlSystem implements GameSystem {
   }
 
   update(dt: number): void {
-    const { player, energy, credit } = this.ctx;
-    // S2：pull-based 從該 player 的 InputSource 取意圖（P1=現有 InputSystem，行為同舊）。
-    const src = player.inputSource;
-
-    // 依 buff 狀態每幀設定玩家倍率/護盾（頭盔/寶盒）。
+    // buff 倍率/護盾每幀套（目前只影響 P1 玩家實體；per-player buff 之後 S5 再細分）。
     this.applyBuffState();
+    // S4：對每個 player（P1 人類 + P2-P4 AI）各自跑操控結算。
+    for (const player of this.ctx.players) {
+      this.updatePlayer(player, dt);
+    }
+    if (this.shapeFlash > 0) this.shapeFlash -= dt;
+  }
 
-    // 無 InputSource（理論上不會，防呆）→ 不操控。
-    if (!src) return;
+  /** 單一 player 的操控主迴圈（人類/AI 皆同，只差 InputSource）。 */
+  private updatePlayer(player: GameContext['player'], dt: number): void {
+    const { energy, credit } = this.ctx;
+    const src = player.inputSource;
+    if (!src) return; // 無 InputSource → 不操控
 
-    // 衝刺觸發（X，edge；需可攻擊(credit>0且非耗盡)、非衝刺中）。
-    if (src.justPressedDash() && !player.isDashing() && credit.canAttack(player.playerId)) {
-      const move = src.getMoveVector();
-      player.startDash(move); // 有移動往移動方向；否則 startDash 內用面向
-      this.dashConsumedCredit = false; // 新衝刺：重置「本次衝刺是否已扣 credit」
+    const pid = player.playerId;
+
+    // 衝刺觸發（edge；需可攻擊、非衝刺中）。
+    if (src.justPressedDash() && !player.isDashing() && credit.canAttack(pid)) {
+      player.startDash(src.getMoveVector());
+      this.dashConsumedCredit.set(pid, false);
     }
 
     if (player.isDashing()) {
-      // 衝刺中：走衝刺位移 + 每幀命中判定（穿過敵人、不做一般移動）。
       player.updateDash(dt);
-      this.resolveDashHits();
+      this.resolveDashHits(player);
     } else {
-      // 一般移動（耗盡狀態不能移動）。
-      if (credit.canAct(player.playerId)) {
+      if (credit.canAct(pid)) {
         player.move(src.getMoveVector(), dt);
       }
-
-      // 攻擊輸入 → 決定普攻或放招 → 用該 AttackData 的 hitDelay 起前搖（需 CanAttack 閘門）
-      if (src.justPressedAttack() && credit.canAttack(player.playerId)) {
-        const intent = energy.resolveAttackIntent(player.playerId);
+      if (src.justPressedAttack() && credit.canAttack(pid)) {
+        const intent = energy.resolveAttackIntent(pid);
         if (player.tryStartAttack(intent.attack.hitDelay, PLAYER_CONFIG.attackCooldown)) {
-          this.pendingIntent = intent;
+          this.pendingIntent.set(pid, intent);
         }
       }
     }
 
-    // 計時器；hitDelay 到期做命中判定（衝刺中仍讓在途攻擊結算）
-    if (player.updateTimers(dt) && this.pendingIntent) {
-      this.resolveAttack(this.pendingIntent);
-      this.pendingIntent = null;
+    // 計時器；hitDelay 到期做命中判定（衝刺中仍讓在途攻擊結算）。
+    const pending = this.pendingIntent.get(pid) ?? null;
+    if (player.updateTimers(dt) && pending) {
+      this.resolveAttack(player, pending);
+      this.pendingIntent.set(pid, null);
     }
-
-    if (this.shapeFlash > 0) this.shapeFlash -= dt;
   }
 
   /** 依 BuffSystem 聚合倍率設定玩家 stat 倍率/護盾（同 stat 多來源已相乘+clamp）。 */
@@ -151,8 +152,7 @@ export class PlayerControlSystem implements GameSystem {
    * 衝刺命中：每幀以半徑 dashRadius 的圓抓範圍內敵人，每隻本次衝刺只打一次（去重），
    * 造成 dashDamage + 側向擊退（垂直於衝刺方向、依敵人在哪側決定左右）。不充能。
    */
-  private resolveDashHits(): void {
-    const { player } = this.ctx;
+  private resolveDashHits(player: GameContext['player']): void {
     const pos = player.getPosition();
     const dir = player.getDashDir();
     // 坐騎：範圍放大（命中數 3→5 近似）＝半徑 × (1 + extraHits/基準)。
@@ -179,8 +179,8 @@ export class PlayerControlSystem implements GameSystem {
       // 衝刺傷害貢獻（per-player，additive）；衝刺命中不充能（不呼叫 energy.reportHit）。
       this.ctx.jp.recordDamage(attackerId, DASH_CONFIG.damage);
       // Credit 扣 + COMBO + JP 共享池：一次衝刺最多一次。
-      if (!this.dashConsumedCredit) {
-        this.dashConsumedCredit = true;
+      if (!this.dashConsumedCredit.get(attackerId)) {
+        this.dashConsumedCredit.set(attackerId, true);
         this.ctx.credit.consumeOnHit(attackerId);
         this.ctx.combo.onHit(attackerId);
         this.ctx.jp.notifyCreditSpent(1);
@@ -189,8 +189,8 @@ export class PlayerControlSystem implements GameSystem {
   }
 
   /** 依 intent 的 AttackData 形狀建立判定、查命中、套傷害；回報 EnergySystem 充能。 */
-  private resolveAttack(intent: AttackIntent): void {
-    const { player, effects, energy } = this.ctx;
+  private resolveAttack(player: GameContext['player'], intent: AttackIntent): void {
+    const { effects, energy } = this.ctx;
     const attack: AttackData = intent.attack;
     const pos = player.getPosition();
     const facing = player.getFacing();

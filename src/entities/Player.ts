@@ -227,6 +227,13 @@ export class Player implements Hittable {
     this.anim.setFacing(dir);
   }
 
+  /** 面向某世界 x（供 AI 面向目標）：目標在右→面右、在左→面左。 */
+  faceTowards(targetX: number): void {
+    const dx = targetX - this.anim.sprite.x;
+    if (dx > 0.001) this.setFacing(1);
+    else if (dx < -0.001) this.setFacing(-1);
+  }
+
   // --- 衝刺（Dash） ---
 
   isDashing(): boolean {

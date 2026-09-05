@@ -33,8 +33,13 @@ export interface GameContext {
    * per-player 迭代（多人）未來用 players[]；ctx.player === ctx.players[0] 恆真。
    */
   readonly player: Player;
-  /** 玩家陣列（多人遷移 S1 骨架；目前只有 P1）。 */
+  /** 玩家陣列（多人遷移；讀取用。增減只透過 addPlayer 受控入口）。 */
   readonly players: readonly Player[];
+  /**
+   * 受控加入玩家（S4 join API 單一入口）：F2/F3/F4 生成 AI player 時呼叫。
+   * 不讓外部隨意 push players[]，保持增減有單一入口。
+   */
+  addPlayer(player: Player): void;
   /** 輸入抽象。 */
   readonly input: InputSystem;
   /** 可重用特效系統。 */

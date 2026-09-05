@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { ENEMY_CHARACTERS } from '@/entities/Enemy';
-import { PLAYER_CHARACTERS } from '@/entities/Player';
+import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
+import { AIController } from '@/systems/AIController';
 import type { EnemySpawner } from '@/systems/EnemySpawner';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
@@ -74,9 +75,25 @@ export class DebugSystem implements GameSystem {
     if (input.isSpawnItemJustPressed()) {
       this.ctx.transform.spawnItem();
     }
+    // F2/F3/F4：加入 AI 玩家（P2-P4）
+    const joinId = input.justPressedJoin();
+    if (joinId > 0) {
+      this.joinAiPlayer(joinId);
+    }
 
     this.drawDebug();
     this.updateInfo();
+  }
+
+  /** 加入一個 AI 玩家（playerId=1/2/3；已存在則略過）。走 GameContext 受控 addPlayer 入口。 */
+  private joinAiPlayer(playerId: number): void {
+    if (this.ctx.players.some((p) => p.playerId === playerId)) return; // 已加入
+    const x = GAME_WIDTH * 0.5 + Phaser.Math.Between(-150, 150);
+    const y = GAME_HEIGHT * 0.5 + Phaser.Math.Between(-100, 100);
+    const ai = new Player(this.ctx.scene, x, y, PLAYER_CHARACTERS[0], playerId, 'ai');
+    ai.inputSource = new AIController(this.ctx, ai); // AI 的 InputSource（各自目標狀態）
+    this.ctx.addPlayer(ai);
+    console.info(`[Debug] 加入 AI 玩家 P${playerId + 1}(id=${playerId})`);
   }
 
   private spawnCurrentType(): void {
@@ -175,7 +192,7 @@ export class DebugSystem implements GameSystem {
         `${creditInfo}   ${comboInfo}   ${chestInfo}   ${energyInfo}\n` +
         `${jpInfo}${guardInfo}\n` +
         `下一隻敵人(E補新/R補同型):${nextEnemy}   場上:${enemies.length}  ${enemyInfo}\n` +
-        `[G]生變身道具  [X]衝刺  [C]投幣  [Z/左鍵]攻擊/放招` +
+        `[G]生變身道具  [X]衝刺  [C]投幣  [H]頭盔  [F2/3/4]加AI玩家(共${this.ctx.players.length}人)  [Z/左鍵]攻擊/放招` +
         (player.isOnCooldown() ? '   [玩家攻擊冷卻中]' : ''),
     );
   }

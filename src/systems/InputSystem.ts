@@ -10,6 +10,9 @@ export type InputAction =
   | 'dash'
   | 'coin'
   | 'helmet'
+  | 'joinP2'
+  | 'joinP3'
+  | 'joinP4'
   | 'respawn'
   | 'switchPlayer'
   | 'switchEnemy'
@@ -53,6 +56,9 @@ export class InputSystem implements GameSystem, InputSource {
     dash: false,
     coin: false,
     helmet: false,
+    joinP2: false,
+    joinP3: false,
+    joinP4: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -63,6 +69,9 @@ export class InputSystem implements GameSystem, InputSource {
     dash: false,
     coin: false,
     helmet: false,
+    joinP2: false,
+    joinP3: false,
+    joinP4: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -73,6 +82,9 @@ export class InputSystem implements GameSystem, InputSource {
     dash: false,
     coin: false,
     helmet: false,
+    joinP2: false,
+    joinP3: false,
+    joinP4: false,
     respawn: false,
     switchPlayer: false,
     switchEnemy: false,
@@ -100,6 +112,9 @@ export class InputSystem implements GameSystem, InputSource {
       dash: kb.addKey(KC.X),
       coin: kb.addKey(KC.C),
       helmet: kb.addKey(KC.H),
+      joinP2: kb.addKey(KC.F2),
+      joinP3: kb.addKey(KC.F3),
+      joinP4: kb.addKey(KC.F4),
       respawn: kb.addKey(KC.R),
       switchPlayer: kb.addKey(KC.T),
       switchEnemy: kb.addKey(KC.E),
@@ -187,6 +202,14 @@ export class InputSystem implements GameSystem, InputSource {
   /** debug 撿頭盔鍵（H）的 edge。 */
   justPressedHelmet(): boolean {
     return this.justPressedNow.helmet;
+  }
+
+  /** 加入 AI 玩家鍵（F2/F3/F4）的 edge，回傳要加入的 playerId（無則 0）。 */
+  justPressedJoin(): number {
+    if (this.justPressedNow.joinP2) return 1;
+    if (this.justPressedNow.joinP3) return 2;
+    if (this.justPressedNow.joinP4) return 3;
+    return 0;
   }
 
   // --- 相容既有呼叫端（改讀 snapshot，語意不變） ---
