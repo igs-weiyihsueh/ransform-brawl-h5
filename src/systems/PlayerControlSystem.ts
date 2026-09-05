@@ -70,6 +70,13 @@ export class PlayerControlSystem implements GameSystem {
   /** 單一 player 的操控主迴圈（人類/AI 皆同，只差 InputSource）。 */
   private updatePlayer(player: GameContext['player'], dt: number): void {
     const { energy, credit } = this.ctx;
+
+    // 進場跳躍中：只推進進場動畫，跳過一般操控/攻擊/夾限（isJumping 已豁免夾限）。
+    if (typeof player.isEntering === 'function' && player.isEntering()) {
+      player.updateEntrance(dt);
+      return;
+    }
+
     const src = player.inputSource;
     if (!src) return; // 無 InputSource → 不操控
 

@@ -7,6 +7,7 @@ import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { BuffSystem } from '@/systems/BuffSystem';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import { splitChestByDamage } from '@/systems/chestAttribution';
+import { P1_ENTRANCE_ON_START, landingX } from '@/systems/entranceMath';
 import { ChestSystem } from '@/systems/ChestSystem';
 import { ComboSystem } from '@/systems/ComboSystem';
 import { CreditSystem } from '@/systems/CreditSystem';
@@ -83,6 +84,13 @@ export class GameScene extends Phaser.Scene {
     const spawner = new EnemySpawner(this, player, worldBounds);
     // S2：P1 的操控意圖來源 = 現有 InputSystem（同一實例，行為完全同舊）。
     player.inputSource = input;
+
+    // 項目3：P1 開場進場（flag 預設關，維持 P1 一開始就在場玩，不改開場體驗）。
+    // 用戶確認要 P1 也跳進場後，把 P1_ENTRANCE_ON_START 設 true 即啟用（機制已就緒）。
+    if (P1_ENTRANCE_ON_START) {
+      const endX = landingX(0, GAME_WIDTH * 0.5);
+      player.startEntrance(endX, -120, endX, GAME_HEIGHT * 0.5);
+    }
     const energy = new EnergySystem();
     const transform = new TransformSystem();
     const credit = new CreditSystem();

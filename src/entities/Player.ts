@@ -8,6 +8,7 @@ import {
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
 import { FOOT_GLOW, playerColor } from '@/config/playerConfig';
+import { ENTRANCE, entrancePosition } from '@/systems/entranceMath';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import type { InputSource } from '@/systems/InputSource';
 import type { Hittable, Vec2 } from '@/systems/hitDetection';
@@ -73,6 +74,12 @@ export class Player implements Hittable {
   private readonly footGlow!: Phaser.GameObjects.Graphics;
   /** 真空環顯示旗標（項目3 進場鉤子：待機隱藏、進場顯示；現預設顯示）。 */
   private footGlowVisible = true;
+
+  /** 進場跳躍狀態（項目3）。 */
+  private entranceActive = false;
+  private entranceT = 0;
+  private entranceStart: Vec2 = { x: 0, y: 0 };
+  private entranceEnd: Vec2 = { x: 0, y: 0 };
 
   constructor(
     scene: Phaser.Scene,
@@ -153,6 +160,59 @@ export class Player implements Hittable {
   /** 真空環目前是否顯示（測試/查詢用）。 */
   isFootGlowVisible(): boolean {
     return this.footGlowVisible;
+  }
+
+  // --- 進場跳躍（JumpToField，項目3） ---
+
+  /**
+   * 開始從待機區進場跳躍到落點。進場中 isJumping=true（免疫地圖夾限）、真空環先隱藏。
+   * @param startX/startY 起點（待機區，通常場外）
+   * @param endX/endY 落點（按 playerId 分散）
+   */
+  startEntrance(startX: number, startY: number, endX: number, endY: number): void {
+    this.entranceActive = true;
+    this.entranceT = 0;
+    this.entranceStart = { x: startX, y: startY };
+    this.entranceEnd = { x: endX, y: endY };
+    this.isJumping = true; // 免疫地圖邊界夾限（接項目1鉤子）
+    this.setFootGlowVisible(false); // 進場前不顯真空環（接項目2鉤子）
+    this.setPosition(startX, startY);
+    this.syncFootGlow();
+    this.anim.play('move');
+  }
+
+  /** 進場中？（PlayerControl 進場期間跳過一般操控）。 */
+  isEntering(): boolean {
+    return this.entranceActive;
+  }
+
+  /**
+   * 進場每幀更新：水平 lerp + 垂直拋物線；到期落地（位置=落點、isJumping=false、顯真空環）。
+   * @returns 是否仍在進場中（落地當幀回 false）。
+   */
+  updateEntrance(dt: number): boolean {
+    if (!this.entranceActive) return false;
+    this.entranceT += dt / ENTRANCE.durationSec;
+    if (this.entranceT >= 1) {
+      // 落地：定位到落點、結束進場。
+      this.entranceActive = false;
+      this.isJumping = false;
+      this.setPosition(this.entranceEnd.x, this.entranceEnd.y);
+      this.setFootGlowVisible(true); // 進場後顯真空環（OnLanded）
+      this.syncFootGlow();
+      this.anim.play('idle');
+      return false;
+    }
+    const p = entrancePosition(
+      this.entranceStart.x,
+      this.entranceStart.y,
+      this.entranceEnd.x,
+      this.entranceEnd.y,
+      this.entranceT,
+    );
+    this.setPosition(p.x, p.y);
+    this.syncFootGlow();
+    return true;
   }
 
   /** 直接設定位置（地圖邊界 clamp 寫回用）。 */
