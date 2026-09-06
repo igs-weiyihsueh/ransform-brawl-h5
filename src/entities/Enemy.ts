@@ -13,6 +13,7 @@ import {
   combineWithSeparation,
   pushOutOfPlayer,
 } from '@/systems/enemySeparation';
+import { slotApproachDir, SLOT_REACH_THRESHOLD_PX, TRAVELER_AVOID_WEIGHT } from '@/systems/surroundSlots';
 import {
   buildAttackCircle,
   isPlayerInEnemyAttackShape,
@@ -145,6 +146,43 @@ export class Enemy implements Hittable {
     this.neighbors = others;
   }
 
+  // --- surround 環繞槽位（征騎，整合六輪）：EnemySpawner 每幀協調 claim 槽 → setSlotTarget ---
+
+  /** 敵人唯一 id（供 SurroundSlotManager 佔用表 key；每隻遞增）。 */
+  readonly id: number = Enemy.nextId++;
+  private static nextId = 1;
+
+  /**
+   * 本幀槽位環繞目標（EnemySpawner 每幀協調後設）：
+   *  - slotPos：已 claim 到的槽世界座標（像素）→ chase 用 slotApproachDir 繞圈趨近它。
+   *  - slotRingCenter：環中心（真空圈中心）→ 繞圈趨近的圈心參考。
+   *  - null：未 claim（或全滿/目標不可環繞）→ fallback 現有 moveChase 分離力追擊。
+   */
+  private slotPos: Vec2 | null = null;
+  private slotRingCenter: Vec2 | null = null;
+
+  /** 設定本幀槽位目標（EnemySpawner 協調後每幀呼叫；null=無槽走 fallback）。 */
+  setSlotTarget(slotPos: Vec2 | null, ringCenter: Vec2 | null): void {
+    this.slotPos = slotPos;
+    this.slotRingCenter = ringCenter;
+  }
+
+  /**
+   * 槽位環繞的起始層（Unity minLayer）：菁英(immovable 大體型)=2 排外圈不佔內圈；小怪=0 內圈優先。
+   * EnemySpawner claim/遞補時讀此。
+   */
+  getSurroundMinLayer(): number {
+    return this.cfg.immovable === true ? 2 : 0;
+  }
+
+  /** 本幀是否已到槽附近（dist<threshold）：EnemySpawner 供 debug / 內層遞補節流參考。 */
+  isAtSlot(threshold = 10): boolean {
+    if (!this.slotPos) return false;
+    const dx = this.slotPos.x - this.anim.sprite.x;
+    const dy = this.slotPos.y - this.anim.sprite.y;
+    return Math.hypot(dx, dy) < threshold;
+  }
+
   /** 敵人 body 半徑（像素）：用碰撞半徑當 body 半徑（含 perCharScale 放大）。 */
   getBodyRadius(): number {
     return this.radiusPx;
@@ -223,13 +261,32 @@ export class Enemy implements Hittable {
     this.anim.sprite.y = fixed.y;
   }
 
-  /** 追擊移動：朝 aim 疊加分離力後正規化、按速度位移。 */
+  /**
+   * 追擊移動（整合 surround，征騎）：
+   *  - 有槽位目標（slotPos）→ 繞圈趨近該槽（slotApproachDir：徑向靠層半徑 + 切線繞行，不穿中央人群）；
+   *    趕路中 separation weight 較高（TRAVELER_AVOID_WEIGHT，繞開彼此不死推）；到槽（<SLOT_REACH_THRESHOLD_PX）停下不動。
+   *  - 無槽（未 claim/全滿/目標不可環繞）→ fallback 原分離力直線追擊（朝 aim 疊加分離力）。
+   */
   private moveChase(aimDx: number, aimDy: number, dt: number): void {
     const speedPx = this.cfg.moveSpeed * PPU;
-    const sep = calculateSeparation(
-      { x: this.anim.sprite.x, y: this.anim.sprite.y },
-      this.neighbors,
-    );
+    const selfPos = { x: this.anim.sprite.x, y: this.anim.sprite.y };
+
+    if (this.slotPos && this.slotRingCenter) {
+      // 到槽：dist<SLOT_REACH_THRESHOLD_PX → 停下（不位移），由狀態機面向目標。
+      const ddx = this.slotPos.x - selfPos.x;
+      const ddy = this.slotPos.y - selfPos.y;
+      if (Math.hypot(ddx, ddy) < SLOT_REACH_THRESHOLD_PX) return;
+      // 繞圈趨近方向 + 趕路避讓（較高 separation weight 繞開彼此）。
+      const approach = slotApproachDir(selfPos, this.slotRingCenter, this.slotPos);
+      const sep = calculateSeparation(selfPos, this.neighbors);
+      const dir = combineWithSeparation(approach, sep, TRAVELER_AVOID_WEIGHT);
+      this.anim.sprite.x += dir.x * speedPx * dt;
+      this.anim.sprite.y += dir.y * speedPx * dt;
+      return;
+    }
+
+    // fallback：無槽 → 原分離力直線追擊。
+    const sep = calculateSeparation(selfPos, this.neighbors);
     const dir = combineWithSeparation({ x: aimDx, y: aimDy }, sep);
     this.anim.sprite.x += dir.x * speedPx * dt;
     this.anim.sprite.y += dir.y * speedPx * dt;
@@ -448,7 +505,8 @@ export class Enemy implements Hittable {
           }
         } else if (dist <= detectPx && dist > 0.001) {
           this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加（含 attackRange 內但形狀外→再逼近，根治空揮）
-          this.anim.play('move');
+          // surround(征騎)：已到槽定位→idle(停走姿)，否則 move(趕路)。
+          this.anim.play(this.slotPos && this.isAtSlot(SLOT_REACH_THRESHOLD_PX) ? 'idle' : 'move');
         } else {
           this.anim.play('idle');
         }
@@ -488,7 +546,7 @@ export class Enemy implements Hittable {
         // 冷卻期間仍會追（若玩家跑出攻擊距離）。
         if (dist > attackPx && dist <= detectPx && dist > 0.001) {
           this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加
-          this.anim.play('move');
+          this.anim.play(this.slotPos && this.isAtSlot(SLOT_REACH_THRESHOLD_PX) ? 'idle' : 'move');
         } else {
           this.anim.play('idle');
         }

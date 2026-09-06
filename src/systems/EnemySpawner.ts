@@ -4,6 +4,7 @@ import type { Player } from '@/entities/Player';
 import { circleIntersectsCircle, type Vec2 } from '@/systems/hitDetection';
 import { pushOutOfPlayer } from '@/systems/enemySeparation';
 import { Projectile } from '@/systems/Projectile';
+import { SurroundSlotManager, type ISurroundTarget } from '@/systems/SurroundSlotManager';
 
 /**
  * EnemySpawner — 生怪 API + 敵人/射彈執行時容器。
@@ -63,9 +64,114 @@ export class EnemySpawner {
 
   /** 清除全部場上敵人（守護波結束 ClearAllActiveEnemies 用）。 */
   clearAllEnemies(): void {
-    for (const e of this.enemies) e.forceDestroy();
+    for (const e of this.enemies) {
+      this.releaseSurroundFor(e);
+      e.forceDestroy();
+    }
     this.enemies = [];
     this.projectiles = [];
+  }
+
+  // --- 槽位同心圓環繞協調（每幀 update 前） ---
+
+  /**
+   * 快取的 ISurroundTarget adapter：把 Player / GuardTarget 包成環繞目標介面。
+   * 快取的原因：SurroundSlotManager 靜態註冊表用 target 物件身份當 key，每幀新建 adapter 會炸出多個 manager、槽位錯亂。
+   * 用底層物件(player/guard 實例)當 key 快取同一個 adapter，維持 manager 一對一。
+   */
+  private readonly surroundAdapters = new WeakMap<object, ISurroundTarget>();
+
+  /** 取得（或建立快取）某玩家的環繞 adapter。IsSurroundActive = 非待機（待機/出局不被環繞）。 */
+  private playerAsSurroundTarget(p: Player): ISurroundTarget {
+    const cached = this.surroundAdapters.get(p as unknown as object);
+    if (cached) return cached;
+    const adapter: ISurroundTarget = {
+      getVacuumCenter: () => p.getVacuumCenter?.() ?? p.getHitCenter(),
+      getVacuumRadius: () => p.getVacuumRadius?.() ?? p.getHitRadius(),
+      isSurroundActive: () => !(p.isWaiting?.() ?? false),
+    };
+    this.surroundAdapters.set(p as unknown as object, adapter);
+    return adapter;
+  }
+
+  /** 取得（或建立快取）守護目標的環繞 adapter。中心=getHitCenter、半徑=getHitRadius、active=未被擊破。 */
+  private guardAsSurroundTarget(
+    g: import('@/systems/hitDetection').Hittable & {
+      getPosition(): Vec2;
+      isDefeated?: () => boolean;
+    },
+  ): ISurroundTarget {
+    const cached = this.surroundAdapters.get(g as unknown as object);
+    if (cached) return cached;
+    const adapter: ISurroundTarget = {
+      getVacuumCenter: () => g.getHitCenter(),
+      getVacuumRadius: () => g.getHitRadius(),
+      isSurroundActive: () => !(g.isDefeated?.() ?? false),
+    };
+    this.surroundAdapters.set(g as unknown as object, adapter);
+    return adapter;
+  }
+
+  /**
+   * 決定某敵人本幀的環繞目標 adapter：守護波→雕像；否則→玩家（對應 e.update 的 aim 目標）。
+   * 目標不可環繞（待機/出局/被擊破）或真空半徑<=0 → 回 null（該敵人 fallback 一般追擊）。
+   */
+  private surroundTargetFor(): ISurroundTarget | null {
+    const adapter = this.guardTarget
+      ? this.guardAsSurroundTarget(this.guardTarget)
+      : this.playerAsSurroundTarget(this.player);
+    if (!adapter.isSurroundActive()) return null;
+    if (adapter.getVacuumRadius() <= 0) return null;
+    return adapter;
+  }
+
+  /**
+   * 每幀協調：對每隻活著、追擊中的敵人 claim 槽（就近內層優先）+ 主動往內遞補，設好本幀 slot 目標。
+   * 目標不可環繞/全滿 → 釋放舊槽 + slotTarget(null)（fallback 一般 moveChase 分離力追擊）。
+   * claim 後持有、不被動遞補，只 tryClaimInner 往更內層遞補（避免抖動；Unity 設計）。
+   */
+  private coordinateSurround(): void {
+    for (const e of this.enemies) {
+      if (e.isDead()) continue;
+      // grabber（抓人者）不走環繞（由 GrabSystem 驅動）。
+      if (e.isGrabber?.()) {
+        this.releaseSurroundFor(e);
+        e.setSlotTarget(null, null);
+        continue;
+      }
+      const target = this.surroundTargetFor();
+      if (!target) {
+        this.releaseSurroundFor(e);
+        e.setSlotTarget(null, null);
+        continue;
+      }
+      const mgr = SurroundSlotManager.getOrCreate(target);
+      const enemyPos = e.getHitCenter();
+      const minLayer = e.getSurroundMinLayer();
+
+      // claim（沒持槽才 claim；持槽則回原槽）。
+      let slotId = mgr.claim(e.id, enemyPos, minLayer);
+      // 主動往更內層遞補（前排死→內圈空）：持槽後每幀嘗試，找不到就保留原槽。
+      if (slotId >= 0) {
+        const inner = mgr.tryClaimInner(e.id, enemyPos, minLayer);
+        if (inner >= 0) slotId = inner;
+      }
+
+      if (slotId < 0) {
+        // 全滿 → 無槽，fallback 一般追擊（不釋放已持槽者；此處 slotId<0 代表本來就沒槽）。
+        e.setSlotTarget(null, mgr.getRingCenter());
+        continue;
+      }
+      e.setSlotTarget(mgr.getSlotPos(slotId), mgr.getRingCenter());
+    }
+  }
+
+  /** 釋放某敵人在（所有可能目標的）manager 中持有的槽（死亡/離場/換目標/停止環繞）。 */
+  private releaseSurroundFor(e: Enemy): void {
+    if (this.guardTarget) {
+      SurroundSlotManager.get(this.guardAsSurroundTarget(this.guardTarget))?.release(e.id);
+    }
+    SurroundSlotManager.get(this.playerAsSurroundTarget(this.player))?.release(e.id);
   }
 
   /** 目前存活的敵人（唯讀）。 */
@@ -80,6 +186,8 @@ export class EnemySpawner {
     const playerPos = this.player.getPosition();
     // separation：每幀給每個敵人「其他敵人位置」清單。
     const positions = this.enemies.map((e) => e.getHitCenter());
+    // 槽位環繞協調：每幀在 update 前 claim/遞補/釋放，設好各敵人本幀 slot 目標（e.update 讀它決定繞圈到槽或 fallback 追擊）。
+    this.coordinateSurround();
     for (let i = 0; i < this.enemies.length; i += 1) {
       const e = this.enemies[i];
       e.setNeighbors(positions.filter((_, j) => j !== i));
@@ -149,6 +257,9 @@ export class EnemySpawner {
       }
     }
     this.projectiles = this.projectiles.filter((p) => !p.isDead());
+    // 死亡敵人移除前先釋放其環繞槽（前排死→內圈空→外層怪 tryClaimInner 遞補進來）。
+    const dead = this.enemies.filter((e) => e.isDead());
+    for (const e of dead) this.releaseSurroundFor(e);
     this.enemies = this.enemies.filter((e) => !e.isDead());
   }
 
@@ -169,6 +280,12 @@ export class EnemySpawner {
         })
       | null,
   ): void {
+    // 換目標：先釋放場上敵人在「舊目標」manager 的槽（Unity 換目標 release 舊槽），並清舊 manager 註冊表。
+    const prev = this.guardTarget;
+    if (prev !== target) {
+      for (const e of this.enemies) this.releaseSurroundFor(e);
+      if (prev) SurroundSlotManager.remove(this.guardAsSurroundTarget(prev));
+    }
     this.guardTarget = target;
     for (const e of this.enemies) e.setGuardTarget(target);
   }
