@@ -84,33 +84,3 @@ export function knockbackDistancePx(
   const distUnit = Math.min(Math.max(force * cfg.knockbackForceScale, 0), cfg.knockbackDistance);
   return distUnit * ppu;
 }
-
-/**
- * 六輪：擊退每秒速度向量（純函式，抽給測騎）。玩家/敵人受擊被推開共用。
- * 方向 = fromPos→toPos（來源指向被擊退者，即遠離來源）正規化；
- * 總位移 = knockbackDistancePx(force)，於 durationSec 內線性推進 → 每秒速度 = 距離/時長 × 方向。
- * fromPos===toPos（重疊、無方向）→ 回 {x:0,y:0}（不亂推）。force<=0 → {x:0,y:0}。
- * @param fromPos 攻擊來源位置（敵人/攻擊圓心）。
- * @param toPos 被擊退者位置（玩家）。
- * @param force knockback 力道（unit 級）。
- * @param ppu 每 unit 像素。
- * @param durationSec 擊退時長（秒，預設 HIT_FEEL.knockbackDuration）。
- * @returns 每秒速度向量（像素/秒）。
- */
-export function knockbackVelocity(
-  fromPos: { x: number; y: number },
-  toPos: { x: number; y: number },
-  force: number,
-  ppu: number,
-  durationSec: number = HIT_FEEL.knockbackDuration,
-  cfg: HitFeelConfig = HIT_FEEL,
-): { x: number; y: number } {
-  if (force <= 0 || durationSec <= 0) return { x: 0, y: 0 };
-  const dx = toPos.x - fromPos.x;
-  const dy = toPos.y - fromPos.y;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) return { x: 0, y: 0 };
-  const distPx = knockbackDistancePx(force, ppu, cfg);
-  const speed = distPx / durationSec;
-  return { x: (dx / len) * speed, y: (dy / len) * speed };
-}

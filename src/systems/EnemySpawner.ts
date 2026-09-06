@@ -253,7 +253,7 @@ export class EnemySpawner {
     for (const p of this.projectiles) {
       const hit = p.update(target, dt, this.worldBounds);
       if (hit) {
-        this.applyAttackDamage(p.damage, p.sourceLabel, p.knockback, p.getCenter()); // 六輪：擊退方向=射彈位置→玩家
+        this.applyAttackDamage(p.damage, p.sourceLabel);
         // 用戶 #7：射彈命中玩家也播命中爆閃（打雕像不播）。純視覺。
         if (!this.guardTarget) {
           const hc = this.player.getHitCenter();
@@ -296,11 +296,11 @@ export class EnemySpawner {
   }
 
   /** 對當前攻擊目標套傷害：守護波→雕像 takeDamage；否則→玩家 takeHit。 */
-  private applyAttackDamage(dmg: number, sourceName: string, knockback = 0, fromPos?: { x: number; y: number }): void {
+  private applyAttackDamage(dmg: number, sourceName: string): void {
     if (this.guardTarget) {
       this.guardTarget.takeDamage(dmg);
     } else {
-      this.player.takeHit(dmg, sourceName, knockback, fromPos); // 六輪：玩家受擊擊退(依來源方向×力道)
+      this.player.takeHit(dmg, sourceName);
     }
   }
 
@@ -314,7 +314,7 @@ export class EnemySpawner {
         target.getHitRadius(),
       );
       if (hit) {
-        this.applyAttackDamage(ev.damage, ev.sourceName, ev.knockback, ev.meleeCircle.center); // 六輪：擊退方向=攻擊圓心→玩家
+        this.applyAttackDamage(ev.damage, ev.sourceName);
         // 用戶 #7：命中玩家瞬間播命中爆閃（生在受擊點；打雕像不播）。純視覺。
         if (!this.guardTarget) {
           const hc = this.player.getHitCenter();
