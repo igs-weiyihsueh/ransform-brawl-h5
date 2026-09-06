@@ -20,6 +20,7 @@ import {
   type LevelNodeData,
   type LevelsFile,
   type RewardNodeData,
+  type SpawnEntry,
   type SpawnNodeData,
   validateLevels,
 } from '@/config/levelSchema';
@@ -528,6 +529,125 @@ function renderEventInspector(node: EventNodeData): void {
     fireHint.textContent = `自訂火雨 preset：${raw}（遊戲端找不到會 fallback）。`;
   }
   inspectorEl.appendChild(fireHint);
+
+  // 自訂補怪 drip（用戶第七輪，翼騎規格）：per-node 覆蓋守護 preset 的補怪 drip，全 optional。
+  //   勾選=自訂(顯 4 欄、存進 node)、不勾=省略欄位=沿用 preset。遊戲端 resolveGuardDrip(node,preset)=node.X ?? preset.X。
+  const dripTitle = document.createElement('div');
+  dripTitle.className = 'section-title';
+  dripTitle.style.marginTop = '12px';
+  dripTitle.textContent = '守護補怪 drip';
+  inspectorEl.appendChild(dripTitle);
+
+  // 是否已自訂：任一 drip 欄位有值即視為自訂。
+  const hasDrip =
+    node.maxAlive !== undefined ||
+    node.spawnThreshold !== undefined ||
+    node.spawnInterval !== undefined ||
+    (node.spawns !== undefined && node.spawns.length > 0);
+
+  const toggleRow = document.createElement('div');
+  toggleRow.className = 'row';
+  const toggleLab = document.createElement('label');
+  toggleLab.textContent = '自訂補怪（覆蓋 preset）';
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  toggle.checked = hasDrip;
+  toggle.addEventListener('change', () => {
+    if (toggle.checked) {
+      // 勾選：以 preset 現值為起點 seed 進 node（沒 preset 就給合理預設），讓使用者接著改。
+      const g = GUARD_PRESETS[node.eventPresetName];
+      node.maxAlive = g?.maxAlive ?? 6;
+      node.spawnThreshold = g?.spawnThreshold ?? 4;
+      node.spawnInterval = g?.spawnInterval ?? 1.0;
+      node.spawns = (g?.spawns ?? []).map((s) => ({ enemyType: s.enemyType, weight: s.weight }));
+      if (node.spawns.length === 0) {
+        const keys = getEnemyTypeKeys();
+        node.spawns = [{ enemyType: (keys[0] ?? ENEMY_TYPES[0]) as EnemyType, weight: 1 }];
+      }
+    } else {
+      // 取消：刪掉所有 drip 欄位 → 省略 → 遊戲端沿用 preset。
+      delete node.maxAlive;
+      delete node.spawnThreshold;
+      delete node.spawnInterval;
+      delete node.spawns;
+    }
+    renderInspector();
+  });
+  toggleRow.appendChild(toggleLab);
+  toggleRow.appendChild(toggle);
+  inspectorEl.appendChild(toggleRow);
+
+  if (!toggle.checked) {
+    const dripHint = document.createElement('div');
+    dripHint.className = 'hint';
+    const g = GUARD_PRESETS[node.eventPresetName];
+    dripHint.textContent = g
+      ? `沿用 preset「${node.eventPresetName}」補怪（上限 ${g.maxAlive}、門檻 ${g.spawnThreshold}、間隔 ${g.spawnInterval}s、${g.spawns.length} 種敵）。勾選以自訂。`
+      : '沿用此守護 preset 的補怪設定。勾選以自訂。';
+    inspectorEl.appendChild(dripHint);
+    return;
+  }
+
+  // 自訂：4 欄。0 合法（spawnThreshold 用 numberInput，Number 保留 0）。
+  inspectorEl.appendChild(fieldRow('場上上限 maxAlive', numberInput(node.maxAlive ?? 0, (v) => { node.maxAlive = v; })));
+  inspectorEl.appendChild(fieldRow('補怪門檻 spawnThreshold', numberInput(node.spawnThreshold ?? 0, (v) => { node.spawnThreshold = v; })));
+  inspectorEl.appendChild(fieldRow('生怪間隔 spawnInterval（秒）', numberInput(node.spawnInterval ?? 0, (v) => { node.spawnInterval = v; })));
+
+  const dripSpawnsTitle = document.createElement('div');
+  dripSpawnsTitle.className = 'section-title';
+  dripSpawnsTitle.style.marginTop = '12px';
+  dripSpawnsTitle.textContent = '補怪敵種 + 權重';
+  inspectorEl.appendChild(dripSpawnsTitle);
+
+  const spawns: SpawnEntry[] = node.spawns ?? (node.spawns = []);
+  spawns.forEach((entry, si) => {
+    const row = document.createElement('div');
+    row.className = 'spawn-entry';
+
+    const sel = document.createElement('select');
+    // 敵種動態讀 getEnemyTypeKeys()（單一來源）∪ 當前值（避免自訂/未知值遺失）。
+    const dyn = getEnemyTypeKeys();
+    const typeList = dyn.includes(entry.enemyType) ? dyn : [...dyn, entry.enemyType];
+    for (const t of typeList) {
+      const opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = enemyTypeLabel(t);
+      if (t === entry.enemyType) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    sel.addEventListener('change', () => { entry.enemyType = sel.value as EnemyType; });
+    row.appendChild(sel);
+
+    const w = document.createElement('input');
+    w.type = 'number';
+    w.step = 'any';
+    w.value = String(entry.weight);
+    w.title = '權重';
+    w.addEventListener('input', () => {
+      const v = Number(w.value);
+      entry.weight = Number.isFinite(v) ? v : 0;
+    });
+    row.appendChild(w);
+
+    const del = document.createElement('button');
+    del.className = 'danger';
+    del.textContent = '✕';
+    del.addEventListener('click', () => {
+      spawns.splice(si, 1);
+      renderInspector();
+    });
+    row.appendChild(del);
+    inspectorEl.appendChild(row);
+  });
+
+  const addBtn = document.createElement('button');
+  addBtn.textContent = '+ 新增敵種';
+  addBtn.addEventListener('click', () => {
+    const keys = getEnemyTypeKeys();
+    spawns.push({ enemyType: (keys[0] ?? ENEMY_TYPES[0]) as EnemyType, weight: 1 });
+    renderInspector();
+  });
+  inspectorEl.appendChild(addBtn);
 }
 
 // ---- 統一重繪 -------------------------------------------------------------
