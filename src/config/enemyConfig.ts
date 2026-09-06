@@ -1,4 +1,5 @@
 import type { AttackData } from '@/systems/AttackData';
+import { SPRITE_SCALE } from '@/config/combatConfig';
 
 /**
  * 敵人 AI 設定（資料驅動，全部對照 Unity 數值）。
@@ -22,6 +23,16 @@ export const SPAWN_WARNING_DURATION_SEC = 3;
  * （比全可視半寬略緊、對齊攻擊形狀 reach，讓真空帶=視覺圈、怪停攻擊形狀內能攻擊）。依 perCharScale 縮放（菁英大隻 body 也大）。
  */
 export const ENEMY_BODY_RADIUS_PX = 45;
+
+/**
+ * 視覺 body 中心相對 sprite 幾何中心的向下偏移（像素，五輪#4）：
+ * sprite frame(256×SPRITE_SCALE) 上方留白、角色美術畫在 frame 下半 → sprite 幾何中心(getHitCenter)
+ * 在角色胸口/頭上方、比可見 body 中心高。範圍攻擊圓心(預警圈+爆發+傷害判定)應以「可見 body 中心」為圓心，
+ * 菁英/近戰才在圈正中央（用戶#4：菁英不在正中心）。
+ * 從 SPRITE_SCALE 算（對齊 FOOT_GLOW.offsetYPx=72×SPRITE_SCALE 到腳底的同套 frame 幾何；body 中心約腳底一半高）非寫死。
+ * 再依 perCharScale 縮放（菁英大隻偏移也大）。subagent 看圖迭代係數到「置中」。
+ */
+export const ENEMY_BODY_CENTER_OFFSET_Y = 40 * SPRITE_SCALE; // ≈42（72×scale 到腳底的約一半，body 中心）
 
 export interface EnemyAIConfig {
   /** 對應動畫角色 key（也決定 perCharScale）。 */

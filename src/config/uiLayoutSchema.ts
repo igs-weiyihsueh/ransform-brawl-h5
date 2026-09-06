@@ -289,7 +289,7 @@ export const DEFAULT_UI_LAYOUT: UiLayoutFile = {
           { id: 'chest', x: 14, y: 36, width: 70, height: 70 }, // 左下：y=120-14-70
           { id: 'ticket', x: 100, y: 58, width: 120, height: 40 }, // chest 右：x=14+70+16
           { id: 'progress', x: 14, y: 98, width: 392, height: 16 }, // 下方跨欄：width=420-2×14
-          { id: 'coin', x: 380, y: 80, width: 26, height: 26 }, // 右下：x=420-14-26,y=120-14-26
+          // 金幣（coin）已移除：遊戲面板不再顯示金幣（用戶第五輪 #5）。
         ],
       },
       { playerIndex: 1, active: false, elements: [] },

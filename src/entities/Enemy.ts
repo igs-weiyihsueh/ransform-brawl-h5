@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { getPerCharScale } from '@/config/animationConfig';
 import { SPRITE_SCALE, PLAYER_HIT_RADIUS } from '@/config/combatConfig';
-import { ENEMY_AI, ENEMY_BODY_RADIUS_PX, type EnemyAIConfig } from '@/config/enemyConfig';
+import { ENEMY_AI, ENEMY_BODY_RADIUS_PX, ENEMY_BODY_CENTER_OFFSET_Y, type EnemyAIConfig } from '@/config/enemyConfig';
 import { PPU } from '@/config/gameConfig';
 import { ENEMY_PLAY_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
@@ -293,6 +293,14 @@ export class Enemy implements Hittable {
     return { x: this.anim.sprite.x, y: this.anim.sprite.y };
   }
 
+  /**
+   * 視覺 body 中心（五輪#4）：sprite 幾何中心往下偏 ENEMY_BODY_CENTER_OFFSET_Y×perCharScale 到「可見 body 中心」。
+   * 範圍攻擊圓心（預警圈/爆發/傷害判定）用此，讓菁英/近戰在圈正中央（sprite frame 上方留白造成幾何中心偏上）。
+   */
+  getBodyCenter(): Vec2 {
+    return { x: this.anim.sprite.x, y: this.anim.sprite.y + ENEMY_BODY_CENTER_OFFSET_Y * this.scaleFactor };
+  }
+
   getHitRadius(): number {
     return this.radiusPx;
   }
@@ -433,7 +441,8 @@ export class Enemy implements Hittable {
           // 三輪#12：只「真大範圍(attackVfx='aoe')」敵人蓄力期地面播 AOE 預告圈；
           // 衝鋒/一般近戰(slash)不播預告圈(改由出手 slash 表現)。不可用 shapeType 判斷(近戰全 circle)。
           if (enemyAttackVfx(this.cfg.attackKind, this.cfg.attackVfx) === 'aoe') {
-            const circle = buildAttackCircle(this.cfg.attack, cpos, this.facing, this.scaleFactor);
+            // 五輪#4：預警圈圓心用視覺 body 中心(非 sprite 幾何中心, frame 上方留白會偏上)→菁英在圈正中央。
+            const circle = buildAttackCircle(this.cfg.attack, this.getBodyCenter(), this.facing, this.scaleFactor);
             this.aoeRingFx =
               this.hitFeelFx?.enemyAoeRing?.(circle.center.x, circle.center.y, circle.radius) ?? null;
           }
@@ -493,7 +502,7 @@ export class Enemy implements Hittable {
     if (this.guardTarget) return true; // 打雕像不做玩家半徑低估
     return isPlayerInEnemyAttackShape(
       this.cfg.attack,
-      this.getHitCenter(),
+      this.getBodyCenter(), // 五輪#4：與實際傷害圓同用視覺 body 中心(一致, 否則揮前判定與命中圓錯位)
       this.facing,
       this.scaleFactor,
       aim,
@@ -512,7 +521,9 @@ export class Enemy implements Hittable {
         this.attackAnimDone = true;
       },
     });
-    const pos = this.getHitCenter();
+    // 五輪#4：攻擊圓心(爆發+斬光+傷害判定)用視覺 body 中心，非 sprite 幾何中心(frame 上方留白偏上)→
+    //   預警圈=傷害圈=菁英/近戰視覺中心(所見即所得)。全近戰共用此 builder、一致下移對齊 body。
+    const pos = this.getBodyCenter();
     const a = this.cfg.attack;
 
     // 用戶 #7/#3：出手當下收掉蓄力/預告圈，播出手特效。純視覺。

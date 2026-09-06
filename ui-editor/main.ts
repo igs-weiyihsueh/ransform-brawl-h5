@@ -361,7 +361,7 @@ function buildPanelEditables(): Editable[] {
 
 function panelElLabel(id: string): string {
   const map: Record<string, string> = {
-    chest: '寶箱', ticket: '彩票', progress: '寶盒進度條', coin: '金幣', platform: '待機平台',
+    chest: '寶箱', ticket: '彩票', progress: '寶盒進度條', platform: '待機平台',
   };
   return map[id] ?? id;
 }
@@ -504,7 +504,6 @@ function buildVisual(key: string): HTMLElement {
       return iconImg('platform', '待機平台');
     case 'panel.chest':
       return iconImg('chest', '寶箱');
-    case 'panel.coin':
     case 'overhead.credit':
       return buildIconWithNumber(key);
     case 'panel.ticket':
@@ -526,7 +525,7 @@ function buildVisual(key: string): HTMLElement {
   }
 }
 
-/** Credit / coin：金幣 icon + 數字（白）。 */
+/** Credit（頭上點數）：點數 icon + 數字（白）。注意這是「點數」HUD，非已移除的面板金幣。 */
 function buildIconWithNumber(key: string): HTMLElement {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'display:flex;align-items:center;gap:4px;width:100%;height:100%;';
