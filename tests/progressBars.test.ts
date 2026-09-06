@@ -120,6 +120,24 @@ describe('progressBars — 節點狀態 / 段填充 / icon 類型', () => {
     expect(NODE_COLORS.current).not.toBe(NODE_COLORS.past);
   });
 
+  it('★ #6 NODE_COLORS 字面值：past=黃(0xfff24d)、current=白(0xffffff)、future=暗(0x595959)', () => {
+    // 用戶#6：觸發過的節點「一直維持黃」→ past 硬斷黃(0xfff24d)，別回青(0x4dd9ff)。
+    expect(NODE_COLORS.past).toBe(0xfff24d); // 已過維持黃
+    expect(NODE_COLORS.current).toBe(0xffffff); // 當前白
+    expect(NODE_COLORS.future).toBe(0x595959); // 未到暗
+  });
+
+  it('★ #6 節點染色：i<cur→黃、i==cur→白、i>cur→暗（nodeMarkerState→NODE_COLORS 對應）', () => {
+    const cur = 2;
+    const colorOf = (i: number) => {
+      const st = nodeMarkerState(i, cur);
+      return st === 'past' ? NODE_COLORS.past : st === 'current' ? NODE_COLORS.current : NODE_COLORS.future;
+    };
+    expect(colorOf(1)).toBe(0xfff24d); // 已過→黃
+    expect(colorOf(2)).toBe(0xffffff); // 當前→白
+    expect(colorOf(3)).toBe(0x595959); // 未到→暗
+  });
+
   it('segmentFill：已過段=1、未來段=0、當前段=segmentRatio（隨進度）', () => {
     const cur = 2;
     expect(segmentFill(0, cur, 0.5)).toBe(1); // 段0(節點0→1)完全已過
