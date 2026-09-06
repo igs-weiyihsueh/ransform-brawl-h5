@@ -10,6 +10,16 @@ import {
   TRANSFORM_IFRAME,
 } from '@/config/transformConfig';
 import { TransformItem } from '@/entities/TransformItem';
+import { playerColor } from '@/config/playerConfig';
+import { PPU } from '@/config/gameConfig';
+import {
+  GUIDE_ARROW,
+  TETHER,
+  guideArrowAngle,
+  shouldHideArrow,
+  nextGuideTarget,
+  tetherEndPoint,
+} from '@/systems/itemGuideMath';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 
@@ -33,11 +43,30 @@ export class TransformSystem implements GameSystem {
   private states = new Map<number, { transformed: boolean; soul: number }>();
   private items: TransformItem[] = [];
   private spawnTimer = 0;
+  /** 用戶 #7 牽引線（per-player 玩家色半透明線，貼地不擋）。 */
+  private tetherGfx: Phaser.GameObjects.Graphics | null = null;
+  /** 用戶 #7 指引箭頭（owner 腳邊玩家色箭頭指向專屬道具，脈動+黑描邊）。 */
+  private guideGfx: Phaser.GameObjects.Graphics | null = null;
+  /** 道具 id 序號。 */
+  private itemSeq = 0;
+  /** 每 owner 的專屬道具 id 佇列（掉落先後，排隊制一次顯一個箭頭）。 */
+  private ownerQueues = new Map<number, number[]>();
+  /** 每道具箭頭已顯示時間（秒，用於 showDuration 淡出）。 */
+  private arrowElapsed = new Map<number, number>();
+  /** 脈動相位累計。 */
+  private pulsePhase = 0;
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
     this.spawnTimer = ITEM_SPAWN_INTERVAL;
     this.states.clear();
+    // 用戶 #7：牽引線(貼地、角色之下)+指引箭頭(角色上層)graphics。
+    // 防禦：測試用最小 ctx 無 scene → 不建 graphics（純狀態機測試不需視覺，drawTethers/Arrows 會 no-op）。
+    const scene = ctx.scene as Phaser.Scene | undefined;
+    if (scene && typeof scene.add?.graphics === 'function') {
+      this.tetherGfx = scene.add.graphics().setDepth(-3); // 貼地不擋(角色 PLAY_DEPTH=10 之上)
+      this.guideGfx = scene.add.graphics().setDepth(25); // 箭頭在道具(20)之上
+    }
   }
 
   private stateOf(playerId: number): { transformed: boolean; soul: number } {
@@ -65,6 +94,100 @@ export class TransformSystem implements GameSystem {
       }
     }
     this.items = this.items.filter((it) => !it.isPicked());
+
+    // 用戶 #7：牽引線 + 指引箭頭（純視覺輔助，不改數值）。
+    this.pulsePhase += dt;
+    this.drawTethers();
+    this.drawGuideArrows();
+  }
+
+  /** 用戶 #7 ①牽引線：每個在場玩家從下方面板欄頂(TetherAnchor)畫玩家色半透明線到真空圈邊緣(靠面板側)。 */
+  private drawTethers(): void {
+    const g = this.tetherGfx;
+    if (!g) return;
+    g.clear();
+    for (const p of this.ctx.players) {
+      if (typeof p.isWaiting === 'function' && p.isWaiting()) continue; // 待機中不畫(還沒進場)
+      const anchor = this.ctx.getWaitingAnchor(p.playerId); // TetherAnchor=下方面板欄待機點
+      if (!anchor) continue;
+      const center =
+        typeof p.getVacuumCenter === 'function' ? p.getVacuumCenter() : p.getPosition();
+      const radius = typeof p.getVacuumRadius === 'function' ? p.getVacuumRadius() * PPU : 40;
+      const end = tetherEndPoint(anchor, center, radius); // 停真空圈邊緣靠 anchor 那側
+      g.lineStyle(TETHER.widthPx, playerColor(p.playerId), TETHER.alpha);
+      g.beginPath();
+      g.moveTo(anchor.x, anchor.y);
+      g.lineTo(end.x, end.y);
+      g.strokePath();
+    }
+  }
+
+  /** 用戶 #7 ③指引箭頭：每 owner 佇列選當前該指的專屬道具，腳邊玩家色箭頭指向它(脈動+黑描邊、3s淡出、近距隱藏)。 */
+  private drawGuideArrows(): void {
+    const g = this.guideGfx;
+    if (!g) return;
+    g.clear();
+    const byId = new Map<number, TransformItem>();
+    for (const it of this.items) byId.set(it.id, it);
+    // 清掉已撿/離場道具的計時。
+    for (const id of [...this.arrowElapsed.keys()]) if (!byId.has(id)) this.arrowElapsed.delete(id);
+
+    for (const p of this.ctx.players) {
+      if (typeof p.isWaiting === 'function' && p.isWaiting()) continue;
+      const queue = this.ownerQueues.get(p.playerId) ?? [];
+      const targetId = nextGuideTarget(queue, (id) => !byId.has(id)); // 未撿(仍在場)的第一個
+      if (targetId === null) continue;
+      const item = byId.get(targetId);
+      if (!item) continue;
+      const ownerPos = p.getPosition();
+      const itemPos = item.getPosition();
+      const distUnits = Math.hypot(itemPos.x - ownerPos.x, itemPos.y - ownerPos.y) / PPU;
+      if (shouldHideArrow(distUnits)) continue; // 已靠近→不指
+      // 顯示計時（3s 後淡出）。
+      const t = (this.arrowElapsed.get(targetId) ?? 0) + this.ctx.scene.game.loop.delta / 1000;
+      this.arrowElapsed.set(targetId, t);
+      let alpha = 1;
+      const fadeStart = GUIDE_ARROW.showDurationSec;
+      if (t > fadeStart) {
+        alpha = Math.max(0, 1 - (t - fadeStart) / GUIDE_ARROW.fadeDurationSec);
+        if (alpha <= 0) continue; // 淡出完不畫
+      }
+      const angle = guideArrowAngle(ownerPos, itemPos);
+      const pulse = 1 + GUIDE_ARROW.pulseScale * Math.sin(this.pulsePhase * GUIDE_ARROW.pulseSpeed);
+      const size = 44 * GUIDE_ARROW.baseScale * 2 * pulse; // 箭頭長度(px，放大更醒目)
+      // 箭頭中心：從腳邊往「指向道具方向」外推一段(避開腳下真空圈、更醒目)。
+      const outPx = (typeof p.getVacuumRadius === 'function' ? p.getVacuumRadius() * PPU : 40) + 24;
+      const fx = ownerPos.x + Math.cos(angle) * outPx;
+      const fy = ownerPos.y + GUIDE_ARROW.footOffsetYUnits * PPU + Math.sin(angle) * outPx;
+      this.drawArrow(g, fx, fy, angle, size, playerColor(p.playerId), alpha);
+    }
+  }
+
+  /** 畫一個朝 angle 的三角箭頭（玩家色 fill + 黑描邊），中心 (cx,cy)。 */
+  private drawArrow(
+    g: Phaser.GameObjects.Graphics,
+    cx: number,
+    cy: number,
+    angle: number,
+    size: number,
+    color: number,
+    alpha: number,
+  ): void {
+    const tip = { x: cx + Math.cos(angle) * size, y: cy + Math.sin(angle) * size };
+    const back = size * 0.55;
+    const spread = Math.PI * 0.75;
+    const l = { x: cx + Math.cos(angle + spread) * back, y: cy + Math.sin(angle + spread) * back };
+    const r = { x: cx + Math.cos(angle - spread) * back, y: cy + Math.sin(angle - spread) * back };
+    // 黑描邊(放大 outlineScale)。
+    g.fillStyle(0x000000, alpha);
+    const o = GUIDE_ARROW.outlineScale;
+    const ot = { x: cx + Math.cos(angle) * size * o, y: cy + Math.sin(angle) * size * o };
+    const ol = { x: cx + Math.cos(angle + spread) * back * o, y: cy + Math.sin(angle + spread) * back * o };
+    const or = { x: cx + Math.cos(angle - spread) * back * o, y: cy + Math.sin(angle - spread) * back * o };
+    g.fillTriangle(ot.x, ot.y, ol.x, ol.y, or.x, or.y);
+    // 玩家色箭頭。
+    g.fillStyle(color, alpha);
+    g.fillTriangle(tip.x, tip.y, l.x, l.y, r.x, r.y);
   }
 
   /** 生成一個變身道具（場上未達上限才生）。可被 debug 呼叫。 */
@@ -73,7 +196,16 @@ export class TransformSystem implements GameSystem {
     const margin = 120;
     const x = Phaser.Math.Between(margin, GAME_WIDTH - margin);
     const y = Phaser.Math.Between(margin, GAME_HEIGHT - margin);
-    this.items.push(new TransformItem(this.ctx.scene, x, y));
+    const item = new TransformItem(this.ctx.scene, x, y, ++this.itemSeq);
+    // 用戶 #7：指派 owner = 輪流分給在場玩家（專屬道具）；加 owner 玩家色邊框 + 入該 owner 佇列(排隊制)。
+    // ⚠️ owner 分配規則為合理預設(round-robin)，多人正式規則待異靈定；S3 單人=全歸 P1。
+    const players = this.ctx.players;
+    const owner = players[this.itemSeq % players.length]?.playerId ?? 0;
+    item.setOwner(owner, playerColor(owner));
+    const q = this.ownerQueues.get(owner) ?? [];
+    q.push(item.id);
+    this.ownerQueues.set(owner, q);
+    this.items.push(item);
   }
 
   private onPickup(item: TransformItem, player: GameContext['player']): void {

@@ -12,11 +12,20 @@ export const ITEM_PICKUP_RADIUS = 0.8;
  * 精緻 VFX（法陣/彈道落下）之後補；核心是「場上有道具→走過去撿」。
  */
 export class TransformItem {
+  private readonly scene: Phaser.Scene;
   private readonly container: Phaser.GameObjects.Container;
   private readonly pickupRadiusPx: number;
   private picked = false;
+  /** 用戶 #7：專屬道具 owner（playerId）；undefined=無主（自由撿）。 */
+  private owner: number | undefined = undefined;
+  /** owner 玩家色邊框（明顯，標記道具屬於誰）。 */
+  private ownerBorder: Phaser.GameObjects.Graphics | null = null;
+  /** 唯一 id（排隊制/佇列追蹤用）。 */
+  readonly id: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, id = 0) {
+    this.scene = scene;
+    this.id = id;
     const ring = scene.add.circle(0, 0, 22, 0xffe64d, 0.25);
     ring.setStrokeStyle(3, 0xffe64d);
     const core = scene.add.star(0, 0, 5, 8, 18, 0xffe64d);
@@ -33,6 +42,22 @@ export class TransformItem {
       repeat: -1,
       ease: 'Sine.inOut',
     });
+  }
+
+  /** 用戶 #7：設為某玩家的專屬道具，加 owner 玩家色邊框（不透明明顯，標記屬於誰）。 */
+  setOwner(playerId: number, color: number): void {
+    this.owner = playerId;
+    if (!this.ownerBorder) {
+      this.ownerBorder = this.scene.add.graphics();
+      this.container.add(this.ownerBorder);
+    }
+    this.ownerBorder.clear();
+    this.ownerBorder.lineStyle(4, color, 1); // owner 玩家色、不透明
+    this.ownerBorder.strokeRect(-28, -28, 56, 56); // 方框邊框標記
+  }
+
+  getOwner(): number | undefined {
+    return this.owner;
   }
 
   getPosition(): Vec2 {
