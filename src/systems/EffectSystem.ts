@@ -40,6 +40,10 @@ const ENEMY_ATTACK_VFX = {
   aoeBurst: { key: 'vfx-enemy-aoe-burst', path: `${BASE_PATH}/fx_enemy_aoe_burst.png` },
   /** 守護開場聚焦放射漸層（用戶 #4，中心透明→外圈壓黑；異靈畫，alpha 客觀確認）。 */
   spotlight: { key: 'vfx-spotlight-radial', path: `${BASE_PATH}/spotlight_radial.png` },
+  /** 三輪#11 火雨重製：從天墜落的火球（帶火焰拖尾）。素材到位前用 aoeBurst 佔位。 */
+  fireballFall: { key: 'vfx-fireball-falling', path: `${BASE_PATH}/fireball_falling.png` },
+  /** 三輪#11 火雨重製：落地火焰爆發。素材到位前用 aoeBurst 佔位。 */
+  fireballImpact: { key: 'vfx-fireball-impact', path: `${BASE_PATH}/fireball_impact.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -634,15 +638,41 @@ export class EffectSystem {
   }
 
   /**
-   * 火柱落下閃光（#10）：落點一道橘紅擴散閃光 + 快速淡出（純視覺，傷害判定在 FireRainSystem）。
+   * 火柱落下閃光（#10 → 三輪#11 升級落地火焰爆發）：落點火焰爆發 + 快速淡出。
+   * 有 fireballImpact 素材用貼圖（火焰感）；否則退回橘紅 graphics 圓閃（佔位）。純視覺，傷害在 FireRainSystem。
    */
   fireStrikeFlash(x: number, y: number, radiusPx: number): void {
+    const impactKey = ENEMY_ATTACK_VFX.fireballImpact.key;
+    const fallbackBurst = ENEMY_ATTACK_VFX.aoeBurst.key;
+    const key = this.scene.textures.exists(impactKey)
+      ? impactKey
+      : this.scene.textures.exists(fallbackBurst)
+        ? fallbackBurst
+        : null;
+    if (key) {
+      // 貼圖爆發：落點火焰爆發，爆開放大+淡出（佔位 aoeBurst 染橘紅、正式用 fireballImpact）。
+      const spr = this.scene.add.image(x, y, key);
+      spr.setOrigin(0.5, 0.5).setDepth(ENERGY_FLY_DEPTH);
+      spr.setDisplaySize(radiusPx * 1.6, radiusPx * 1.6).setAlpha(1);
+      if (key === fallbackBurst) spr.setTint(0xff7722); // 佔位：把白熱 burst 染成火焰橘紅
+      this.scene.tweens.add({
+        targets: spr,
+        displayWidth: radiusPx * 2.4,
+        displayHeight: radiusPx * 2.4,
+        alpha: 0,
+        duration: 400,
+        ease: 'Cubic.easeOut',
+        onComplete: () => spr.destroy(),
+      });
+      return;
+    }
+    // 後備：純 graphics 橘紅圓閃。
     const g = this.scene.add.graphics();
     g.fillStyle(0xffaa22, 0.85);
     g.fillCircle(0, 0, radiusPx);
     g.x = x;
     g.y = y;
-    g.setDepth(ENERGY_FLY_DEPTH); // 火柱在角色上層一閃
+    g.setDepth(ENERGY_FLY_DEPTH);
     g.setScale(0.5);
     this.scene.tweens.add({
       targets: g,
@@ -652,6 +682,51 @@ export class EffectSystem {
       ease: 'Cubic.easeOut',
       onComplete: () => g.destroy(),
     });
+  }
+
+  /**
+   * 三輪#11 火雨重製：一顆火球從落點正上方（高處/畫面外）墜落到落點。
+   * 墜落結束時機對齊 FireRainSystem 的 resolveStrike（傷害那刻）→ 視覺與傷害同步（用戶核心：傷害在落地爆炸那刻）。
+   * 有 fireballFall 素材用貼圖（帶火焰拖尾）；否則退回 aoeBurst 染橘紅佔位。純視覺。
+   * @param x,y 落點（世界座標，火球墜落終點）。
+   * @param fallMs 墜落時長（= warning 剩餘秒 ×1000，讓落地=傷害那刻）。
+   * @param onLand 落地回呼（可選；FireRainSystem 已自行在 resolveStrike 播爆炸，這裡通常不用）。
+   * @returns 火球 sprite（呼叫端可持有；落地 tween 完成自動 destroy）；無任何素材則回 null。
+   */
+  fireballFall(
+    x: number,
+    y: number,
+    fallMs: number,
+    onLand?: () => void,
+  ): Phaser.GameObjects.Image | null {
+    const fallKey = ENEMY_ATTACK_VFX.fireballFall.key;
+    const fallbackBurst = ENEMY_ATTACK_VFX.aoeBurst.key;
+    const key = this.scene.textures.exists(fallKey)
+      ? fallKey
+      : this.scene.textures.exists(fallbackBurst)
+        ? fallbackBurst
+        : null;
+    if (!key) {
+      if (onLand) this.scene.time.delayedCall(Math.max(50, fallMs), onLand);
+      return null;
+    }
+    const startY = y - 640; // 從落點上方 640px（畫面外/高處）墜下
+    const spr = this.scene.add.image(x, startY, key);
+    spr.setOrigin(0.5, 0.5).setDepth(ENERGY_FLY_DEPTH - 1); // 火球在角色上層、爆炸之下
+    spr.setDisplaySize(54, 72).setAlpha(1); // 豎向(高>寬)呈下墜火球感
+    if (key === fallbackBurst) spr.setTint(0xff5522); // 佔位染火焰紅
+    // 墜落：y 從高到落點，加速下墜（Quad.easeIn 越落越快）。
+    this.scene.tweens.add({
+      targets: spr,
+      y,
+      duration: Math.max(80, fallMs),
+      ease: 'Quad.easeIn',
+      onComplete: () => {
+        spr.destroy();
+        if (onLand) onLand();
+      },
+    });
+    return spr;
   }
 
   // ---- hitFeel 打擊手感（搬自 Unity EnemyConfig，純視覺疊在 Enemy.takeHit/die） ----

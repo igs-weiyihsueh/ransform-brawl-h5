@@ -104,6 +104,8 @@ export class FireRainSystem implements GameSystem {
     );
     if (!pos) return; // 額度滿/太近 → 這道略過
     const ring = this.ctx.effects.fireWarningRing(pos.x, pos.y, p.radiusPx);
+    // 三輪#11：warning 期間一顆火球從天墜落到落點；墜落時長=warning，落地=resolveStrike(傷害那刻)→視覺與傷害同步。
+    this.ctx.effects.fireballFall?.(pos.x, pos.y, p.warningSec * 1000);
     this.strikes.push({ pos, warning: p.warningSec, ring, struck: false });
   }
 
