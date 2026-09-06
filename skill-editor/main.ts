@@ -36,6 +36,11 @@ const PPU = 100; // 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲
 // 對齊遊戲：FRAME_SIZE=256、SPRITE_SCALE≈1.05 → ≈269px。sprite 與範圍同乘 viewScale，
 // 故「招式相對角色」比例恆等遊戲實際（PPU=100，1 unit=100px）。
 const REF_SPRITE_SIZE = 269;
+/** 遊戲場景尺寸（完整場景視野，對齊 GAME 1920×1080）。 */
+const SCENE_W = 1920;
+const SCENE_H = 1080;
+/** 預覽放大倍率（1=完整場景真實比例；>1 選擇性放大看細節，等比、以中心為錨）。 */
+let previewZoom = 1;
 /** 角色 idle sprite 路徑（skill-editor 在 /skill-editor/，資產在網站根）。依角色 key 載，載不到 fallback。 */
 function spriteUrl(charKey: string): string {
   return `../assets/images/characters/${charKey}/idle/frame_00.png`;
@@ -339,14 +344,29 @@ function renderPreview(): void {
   const a = currentSkill();
   if (!a) return;
 
-  // 依形狀的最大延伸決定顯示縮放，讓判定約佔畫布 40%。面向朝右(+x)。
-  const reach = shapeReach(a);
-  const maxPx = Math.max(reach * PPU, 40);
-  const viewScale = (Math.min(W, H) * 0.4) / maxPx;
+  const reach = shapeReach(a); // 招式最大延伸（供敵人參照定位）
+
+  // 完整場景真實比例（用戶比例修正）：不再動態聚焦招式範圍，改成固定顯示整個遊戲場景 1920×1080
+  // 等比縮進畫布 → 角色/招式在完整場景裡是「實際大小」。previewZoom 選擇性放大看細節（預設 1）。
+  const sceneScale = (W / SCENE_W) * previewZoom;
+  const viewScale = sceneScale; // 角色 + 招式範圍全用同一固定場景比例
   const s = PPU * viewScale;
 
-  // 角色參照（用戶 UX 修正）：畫布中心(=角色攻擊錨點/getBodyCenter)畫所選角色 sprite，
-  // 尺寸=遊戲實際 269px×viewScale，與招式範圍同乘 viewScale → 範圍相對角色比例恆等遊戲。
+  // 完整場景範圍框（1920×1080 等比縮）＋底色，讓用戶看得出整個場景。
+  const sceneWpx = SCENE_W * sceneScale;
+  const sceneHpx = SCENE_H * sceneScale;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 1;
+  ctx.fillRect(cx - sceneWpx / 2, cy - sceneHpx / 2, sceneWpx, sceneHpx);
+  ctx.strokeRect(cx - sceneWpx / 2, cy - sceneHpx / 2, sceneWpx, sceneHpx);
+  ctx.fillStyle = 'rgba(150,150,180,0.6)';
+  ctx.font = '10px Arial, sans-serif';
+  ctx.fillText(`遊戲場景 ${SCENE_W}×${SCENE_H}`, cx - sceneWpx / 2 + 4, cy - sceneHpx / 2 + 12);
+  ctx.restore();
+
+  // 角色參照：畫在場景中心(=角色攻擊錨點/getBodyCenter)，尺寸=遊戲實際 269px×sceneScale（完整場景裡的實際大小）。
   const spr = selectedChar ? getSprite(selectedChar) : null;
   const sprPx = REF_SPRITE_SIZE * viewScale;
   if (spr) {
@@ -434,7 +454,10 @@ function renderPreview(): void {
   // 比例尺
   ctx.fillStyle = '#9a9ab5';
   ctx.font = '11px Arial, sans-serif';
-  ctx.fillText(`顯示比例 ×${viewScale.toFixed(2)}（1 unit = ${PPU}px 遊戲內；角色與範圍同比例）`, 8, H - 10);
+  ctx.fillText(
+    `完整場景 ${SCENE_W}×${SCENE_H}｜比例 ×${viewScale.toFixed(3)}（1 unit=${PPU}px）${previewZoom !== 1 ? `｜放大 ${previewZoom}×` : ''}`,
+    8, H - 10,
+  );
 }
 
 /** 該形狀在 unit 下的最大延伸（供縮放）。 */
@@ -551,6 +574,17 @@ function bindUI(): void {
   $('btn-reset').addEventListener('click', resetDefault);
   $('btn-apply').addEventListener('click', applyToGameFromEditor);
   $('btn-clear-apply').addEventListener('click', clearAppliedFromEditor);
+
+  // 預覽放大滑桿（1×=完整場景真實比例；放大只為看細節，比例仍真實）。
+  const zoomInput = document.getElementById('preview-zoom') as HTMLInputElement | null;
+  if (zoomInput) {
+    zoomInput.addEventListener('input', () => {
+      previewZoom = Number(zoomInput.value) || 1;
+      const val = document.getElementById('preview-zoom-val');
+      if (val) val.textContent = `${previewZoom}×`;
+      renderPreview();
+    });
+  }
   $('btn-add-char').addEventListener('click', addChar);
   $('btn-undo').addEventListener('click', undo);
   $('btn-redo').addEventListener('click', redo);

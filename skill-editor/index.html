@@ -55,8 +55,8 @@
       <input id="file-input" type="file" accept="application/json,.json" hidden />
       <button id="btn-reset">重設為預設值</button>
       <button id="btn-export" class="primary">驗證並下載 JSON</button>
-      <button id="btn-apply" class="primary" title="套用到遊戲（存瀏覽器，重開遊戲生效）">套用到遊戲</button>
-      <button id="btn-clear-apply" title="清除套用，遊戲回打包預設">清除套用</button>
+      <button id="btn-apply" class="primary" title="驗證後存入瀏覽器，重開遊戲即生效">套用到遊戲</button>
+      <button id="btn-clear-apply" title="移除套用，遊戲回打包預設">清除套用</button>
     </header>
 
     <div class="layout">
@@ -69,7 +69,13 @@
       </div>
 
       <div class="stage-wrap">
-        <canvas id="preview" width="620" height="620"></canvas>
+        <canvas id="preview" width="640" height="360"></canvas>
+        <div style="margin-top:6px;font-size:12px;color:#9a9ab5;display:flex;align-items:center;gap:8px;">
+          <span>放大檢視</span>
+          <input id="preview-zoom" type="range" min="1" max="6" step="0.5" value="1" style="flex:1;" />
+          <span id="preview-zoom-val">1×</span>
+          <span>（1×＝完整場景真實比例）</span>
+        </div>
       </div>
 
       <div class="col-inspector">
