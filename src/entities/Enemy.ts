@@ -729,16 +729,17 @@ export class Enemy implements Hittable {
     const len = Math.hypot(dx, dy) || 1;
     const immovable = this.cfg.immovable === true;
 
-    // hitFeel 擊退「快進快出」：總距離 = clamp(force×forceScale, 0, knockbackDistance)×PPU，
-    // 於 knockbackDuration 內線性推進。菁英(immovable) + hitStun 抗性 → 幾乎/完全不退（保留）。
+    // hitFeel 擊退「快進快出」：總距離 = knockbackDistancePx(招式 knockback)，於 knockbackDuration 內線性推進。
+    // 擊退定案(用戶)：怪被玩家打的擊退 = 看玩家招式 knockback、**所有怪統一照招式**(移除 ×hitStun 抗性, 不再因怪而異)。
+    // 菁英(immovable) 仍走 !immovable 分支豁免(像牆不退)；knockbackForce(怪被擊退力)遊戲端不用(改讀招式)。
     if (HIT_FEEL.enabled && !immovable) {
-      const distPx = knockbackDistancePx(knockback, PPU) * this.cfg.hitStun; // hitStun 當抗性
+      const distPx = knockbackDistancePx(knockback, PPU); // 統一照招式 knockback(不 ×hitStun)
       const dur = HIT_FEEL.knockbackDuration;
       this.knockbackRemaining = dur;
       this.knockbackPerSec = { x: (dx / len) * (distPx / dur), y: (dy / len) * (distPx / dur) };
     } else if (!immovable) {
-      // hitFeel 關閉時的後備（基本擊退：舊式力道，於 0.18s 線性推進）。
-      const kbPx = knockback * PPU * this.cfg.hitStun;
+      // hitFeel 關閉時的後備（基本擊退：舊式力道，於 0.18s 線性推進；同樣統一照招式不 ×hitStun）。
+      const kbPx = knockback * PPU;
       this.knockbackRemaining = 0.18;
       this.knockbackPerSec = { x: (dx / len) * (kbPx / 0.18), y: (dy / len) * (kbPx / 0.18) };
     }
