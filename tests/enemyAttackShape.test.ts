@@ -2,7 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAttackCircle,
+  buildAttackFan,
   circleIntersectsCircle,
+  fanIntersectsCircle,
   isPlayerInEnemyAttackShape,
 } from '@/systems/hitDetection';
 import { PPU } from '@/config/gameConfig';
@@ -59,18 +61,35 @@ describe('isPlayerInEnemyAttackShape — 扇形（距離內且角度內）', () 
     expect(isPlayerInEnemyAttackShape(atk, ENEMY, FACE_R, SCALE, { x: 100, y: 0 }, PR)).toBe(true);
   });
 
-  it('扇形：距離內但角度外（斜上超過 ±30°）→ false', () => {
+  it('★ #3治本：扇形攻擊判定朝 aim(玩家) → 斜上/上/下/左 玩家都 true（怪能打任意方向,decision 34b0be5b）', () => {
     const atk = fanAtk({ radius: 2, angle: 60, offsetX: 0 });
-    // 玩家(100,100)：距~141<=200,但角 45° > 30° → false。
-    expect(isPlayerInEnemyAttackShape(atk, ENEMY, FACE_R, SCALE, { x: 100, y: 100 }, PR)).toBe(false);
+    // isPlayerInEnemyAttackShape 傳 aim=playerPos → fan 朝目標 → 目標恆在中軸(角0) → 距離內就 true。
+    for (const p of [
+      { x: 100, y: 100 }, // 斜上(舊 45°角外)
+      { x: 0, y: 150 }, // 正下
+      { x: 0, y: -150 }, // 正上（#3 用戶報的卡住方向）
+      { x: -100, y: 0 }, // 正左（面右時舊為背後）
+    ]) {
+      expect(isPlayerInEnemyAttackShape(atk, ENEMY, FACE_R, SCALE, p, PR)).toBe(true);
+    }
   });
 
-  it('扇形：玩家在背後（面向右、玩家在左）→ false（不對背後空揮）', () => {
-    const atk = fanAtk({ radius: 2, angle: 60, offsetX: 0 });
-    // 面向右,玩家(-100,0)在正後方 角180° → false。
-    expect(isPlayerInEnemyAttackShape(atk, ENEMY, FACE_R, SCALE, { x: -100, y: 0 }, PR)).toBe(false);
-    // 面向左(facing=-1)時,同玩家(-100,0)變正前 → true（面向決定前後）。
-    expect(isPlayerInEnemyAttackShape(atk, ENEMY, -1, SCALE, { x: -100, y: 0 }, PR)).toBe(true);
+  it('扇形：距離外仍 false（朝 aim 只解決角度,距離 gate 不變）', () => {
+    const atk = fanAtk({ radius: 2, angle: 60, offsetX: 0 }); // 半徑200px
+    // 玩家(0,300)距300 > 200+20 → 距離外 false（朝 aim 也搆不到）。
+    expect(isPlayerInEnemyAttackShape(atk, ENEMY, FACE_R, SCALE, { x: 0, y: 300 }, PR)).toBe(false);
+  });
+
+  it('★ 相容路徑：buildAttackFan 無 aim → 水平 facing 的角度 gate 仍在（斜上45°>±30°角外 miss、背後 miss）', () => {
+    // 無 aim = 舊水平 fan：保留「角度 gate」語意（與 isPlayerInEnemyAttackShape 朝 aim 分開測）。
+    const atk = fanAtk({ radius: 2, angle: 60, offsetX: 0 }); // ±30°
+    const fanNoAim = buildAttackFan(atk, ENEMY, FACE_R, SCALE); // 無 aim → 水平朝右
+    // 正前(100,0)角0 → 命中。
+    expect(fanIntersectsCircle(fanNoAim, { x: 100, y: 0 }, PR)).toBe(true);
+    // 斜上(100,100)角45° > 30° → 角外 miss（水平 fan 的角度 gate 仍守）。
+    expect(fanIntersectsCircle(fanNoAim, { x: 100, y: 100 }, PR)).toBe(false);
+    // 背後(-100,0)角180° → miss。
+    expect(fanIntersectsCircle(fanNoAim, { x: -100, y: 0 }, PR)).toBe(false);
   });
 });
 
