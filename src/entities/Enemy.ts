@@ -337,6 +337,22 @@ export class Enemy implements Hittable {
     }
   }
 
+  /**
+   * 六輪#11：蓄力特效每幀跟隨怪當前位置（怪蓄力期被推開/擠開→特效跟著移動，不留原地）。
+   * chargeFx=腳底法陣盤（footY=body 中心下方 radiusPx×1.7，與建立時同式，不寫死）；
+   * aoeRingFx=AOE 預警圈（圓心=視覺 body 中心，同五輪#4）。只更新位置，depth/壓扁/旋轉等視覺（EffectSystem 設）不動。
+   */
+  private syncChargeFx(): void {
+    if (this.chargeFx) {
+      const cpos = this.getHitCenter();
+      this.chargeFx.setPosition(cpos.x, cpos.y + this.radiusPx * 1.7);
+    }
+    if (this.aoeRingFx) {
+      const center = this.getBodyCenter();
+      this.aoeRingFx.setPosition(center.x, center.y);
+    }
+  }
+
   /** 立即銷毀（守護波 cleanup ClearAllActiveEnemies 用，不播死亡動畫、不觸發 onKilled）。 */
   forceDestroy(): void {
     if (this.dead) return;
@@ -517,6 +533,8 @@ export class Enemy implements Hittable {
         this.timer -= dt;
         // 蓄力期間維持 idle 姿勢（別移動），時間到 → 進 attack 狀態出手。
         this.anim.play('idle');
+        // 六輪#11：蓄力特效每幀跟隨怪當前位置（怪被推開時特效跟著移動、不留原地）。
+        this.syncChargeFx();
         if (this.timer <= 0) {
           // 六輪#8：出手前再 gate 一次 canReachTarget（與進 charge 同基準 getBodyCenter，五輪#4 已對齊）。
           // 真因=gate 只擋「進 charge」那刻、沒擋「出手」那刻，蓄力期玩家跑出範圍仍照揮→空揮。
