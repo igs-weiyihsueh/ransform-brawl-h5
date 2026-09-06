@@ -19,6 +19,7 @@ import {
   DEFAULT_UI_LAYOUT,
   validateUiLayout,
   type PanelElement,
+  type ScreenElement,
   type UiLayoutFile,
 } from '@/config/uiLayoutSchema';
 
@@ -222,22 +223,58 @@ function buildEditables(): Editable[] {
   return buildPanelEditables();
 }
 
-/** 全螢幕區塊：波次訊息（螢幕座標，origin=螢幕左上 0,0）。 */
+/** 全螢幕區塊：波次/事件/火雨訊息（螢幕座標 origin 0,0）+ 腳下圈 foot（螢幕中心+offset，可調半徑/位置）。 */
 function buildScreenEditables(): Editable[] {
   const list: Editable[] = [];
   // screen 為 optional：若缺，補一份預設，讓編輯器可編（匯出時就會帶上）。
   if (!layout.screen) {
-    layout.screen = { waveMessage: { x: 640, y: 180, width: 640, height: 90, align: 'center' } };
+    layout.screen = {
+      waveMessage: { x: 0, y: 403.6, width: 1920, height: 100, align: 'center' },
+      eventMessage: { x: 0, y: 324, width: 1920, height: 92, align: 'center' },
+      fireRainMessage: { x: 0, y: 480, width: 1920, height: 92, align: 'center' },
+    };
   }
-  const wm = layout.screen.waveMessage;
+  const s = layout.screen;
+  // 三個螢幕級訊息：waveMessage 必有；event/fireRain 若缺補預設（讓用戶可調）。
+  if (!s.eventMessage) s.eventMessage = { x: 0, y: 324, width: 1920, height: 92, align: 'center' };
+  if (!s.fireRainMessage) s.fireRainMessage = { x: 0, y: 480, width: 1920, height: 92, align: 'center' };
+  const msgs: Array<[string, string, ScreenElement]> = [
+    ['screen.waveMessage', '波次訊息 waveMessage', s.waveMessage],
+    ['screen.eventMessage', '事件/守護波訊息 eventMessage', s.eventMessage],
+    ['screen.fireRainMessage', '火雨訊息 fireRainMessage', s.fireRainMessage],
+  ];
+  for (const [key, label, el] of msgs) {
+    list.push({
+      key, label, origin: { x: 0, y: 0 }, resizable: true,
+      get: () => ({ x: el.x, y: el.y, width: el.width, height: el.height }),
+      set: (r) => {
+        if (r.x !== undefined) el.x = r.x;
+        if (r.y !== undefined) el.y = r.y;
+        if (r.width !== undefined) el.width = r.width;
+        if (r.height !== undefined) el.height = r.height;
+      },
+    });
+  }
+  // 腳下圈（搜索圈=真空帶）：以 2r×2r 方框表示、置於螢幕中心+offset。拖=改 offset，縮放=改半徑。
+  if (!layout.foot) layout.foot = { searchRadiusPx: 50, offsetX: 0, offsetY: 75.6 };
+  const foot = layout.foot;
+  const cx = layout.design.width / 2;
+  const cy = layout.design.height / 2;
   list.push({
-    key: 'screen.waveMessage', label: '波次訊息 waveMessage', origin: { x: 0, y: 0 }, resizable: true,
-    get: () => ({ x: wm.x, y: wm.y, width: wm.width, height: wm.height }),
-    set: (r) => {
-      if (r.x !== undefined) wm.x = r.x;
-      if (r.y !== undefined) wm.y = r.y;
-      if (r.width !== undefined) wm.width = r.width;
-      if (r.height !== undefined) wm.height = r.height;
+    key: 'foot.searchRadius', label: '搜索圈/真空帶 foot（半徑+位置）', origin: { x: 0, y: 0 }, resizable: true,
+    get: () => {
+      const r = foot.searchRadiusPx ?? 50;
+      const ox = foot.offsetX ?? 0;
+      const oy = foot.offsetY ?? 0;
+      return { x: cx + ox - r, y: cy + oy - r, width: r * 2, height: r * 2 };
+    },
+    set: (rc) => {
+      // 縮放：以 width 推半徑（保持圓形，取 width 為準）。
+      if (rc.width !== undefined) foot.searchRadiusPx = Math.max(1, rc.width / 2);
+      const r = foot.searchRadiusPx ?? 50;
+      // 拖移：左上角回推中心，減基準螢幕中心 = offset。
+      if (rc.x !== undefined) foot.offsetX = rc.x + r - cx;
+      if (rc.y !== undefined) foot.offsetY = rc.y + r - cy;
     },
   });
   return list;
@@ -456,7 +493,13 @@ function iconImg(name: string, label: string): HTMLElement {
 function buildVisual(key: string): HTMLElement {
   switch (key) {
     case 'screen.waveMessage':
-      return buildWaveMessage();
+      return buildMessageBanner('第 1 波', layout.screen?.waveMessage.align);
+    case 'screen.eventMessage':
+      return buildMessageBanner('守護目標出現！', layout.screen?.eventMessage?.align);
+    case 'screen.fireRainMessage':
+      return buildMessageBanner('天降火雨！', layout.screen?.fireRainMessage?.align);
+    case 'foot.searchRadius':
+      return buildFootCircle();
     case 'panel.platform':
       return iconImg('platform', '待機平台');
     case 'panel.chest':
@@ -570,17 +613,31 @@ function buildCombo(): HTMLElement {
   return t;
 }
 
-/** 波次訊息橫幅（示意：半透明底 + 置中大字，對齊依 align）。 */
-function buildWaveMessage(): HTMLElement {
-  const align = layout.screen?.waveMessage.align ?? 'center';
-  const justify = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+/** 螢幕級訊息橫幅（示意：半透明底 + 置中大字，對齊依 align）。 */
+function buildMessageBanner(sampleText: string, align?: 'left' | 'center' | 'right'): HTMLElement {
+  const a = align ?? 'center';
+  const justify = a === 'left' ? 'flex-start' : a === 'right' ? 'flex-end' : 'center';
   const box = document.createElement('div');
   box.style.cssText =
     `width:100%;height:100%;display:flex;align-items:center;justify-content:${justify};` +
     'background:rgba(20,20,40,0.55);border:1px dashed rgba(255,255,255,0.5);border-radius:8px;padding:0 12px;';
   const t = document.createElement('div');
-  t.textContent = '第 1 波';
+  t.textContent = sampleText;
   t.style.cssText = 'color:#fff;font-size:40px;font-weight:bold;text-shadow:0 2px 6px rgba(0,0,0,0.6);white-space:nowrap;';
+  box.appendChild(t);
+  return box;
+}
+
+/** 腳下圈（搜索圈/真空帶）示意：玩家色圓環，方框內畫成圓。 */
+function buildFootCircle(): HTMLElement {
+  const box = document.createElement('div');
+  box.style.cssText =
+    'width:100%;height:100%;border-radius:50%;box-sizing:border-box;' +
+    'border:3px solid rgba(80,180,255,0.9);background:rgba(80,180,255,0.15);' +
+    'display:flex;align-items:center;justify-content:center;';
+  const t = document.createElement('div');
+  t.textContent = '搜索圈/真空帶';
+  t.style.cssText = 'color:#cfefff;font-size:14px;font-weight:bold;text-shadow:0 1px 3px rgba(0,0,0,0.7);white-space:nowrap;';
   box.appendChild(t);
   return box;
 }

@@ -72,8 +72,8 @@ function animKey(effectKey: string): string {
  */
 export class EffectSystem {
   private readonly scene: Phaser.Scene;
-  /** 用戶 #5：波次訊息位置（讀 layout.screen.waveMessage，lazy 快取）；null=尚未讀。 */
-  private cachedWaveMsgEl: ScreenElement | null = null;
+  /** 用戶 #5/#8：螢幕訊息位置快取（waveMessage/eventMessage/fireRainMessage），null=尚未讀。 */
+  private cachedScreenEl: Partial<Record<'waveMessage' | 'eventMessage' | 'fireRainMessage', ScreenElement>> = {};
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -306,28 +306,38 @@ export class EffectSystem {
   }
 
   /**
-   * 用戶 #5：波次訊息定位 = layout.screen.waveMessage（螢幕座標 1920×1080）；lazy 讀 scene 快取 + schema 驗證，
-   * 無 screen（舊資料/未載/不合法）→ fallback 內建預設（原寫死位置：中央略高 GAME_HEIGHT*0.42、高 100）。
+   * 用戶 #5/#8：螢幕訊息定位 = layout.screen.{kind}（螢幕座標 1920×1080）；lazy 讀 scene 快取 + schema 驗證，
+   * 無 screen/該訊息（舊資料/未載/不合法）→ fallback 內建預設（不炸）。三種訊息共用。
+   * @param kind waveMessage(波次) / eventMessage(限時事件/守護波) / fireRainMessage(天降火雨)。
+   * @param fallback 該訊息的內建預設位置。
    */
+  private screenElement(
+    kind: 'waveMessage' | 'eventMessage' | 'fireRainMessage',
+    fallback: ScreenElement,
+  ): ScreenElement {
+    const cached = this.cachedScreenEl[kind];
+    if (cached) return cached;
+    let el = fallback;
+    const raw = this.scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown;
+    if (raw !== undefined && raw !== null) {
+      const result = validateUiLayout(raw);
+      if (result.ok && result.data.screen?.[kind]) {
+        el = result.data.screen[kind] as ScreenElement;
+      }
+    }
+    this.cachedScreenEl[kind] = el;
+    return el;
+  }
+
+  /** 用戶 #5：波次訊息定位（見 screenElement）。fallback = 中央略高 GAME_HEIGHT*0.42、滿寬置中。 */
   private screenWaveMessage(): ScreenElement {
-    if (this.cachedWaveMsgEl) return this.cachedWaveMsgEl;
-    const fallback: ScreenElement = {
+    return this.screenElement('waveMessage', {
       x: 0,
       y: GAME_HEIGHT * 0.42 - 50,
       width: GAME_WIDTH,
       height: 100,
       align: 'center',
-    };
-    let el = fallback;
-    const raw = this.scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown;
-    if (raw !== undefined && raw !== null) {
-      const result = validateUiLayout(raw);
-      if (result.ok && result.data.screen?.waveMessage) {
-        el = result.data.screen.waveMessage;
-      }
-    }
-    this.cachedWaveMsgEl = el;
-    return el;
+    });
   }
 
   /**
@@ -521,13 +531,23 @@ export class EffectSystem {
    * @param durationSec 顯示時長（Unity ≈3s）。
    */
   timedEventText(durationSec = 3): void {
-    const cx = GAME_WIDTH * 0.5;
-    const cy = GAME_HEIGHT * 0.3;
+    // 用戶 #8：讀 layout.screen.eventMessage 定位；無則 fallback 內建(GAME_HEIGHT*0.3 滿寬置中、高 92)。
+    const el = this.screenElement('eventMessage', {
+      x: 0,
+      y: GAME_HEIGHT * 0.3 - 46,
+      width: GAME_WIDTH,
+      height: 92,
+      align: 'center',
+    });
+    const cy = el.y + el.height / 2;
+    const align = el.align ?? 'center';
+    const cx = align === 'left' ? el.x : align === 'right' ? el.x + el.width : el.x + el.width / 2;
+    const originX = align === 'left' ? 0 : align === 'right' ? 1 : 0.5;
     const bar = this.scene.add.graphics().setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 6);
     bar.fillStyle(0x8a1a1a, 0.72);
-    bar.fillRect(0, cy - 46, GAME_WIDTH, 92);
+    bar.fillRect(0, cy - el.height / 2, GAME_WIDTH, el.height);
     bar.lineStyle(3, 0xffd24d, 0.9);
-    bar.strokeRect(0, cy - 46, GAME_WIDTH, 92);
+    bar.strokeRect(0, cy - el.height / 2, GAME_WIDTH, el.height);
     const txt = this.scene.add
       .text(cx, cy, '限時事件', {
         fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
@@ -537,7 +557,7 @@ export class EffectSystem {
         stroke: '#000000',
         strokeThickness: 7,
       })
-      .setOrigin(0.5, 0.5)
+      .setOrigin(originX, 0.5)
       .setScrollFactor(0)
       .setDepth(ENERGY_FLY_DEPTH + 7);
     const group: Phaser.GameObjects.GameObject[] = [bar, txt];
@@ -1011,8 +1031,18 @@ export class EffectSystem {
    * @param onDone 右滑出完成後回呼（FireRainSystem 用來延遲第一道火雨）。
    */
   fireRainAnnounce(onDone?: () => void): void {
-    const cx = GAME_WIDTH / 2;
-    const cy = GAME_HEIGHT / 2 - 60; // 略偏上（Unity y+60，畫面中央往上）
+    // 用戶 #8：讀 layout.screen.fireRainMessage 定位；無則 fallback 內建(GAME_HEIGHT/2-60 滿寬置中、高 92)。
+    const el = this.screenElement('fireRainMessage', {
+      x: 0,
+      y: GAME_HEIGHT / 2 - 60 - 46,
+      width: GAME_WIDTH,
+      height: 92,
+      align: 'center',
+    });
+    const cy = el.y + el.height / 2; // 元素中心 Y
+    const align = el.align ?? 'center';
+    const cx = align === 'left' ? el.x : align === 'right' ? el.x + el.width : el.x + el.width / 2;
+    const originX = align === 'left' ? 0 : align === 'right' ? 1 : 0.5;
     const txt = this.scene.add.text(cx, cy, '天降火雨！', {
       fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
       fontSize: '96px',
@@ -1021,13 +1051,13 @@ export class EffectSystem {
       stroke: '#7a1500',
       strokeThickness: 10,
     });
-    txt.setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 20);
-    const startX = -GAME_WIDTH * 0.5; // 左外
-    const endX = GAME_WIDTH * 1.5; // 右外
+    txt.setOrigin(originX, 0.5).setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 20);
+    const startX = cx - GAME_WIDTH; // 左外
+    const endX = cx + GAME_WIDTH; // 右外
     txt.x = startX;
     const slideMs = 400; // Unity SlideDuration 0.4s
     const holdMs = 3000; // 停留 3s
-    // 左滑進中央。
+    // 左滑進定位。
     this.scene.tweens.add({
       targets: txt,
       x: cx,

@@ -68,3 +68,20 @@ export function footGlowCenter(
 ): { x: number; y: number } {
   return { x: spriteX + offsetX, y: spriteY + offsetY };
 }
+
+/**
+ * 生效搜索圈(真空帶)參數（用戶 #5/#8，純函式可測）：以 layout.foot 覆蓋，缺欄位 fallback FOOT_GLOW。
+ * 讓「搜索圈=真空帶」大小/位置可由 ui-editor 調（讀取端 fallback 不炸，舊資料無 foot 照舊）。
+ * @param foot layout.foot（optional 各欄位）；undefined/缺欄位 → 用 FOOT_GLOW 預設。
+ */
+export function resolveFoot(foot?: {
+  searchRadiusPx?: number;
+  offsetX?: number;
+  offsetY?: number;
+}): { radiusPx: number; offsetX: number; offsetY: number } {
+  return {
+    radiusPx: foot?.searchRadiusPx ?? FOOT_GLOW.radiusPx,
+    offsetX: foot?.offsetX ?? FOOT_GLOW.offsetXPx,
+    offsetY: foot?.offsetY ?? FOOT_GLOW.offsetYPx,
+  };
+}

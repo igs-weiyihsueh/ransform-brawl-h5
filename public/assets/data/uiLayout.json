@@ -59,6 +59,9 @@
     ]
   },
   "screen": {
-    "waveMessage": { "x": 640, "y": 180, "width": 640, "height": 90, "align": "center" }
-  }
+    "waveMessage": { "x": 0, "y": 403.6, "width": 1920, "height": 100, "align": "center" },
+    "eventMessage": { "x": 0, "y": 324, "width": 1920, "height": 92, "align": "center" },
+    "fireRainMessage": { "x": 0, "y": 480, "width": 1920, "height": 92, "align": "center" }
+  },
+  "foot": { "searchRadiusPx": 50, "offsetX": 0, "offsetY": 75.6 }
 }

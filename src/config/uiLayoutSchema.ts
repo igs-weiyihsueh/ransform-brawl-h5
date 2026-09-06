@@ -189,12 +189,32 @@ export interface ScreenElement {
 }
 
 /**
- * 全螢幕 UI 區塊（用戶 #5，additive optional）：螢幕座標定位的 HUD 元素。
- * 目前含 waveMessage（每波開始的波次宣告文字位置）。舊 JSON 無 screen 仍合法。
+ * 全螢幕 UI 區塊（用戶 #5/#8，additive optional）：螢幕座標定位的 HUD 訊息。
+ * waveMessage 波次宣告；eventMessage 限時事件/守護波宣告；fireRainMessage 天降火雨宣告。
+ * 新增訊息皆 optional，舊 JSON 缺 screen（或缺個別訊息）仍合法。
  */
 export interface ScreenLayout {
   /** 波次訊息/宣告的顯示位置（螢幕座標）。 */
   waveMessage: ScreenElement;
+  /** 限時事件/守護波宣告大字（對應遊戲 TimedEventTextUI）。optional。 */
+  eventMessage?: ScreenElement;
+  /** 天降火雨宣告字（對應遊戲 FireRainTextUI）。optional。 */
+  fireRainMessage?: ScreenElement;
+}
+
+/**
+ * 角色腳下圈（用戶 #5，additive optional）：搜索圈 = 真空帶（同一個 FOOT_GLOW 圈）。
+ * per-player 綁角色腳下、跟著角色走，故不放 screen（螢幕座標）而獨立一區。
+ * searchRadiusPx 主調大小；offsetX/Y 微調圈相對角色的位置。單位 px。
+ * 翼騎讀取端：layout.foot?.searchRadiusPx ?? FOOT_GLOW.radiusPx（fallback 不炸）。
+ */
+export interface FootLayout {
+  /** 搜索圈/真空帶半徑（px）。 */
+  searchRadiusPx?: number;
+  /** 圈相對角色的水平偏移（px，預設 0 置中）。 */
+  offsetX?: number;
+  /** 圈相對角色的垂直偏移（px，正=往下到腳底）。 */
+  offsetY?: number;
 }
 
 /** UI 佈局檔頂層結構。 */
@@ -204,8 +224,10 @@ export interface UiLayoutFile {
   design: DesignResolution;
   overhead: OverheadLayout;
   panel: PanelLayout;
-  /** 全螢幕 UI（波次訊息等）。additive optional，舊 JSON 缺此區塊仍合法。 */
+  /** 全螢幕 UI（波次/事件/火雨訊息）。additive optional，舊 JSON 缺此區塊仍合法。 */
   screen?: ScreenLayout;
+  /** 角色腳下圈（搜索圈=真空帶）。additive optional。 */
+  foot?: FootLayout;
 }
 
 // ---------------------------------------------------------------------------
@@ -275,15 +297,20 @@ export const DEFAULT_UI_LAYOUT: UiLayoutFile = {
       { playerIndex: 3, active: false, elements: [] },
     ],
   },
-  // 全螢幕 UI（用戶 #5）：波次訊息預設螢幕中上方橫幅（1920×1080 基準）。
+  // 全螢幕 UI（用戶 #5/#8）：波次/事件/火雨宣告皆滿寬置中橫幅（1920×1080 基準，對齊遊戲寫死位置）。
   screen: {
-    waveMessage: {
-      x: 640, // (1920-640)/2 水平置中
-      y: 180,
-      width: 640,
-      height: 90,
-      align: 'center',
-    },
+    // 波次宣告：y=GAME_HEIGHT×0.42−50=403.6。
+    waveMessage: { x: 0, y: 403.6, width: 1920, height: 100, align: 'center' },
+    // 限時事件/守護波宣告（TimedEventTextUI）：y=GAME_HEIGHT×0.3=324。
+    eventMessage: { x: 0, y: 324, width: 1920, height: 92, align: 'center' },
+    // 天降火雨宣告（FireRainTextUI）：y=GAME_HEIGHT/2−60=480。
+    fireRainMessage: { x: 0, y: 480, width: 1920, height: 92, align: 'center' },
+  },
+  // 角色腳下圈（用戶 #5）：搜索圈=真空帶=FOOT_GLOW（radiusPx=0.5×PPU=50、offsetY≈72×SPRITE_SCALE≈75.6）。
+  foot: {
+    searchRadiusPx: 50,
+    offsetX: 0,
+    offsetY: 75.6,
   },
 };
 
@@ -361,6 +388,7 @@ export function validateUiLayout(json: unknown): ValidateUiResult {
   validateOverhead(root.overhead, errors);
   validatePanel(root.panel, errors);
   validateScreen(root.screen, errors); // optional
+  validateFoot(root.foot, errors); // optional
 
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, data: root as unknown as UiLayoutFile };
@@ -435,19 +463,48 @@ function validateScreen(raw: unknown, errors: string[]): void {
     errors.push('「全螢幕 UI screen」若提供必須是物件。');
     return;
   }
+  // waveMessage 必填（screen 存在時）；eventMessage/fireRainMessage optional（存在才驗）。
   const wm = asObject(s.waveMessage);
   if (!wm) {
     errors.push('screen 的「波次訊息 waveMessage」缺少或不是物件。');
-    return;
+  } else {
+    validateScreenElement(wm, 'screen.waveMessage（波次訊息）的', errors);
   }
-  const at = 'screen.waveMessage（波次訊息）的';
-  checkNum(wm, 'x', at, errors);
-  checkNum(wm, 'y', at, errors);
-  checkNum(wm, 'width', at, errors, { positive: true });
-  checkNum(wm, 'height', at, errors, { positive: true });
-  if (wm.align !== undefined && !['left', 'center', 'right'].includes(wm.align as string)) {
+  if (s.eventMessage !== undefined) {
+    const em = asObject(s.eventMessage);
+    if (!em) errors.push('screen 的「事件訊息 eventMessage」若提供必須是物件。');
+    else validateScreenElement(em, 'screen.eventMessage（限時事件/守護波宣告）的', errors);
+  }
+  if (s.fireRainMessage !== undefined) {
+    const fm = asObject(s.fireRainMessage);
+    if (!fm) errors.push('screen 的「火雨訊息 fireRainMessage」若提供必須是物件。');
+    else validateScreenElement(fm, 'screen.fireRainMessage（天降火雨宣告）的', errors);
+  }
+}
+
+/** 驗證單一 ScreenElement（x/y 數字、width/height>0、align 若有則合法）。 */
+function validateScreenElement(el: Record<string, unknown>, at: string, errors: string[]): void {
+  checkNum(el, 'x', at, errors);
+  checkNum(el, 'y', at, errors);
+  checkNum(el, 'width', at, errors, { positive: true });
+  checkNum(el, 'height', at, errors, { positive: true });
+  if (el.align !== undefined && !['left', 'center', 'right'].includes(el.align as string)) {
     errors.push(`${at}「align」若提供必須是 left / center / right。`);
   }
+}
+
+/** 驗證 foot 區塊（optional）：若提供，各欄位若存在則驗；searchRadiusPx>0。 */
+function validateFoot(raw: unknown, errors: string[]): void {
+  if (raw === undefined) return; // optional
+  const f = asObject(raw);
+  if (!f) {
+    errors.push('「腳下圈 foot」若提供必須是物件。');
+    return;
+  }
+  const at = 'foot（搜索圈/真空帶）的';
+  if (f.searchRadiusPx !== undefined) checkNum(f, 'searchRadiusPx', at, errors, { positive: true });
+  if (f.offsetX !== undefined) checkNum(f, 'offsetX', at, errors);
+  if (f.offsetY !== undefined) checkNum(f, 'offsetY', at, errors);
 }
 
 function validatePanel(raw: unknown, errors: string[]): void {

@@ -7,8 +7,10 @@ import {
   SPRITE_SCALE,
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
-import { FOOT_GLOW, footGlowCenter, playerColor } from '@/config/playerConfig';
+import { FOOT_GLOW, footGlowCenter, playerColor, resolveFoot } from '@/config/playerConfig';
 import { PANEL_DEPTH } from '@/config/uiConfig';
+import { UI_LAYOUT_ASSET } from '@/config/uiConfig';
+import { validateUiLayout } from '@/config/uiLayoutSchema';
 import { ENTRANCE, entrancePosition } from '@/systems/entranceMath';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import type { InputSource } from '@/systems/InputSource';
@@ -25,6 +27,19 @@ const AFTER_IMAGE_FADE = 0.3;
 
 /** 待機/進場中角色 depth：提到下方面板(PANEL_DEPTH=1000)之上，站在介面上看得見。 */
 const WAITING_DEPTH = PANEL_DEPTH + 10;
+
+/**
+ * 用戶 #5/#8：從 scene 快取讀 layout.foot（搜索圈/真空帶設定）。
+ * 無 JSON/未載/不合法/無 foot → undefined（呼叫端 resolveFoot fallback FOOT_GLOW，不炸）。
+ */
+function readFootLayout(scene: Phaser.Scene):
+  | { searchRadiusPx?: number; offsetX?: number; offsetY?: number }
+  | undefined {
+  const raw = scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown;
+  if (raw === undefined || raw === null) return undefined;
+  const result = validateUiLayout(raw);
+  return result.ok ? result.data.foot : undefined;
+}
 /** 遊玩中角色 depth：正常地面層（面板之下、真空環 -10 之上）。 */
 const PLAY_DEPTH = 10;
 
@@ -81,6 +96,8 @@ export class Player implements Hittable {
   private afterImageTimer = 0;
 
   private readonly hitRadiusPx: number;
+  /** 用戶 #5/#8：生效的搜索圈(真空帶)參數 = layout.foot 或 fallback FOOT_GLOW。 */
+  private readonly foot: { radiusPx: number; offsetX: number; offsetY: number };
 
   /** 腳下真空環（搜索圈）圖形；識別色圓環，depth 低於角色。 */
   private readonly footGlow!: Phaser.GameObjects.Graphics;
@@ -111,6 +128,9 @@ export class Player implements Hittable {
     this.anim.setScale(SPRITE_SCALE);
     this.anim.setFacing(this.facing);
     this.hitRadiusPx = PLAYER_HIT_RADIUS * PPU;
+
+    // 用戶 #5/#8：搜索圈(真空帶)大小/位置讀 layout.foot（可編輯器調）；無/不合法 → fallback FOOT_GLOW（不炸）。
+    this.foot = resolveFoot(readFootLayout(scene));
 
     // 腳下真空環（搜索圈）：玩家識別色圓環，depth 低於角色不擋，每幀跟隨位置。
     this.footGlow = scene.add.graphics();
@@ -152,7 +172,7 @@ export class Player implements Hittable {
     const color = playerColor(this.playerId);
     this.footGlow.clear();
     this.footGlow.lineStyle(FOOT_GLOW.ringWidthPx, color, FOOT_GLOW.alpha);
-    this.footGlow.strokeCircle(0, 0, FOOT_GLOW.radiusPx); // 圓心設在 graphics 原點，位置靠 syncFootGlow
+    this.footGlow.strokeCircle(0, 0, this.foot.radiusPx); // 用戶#5/#8：半徑讀 layout.foot（可編輯器調）
     this.footGlow.setVisible(this.footGlowVisible);
   }
 
@@ -161,7 +181,7 @@ export class Player implements Hittable {
    * 不再是 Unity 的 -50 往上，改用 footGlowCenter 往下貼腳部）。
    */
   syncFootGlow(): void {
-    const c = footGlowCenter(this.anim.sprite.x, this.anim.sprite.y);
+    const c = footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.foot.offsetY);
     this.footGlow.x = c.x;
     this.footGlow.y = c.y;
   }
@@ -286,7 +306,7 @@ export class Player implements Hittable {
    * 與 getHitRadius（受擊命中半徑 40）分開：受擊用 40、推怪真空用 50（視覺一致）。
    */
   getVacuumRadius(): number {
-    return FOOT_GLOW.radiusPx;
+    return this.foot.radiusPx; // 用戶#5/#8：讀 layout.foot.searchRadiusPx（fallback FOOT_GLOW.radiusPx）
   }
 
   /**
@@ -294,7 +314,7 @@ export class Player implements Hittable {
    * 讓推怪判定中心與視覺圈同一點（不再用身體中心 getHitCenter 差 ~75px），眼見即實際。
    */
   getVacuumCenter(): Vec2 {
-    return footGlowCenter(this.anim.sprite.x, this.anim.sprite.y);
+    return footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.foot.offsetY);
   }
 
   /** 目前是否處於無敵幀（iFrame 內免疫再次受擊）。 */
