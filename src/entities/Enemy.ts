@@ -134,11 +134,11 @@ export class Enemy implements Hittable {
     this.damageByPlayer.set(attackerId, (this.damageByPlayer.get(attackerId) ?? 0) + dmg);
   }
 
-  /** 守護波目標覆蓋：設定後 AI 追/打此目標而非玩家；清除(null)回玩家。 */
-  private guardTarget: { getPosition(): Vec2 } | null = null;
+  /** 守護波目標覆蓋：設定後 AI 追/打此目標而非玩家；清除(null)回玩家。含判定半徑/中心供 canReach 形狀判定(七輪#3)。 */
+  private guardTarget: { getPosition(): Vec2; getHitCenter?(): Vec2; getHitRadius?(): number } | null = null;
 
   /** 設定/清除守護目標覆蓋（守護波開始設雕像、結束清回玩家）。 */
-  setGuardTarget(target: { getPosition(): Vec2 } | null): void {
+  setGuardTarget(target: { getPosition(): Vec2; getHitCenter?(): Vec2; getHitRadius?(): number } | null): void {
     this.guardTarget = target;
   }
 
@@ -604,7 +604,20 @@ export class Enemy implements Hittable {
    *  - 近戰打玩家：用與實際命中同一套形狀（isPlayerInEnemyAttackShape）預判，形狀內才揮。 */
   private canReachTarget(aim: Vec2): boolean {
     if (this.cfg.attackKind !== 'melee') return true; // 射彈不受形狀短影響
-    if (this.guardTarget) return true; // 打雕像不做玩家半徑低估
+    // 七輪#3：守護波打雕像也做形狀判定（原本 return true 跳過→怪在雕像上/下方時攻擊 offset 依水平 facing、
+    //   meleeCircle 偏側邊搆不到雕像仍照揮＝空揮）。用雕像判定中心+半徑（對齊 Unity hitAnchor 統一錨點）。
+    if (this.guardTarget) {
+      const gc = this.guardTarget.getHitCenter?.() ?? this.guardTarget.getPosition();
+      const gr = this.guardTarget.getHitRadius?.() ?? 0;
+      return isPlayerInEnemyAttackShape(
+        this.cfg.attack,
+        this.getBodyCenter(),
+        this.facing,
+        this.scaleFactor,
+        gc,
+        gr, // 雕像判定半徑（非玩家半徑）
+      );
+    }
     return isPlayerInEnemyAttackShape(
       this.cfg.attack,
       this.getBodyCenter(), // 五輪#4：與實際傷害圓同用視覺 body 中心(一致, 否則揮前判定與命中圓錯位)
