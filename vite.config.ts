@@ -25,6 +25,8 @@ export default defineConfig({
         skillEditor: fileURLToPath(new URL('./skill-editor/index.html', import.meta.url)),
         hitfeelEditor: fileURLToPath(new URL('./hitfeel-editor/index.html', import.meta.url)),
         dashEditor: fileURLToPath(new URL('./dash-editor/index.html', import.meta.url)),
+        firerainEditor: fileURLToPath(new URL('./firerain-editor/index.html', import.meta.url)),
+        guardEditor: fileURLToPath(new URL('./guard-editor/index.html', import.meta.url)),
       },
     },
   },
