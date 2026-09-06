@@ -37,6 +37,7 @@ export interface HitFeelFx {
   deathParticle(x: number, y: number, color: number): void;
   /** 用戶 #7 敵人攻擊特效（純視覺）。實作於 EffectSystem。 */
   enemySlash?(x: number, y: number, angleRad: number, scale?: number): void;
+  enemyFan?(x: number, y: number, angleRad: number, scale?: number): void;
   enemyImpact?(x: number, y: number, scale?: number): void;
   enemyCharge?(x: number, y: number, durationMs?: number, diskPx?: number): Phaser.GameObjects.Image | null;
   /** 用戶 #3 圓形範圍攻擊特效（純視覺）。 */
@@ -637,8 +638,16 @@ export class Enemy implements Hittable {
       // 真大範圍敵人(菁英) → 播 AOE 爆發（同攻擊圓心、依 AOE 半徑）。
       const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor);
       this.hitFeelFx?.enemyAoeBurst?.(circle.center.x, circle.center.y, circle.radius);
+    } else if (vfx === 'fan') {
+      // 七輪：衝鋒兵扇形揮砍（頂點=出手點偏敵人手前、rotate 朝玩家、scale 依攻擊範圍隨範圍縮放）。
+      const aimAngle = Math.atan2(playerPos.y - pos.y, playerPos.x - pos.x);
+      const fanX = pos.x + Math.cos(aimAngle) * a.offsetX * PPU;
+      const fanY = pos.y + Math.sin(aimAngle) * a.offsetX * PPU;
+      // scale 隨攻擊範圍：以 fan 素材涵蓋 ~攻擊半徑(a.radius×PPU)為基準（fan 頂點→弧 ≈128px）×perCharScale。
+      const fanScale = (((a.radius ?? 0.45) * PPU * 2) / 128) * this.scaleFactor;
+      this.hitFeelFx?.enemyFan?.(fanX, fanY, aimAngle, fanScale);
     } else if (vfx === 'slash') {
-      // 衝鋒/一般近戰 → 揮擊斬光（rotation 對準玩家 aim、生成偏敵人手前）。三輪#12 修回歸：衝鋒兵揮斬回來。
+      // 一般近戰 → 揮擊斬光（rotation 對準玩家 aim、生成偏敵人手前）。三輪#12 修回歸。
       const aimAngle = Math.atan2(playerPos.y - pos.y, playerPos.x - pos.x);
       const slashX = pos.x + Math.cos(aimAngle) * a.offsetX * PPU;
       const slashY = pos.y + Math.sin(aimAngle) * a.offsetX * PPU;

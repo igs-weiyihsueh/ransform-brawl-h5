@@ -217,16 +217,19 @@ export function blockEliteAdvance(
  * ⚠️ 不可用 attack.shapeType 判斷——所有近戰都是 meleeCircle(shapeType='circle')，
  *    那是命中形狀非視覺語意，用它會讓所有近戰(含衝鋒兵)都被當 AOE、slash 消失。
  * 規則：
- * - 射彈(projectile)：'none'（有自己的射彈視覺，不播 slash/aoe）。
+ * - 射彈(projectile)：'none'（有自己的射彈視覺，不播 slash/aoe/fan）。
  * - 近戰 attackVfx==='aoe'：'aoe'（真大範圍敵人，如菁英）。
- * - 近戰其餘（含未設 attackVfx 的衝鋒/一般近戰）：'slash'（預設揮斬）。
+ * - 近戰 attackVfx==='fan'：'fan'（七輪：衝鋒兵扇形揮砍 fx_enemy_fan）。
+ * - 近戰其餘（含未設 attackVfx 的一般近戰）：'slash'（預設揮斬）。
  * @param attackKind 'melee' | 'projectile'。
- * @param attackVfx 敵人設定的出手視覺（'slash'|'aoe'|undefined）。
+ * @param attackVfx 敵人設定的出手視覺（'slash'|'aoe'|'fan'|undefined）。
  */
 export function enemyAttackVfx(
   attackKind: 'melee' | 'projectile',
-  attackVfx: 'slash' | 'aoe' | undefined,
-): 'slash' | 'aoe' | 'none' {
+  attackVfx: 'slash' | 'aoe' | 'fan' | undefined,
+): 'slash' | 'aoe' | 'fan' | 'none' {
   if (attackKind === 'projectile') return 'none';
-  return attackVfx === 'aoe' ? 'aoe' : 'slash';
+  if (attackVfx === 'aoe') return 'aoe';
+  if (attackVfx === 'fan') return 'fan';
+  return 'slash';
 }

@@ -29,6 +29,8 @@ const ENERGY_FLY_DEPTH = 950;
  */
 const ENEMY_ATTACK_VFX = {
   slash: { key: 'vfx-enemy-slash', path: `${BASE_PATH}/fx_enemy_slash.png` },
+  /** 七輪：衝鋒兵扇形揮砍（左頂點往右張 76°，白刃+橘紅能量+3 道弧形刃光）。 */
+  fan: { key: 'vfx-enemy-fan', path: `${BASE_PATH}/fx_enemy_fan.png` },
   impact: { key: 'vfx-enemy-impact', path: `${BASE_PATH}/fx_enemy_impact.png` },
   charge: { key: 'vfx-enemy-charge', path: `${BASE_PATH}/fx_enemy_charge.png` },
   /** 集氣升級版（用戶 #4：中心聚能核 + 5 道環繞氣流臂，靠 rotation 呈現漩渦感）。正視漩渦，保留備用。 */
@@ -875,6 +877,38 @@ export class EffectSystem {
       alpha: 0,
       delay: 108, // 後 40% 才淡出（180×0.6）
       duration: 72,
+      ease: 'Sine.easeIn',
+      onComplete: () => spr.destroy(),
+    });
+  }
+
+  /**
+   * 七輪：衝鋒兵扇形揮砍（fx_enemy_fan，128×128，頂點在左緣、往右張 76°）。
+   * origin(0,0.5)＝頂點在左中＝以敵人出手點為樞紐；setRotation(angleRad) 讓扇形往攻擊方向張開。
+   * scale 依攻擊範圍（呼應「特效隨範圍」）；0.8→1.1 快速張開、時長 0.2s、後 40% 淡出。純視覺。
+   * @param x,y 出手點（敵人手前/body 中心，世界座標）＝扇形頂點。
+   * @param angleRad 攻擊方向（敵人→玩家），扇形往此方向張。
+   * @param scale 依攻擊範圍縮放（呼叫端 = attackRange 相關）。
+   */
+  enemyFan(x: number, y: number, angleRad: number, scale = 1): void {
+    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.fan.key)) return;
+    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.fan.key);
+    // 頂點在圖左緣中央 → origin(0,0.5) 讓頂點=出手點，rotate 繞頂點張向攻擊方向。
+    spr.setOrigin(0, 0.5).setDepth(ATTACK_VFX_DEPTH).setRotation(angleRad);
+    spr.setScale(0.8 * scale).setAlpha(1);
+    // ~0.2s：scale 0.8→1.1 快速張開（揮砍展開感）。
+    this.scene.tweens.add({
+      targets: spr,
+      scale: 1.1 * scale,
+      duration: 200,
+      ease: 'Cubic.easeOut',
+    });
+    // 後 40% 淡出（200×0.6=120 後淡出 80ms）。
+    this.scene.tweens.add({
+      targets: spr,
+      alpha: 0,
+      delay: 120,
+      duration: 80,
       ease: 'Sine.easeIn',
       onComplete: () => spr.destroy(),
     });

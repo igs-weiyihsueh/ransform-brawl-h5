@@ -59,7 +59,7 @@ export interface EnemyAIConfig {
    * ⚠️ 不可用 attack.shapeType 判斷——所有近戰都是 meleeCircle(shapeType='circle')，那是命中形狀非視覺語意。
    * 射彈(projectile)不吃此欄（有自己的射彈視覺，不播 slash/aoe）。
    */
-  attackVfx?: 'slash' | 'aoe';
+  attackVfx?: 'slash' | 'aoe' | 'fan';
   /** 射彈速度（unit/s），attackKind='projectile' 時使用。 */
   projectileSpeed?: number;
   /** 受擊硬直時間（秒）。 */
@@ -101,6 +101,7 @@ export const ENEMY_AI: Record<string, EnemyAIConfig> = {
     attackCooldown: 2,
     attackKind: 'melee',
     attack: meleeCircle(0.45, 0.8, 10, 3),
+    attackVfx: 'fan', // 七輪：衝鋒兵出手播扇形揮砍 fx_enemy_fan(取代通用 slash)；命中仍圓形判定不變
     hitStun: 0.8,
     knockbackForce: 3,
   },
