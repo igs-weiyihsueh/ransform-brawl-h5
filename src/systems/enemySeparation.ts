@@ -233,3 +233,63 @@ export function enemyAttackVfx(
   if (attackVfx === 'fan') return 'fan';
   return 'slash';
 }
+
+/** 敵-敵 hard de-overlap 的單一敵人輸入（第八輪#4）。 */
+export interface OverlapAgent {
+  x: number;
+  y: number;
+  /** body 半徑（像素，getHitRadius）。 */
+  radius: number;
+  /** 是否可被推移（false=像牆：只推別人、自己不動，如 immovable 菁英/蓄力站定）。 */
+  movable: boolean;
+}
+
+/**
+ * 敵-敵 hard de-overlap（第八輪#4，純函式，抽給測騎）：兩兩距離 < r_i+r_j → 沿連線推開重疊量，
+ * 迭代 iterations 次收斂。對稱解（兩者都 movable → 各推一半）；一方 immovable(movable=false) → 只推另一方全量；
+ * 兩者都 immovable → 都不動。完全重疊(dist≈0)→ 用 index 定向(x 軸)避免 NaN。
+ * 照 H5 resolvePenetration(敵-玩家)模式做敵-敵版。回傳新座標陣列（不改原輸入）。
+ * @param agents 敵人 {x,y,radius,movable}（呼叫端已過濾 grabber/dead）。
+ * @param iterations 迭代次數（預設 2，headless 調到不疊+不抖的最小）。
+ */
+export function resolveEnemyOverlap(
+  agents: readonly OverlapAgent[],
+  iterations = 2,
+): { x: number; y: number }[] {
+  const pos = agents.map((a) => ({ x: a.x, y: a.y }));
+  const n = agents.length;
+  for (let iter = 0; iter < iterations; iter += 1) {
+    for (let i = 0; i < n; i += 1) {
+      for (let j = i + 1; j < n; j += 1) {
+        const ai = agents[i], aj = agents[j];
+        if (ai.radius <= 0 || aj.radius <= 0) continue; // 半徑 0（grabber/dead 標記）不參與
+        const minDist = ai.radius + aj.radius;
+        if (minDist <= 0) continue;
+        let dx = pos[j].x - pos[i].x;
+        let dy = pos[j].y - pos[i].y;
+        let dist = Math.hypot(dx, dy);
+        if (dist >= minDist) continue; // 沒重疊
+        let ux: number, uy: number;
+        if (dist <= 0.0001) {
+          // 完全重疊：用 index 定向(i 左 j 右)避免 NaN/爆量。
+          ux = 1; uy = 0; dist = 0; // dist=0 → overlap=minDist
+        } else {
+          ux = dx / dist; uy = dy / dist;
+        }
+        const overlap = minDist - dist;
+        const iMov = ai.movable, jMov = aj.movable;
+        if (iMov && jMov) {
+          const half = overlap / 2; // 對稱各推一半
+          pos[i].x -= ux * half; pos[i].y -= uy * half;
+          pos[j].x += ux * half; pos[j].y += uy * half;
+        } else if (iMov && !jMov) {
+          pos[i].x -= ux * overlap; pos[i].y -= uy * overlap; // j 像牆→i 全量退
+        } else if (!iMov && jMov) {
+          pos[j].x += ux * overlap; pos[j].y += uy * overlap; // i 像牆→j 全量退
+        }
+        // 兩者都不動 → 都不推。
+      }
+    }
+  }
+  return pos;
+}

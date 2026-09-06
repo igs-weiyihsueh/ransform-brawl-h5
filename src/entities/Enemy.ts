@@ -405,6 +405,18 @@ export class Enemy implements Hittable {
     return this.cfg.immovable === true;
   }
 
+  /**
+   * 第八輪#4：敵-敵 de-overlap 是否可被推移。
+   * false（像牆不被推、只推別人）：immovable 菁英 / 蓄力免疫中的菁英（六輪#3，蓄力站定不被擠走）。
+   * true：一般敵人（會被推開解重疊）。（grabber/dead 由呼叫端過濾，不進 de-overlap。）
+   */
+  isSeparationMovable(): boolean {
+    const immovable = this.cfg.immovable === true;
+    if (immovable) return false;
+    if (isChargeInvulnerable(this.state, immovable)) return false;
+    return true;
+  }
+
   // --- grabber（抓人者，用戶試玩#4，由 GrabSystem 驅動） ---
 
   /** 設為 grabber（true=開始抓人：暫停一般 AI、無敵、由 GrabSystem 追玩家）。 */

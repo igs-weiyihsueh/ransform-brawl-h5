@@ -3,6 +3,7 @@ import { Enemy, type EnemyAttackEvent } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import { circleIntersectsCircle, type Vec2 } from '@/systems/hitDetection';
 import { pushOutOfPlayer } from '@/systems/enemySeparation';
+import { resolveEnemyOverlap } from '@/systems/enemySeparation';
 import { Projectile } from '@/systems/Projectile';
 import { SurroundSlotManager, type ISurroundTarget } from '@/systems/SurroundSlotManager';
 import { isValidEnemyTarget } from '@/systems/targetingMath';
@@ -252,6 +253,24 @@ export class EnemySpawner {
       }
       // 敵人不穿進雕像：把敵人頂到雕像外緣（守護波敵人圍攻雕像時不重疊進體內）。
       for (const e of this.enemies) e.pushOutOfObstacle(sc, sr);
+    }
+
+    // 第八輪#4：敵-敵 hard de-overlap（怪互相疊在一起根治）——soft-steering separation 只在移動時作用，
+    //   停止態(charge/attack/cooldown/at-slot)不分離 → 擠同側疊住。這道每幀硬解重疊（對齊敵-玩家 resolvePenetration）。
+    //   排除 grabber(GrabSystem 專屬)/dead；immovable/蓄力菁英 movable=false(只推別人不被推)。
+    const overlapAgents = this.enemies.map((e) => {
+      const c = e.getHitCenter();
+      const skip = e.isDead() || (e.isGrabber?.() ?? false); // grabber/dead 不參與(半徑 0→純函式跳過)
+      return { x: c.x, y: c.y, radius: skip ? 0 : e.getHitRadius(), movable: !skip && e.isSeparationMovable() };
+    });
+    const resolved = resolveEnemyOverlap(overlapAgents);
+    for (let i = 0; i < this.enemies.length; i += 1) {
+      const e = this.enemies[i];
+      if (overlapAgents[i].radius <= 0) continue; // grabber/dead 跳過
+      const dx = resolved[i].x - overlapAgents[i].x;
+      const dy = resolved[i].y - overlapAgents[i].y;
+      // getHitCenter == sprite 位置（無 offset）→ 新 hitCenter 即新 sprite 位置；moveTo 施加。
+      if (dx !== 0 || dy !== 0) e.moveTo(resolved[i].x, resolved[i].y);
     }
 
     // 六輪#10 根本修：clamp 是「單一最後防線」——排在所有位移/推力
