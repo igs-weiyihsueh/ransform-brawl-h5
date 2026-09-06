@@ -177,6 +177,11 @@ export class PlayerOverheadUI {
     if (vis.energy === false && typeof this.energyBar.setContainerVisible === 'function') this.energyBar.setContainerVisible(false);
   }
 
+  /** 七輪 待機隔離：整個頭上 UI 容器顯示/隱藏（待機玩家不顯，加入後顯）。 */
+  setContainerVisible(visible: boolean): void {
+    this.container.setVisible(visible);
+  }
+
   /** 每幀跟隨玩家：把容器移到玩家位置上方。 */
   followWorldPosition(x: number, y: number): void {
     this.container.setPosition(x, y + OVERHEAD_LAYOUT.offsetY);

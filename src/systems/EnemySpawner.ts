@@ -5,6 +5,7 @@ import { circleIntersectsCircle, type Vec2 } from '@/systems/hitDetection';
 import { pushOutOfPlayer } from '@/systems/enemySeparation';
 import { Projectile } from '@/systems/Projectile';
 import { SurroundSlotManager, type ISurroundTarget } from '@/systems/SurroundSlotManager';
+import { isValidEnemyTarget } from '@/systems/targetingMath';
 
 /**
  * EnemySpawner — 生怪 API + 敵人/射彈執行時容器。
@@ -184,6 +185,10 @@ export class EnemySpawner {
   update(dt: number): void {
     if (this.meleeCircleFlash > 0) this.meleeCircleFlash -= dt;
 
+    // 七輪 待機隔離：無守護雕像目標且玩家待機（未參戰）→ 敵人無有效目標，本幀不追擊/不攻擊（原地待命）。
+    //   守護波（有雕像目標）照常；玩家加入後 isValidEnemyTarget=true 恢復追擊。
+    const targetActive = this.guardTarget !== null ? true : isValidEnemyTarget(this.player);
+
     const playerPos = this.player.getPosition();
     // separation：每幀給每個敵人「其他敵人位置」清單。
     const positions = this.enemies.map((e) => e.getHitCenter());
@@ -192,7 +197,8 @@ export class EnemySpawner {
     for (let i = 0; i < this.enemies.length; i += 1) {
       const e = this.enemies[i];
       e.setNeighbors(positions.filter((_, j) => j !== i));
-      e.update(playerPos, dt);
+      // 無有效目標（玩家待機、無雕像）→ 傳 null 讓敵人待命（不追不打）；有目標照常。
+      e.update(targetActive ? playerPos : null, dt);
     }
 
     // 防穿透：敵人移動後，對所有 player 頂開（不穿透）。
@@ -305,7 +311,8 @@ export class EnemySpawner {
   private applyAttackDamage(dmg: number, sourceName: string): void {
     if (this.guardTarget) {
       this.guardTarget.takeDamage(dmg);
-    } else {
+    } else if (isValidEnemyTarget(this.player)) {
+      // 七輪 待機隔離：待機玩家不受擊（保險——追擊已 gate，此為第二道防線）。
       this.player.takeHit(dmg, sourceName);
     }
   }

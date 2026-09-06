@@ -153,6 +153,10 @@ export class UISystem implements GameSystem {
       const p = players[i];
       const pid = p.playerId;
       const overhead = this.overheads[i];
+      // 七輪 待機隔離：待機玩家（未參戰）不顯頭上 UI；加入（投幣進場）後恢復。
+      const waiting = typeof p.isWaiting === 'function' && p.isWaiting();
+      overhead.setContainerVisible(!waiting);
+      if (waiting) continue; // 待機不更新內容/跟隨（隱藏即可）
       const pos = p.getPosition();
       overhead.followWorldPosition(pos.x, pos.y);
       // 用戶 #1：變身前不顯示魂力條，變身後才顯（gate 魂力環顯示 = transform.isTransformed）。

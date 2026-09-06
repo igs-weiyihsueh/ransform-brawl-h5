@@ -459,7 +459,7 @@ export class Enemy implements Hittable {
   }
 
   /** 每幀更新：套擊退殘速 → 跑狀態機 → 更新動畫。 */
-  update(playerPos: Vec2, dt: number): void {
+  update(playerPos: Vec2 | null, dt: number): void {
     if (this.dead) return;
 
     // 記錄移動前位置（immovable 菁英防穿透用：只擋自己前進、不被玩家推回）。
@@ -497,7 +497,12 @@ export class Enemy implements Hittable {
     }
 
     // 守護波：有覆蓋目標則追/打雕像，否則玩家。
+    // 七輪 待機隔離：無雕像目標且玩家待機(playerPos=null) → 無有效目標，原地待命(idle、不追不打)。
     const aim = this.guardTarget ? this.guardTarget.getPosition() : playerPos;
+    if (!aim) {
+      this.anim.play('idle');
+      return;
+    }
     const dx = aim.x - this.anim.sprite.x;
     const dy = aim.y - this.anim.sprite.y;
     const dist = Math.hypot(dx, dy);
