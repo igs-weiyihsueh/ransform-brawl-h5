@@ -969,22 +969,26 @@ export class EffectSystem {
   }
 
   /**
-   * 圓形範圍攻擊爆發（用戶 #3）：命中/出手瞬間播。同圓心、爆開放大、隨機旋轉、後半淡出。
+   * 圓形範圍攻擊爆發（用戶 #3 → 四輪#3#4：壓到貼地層不蓋角色）：命中/出手瞬間播。同圓心、爆開放大、隨機旋轉、後半淡出。
+   * depth 壓到角色之下(貼地)＝地面爆發、不遮擋角色/怪主體（原 ATTACK_VFX_DEPTH+1=951 蓋在角色上）。
    * @param x,y 圓心（世界座標）。
    * @param radiusPx AOE 半徑（爆發覆蓋 ≈ 此）。
    */
   enemyAoeBurst(x: number, y: number, radiusPx: number): void {
     if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.aoeBurst.key)) return;
     const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.aoeBurst.key);
-    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH + 1); // 爆發在角色上層
+    // 四輪#3#4：depth -3（角色 PLAY_DEPTH=10 之下＝貼地、在 aoeRing -4 之上），當地面爆發不蓋角色/怪。
+    spr.setOrigin(0.5, 0.5).setDepth(-3);
+    spr.setBlendMode(Phaser.BlendModes.ADD); // 貼地在暗地面更亮醒目
     spr.setRotation(Phaser.Math.FloatBetween(0, Math.PI * 2));
     const target = radiusPx * 2;
-    spr.setDisplaySize(target * 0.5, target * 0.5).setAlpha(1);
-    // ~0.2s：scale 0.5→1.15 炸開 + 後半淡出。
+    // 貼地俯視：高壓扁成寬的一半(2:1 橢圓)＝地面爆發透視，與 aoeRing 一致。
+    spr.setDisplaySize(target * 0.5, target * 0.25).setAlpha(1);
+    // ~0.2s：scale 炸開 + 後半淡出（維持 2:1 壓扁）。
     this.scene.tweens.add({
       targets: spr,
       displayWidth: target * 1.15,
-      displayHeight: target * 1.15,
+      displayHeight: target * 0.575, // 1.15 的一半，保持 2:1 貼地
       duration: 200,
       ease: 'Cubic.easeOut',
     });
