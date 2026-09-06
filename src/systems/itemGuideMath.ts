@@ -130,13 +130,13 @@ export function resolveItemOwner(source: ItemSource, ownerPlayerId?: number): nu
  * 玩家一進場就在旁邊看到自己的初始道具。夾限在可走區內（不出界/不進面板）。
  * @param landing 玩家進場落點 {x,y}。
  * @param bounds 可走邊界 {minX,maxX,minY,maxY}（像素，通常 PLAYER_BOUNDS）。
- * @param offsetPx 距落點的偏移距離（px，預設 90）。
+ * @param offsetPx 距落點的偏移距離（px，七輪#10 用戶要離角色遠一點：90→180，明顯離開角色身邊）。
  * @returns 初始道具生成點（clamp 在界內）。
  */
 export function initialItemPos(
   landing: Vec2,
   bounds: { minX: number; maxX: number; minY: number; maxY: number },
-  offsetPx = 90,
+  offsetPx = 180,
 ): Vec2 {
   // 放落點上方（y 減，H5 上為負方向）；clamp 在界內（上界不越 minY）。
   const rawY = landing.y - offsetPx;
