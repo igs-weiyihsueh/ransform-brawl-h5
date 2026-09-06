@@ -40,21 +40,23 @@ export function buildAttackOBB(
   attackerPos: Vec2,
   facing: number,
   scale: number,
+  aim?: Vec2,
 ): OBB {
-  const dir = facing >= 0 ? 1 : -1;
-  // 中心偏移（unit → 像素，且 × scale）。offsetX 沿面向；offsetY 為垂直。
-  const cx = attackerPos.x + dir * attack.offsetX * scale * PPU;
-  const cy = attackerPos.y + attack.offsetY * scale * PPU;
-
+  const center = attackOffsetCenter(attackerPos, attack.offsetX, attack.offsetY ?? 0, scale, facing, aim);
   const length = (attack.length ?? 0) * scale * PPU;
   const width = (attack.width ?? 0) * scale * PPU;
-
+  // 旋轉：有 aim → 朝 aim 角度；無 aim → 沿水平 facing（面左 180°）。
+  let rotation: number;
+  if (aim) {
+    rotation = Math.atan2(aim.y - attackerPos.y, aim.x - attackerPos.x);
+  } else {
+    rotation = (facing >= 0 ? 1 : -1) === 1 ? 0 : Math.PI;
+  }
   return {
-    center: { x: cx, y: cy },
+    center,
     halfLength: length / 2,
     halfWidth: width / 2,
-    // 面左時矩形旋轉 180°，長邊仍沿水平；對稱矩形其實不影響，但保留語意正確。
-    rotation: dir === 1 ? 0 : Math.PI,
+    rotation,
   };
 }
 
@@ -109,20 +111,50 @@ export interface AttackCircle {
 }
 
 /**
+ * 攻擊 shape 的偏移中心（七輪#3 治本，decision 34b0be5b）：
+ * - 有 aim（敵人→目標）：offsetX 沿「敵人→aim」單位向量、offsetY 垂直該向量側偏 → 攻擊圓朝目標那側（上下左右都涵蓋）。
+ * - 無 aim（相容：玩家攻擊/舊測）：offsetX 沿水平 facing、offsetY 垂直（舊行為）。
+ * @param attackerPos 攻擊者位置。
+ * @param offsetX/offsetY 攻擊偏移（unit，未 ×scale×PPU）。
+ * @param scale 角色 scale。
+ * @param facing 面向（±1，無 aim 時用）。
+ * @param aim 目標點（有則朝 aim；無則水平 facing）。
+ */
+function attackOffsetCenter(
+  attackerPos: Vec2, offsetX: number, offsetY: number, scale: number, facing: number, aim?: Vec2,
+): Vec2 {
+  const oxPx = offsetX * scale * PPU;
+  const oyPx = offsetY * scale * PPU;
+  if (aim) {
+    const dx = aim.x - attackerPos.x;
+    const dy = aim.y - attackerPos.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 0.0001) {
+      const ux = dx / d, uy = dy / d;          // 敵人→aim 單位向量
+      // offsetX 沿 aim 方向、offsetY 沿垂直（左手法線）側偏。
+      return {
+        x: attackerPos.x + ux * oxPx + -uy * oyPx,
+        y: attackerPos.y + uy * oxPx + ux * oyPx,
+      };
+    }
+  }
+  const dir = facing >= 0 ? 1 : -1;
+  return { x: attackerPos.x + dir * oxPx, y: attackerPos.y + oyPx };
+}
+
+/**
  * 由 AttackData（shapeType='circle'）+ 攻擊者位置 + 面向 + 角色 scale，
- * 算出世界像素座標的判定圓。offsetX 沿面向、offsetY 垂直，皆 × scale × PPU。
+ * 算出世界像素座標的判定圓。有 aim 時 offset 朝 aim 方向（七輪#3 治本），無 aim 沿水平 facing（相容）。
  */
 export function buildAttackCircle(
   attack: AttackData,
   attackerPos: Vec2,
   facing: number,
   scale: number,
+  aim?: Vec2,
 ): AttackCircle {
-  const dir = facing >= 0 ? 1 : -1;
-  const cx = attackerPos.x + dir * attack.offsetX * scale * PPU;
-  const cy = attackerPos.y + attack.offsetY * scale * PPU;
   return {
-    center: { x: cx, y: cy },
+    center: attackOffsetCenter(attackerPos, attack.offsetX, attack.offsetY ?? 0, scale, facing, aim),
     radius: (attack.radius ?? 0) * scale * PPU,
   };
 }
@@ -157,10 +189,12 @@ export function queryHitsCircle<T extends Hittable>(
 export interface AttackFan {
   center: Vec2;
   radius: number;
-  /** 面向方向（+1 右、-1 左），決定扇形朝向。 */
+  /** 面向方向（+1 右、-1 左），決定扇形朝向（無 forwardAngle 時用）。 */
   facing: number;
   /** 半張角（弧度）：命中需與面向夾角 <= 此值。 */
   halfAngleRad: number;
+  /** 七輪#3：扇形朝向角（弧度，朝 aim）；有值時取代水平 facing。 */
+  forwardAngle?: number;
 }
 
 /**
@@ -172,15 +206,19 @@ export function buildAttackFan(
   attackerPos: Vec2,
   facing: number,
   scale: number,
+  aim?: Vec2,
 ): AttackFan {
   const dir = facing >= 0 ? 1 : -1;
-  const cx = attackerPos.x + dir * attack.offsetX * scale * PPU;
-  const cy = attackerPos.y + attack.offsetY * scale * PPU;
+  const center = attackOffsetCenter(attackerPos, attack.offsetX, attack.offsetY ?? 0, scale, facing, aim);
+  const forwardAngle = aim
+    ? Math.atan2(aim.y - attackerPos.y, aim.x - attackerPos.x)
+    : undefined;
   return {
-    center: { x: cx, y: cy },
+    center,
     radius: (attack.radius ?? 0) * scale * PPU,
     facing: dir,
     halfAngleRad: (((attack.angle ?? 0) / 2) * Math.PI) / 180,
+    forwardAngle,
   };
 }
 
@@ -202,10 +240,15 @@ export function fanIntersectsCircle(
   if (dist > fan.radius + circleRadius) return false;
   if (dist <= 1e-6) return true; // 幾乎同點 → 中
 
-  // 角度檢查：目標方向與面向（+x*dir）的夾角。
-  // 面向向量為 (fan.facing, 0)；用點積求夾角。
-  const forwardX = fan.facing;
-  const cosTheta = (dx * forwardX) / dist; // forward 為單位水平向量，y=0
+  // 角度檢查：目標方向與面向的夾角。有 forwardAngle(朝 aim)用它，否則水平 (facing,0)。
+  let cosTheta: number;
+  if (fan.forwardAngle !== undefined) {
+    const fx = Math.cos(fan.forwardAngle), fy = Math.sin(fan.forwardAngle);
+    cosTheta = (dx * fx + dy * fy) / dist; // forward 為單位向量
+  } else {
+    const forwardX = fan.facing;
+    cosTheta = (dx * forwardX) / dist; // forward 為單位水平向量，y=0
+  }
   const clamped = cosTheta < -1 ? -1 : cosTheta > 1 ? 1 : cosTheta;
   const theta = Math.acos(clamped);
   return theta <= fan.halfAngleRad;
@@ -251,14 +294,15 @@ export function isPlayerInEnemyAttackShape(
   playerPos: Vec2,
   playerRadius: number,
 ): boolean {
+  // 七輪#3 治本：攻擊 shape offset 朝目標（aim=playerPos）→ 目標在上下左右都涵蓋（不再只水平 facing）。
   if (attack.shapeType === 'circle') {
-    const circle = buildAttackCircle(attack, enemyPos, facing, scale);
+    const circle = buildAttackCircle(attack, enemyPos, facing, scale, playerPos);
     return circleIntersectsCircle(circle, playerPos, playerRadius);
   }
   if (attack.shapeType === 'fan') {
-    const fan = buildAttackFan(attack, enemyPos, facing, scale);
+    const fan = buildAttackFan(attack, enemyPos, facing, scale, playerPos);
     return fanIntersectsCircle(fan, playerPos, playerRadius);
   }
-  const obb = buildAttackOBB(attack, enemyPos, facing, scale);
+  const obb = buildAttackOBB(attack, enemyPos, facing, scale, playerPos);
   return obbIntersectsCircle(obb, playerPos, playerRadius);
 }

@@ -14,7 +14,6 @@ import {
   combineWithSeparation,
   pushOutOfPlayer,
   isChargeInvulnerable,
-  shouldApproachAfterSlot,
 } from '@/systems/enemySeparation';
 import { slotApproachDir, SLOT_REACH_THRESHOLD_PX, TRAVELER_AVOID_WEIGHT } from '@/systems/surroundSlots';
 import {
@@ -282,12 +281,12 @@ export class Enemy implements Hittable {
       const ddx = this.slotPos.x - selfPos.x;
       const ddy = this.slotPos.y - selfPos.y;
       const atSlot = Math.hypot(ddx, ddy) < SLOT_REACH_THRESHOLD_PX;
-      // 七輪#7：到槽但離目標 body 仍 > 攻擊範圍 → 繼續逼近(不停在遠槽搆不到)；否則到槽停。
-      const distBody = Math.hypot(aimDx, aimDy); // aim=玩家 body(getPosition)，aimDx/Dy=aim-sprite
-      const attackPx = this.cfg.attackRange * PPU;
+      // 七輪#3 治本(decision 34b0be5b)：停止基準＝攻擊基準。到槽後「攻擊 shape 已涵蓋目標(canReachTarget)」才停；
+      //   否則繼續朝目標 body 逼近，進到攻擊 shape 內才停 → 停下必能打(不再停在搆不到處空轉，含正上/下方)。
       if (atSlot) {
-        if (!shouldApproachAfterSlot(distBody, attackPx)) return; // 已在攻擊範圍→停在槽
-        // 到槽但搆不到 → 直接朝玩家 body 逼近(疊分離力)，進攻擊範圍才停。
+        const aim = { x: selfPos.x + aimDx, y: selfPos.y + aimDy }; // 還原目標絕對座標供攻擊 shape 判定
+        if (this.canReachTarget(aim)) return; // 攻擊 shape 已涵蓋→停在槽
+        // 到槽但攻擊 shape 搆不到 → 直接朝目標 body 逼近(疊分離力)，進攻擊 shape 才停。
         const sep = calculateSeparation(selfPos, this.neighbors);
         const dir = combineWithSeparation({ x: aimDx, y: aimDy }, sep);
         this.anim.sprite.x += dir.x * speedPx * dt;
@@ -534,7 +533,7 @@ export class Enemy implements Hittable {
           if (isAoe) {
             // 六輪#2：菁英(aoe)不要腳底小蓄力盤 chargeFx，只留 aoeRing 範圍預告圈。
             // 五輪#4：預警圈圓心用視覺 body 中心(非 sprite 幾何中心, frame 上方留白會偏上)→菁英在圈正中央。
-            const circle = buildAttackCircle(this.cfg.attack, this.getBodyCenter(), this.facing, this.scaleFactor);
+            const circle = buildAttackCircle(this.cfg.attack, this.getBodyCenter(), this.facing, this.scaleFactor, aim);
             this.aoeRingFx =
               this.hitFeelFx?.enemyAoeRing?.(circle.center.x, circle.center.y, circle.radius) ?? null;
           } else {
@@ -653,8 +652,8 @@ export class Enemy implements Hittable {
     this.clearChargeFx();
     const vfx = enemyAttackVfx(this.cfg.attackKind, this.cfg.attackVfx); // 三輪#12：slash/aoe/none
     if (vfx === 'aoe') {
-      // 真大範圍敵人(菁英) → 播 AOE 爆發（同攻擊圓心、依 AOE 半徑）。
-      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor);
+      // 真大範圍敵人(菁英) → 播 AOE 爆發（同攻擊圓心、依 AOE 半徑）。七輪#3：offset 朝 aim(playerPos)。
+      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, playerPos);
       this.hitFeelFx?.enemyAoeBurst?.(circle.center.x, circle.center.y, circle.radius);
     } else if (vfx === 'fan') {
       // 七輪：衝鋒兵扇形揮砍（頂點=出手點偏敵人手前、rotate 朝玩家、scale 依攻擊範圍隨範圍縮放）。
@@ -674,8 +673,8 @@ export class Enemy implements Hittable {
     // vfx==='none'（射彈）：不播近戰揮斬/AOE，有自己的射彈視覺。
 
     if (this.cfg.attackKind === 'melee') {
-      // 近戰圓形判定：offset 隨 perCharScale 放大（菁英大範圍）。
-      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor);
+      // 近戰圓形判定：offset 隨 perCharScale 放大（菁英大範圍）。七輪#3：offset 朝 aim(playerPos)＝與 canReachTarget 同基準。
+      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, playerPos);
       this.onAttack?.({
         kind: 'melee',
         sourceName: this.cfg.characterKey,
