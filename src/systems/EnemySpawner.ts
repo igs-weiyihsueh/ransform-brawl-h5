@@ -81,14 +81,15 @@ export class EnemySpawner {
    */
   private readonly surroundAdapters = new WeakMap<object, ISurroundTarget>();
 
-  /** 取得（或建立快取）某玩家的環繞 adapter。IsSurroundActive = 非待機（待機/出局不被環繞）。 */
+  /** 取得（或建立快取）某玩家的環繞 adapter。IsSurroundActive = 非待機 且 非衝刺（七輪#11 對齊 Unity：衝刺時 surround 失效→敵人不環繞不推玩家、真空圈判定失效，衝刺直直穿）。 */
   private playerAsSurroundTarget(p: Player): ISurroundTarget {
     const cached = this.surroundAdapters.get(p as unknown as object);
     if (cached) return cached;
     const adapter: ISurroundTarget = {
       getVacuumCenter: () => p.getVacuumCenter?.() ?? p.getHitCenter(),
       getVacuumRadius: () => p.getVacuumRadius?.() ?? p.getHitRadius(),
-      isSurroundActive: () => !(p.isWaiting?.() ?? false),
+      // 七輪#11：衝刺時 isSurroundActive=false（對齊 Unity IsSurroundActive => ... && !isDashing）。
+      isSurroundActive: () => !(p.isWaiting?.() ?? false) && !(p.isDashing?.() ?? false),
     };
     this.surroundAdapters.set(p as unknown as object, adapter);
     return adapter;
@@ -196,12 +197,15 @@ export class EnemySpawner {
 
     // 防穿透：敵人移動後，對所有 player 頂開（不穿透）。
     // pushOut：immovable 菁英頂不動時，改把玩家本身移到菁英外（玩家被擋、不穿進菁英）。
-    // 真空帶半徑用 getVacuumRadius（=FOOT_GLOW 50）、中心用 getVacuumCenter（=視覺圈腳部中心，用戶試玩#1）。
-    const players = this.getAllPlayers().map((p) => ({
-      pos: p.getVacuumCenter?.() ?? p.getHitCenter(),
-      hitRadius: p.getVacuumRadius?.() ?? p.getHitRadius(),
-      pushOut: (x: number, y: number) => p.setPosition?.(x, y),
-    }));
+    // 真空帶半徑用 getVacuumRadius（=FOOT_GLOW 50）、中心用 getVacuumCenter（身體中心, 七輪#8）。
+    // 七輪#11：衝刺中的玩家排除（isDashing→真空判定失效, 敵人不被其真空推開, 玩家衝刺直直穿）。對齊 Unity。
+    const players = this.getAllPlayers()
+      .filter((p) => !(p.isDashing?.() ?? false))
+      .map((p) => ({
+        pos: p.getVacuumCenter?.() ?? p.getHitCenter(),
+        hitRadius: p.getVacuumRadius?.() ?? p.getHitRadius(),
+        pushOut: (x: number, y: number) => p.setPosition?.(x, y),
+      }));
     for (const e of this.enemies) {
       e.resolvePenetration(players);
     }
@@ -209,11 +213,13 @@ export class EnemySpawner {
     // #1 修正：菁英「像牆」——玩家主動撞 immovable 菁英時，把玩家擋在菁英外緣（玩家穿不進）。
     // 注意：菁英自己移動撞玩家「不推玩家」由 Enemy.resolvePenetration(blockEliteAdvance) 處理；
     // 這道只在「玩家侵入菁英」時把玩家頂出，兩道合起來＝真正的牆（雙向都不會被推著走）。
+    // 七輪#11：衝刺中的玩家跳過（dashThrough 穿過敵人/菁英, 對齊 Unity EnableDashThrough）。
     for (const e of this.enemies) {
       if (!e.isImmovable()) continue;
       const ec = e.getHitCenter();
       const er = e.getHitRadius();
       for (const p of this.getAllPlayers()) {
+        if (p.isDashing?.()) continue; // 衝刺穿過菁英, 不被擋
         const pc = p.getVacuumCenter?.() ?? p.getHitCenter();
         const vac = p.getVacuumRadius?.() ?? p.getHitRadius();
         const fixed = pushOutOfPlayer(pc, ec, er + vac);
