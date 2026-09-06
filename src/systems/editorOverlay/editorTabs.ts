@@ -15,4 +15,14 @@ export const EDITOR_TABS: readonly EditorTabDef[] = [
     label: '怪物編輯器',
     loader: () => import('../../../enemy-editor/main'),
   },
+  {
+    id: 'ui',
+    label: 'UI 編輯器',
+    loader: () => import('../../../ui-editor/main'),
+  },
+  {
+    id: 'level',
+    label: '關卡編輯器',
+    loader: () => import('../../../editor/main'),
+  },
 ];

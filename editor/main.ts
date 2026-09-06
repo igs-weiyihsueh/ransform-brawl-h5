@@ -59,16 +59,23 @@ const state: EditorState = {
 
 // ---- DOM 快取 -------------------------------------------------------------
 
+/**
+ * mount 化（方案 A' 遊戲內展開）：DOM 查找 scope 進 editorRoot（overlay 分配的 .tb-editor-root 容器），
+ * 不吃 document 全域（避免與遊戲頁 / 其他編輯器 id 撞）。獨立頁 /editor/ 仍可用（並存）。
+ */
+let editorRoot: HTMLElement = document.body;
+
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
-  const el = document.getElementById(id);
+  const el = editorRoot.querySelector<T>(`#${id}`);
   if (!el) throw new Error(`缺少元素 #${id}`);
   return el as T;
 };
 
-const levelListEl = $('level-list');
-const nodeListEl = $('node-list');
-const inspectorEl = $('inspector');
-const statusEl = $('status');
+// 元素快取改延遲賦值（mount 注入 HTML 後才綁；避免 import 當下 $() 找不到而炸）。
+let levelListEl: HTMLElement = document.body;
+let nodeListEl: HTMLElement = document.body;
+let inspectorEl: HTMLElement = document.body;
+let statusEl: HTMLElement = document.body;
 
 // ---- 狀態訊息 -------------------------------------------------------------
 
@@ -986,13 +993,170 @@ function bindUI(): void {
     fileInput.value = ''; // 允許重複載入同檔
   });
 
-  document.querySelectorAll<HTMLButtonElement>('[data-add-node]').forEach((btn) => {
+  editorRoot.querySelectorAll<HTMLButtonElement>('[data-add-node]').forEach((btn) => {
     btn.addEventListener('click', () => {
       addNode(btn.dataset.addNode as LevelNodeData['nodeType']);
     });
   });
 }
 
-bindUI();
-renderAll();
-void initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則 fetch 打包預設關卡
+// ---- mount 化（方案 A' 遊戲內展開 + 獨立頁並存） -------------------------
+
+/** 編輯器 body HTML（從 editor/index.html <body> 搬來，去 <script>）。 */
+const EDITOR_BODY_HTML = `
+<header>
+  <h1>波次編輯器</h1>
+  <span class="badge" id="schema-version"></span>
+  <div class="spacer"></div>
+  <button id="btn-load-default">載入預設 levels.json</button>
+  <button id="btn-load-file">載入 JSON 檔…</button>
+  <input id="file-input" type="file" accept="application/json,.json" hidden />
+  <button id="btn-preview">試玩</button>
+  <button id="btn-preview-reapply" hidden>重新套用</button>
+  <button id="btn-preview-close" hidden>關閉試玩</button>
+  <button id="btn-export" class="primary">驗證並下載 JSON</button>
+  <button id="btn-apply" class="primary" title="套用到遊戲（存瀏覽器，重開遊戲生效）">套用到遊戲</button>
+  <button id="btn-apply-return" class="primary" title="套用並立即返回遊戲">套用並回到遊戲</button>
+  <button id="btn-clear-apply" title="清除套用，遊戲回打包預設">清除套用</button>
+</header>
+<div class="layout">
+  <div class="col col-levels">
+    <div class="section-title">關卡</div>
+    <div id="level-list"></div>
+    <button id="btn-add-level" style="width:100%">+ 新增關卡</button>
+  </div>
+  <div class="col col-nodes">
+    <div class="section-title">節點序列</div>
+    <div id="node-list"></div>
+    <div class="mini" style="margin-top:8px">
+      <button data-add-node="Spawn">+ 刷怪</button>
+      <button data-add-node="Reward">+ 獎勵</button>
+      <button data-add-node="Event">+ 事件</button>
+    </div>
+  </div>
+  <div class="col col-inspector">
+    <div class="section-title">Inspector</div>
+    <div id="inspector"></div>
+  </div>
+</div>
+<div id="status">就緒。可載入預設 levels.json 或新增關卡開始編輯。</div>
+<div id="preview-overlay" hidden>
+  <div class="preview-bar">
+    <span id="preview-title">試玩中</span>
+    <div class="spacer"></div>
+    <span id="preview-msg"></span>
+  </div>
+  <div id="preview-frame-host"></div>
+</div>
+`;
+
+/** 編輯器樣式（從 index.html <style> 搬來，命名空間 .tb-editor-root）。 */
+const EDITOR_CSS = `
+.tb-editor-root {
+  --bg: #1a1a2e; --panel: #23233a; --panel2: #2c2c48; --line: #3a3a5c;
+  --text: #e6e6f0; --muted: #9a9ab5; --accent: #6c8cff; --danger: #ff6c7a; --ok: #59d98e;
+  display: flex; flex-direction: column; height: 100%;
+  background: var(--bg); color: var(--text);
+  font-family: Arial, "Microsoft JhengHei", sans-serif; font-size: 14px;
+}
+.tb-editor-root * { box-sizing: border-box; }
+.tb-editor-root header { padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex: 0 0 auto; }
+.tb-editor-root header h1 { font-size: 16px; margin: 0; }
+.tb-editor-root header .spacer { flex: 1; }
+.tb-editor-root button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.tb-editor-root button:hover { border-color: var(--accent); }
+.tb-editor-root button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tb-editor-root button.danger { color: var(--danger); }
+.tb-editor-root button:disabled { opacity: 0.5; cursor: not-allowed; }
+.tb-editor-root .layout { display: flex; flex: 1; min-height: 0; }
+.tb-editor-root .col { overflow-y: auto; padding: 12px; }
+.tb-editor-root .col-levels { width: 240px; border-right: 1px solid var(--line); background: var(--panel); }
+.tb-editor-root .col-nodes { width: 300px; border-right: 1px solid var(--line); }
+.tb-editor-root .col-inspector { flex: 1; }
+.tb-editor-root .section-title { color: var(--muted); font-size: 12px; text-transform: uppercase; margin: 4px 0 8px; letter-spacing: 0.5px; }
+.tb-editor-root .list-item { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; cursor: pointer; background: var(--panel2); display: flex; align-items: center; gap: 8px; }
+.tb-editor-root .list-item.selected { border-color: var(--accent); background: #34345a; }
+.tb-editor-root .list-item .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-editor-root .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 1px 6px; border-radius: 10px; }
+.tb-editor-root .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tb-editor-root .row label { width: 120px; color: var(--muted); }
+.tb-editor-root .row input, .tb-editor-root .row select { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+.tb-editor-root .mini { display: flex; gap: 6px; }
+.tb-editor-root .mini button { padding: 4px 8px; font-size: 12px; }
+.tb-editor-root .spawn-entry { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.tb-editor-root .spawn-entry select { flex: 2; }
+.tb-editor-root .spawn-entry input { flex: 1; }
+.tb-editor-root #status { padding: 8px 16px; font-size: 13px; white-space: pre-wrap; border-top: 1px solid var(--line); background: var(--panel); max-height: 160px; overflow-y: auto; flex: 0 0 auto; }
+.tb-editor-root .status-ok { color: var(--ok); }
+.tb-editor-root .status-err { color: var(--danger); }
+.tb-editor-root .empty { color: var(--muted); padding: 20px 0; text-align: center; }
+.tb-editor-root .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.tb-editor-root #preview-overlay { position: fixed; inset: 0; background: rgba(10,10,20,0.92); z-index: 100; display: flex; flex-direction: column; }
+.tb-editor-root #preview-overlay[hidden] { display: none; }
+.tb-editor-root .preview-bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.tb-editor-root .preview-bar .spacer { flex: 1; }
+.tb-editor-root #preview-msg { color: var(--danger); font-size: 13px; }
+.tb-editor-root #preview-frame-host { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.tb-editor-root #preview-frame-host iframe { width: 100%; height: 100%; border: 0; background: var(--bg); }
+`;
+
+const EDITOR_STYLE_ID = 'tb-level-editor-style';
+
+function ensureEditorStyle(): void {
+  if (document.getElementById(EDITOR_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = EDITOR_STYLE_ID;
+  style.textContent = EDITOR_CSS;
+  document.head.appendChild(style);
+}
+
+/**
+ * 掛載波次編輯器到指定容器（EditorMountFn）：注入 HTML+樣式 → 綁元素快取 → bindUI → renderAll → initLoad（回顯）。
+ * 回傳 { unmount() } 清 DOM（含關閉試玩 iframe/message listener）。
+ */
+export function mount(container: HTMLElement): { unmount(): void } {
+  ensureEditorStyle();
+  container.classList.add('tb-editor-root');
+  container.innerHTML = EDITOR_BODY_HTML;
+  editorRoot = container;
+  // HTML 已注入，綁定元素快取。
+  levelListEl = $('level-list');
+  nodeListEl = $('node-list');
+  inspectorEl = $('inspector');
+  statusEl = $('status');
+
+  // 重置狀態（反覆開關 overlay：回乾淨初值，initLoad 再讀 override 回顯）。
+  state.version = LEVELS_SCHEMA_VERSION;
+  state.levels = [];
+  state.selectedLevel = -1;
+  state.selectedNode = -1;
+
+  bindUI();
+  renderAll();
+  void initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則 fetch 打包預設關卡
+
+  // ⚠️ 遊戲內 overlay 內禁用「試玩」（征騎 flag）：試玩建 iframe src=../?preview=1，
+  //   overlay 內 ../ 相對遊戲根=自己(遊戲內的遊戲)+被 overlay 殼 z2000 蓋 → 壞體驗。
+  //   standalone /editor/(container#tb-editor-standalone) 試玩保留正常；overlay(動態 .tb-editor-root 容器)隱藏試玩鈕。
+  const inOverlay = container.id !== 'tb-editor-standalone';
+  if (inOverlay) {
+    const pv = editorRoot.querySelector<HTMLButtonElement>('#btn-preview');
+    if (pv) { pv.hidden = true; pv.disabled = true; pv.title = '遊戲內編輯器不支援試玩，請用獨立編輯器頁'; }
+  }
+
+  return {
+    unmount(): void {
+      closePreview(); // 收乾淨試玩 iframe + message listener + timer
+      container.innerHTML = '';
+      container.classList.remove('tb-editor-root');
+    },
+  };
+}
+
+/** 獨立頁自動啟動（並存）：有 #tb-editor-standalone 掛載點才自動 mount；overlay lazy import 時無此元素 → 不自動跑。 */
+const standaloneHost = document.getElementById('tb-editor-standalone');
+if (standaloneHost) {
+  mount(standaloneHost);
+}
+
+
