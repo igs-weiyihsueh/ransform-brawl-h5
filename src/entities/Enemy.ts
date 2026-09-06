@@ -208,6 +208,10 @@ export class Enemy implements Hittable {
     }[],
   ): void {
     if (this.dead || this.state === 'death') return;
+    // 七輪#1：grabber（抓人者）是 GrabSystem 專屬驅動的特殊態（無敵/暫停一般 AI/不走環繞）——
+    //   也不受一般真空分離推出，否則觸碰基準(grabberR+playerHitRadius 40) 被推出基準(grabberR+vacuumRadius 50)
+    //   每幀推到觸碰範圍外 → 左右晃抓不到。補齊 grabber 例外（對齊環繞協調 line138 的 isGrabber 排除），抓取全交 GrabSystem。
+    if (this.grabber) return;
     if (isChargeInvulnerable(this.state, this.cfg.immovable === true)) return; // 六輪#3：菁英蓄力免疫被推(站定)
     const immovable = this.cfg.immovable === true;
     for (const p of players) {
