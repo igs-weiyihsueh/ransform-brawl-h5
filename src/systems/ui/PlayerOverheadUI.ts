@@ -4,6 +4,7 @@ import {
   HUD_FONT_FAMILY,
   OVERHEAD_DEPTH,
   OVERHEAD_LAYOUT,
+  resolveOverheadLayout,
   UI_ICONS,
 } from '@/config/uiConfig';
 import { EnergyBar } from '@/systems/ui/EnergyBar';
@@ -53,8 +54,11 @@ export class PlayerOverheadUI {
     scene: Phaser.Scene,
     badgeText: string = OVERHEAD_LAYOUT.badge.text,
     badgeColor: number = HUD_COLORS.pNumBg,
+    overhead?: Parameters<typeof resolveOverheadLayout>[0],
   ) {
-    const cfg = OVERHEAD_LAYOUT;
+    // 七輪 overhead override 補接：座標讀 layout.overhead(含 override) 合併進 OVERHEAD_LAYOUT，
+    //   無 override/缺欄 → 打包預設(行為不變)。取代舊「硬讀 OVERHEAD_LAYOUT 靜態 const 無視 override」。
+    const cfg = resolveOverheadLayout(overhead);
     this.scene = scene;
     this.container = scene.add.container(0, 0);
     this.container.setDepth(OVERHEAD_DEPTH);

@@ -102,7 +102,7 @@ export class UISystem implements GameSystem {
 
     // 每個目前存在的 player 各建一份頭上 UI（P 牌底用該 player 識別色 PLAYER_COLORS）。
     for (let i = 0; i < ctx.players.length; i++) {
-      const oh = new PlayerOverheadUI(scene, `P${i + 1}`, playerColor(ctx.players[i].playerId));
+      const oh = new PlayerOverheadUI(scene, `P${i + 1}`, playerColor(ctx.players[i].playerId), this.layout.overhead);
       oh.setElementVisibility(this.overheadVisibility()); // 用戶 #6：套 layout.overhead 顯示開關
       this.overheads.push(oh);
     }
@@ -141,7 +141,7 @@ export class UISystem implements GameSystem {
     // 玩家加入（F2~F4）→ 補建頭上 UI + 亮對應底部欄。
     if (this.overheads.length < players.length) {
       for (let i = this.overheads.length; i < players.length; i++) {
-        const oh = new PlayerOverheadUI(this.ctx.scene, `P${i + 1}`, playerColor(players[i].playerId));
+        const oh = new PlayerOverheadUI(this.ctx.scene, `P${i + 1}`, playerColor(players[i].playerId), this.layout.overhead);
         oh.setElementVisibility(this.overheadVisibility()); // 用戶 #6：套 layout.overhead 顯示開關
         this.overheads.push(oh);
       }

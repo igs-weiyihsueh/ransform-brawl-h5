@@ -193,6 +193,55 @@ export const OVERHEAD_LAYOUT = {
 } as const;
 
 /**
+ * 七輪 overhead override 補接：把 uiLayout override 的 overhead 位置/尺寸「合併進」OVERHEAD_LAYOUT（純函式，抽給測騎）。
+ * override 提供 position/size（badge cx/cy/半徑、credit x/y/w/h/coinSize、energy x/y、combo x/y/maxOffsetY）；
+ * 樣式欄（fontSize/顏色/文字/max 動畫參數）不在 override 內 → 一律留 OVERHEAD_LAYOUT 打包預設。
+ * 各欄逐項 `override?.xxx ?? OVERHEAD_LAYOUT.xxx` fallback：無 override/缺欄 → 打包預設（行為 100% 不變）。
+ * ⚠️ 遊戲端 PlayerOverheadUI 建構用此取代硬讀 OVERHEAD_LAYOUT（讓 ui-editor 改 overhead 位置→套用→遊戲跟著變）。
+ * @param ov uiLayout 的 overhead 區塊（來自 loadOverride 後的 layout.overhead；缺→全用打包預設）。
+ */
+export function resolveOverheadLayout(ov?: {
+  offsetX?: number; offsetY?: number; width?: number; height?: number;
+  badge?: { cx?: number; cy?: number; innerRadius?: number; ringRadius?: number; ringThickness?: number };
+  credit?: { x?: number; y?: number; width?: number; height?: number; coinSize?: number };
+  energy?: { x?: number; y?: number };
+  combo?: { x?: number; y?: number; maxOffsetY?: number };
+}): typeof OVERHEAD_LAYOUT {
+  const L = OVERHEAD_LAYOUT;
+  return {
+    ...L,
+    offsetY: ov?.offsetY ?? L.offsetY,
+    badge: {
+      ...L.badge,
+      cx: ov?.badge?.cx ?? L.badge.cx,
+      cy: ov?.badge?.cy ?? L.badge.cy,
+      innerRadius: ov?.badge?.innerRadius ?? L.badge.innerRadius,
+      ringRadius: ov?.badge?.ringRadius ?? L.badge.ringRadius,
+      ringThickness: ov?.badge?.ringThickness ?? L.badge.ringThickness,
+    },
+    credit: {
+      ...L.credit,
+      x: ov?.credit?.x ?? L.credit.x,
+      y: ov?.credit?.y ?? L.credit.y,
+      width: ov?.credit?.width ?? L.credit.width,
+      height: ov?.credit?.height ?? L.credit.height,
+      coinSize: ov?.credit?.coinSize ?? L.credit.coinSize,
+    },
+    energy: {
+      ...L.energy,
+      x: ov?.energy?.x ?? L.energy.x,
+      y: ov?.energy?.y ?? L.energy.y,
+    },
+    combo: {
+      ...L.combo,
+      x: ov?.combo?.x ?? L.combo.x,
+      y: ov?.combo?.y ?? L.combo.y,
+      max: { ...L.combo.max, offsetY: ov?.combo?.maxOffsetY ?? L.combo.max.offsetY },
+    },
+  } as typeof OVERHEAD_LAYOUT;
+}
+
+/**
  * 能量 4 格外觀（頭上 UI 用小尺寸，對照 Unity SkillGauge Slot 14×14）。
  * 由 PlayerOverheadUI 以 local 座標嵌入容器；EnergyBar 只負責畫格與滿格閃爍。
  */
