@@ -7,6 +7,7 @@ import { MAP_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import {
   attackFacing,
+  enemyAttackVfx,
   blockEliteAdvance,
   calculateSeparation,
   combineWithSeparation,
@@ -424,8 +425,9 @@ export class Enemy implements Hittable {
           const cpos = this.getHitCenter();
           this.chargeFx =
             this.hitFeelFx?.enemyCharge?.(cpos.x, cpos.y, this.cfg.chargeTime * 1000) ?? null;
-          // 用戶 #3：圓形範圍(circle shape)攻擊 → 蓄力期地面播 AOE 預告圈（以攻擊圓心、依 AOE 半徑）。
-          if (this.cfg.attack.shapeType === 'circle') {
+          // 三輪#12：只「真大範圍(attackVfx='aoe')」敵人蓄力期地面播 AOE 預告圈；
+          // 衝鋒/一般近戰(slash)不播預告圈(改由出手 slash 表現)。不可用 shapeType 判斷(近戰全 circle)。
+          if (enemyAttackVfx(this.cfg.attackKind, this.cfg.attackVfx) === 'aoe') {
             const circle = buildAttackCircle(this.cfg.attack, cpos, this.facing, this.scaleFactor);
             this.aoeRingFx =
               this.hitFeelFx?.enemyAoeRing?.(circle.center.x, circle.center.y, circle.radius) ?? null;
@@ -510,17 +512,19 @@ export class Enemy implements Hittable {
 
     // 用戶 #7/#3：出手當下收掉蓄力/預告圈，播出手特效。純視覺。
     this.clearChargeFx();
-    if (a.shapeType === 'circle') {
-      // 用戶 #3：圓形範圍攻擊 → 播 AOE 爆發（同攻擊圓心、依 AOE 半徑），取代揮擊斬光。
+    const vfx = enemyAttackVfx(this.cfg.attackKind, this.cfg.attackVfx); // 三輪#12：slash/aoe/none
+    if (vfx === 'aoe') {
+      // 真大範圍敵人(菁英) → 播 AOE 爆發（同攻擊圓心、依 AOE 半徑）。
       const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor);
       this.hitFeelFx?.enemyAoeBurst?.(circle.center.x, circle.center.y, circle.radius);
-    } else {
-      // 非圓形近戰 → 揮擊斬光（rotation 對準玩家 aim、生成偏敵人手前）。
+    } else if (vfx === 'slash') {
+      // 衝鋒/一般近戰 → 揮擊斬光（rotation 對準玩家 aim、生成偏敵人手前）。三輪#12 修回歸：衝鋒兵揮斬回來。
       const aimAngle = Math.atan2(playerPos.y - pos.y, playerPos.x - pos.x);
       const slashX = pos.x + Math.cos(aimAngle) * a.offsetX * PPU;
       const slashY = pos.y + Math.sin(aimAngle) * a.offsetX * PPU;
       this.hitFeelFx?.enemySlash?.(slashX, slashY, aimAngle, this.scaleFactor);
     }
+    // vfx==='none'（射彈）：不播近戰揮斬/AOE，有自己的射彈視覺。
 
     if (this.cfg.attackKind === 'melee') {
       // 近戰圓形判定：offset 隨 perCharScale 放大（菁英大範圍）。

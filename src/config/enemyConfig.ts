@@ -41,6 +41,14 @@ export interface EnemyAIConfig {
   attackKind: EnemyAttackKind;
   /** 攻擊資料（近戰用形狀/半徑/offset；射彈用 damage/knockback，形狀給射彈碰撞半徑）。 */
   attack: AttackData;
+  /**
+   * 出手視覺類型（三輪#12 修回歸）：
+   * - 'slash'（預設/省略）：揮斬斬光（衝鋒/一般近戰）。
+   * - 'aoe'：圓形範圍預告圈+爆發（真大範圍敵人，如菁英）。
+   * ⚠️ 不可用 attack.shapeType 判斷——所有近戰都是 meleeCircle(shapeType='circle')，那是命中形狀非視覺語意。
+   * 射彈(projectile)不吃此欄（有自己的射彈視覺，不播 slash/aoe）。
+   */
+  attackVfx?: 'slash' | 'aoe';
   /** 射彈速度（unit/s），attackKind='projectile' 時使用。 */
   projectileSpeed?: number;
   /** 受擊硬直時間（秒）。 */
@@ -120,6 +128,7 @@ export const ENEMY_AI: Record<string, EnemyAIConfig> = {
     attackCooldown: 2.5,
     attackKind: 'melee',
     attack: meleeCircle(1.5, 0, 25, 2),
+    attackVfx: 'aoe', // 菁英=大範圍坦 → 圓形 AOE 預告圈+爆發(三輪#12：只此類走純 AOE，衝鋒兵走 slash)
     hitStun: 0.05, // 幾乎不退，像牆
     knockbackForce: 2,
     immovable: true, // 防穿透豁免：玩家頂不動菁英，改成玩家被擋在菁英外（用戶 #4，對應像牆）

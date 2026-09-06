@@ -187,3 +187,23 @@ export function blockEliteAdvance(
     y: playerPos.y + (dy / dist) * targetDist,
   };
 }
+
+/**
+ * 敵人出手視覺類型（三輪#12 修回歸：衝鋒兵揮斬不見）。
+ * 決定敵人 fireAttack/charge 播 slash（揮斬斬光）還是 aoe（圓形範圍預告圈+爆發）。
+ * ⚠️ 不可用 attack.shapeType 判斷——所有近戰都是 meleeCircle(shapeType='circle')，
+ *    那是命中形狀非視覺語意，用它會讓所有近戰(含衝鋒兵)都被當 AOE、slash 消失。
+ * 規則：
+ * - 射彈(projectile)：'none'（有自己的射彈視覺，不播 slash/aoe）。
+ * - 近戰 attackVfx==='aoe'：'aoe'（真大範圍敵人，如菁英）。
+ * - 近戰其餘（含未設 attackVfx 的衝鋒/一般近戰）：'slash'（預設揮斬）。
+ * @param attackKind 'melee' | 'projectile'。
+ * @param attackVfx 敵人設定的出手視覺（'slash'|'aoe'|undefined）。
+ */
+export function enemyAttackVfx(
+  attackKind: 'melee' | 'projectile',
+  attackVfx: 'slash' | 'aoe' | undefined,
+): 'slash' | 'aoe' | 'none' {
+  if (attackKind === 'projectile') return 'none';
+  return attackVfx === 'aoe' ? 'aoe' : 'slash';
+}
