@@ -17,7 +17,7 @@ import {
   type EnemyAIConfig,
   type EnemyAttackKind,
   type EnemyFile,
-} from './enemySchema';
+} from '@/config/enemySchema';
 import {
   EDITOR_STORE_KEYS,
   applyToGame,

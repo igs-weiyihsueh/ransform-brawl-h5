@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { getPerCharScale } from '@/config/animationConfig';
 import { SPRITE_SCALE, PLAYER_HIT_RADIUS } from '@/config/combatConfig';
 import { ENEMY_AI, ENEMY_BODY_RADIUS_PX, ENEMY_BODY_CENTER_OFFSET_Y, type EnemyAIConfig } from '@/config/enemyConfig';
+import { getResolvedEnemy } from '@/config/enemySchema';
 import { PPU } from '@/config/gameConfig';
 import { ENEMY_PLAY_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
@@ -310,7 +311,8 @@ export class Enemy implements Hittable {
   }
 
   constructor(scene: Phaser.Scene, x: number, y: number, charKey: string = ENEMY_CHARACTERS[0]) {
-    this.cfg = ENEMY_AI[charKey] ?? ENEMY_AI[ENEMY_CHARACTERS[0]];
+    // 六輪 enemies JSON 化：override(enemy-editor 套用)優先 + cache，無/壞→打包預設 ENEMY_AI。
+    this.cfg = getResolvedEnemy(charKey) ?? getResolvedEnemy(ENEMY_CHARACTERS[0]) ?? ENEMY_AI[ENEMY_CHARACTERS[0]];
     this.scaleFactor = getPerCharScale(this.cfg.characterKey);
     this.anim = new CharacterAnimator(scene, this.cfg.characterKey, x, y);
     this.anim.setScale(SPRITE_SCALE);
