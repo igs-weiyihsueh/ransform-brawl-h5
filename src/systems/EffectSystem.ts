@@ -650,18 +650,19 @@ export class EffectSystem {
         ? fallbackBurst
         : null;
     if (key) {
-      // 貼圖爆發：落點火焰爆發，爆開放大+淡出（佔位 aoeBurst 染橘紅、正式用 fireballImpact）。
+      // 貼圖爆發：落點火焰爆發，爆開放大+淡出+隨機旋轉（正式用 fireballImpact、佔位 aoeBurst 染橘紅）。
       const spr = this.scene.add.image(x, y, key);
       spr.setOrigin(0.5, 0.5).setDepth(ENERGY_FLY_DEPTH);
       spr.setDisplaySize(radiusPx * 1.6, radiusPx * 1.6).setAlpha(1);
-      if (key === fallbackBurst) spr.setTint(0xff7722); // 佔位：把白熱 burst 染成火焰橘紅
+      spr.setAngle(Math.random() * 360); // 隨機旋轉(每次爆發不同向)
+      if (key === fallbackBurst) spr.setTint(0xff7722); // 佔位：白熱 burst 染火焰橘紅(真素材不染)
       this.scene.tweens.add({
         targets: spr,
         displayWidth: radiusPx * 2.4,
         displayHeight: radiusPx * 2.4,
         alpha: 0,
         duration: 400,
-        ease: 'Cubic.easeOut',
+        ease: 'Cubic.easeOut', // scale 炸開 + 後半淡出
         onComplete: () => spr.destroy(),
       });
       return;
@@ -713,8 +714,13 @@ export class EffectSystem {
     const startY = y - 640; // 從落點上方 640px（畫面外/高處）墜下
     const spr = this.scene.add.image(x, startY, key);
     spr.setOrigin(0.5, 0.5).setDepth(ENERGY_FLY_DEPTH - 1); // 火球在角色上層、爆炸之下
-    spr.setDisplaySize(54, 72).setAlpha(1); // 豎向(高>寬)呈下墜火球感
-    if (key === fallbackBurst) spr.setTint(0xff5522); // 佔位染火焰紅
+    const isReal = key === fallKey;
+    // 真火球 fireball_falling 為 96×128(3:4, 頭下尾上) → 60×80 保比例; 佔位 burst 用方形。
+    if (isReal) spr.setDisplaySize(60, 80);
+    else {
+      spr.setDisplaySize(54, 72).setTint(0xff5522); // 佔位染火焰紅
+    }
+    spr.setAlpha(1);
     // 墜落：y 從高到落點，加速下墜（Quad.easeIn 越落越快）。
     this.scene.tweens.add({
       targets: spr,
@@ -726,6 +732,18 @@ export class EffectSystem {
         if (onLand) onLand();
       },
     });
+    // 真火球：輕微左右抖動 angle（±6°）增墜落動感（拖尾方向大致朝上不亂轉）。
+    if (isReal) {
+      spr.setAngle(-6);
+      this.scene.tweens.add({
+        targets: spr,
+        angle: 6,
+        duration: 140,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.inOut',
+      });
+    }
     return spr;
   }
 

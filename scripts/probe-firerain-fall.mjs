@@ -23,14 +23,16 @@ const seq = await page.evaluate(async ()=>{
   // 火球墜落 1000ms 對齊, onLand 記錄。
   const spr = fx.fireballFall(x, y, 1000, ()=>{ window.__landed=true; fx.fireStrikeFlash(x,y,80); });
   window.__ball = spr;
-  return { hasBall: !!spr, ballStartY: spr? Math.round(spr.y): null, landPointY: y };
+  return { hasBall: !!spr, ballStartY: spr? Math.round(spr.y): null, landPointY: y, ballKey: spr? spr.texture.key: null };
 });
 console.log('[起始]', JSON.stringify(seq), '(火球起點 y 應遠小於落點 400 = 在上方)');
 // 取樣墜落 y 遞減。
 async function ballY(){ return page.evaluate(()=>{ const b=window.__ball; return { y: b&&b.active? Math.round(b.y): 'gone', landed: window.__landed }; }); }
 await page.waitForTimeout(200); console.log('[t=200ms]', JSON.stringify(await ballY()));
 await page.waitForTimeout(400); console.log('[t=600ms]', JSON.stringify(await ballY()));
-await page.waitForTimeout(500); console.log('[t=1100ms 落地後]', JSON.stringify(await ballY()));
+await page.waitForTimeout(250);
+await page.screenshot({ path: path.join(__dirname,'..','probe-shot-fireball.png') }); // ~t=850 火球接近落點(可見)
+await page.waitForTimeout(250); console.log('[t=1100ms 落地後]', JSON.stringify(await ballY()));
 // 落地那刻爆炸有沒有(image at landing point, depth 高)。
 const impact = await page.evaluate(()=>{
   const gs=window.__gs; const list=gs.children.list;
