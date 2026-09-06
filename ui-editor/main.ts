@@ -31,6 +31,13 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
   return el as T;
 };
 
+// 角色參照（腳下圈編輯用，用戶 UX 修正）：遊戲角色顯示尺寸 = FRAME_SIZE×SPRITE_SCALE。
+// FRAME_SIZE=256、SPRITE_SCALE≈1.05（=0.7×GLOBAL_CHARACTER_SCALE，由 offsetY 75.6=72×SPRITE_SCALE 反推）。
+// 用固定值畫參照人形，讓搜索圈相對角色有真實尺度（PPU=100，圈半徑 50px≈角色半身）。
+const REF_SPRITE_SIZE = 269; // 256 × 1.05，角色示意圖邊長（px，設計解析度）
+/** 角色參照 idle sprite 路徑（ui-editor 在 /ui-editor/，資產在網站根）。載不到退場成佔位人形。 */
+const REF_SPRITE_URL = '../assets/images/characters/SunWukong/idle/frame_00.png';
+
 // ---- 狀態 -----------------------------------------------------------------
 
 /** 深拷貝一份預設當初始狀態（避免改到常數）。 */
@@ -454,7 +461,11 @@ function renderStage(): void {
     cont.appendChild(clab);
     stageEl.appendChild(cont);
   }
-  // screen 區塊：整個 1920×1080 畫布當背景（stage 本身即設計畫布），不需額外框。
+  // screen 區塊：整個 1920×1080 畫布當背景（stage 本身即設計畫布）。
+  // 腳下圈（foot）需角色參照才調得準 → 在畫布中心畫一個角色示意 sprite，搜索圈疊在其腳下。
+  if (currentSection === 'screen') {
+    renderCharacterReference(off);
+  }
 
   // 各元素方框（聚焦模式）：只有「選中」那一個高亮 + 可拖拉/縮放；
   // 其餘半透明背景參考（不可拖，點一下=切換選中）。
@@ -680,6 +691,63 @@ function buildFootCircle(): HTMLElement {
   t.style.cssText = 'color:#cfefff;font-size:14px;font-weight:bold;text-shadow:0 1px 3px rgba(0,0,0,0.7);white-space:nowrap;';
   box.appendChild(t);
   return box;
+}
+
+/**
+ * 角色參照（腳下圈編輯用，用戶 UX 修正）：在設計畫布中心畫一個角色 idle sprite，
+ * 尺寸=REF_SPRITE_SIZE(遊戲實際顯示大小)，讓搜索圈相對角色有真實尺度。
+ * 錨點 = 設計畫布中心 (cx,cy)——與 foot editable 的 get() 同錨；圈中心 = (cx+offsetX, cy+offsetY)，
+ * offsetY≈75.6 → 圈落在角色腳下。sprite 不可互動(pointer-events:none)、z-index 墊底,只當參照。
+ * sprite 載不到 → onerror 退成半透明佔位人形輪廓(重點是有個「人」給尺度)。
+ */
+function renderCharacterReference(off: { x: number; y: number }): void {
+  const cx = layout.design.width / 2;
+  const cy = layout.design.height / 2;
+  const left = cx - REF_SPRITE_SIZE / 2 - off.x;
+  const top = cy - REF_SPRITE_SIZE / 2 - off.y;
+
+  const wrap = document.createElement('div');
+  wrap.id = 'char-ref';
+  wrap.style.cssText =
+    `position:absolute;left:${left}px;top:${top}px;` +
+    `width:${REF_SPRITE_SIZE}px;height:${REF_SPRITE_SIZE}px;z-index:0;pointer-events:none;`;
+
+  const img = document.createElement('img');
+  img.src = REF_SPRITE_URL;
+  img.alt = '角色參照';
+  img.style.cssText = 'width:100%;height:100%;object-fit:contain;opacity:0.85;';
+  img.addEventListener('error', () => {
+    // 載不到 → 佔位人形（簡單輪廓），確保永遠有尺度參照。
+    img.remove();
+    const ph = document.createElement('div');
+    ph.textContent = '🧍';
+    ph.style.cssText =
+      'width:100%;height:100%;display:flex;align-items:center;justify-content:center;' +
+      `font-size:${Math.round(REF_SPRITE_SIZE * 0.8)}px;opacity:0.5;`;
+    wrap.appendChild(ph);
+  });
+  wrap.appendChild(img);
+
+  // 腳底基準點標記（圈中心錨=角色腳底 cy+offsetY）——畫一個小十字讓用戶對齊。
+  const footY = cy + (layout.foot?.offsetY ?? 0);
+  const footX = cx + (layout.foot?.offsetX ?? 0);
+  const mark = document.createElement('div');
+  mark.style.cssText =
+    `position:absolute;left:${footX - off.x - 5}px;top:${footY - off.y - 5}px;` +
+    'width:10px;height:10px;z-index:1;pointer-events:none;' +
+    'border-left:2px solid rgba(255,255,255,0.7);border-top:2px solid rgba(255,255,255,0.7);' +
+    'transform:rotate(45deg);';
+  mark.title = '角色腳底（搜索圈中心基準）';
+
+  const label = document.createElement('div');
+  label.textContent = '角色參照（搜索圈疊腳下，可拖圈調位置/縮圈調大小）';
+  label.style.cssText =
+    `position:absolute;left:${left}px;top:${top - 20}px;z-index:1;pointer-events:none;` +
+    'color:#cfefff;font-size:13px;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,0.8);';
+
+  stageEl.appendChild(wrap);
+  stageEl.appendChild(mark);
+  stageEl.appendChild(label);
 }
 
 /** P2~P4 佔位欄：alpha 0.4 複製 P1 欄底框 + P1 template 元素 icon（唯讀，不可拖）。 */

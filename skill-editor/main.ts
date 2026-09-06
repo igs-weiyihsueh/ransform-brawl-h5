@@ -27,6 +27,29 @@ import {
 
 const PPU = 100; // 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲檔）
 
+// 角色參照（招式範圍預覽用，用戶 UX 修正）：角色 sprite 顯示尺寸 = FRAME_SIZE×SPRITE_SCALE。
+// 對齊遊戲：FRAME_SIZE=256、SPRITE_SCALE≈1.05 → ≈269px。sprite 與範圍同乘 viewScale，
+// 故「招式相對角色」比例恆等遊戲實際（PPU=100，1 unit=100px）。
+const REF_SPRITE_SIZE = 269;
+/** 角色 idle sprite 路徑（skill-editor 在 /skill-editor/，資產在網站根）。依角色 key 載，載不到 fallback。 */
+function spriteUrl(charKey: string): string {
+  return `../assets/images/characters/${charKey}/idle/frame_00.png`;
+}
+
+/** sprite 影像快取：載入完成後重繪預覽（canvas drawImage 需等圖 load）。 */
+const spriteCache = new Map<string, HTMLImageElement>();
+function getSprite(charKey: string): HTMLImageElement | null {
+  if (!charKey) return null;
+  const cached = spriteCache.get(charKey);
+  if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
+  const img = new Image();
+  img.src = spriteUrl(charKey);
+  img.addEventListener('load', () => renderPreview());
+  img.addEventListener('error', () => renderPreview());
+  spriteCache.set(charKey, img);
+  return null;
+}
+
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
   if (!el) throw new Error(`缺少元素 #${id}`);
@@ -317,6 +340,29 @@ function renderPreview(): void {
   const viewScale = (Math.min(W, H) * 0.4) / maxPx;
   const s = PPU * viewScale;
 
+  // 角色參照（用戶 UX 修正）：畫布中心(=角色攻擊錨點/getBodyCenter)畫所選角色 sprite，
+  // 尺寸=遊戲實際 269px×viewScale，與招式範圍同乘 viewScale → 範圍相對角色比例恆等遊戲。
+  const spr = selectedChar ? getSprite(selectedChar) : null;
+  const sprPx = REF_SPRITE_SIZE * viewScale;
+  if (spr) {
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(spr, cx - sprPx / 2, cy - sprPx / 2, sprPx, sprPx);
+    ctx.restore();
+  } else {
+    // fallback：sprite 未載到 → 佔位人形，仍給尺度。
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.font = `${Math.round(sprPx * 0.5)}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(180,180,200,0.5)';
+    ctx.fillText('🧍', cx, cy);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
+
   const offX = a.offsetX * s;
   const offY = a.offsetY * s;
   const hx = cx + offX; // 判定中心
@@ -356,17 +402,34 @@ function renderPreview(): void {
   ctx.font = '12px Arial, "Microsoft JhengHei", sans-serif';
   ctx.fillText(shapeDesc(a), hx + 6, hy - 6);
 
-  // 角色本體（原點）+ 面向箭頭
-  ctx.fillStyle = '#e6e6f0';
-  ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#e6e6f0';
-  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + 26, cy); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx + 26, cy); ctx.lineTo(cx + 20, cy - 5); ctx.lineTo(cx + 20, cy + 5); ctx.closePath(); ctx.fill();
+  // 面向箭頭（sprite 已示意本體；標面向朝右，offset/扇形以此為準）。
+  ctx.strokeStyle = 'rgba(230,230,240,0.85)';
+  ctx.lineWidth = 2;
+  const arrow = Math.max(26, sprPx * 0.35);
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + arrow, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx + arrow, cy); ctx.lineTo(cx + arrow - 6, cy - 5); ctx.lineTo(cx + arrow - 6, cy + 5); ctx.closePath(); ctx.fill();
+
+  // 敵人參照（距離感）：在招式最大延伸(reach)邊緣、面向前方放一個敵人示意,
+  // 看「招式打得到站在該距離的敵人嗎」。
+  const enemySpr = getSprite('Enemy_Rush');
+  const enemyX = cx + reach * s; // 面向右方、招式延伸處
+  const ePx = REF_SPRITE_SIZE * viewScale * 0.9;
+  if (enemySpr) {
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    ctx.drawImage(enemySpr, enemyX - ePx / 2, cy - ePx / 2, ePx, ePx);
+    ctx.restore();
+  }
+  ctx.fillStyle = '#ff9d5c';
+  ctx.font = '11px Arial, "Microsoft JhengHei", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('敵人（招式延伸處）', enemyX, cy + ePx / 2 + 12);
+  ctx.textAlign = 'start';
 
   // 比例尺
   ctx.fillStyle = '#9a9ab5';
   ctx.font = '11px Arial, sans-serif';
-  ctx.fillText(`顯示比例 ×${viewScale.toFixed(2)}（1 unit = ${PPU}px 遊戲內）`, 8, H - 10);
+  ctx.fillText(`顯示比例 ×${viewScale.toFixed(2)}（1 unit = ${PPU}px 遊戲內；角色與範圍同比例）`, 8, H - 10);
 }
 
 /** 該形狀在 unit 下的最大延伸（供縮放）。 */

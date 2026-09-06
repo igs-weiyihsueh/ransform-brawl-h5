@@ -22,6 +22,29 @@ import {
 /** Pixels-Per-Unit：對照 gameConfig.PPU=100（本檔自持常數，不 import 遊戲檔）。 */
 const PPU = 100;
 
+// 角色參照（攻擊範圍預覽用，用戶 UX 修正）：敵人 sprite 顯示尺寸 = FRAME_SIZE×SPRITE_SCALE。
+// 對齊遊戲：FRAME_SIZE=256、SPRITE_SCALE≈1.05 → ≈269px（設計解析度）。sprite 與範圍同乘 viewScale，
+// 故「範圍相對敵人」比例恆等於遊戲實際（PPU=100，1 unit=100px）。
+const REF_SPRITE_SIZE = 269;
+/** 敵人 idle sprite 路徑（enemy-editor 在 /enemy-editor/，資產在網站根）。依 characterKey 載，載不到 fallback。 */
+function enemySpriteUrl(characterKey: string): string {
+  return `../assets/images/characters/${characterKey}/idle/frame_00.png`;
+}
+
+/** sprite 影像快取：載入完成後重繪預覽（canvas drawImage 需等圖 load）。 */
+const spriteCache = new Map<string, HTMLImageElement>();
+function getSprite(characterKey: string): HTMLImageElement | null {
+  if (!characterKey) return null;
+  const cached = spriteCache.get(characterKey);
+  if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
+  const img = new Image();
+  img.src = enemySpriteUrl(characterKey);
+  img.addEventListener('load', () => renderPreview()); // 載完重繪
+  img.addEventListener('error', () => renderPreview()); // 失敗也重繪（走 fallback）
+  spriteCache.set(characterKey, img);
+  return null; // 首次尚未載完，本次先畫 fallback
+}
+
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
   if (!el) throw new Error(`缺少元素 #${id}`);
@@ -343,6 +366,34 @@ function renderPreview(): void {
   const maxPx = Math.max(detectPx, e.attackRange * PPU, 40);
   const viewScale = (Math.min(W, H) * 0.42) / maxPx;
 
+  // 敵人角色參照（用戶 UX 修正）：畫在畫布中心(=敵人 getBodyCenter)，尺寸=遊戲實際 269px×viewScale。
+  // 與範圍同乘 viewScale → 範圍相對敵人的比例恆等遊戲實際。sprite 墊底,範圍疊其上。
+  const spr = getSprite(e.characterKey);
+  const sprPx = REF_SPRITE_SIZE * viewScale;
+  if (spr) {
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(spr, cx - sprPx / 2, cy - sprPx / 2, sprPx, sprPx);
+    ctx.restore();
+  } else {
+    // fallback：sprite 未載到 → 畫佔位人形圈 + 十字，仍給尺度。
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = '#8a8aa5';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, sprPx / 3, 0, Math.PI * 2); // 身體約 sprite 1/3
+    ctx.stroke();
+    ctx.font = `${Math.round(sprPx * 0.5)}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(180,180,200,0.5)';
+    ctx.fillText('🧍', cx, cy);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
+
   const ring = (radiusUnit: number, color: string, labelText: string): void => {
     const rPx = radiusUnit * PPU * viewScale;
     if (rPx <= 0) return;
@@ -396,21 +447,35 @@ function renderPreview(): void {
   ctx.font = '12px Arial, "Microsoft JhengHei", sans-serif';
   ctx.fillText('判定', hx + 6, hy - 6);
 
-  // 敵人本體（中心點 + 面向箭頭）
-  ctx.fillStyle = '#e6e6f0';
-  ctx.beginPath();
-  ctx.arc(cx, cy, 8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#e6e6f0';
+  // 面向箭頭（sprite 已示意本體；箭頭標面向朝右，攻擊 offset/扇形以此為準）。
+  ctx.strokeStyle = 'rgba(230,230,240,0.85)';
+  ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(cx, cy);
-  ctx.lineTo(cx + 22, cy);
+  ctx.lineTo(cx + Math.max(24, REF_SPRITE_SIZE * viewScale * 0.35), cy);
   ctx.stroke();
+
+  // 玩家參照（距離感）：在攻擊範圍(attackRange)邊緣、敵人面向前方放一個玩家示意,
+  // 看「敵人攻擊範圍能不能搆到站在攻擊距離的玩家」。
+  const playerSpr = getSprite('SunWukong');
+  const playerX = cx + e.attackRange * PPU * viewScale; // 面向右方、攻擊距離處
+  const pPx = REF_SPRITE_SIZE * viewScale * 0.9;
+  if (playerSpr) {
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.drawImage(playerSpr, playerX - pPx / 2, cy - pPx / 2, pPx, pPx);
+    ctx.restore();
+  }
+  ctx.fillStyle = '#7fd0ff';
+  ctx.font = '11px Arial, "Microsoft JhengHei", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('玩家（攻擊距離處）', playerX, cy + pPx / 2 + 12);
+  ctx.textAlign = 'start';
 
   // 比例尺
   ctx.fillStyle = '#9a9ab5';
   ctx.font = '11px Arial, sans-serif';
-  ctx.fillText(`顯示比例 ×${viewScale.toFixed(2)}（1 unit = ${PPU}px 遊戲內）`, 8, H - 10);
+  ctx.fillText(`顯示比例 ×${viewScale.toFixed(2)}（1 unit = ${PPU}px 遊戲內；敵人與範圍同比例）`, 8, H - 10);
 }
 
 /** 讀 CSS 變數色值。 */
