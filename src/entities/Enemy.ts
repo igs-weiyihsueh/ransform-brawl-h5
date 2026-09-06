@@ -252,6 +252,11 @@ export class Enemy implements Hittable {
     this.scaleFactor = getPerCharScale(this.cfg.characterKey);
     this.anim = new CharacterAnimator(scene, this.cfg.characterKey, x, y);
     this.anim.setScale(SPRITE_SCALE);
+    // 第三大輪#1 回歸根治：出生就同步視覺面向 = 資料 facing(預設 1)。
+    // 否則 setFacing 的 early-return(dir===facing) 會讓「首次朝右(=預設 1)追玩家」永遠不呼 setFacingEnemy，
+    // enemyFacing 停在 null → play('move') 不套 flipX → sprite 用預設 flipX=false → 背對。
+    // 這裡強制初始化，使 enemyFacing≠null 且 flipX 與 facing 一致(enemyFlipForAnim)，從出生第一幀就正確。
+    this.anim.setFacingEnemy(this.facing);
     this.hp = this.cfg.hp;
     this.maxHp = this.cfg.hp;
     this.radiusPx = ENEMY_BODY_RADIUS_PX * this.scaleFactor; // 可視 body 半徑(用戶#1#2a根治), 取代 256 frame 半徑
