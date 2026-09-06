@@ -19,6 +19,8 @@ import {
   shouldHideArrow,
   nextGuideTarget,
   tetherEndPoint,
+  resolveItemOwner,
+  type ItemSource,
 } from '@/systems/itemGuideMath';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
@@ -194,21 +196,25 @@ export class TransformSystem implements GameSystem {
     g.fillTriangle(tip.x, tip.y, l.x, l.y, r.x, r.y);
   }
 
-  /** 生成一個變身道具（場上未達上限才生）。可被 debug 呼叫。 */
-  spawnItem(): void {
+  /**
+   * 生成一個變身道具（場上未達上限才生）。可被 debug 呼叫。
+   * @param source 三輪#6 來源：'random'(隨機刷,無主)/'initial'(登場,有主)/'kill'(擊落,歸打的玩家)。預設 'random'。
+   * @param ownerPlayerId 初始/擊落來源的擁有者 playerId（隨機來源忽略）。
+   */
+  spawnItem(source: ItemSource = 'random', ownerPlayerId?: number): void {
     if (this.items.length >= MAX_ITEMS_ON_FIELD) return;
     const margin = 120;
     const x = Phaser.Math.Between(margin, GAME_WIDTH - margin);
     const y = Phaser.Math.Between(margin, GAME_HEIGHT - margin);
     const item = new TransformItem(this.ctx.scene, x, y, ++this.itemSeq);
-    // 用戶 #7：指派 owner = 輪流分給在場玩家（專屬道具）；加 owner 玩家色邊框 + 入該 owner 佇列(排隊制)。
-    // ⚠️ owner 分配規則為合理預設(round-robin)，多人正式規則待異靈定；S3 單人=全歸 P1。
-    const players = this.ctx.players;
-    const owner = players[this.itemSeq % players.length]?.playerId ?? 0;
-    item.setOwner(owner, playerColor(owner));
-    const q = this.ownerQueues.get(owner) ?? [];
-    q.push(item.id);
-    this.ownerQueues.set(owner, q);
+    // 三輪#6：owner 依來源分配。隨機刷=無主(不標色框/不畫箭頭/不連牽引)；初始/擊落=有主(標玩家色+入佇列)。
+    const owner = resolveItemOwner(source, ownerPlayerId);
+    if (owner !== null) {
+      item.setOwner(owner, playerColor(owner));
+      const q = this.ownerQueues.get(owner) ?? [];
+      q.push(item.id);
+      this.ownerQueues.set(owner, q);
+    }
     this.items.push(item);
   }
 

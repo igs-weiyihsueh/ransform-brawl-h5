@@ -85,3 +85,20 @@ export function tetherEndPoint(anchor: Vec2, charCenter: Vec2, radiusPx: number)
   if (d <= radiusPx || d === 0) return { x: charCenter.x, y: charCenter.y }; // 太近直接圓心
   return { x: charCenter.x + (dx / d) * radiusPx, y: charCenter.y + (dy / d) * radiusPx };
 }
+
+/** 道具來源（三輪#6 owner 依來源分配）。 */
+export type ItemSource = 'initial' | 'kill' | 'random';
+
+/**
+ * 依來源決定道具 owner（三輪#6）：
+ * - 'initial'（登場初始擺放）→ 指定 ownerPlayerId（有主、標玩家色）。
+ * - 'kill'（玩家擊落產生）→ 擊落的玩家 ownerPlayerId（有主、標玩家色）。
+ * - 'random'（場上隨機刷）→ null（無主、不標色框、不畫箭頭、不連牽引）。
+ * @param source 生成來源。
+ * @param ownerPlayerId 初始/擊落來源時的擁有者（隨機來源忽略）。
+ * @returns owner playerId 或 null（無主）。
+ */
+export function resolveItemOwner(source: ItemSource, ownerPlayerId?: number): number | null {
+  if (source === 'random') return null;
+  return ownerPlayerId ?? null; // 初始/擊落但沒給 owner → 視為無主(不亂標)
+}
