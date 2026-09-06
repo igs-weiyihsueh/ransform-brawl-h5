@@ -9,6 +9,7 @@ import {
   isVisible,
   type UiLayoutFile,
 } from '@/config/uiLayoutSchema';
+import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 import { BottomPanel } from '@/systems/ui/BottomPanel';
 import { PlayerOverheadUI } from '@/systems/ui/PlayerOverheadUI';
 
@@ -120,14 +121,16 @@ export class UISystem implements GameSystem {
     };
   }
 
-  /** 載入並驗證 uiLayout.json；失敗（未載/不合法）退回 DEFAULT_UI_LAYOUT。 */
+  /** 載入並驗證 uiLayout.json；匯入 override(localStorage) 優先、否則打包預設；失敗退回 DEFAULT_UI_LAYOUT。 */
   private loadLayout(scene: Phaser.Scene): UiLayoutFile {
-    const raw = scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown;
+    // 匯入機制：localStorage override(編輯器套用)優先(同步)，無則用打包預設(Phaser cache)。
+    const override = loadOverride(EDITOR_STORE_KEYS.uiLayout);
+    const raw = override ?? (scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown);
     if (raw !== undefined && raw !== null) {
       const result = validateUiLayout(raw);
       if (result.ok) return result.data;
-      // 不合法：警告後退回預設（不讓 UI 整個壞掉）。
-      console.warn('[UISystem] uiLayout.json 驗證失敗，改用預設佈局：', result.errors);
+      // 不合法（含 override 壞掉）：警告後退回預設（不讓 UI 整個壞掉）。
+      console.warn('[UISystem] uiLayout 驗證失敗，改用預設佈局：', result.errors);
     }
     return DEFAULT_UI_LAYOUT;
   }

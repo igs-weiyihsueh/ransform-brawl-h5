@@ -11,6 +11,7 @@ import { FOOT_GLOW, footGlowCenter, playerColor, resolveFoot } from '@/config/pl
 import { PANEL_DEPTH } from '@/config/uiConfig';
 import { UI_LAYOUT_ASSET } from '@/config/uiConfig';
 import { validateUiLayout, isVisible } from '@/config/uiLayoutSchema';
+import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 import { ENTRANCE, entrancePosition } from '@/systems/entranceMath';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import type { InputSource } from '@/systems/InputSource';
@@ -35,7 +36,8 @@ const WAITING_DEPTH = PANEL_DEPTH + 10;
 function readFootLayout(scene: Phaser.Scene):
   | { searchRadiusPx?: number; offsetX?: number; offsetY?: number; visible?: boolean }
   | undefined {
-  const raw = scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown;
+  const override = loadOverride(EDITOR_STORE_KEYS.uiLayout); // 匯入機制：override 優先
+  const raw = override ?? (scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown);
   if (raw === undefined || raw === null) return undefined;
   const result = validateUiLayout(raw);
   return result.ok ? result.data.foot : undefined;

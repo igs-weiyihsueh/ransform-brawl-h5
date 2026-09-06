@@ -24,6 +24,11 @@ import {
   type ShapeType,
   type SkillFile,
 } from './skillSchema';
+import {
+  EDITOR_STORE_KEYS,
+  applyToGame,
+  clearOverride,
+} from '@/config/editorStore';
 
 const PPU = 100; // 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲檔）
 
@@ -507,6 +512,26 @@ function resetDefault(): void {
   setStatus('已重設為預設值。', 'info');
 }
 
+/** 套用到遊戲（匯入機制）：validate 過才存 localStorage，遊戲啟動優先讀。 */
+function applyToGameFromEditor(): void {
+  const result = validateSkills(file);
+  if (!result.ok) {
+    setStatus(`套用被擋下：資料不合法（${result.errors.length} 項）：\n${result.errors.map((m) => `  - ${m}`).join('\n')}`, 'err');
+    return;
+  }
+  const ok = applyToGame(EDITOR_STORE_KEYS.skills, assertValidSkills(file));
+  setStatus(
+    ok ? '✅ 已套用到遊戲（存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。',
+    ok ? 'ok' : 'err',
+  );
+}
+
+/** 清除套用（回打包預設）：移除 localStorage override。 */
+function clearAppliedFromEditor(): void {
+  clearOverride(EDITOR_STORE_KEYS.skills);
+  setStatus('已清除套用，遊戲將回到打包預設招式設定。', 'info');
+}
+
 // ---- 統一重繪 -------------------------------------------------------------
 
 function renderAll(): void {
@@ -524,6 +549,8 @@ function bindUI(): void {
   $('btn-load-default').addEventListener('click', loadDefault);
   $('btn-export').addEventListener('click', exportJson);
   $('btn-reset').addEventListener('click', resetDefault);
+  $('btn-apply').addEventListener('click', applyToGameFromEditor);
+  $('btn-clear-apply').addEventListener('click', clearAppliedFromEditor);
   $('btn-add-char').addEventListener('click', addChar);
   $('btn-undo').addEventListener('click', undo);
   $('btn-redo').addEventListener('click', redo);

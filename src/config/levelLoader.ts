@@ -1,4 +1,5 @@
 import { type LevelData, validateLevels } from '@/config/levelSchema';
+import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 
 // 轉出 schema 的共用驗證閘門，讓載入器消費端也能從這裡取得（單一實作）。
 export { assertValidLevels } from '@/config/levelSchema';
@@ -38,6 +39,15 @@ function resolveUrl(url: string): string {
  * @param url 關卡 JSON 路徑（相對，預設 assets/data/levels.json）。
  */
 export async function loadLevels(url: string = DEFAULT_LEVELS_URL): Promise<LevelData[]> {
+  // 匯入機制：localStorage override(關卡編輯器套用)優先(同步)，無則走打包預設 fetch。
+  const override = loadOverride(EDITOR_STORE_KEYS.levels);
+  if (override !== null) {
+    const ov = validateLevels(override);
+    if (ov.ok) return ov.data.levels;
+    // override 壞掉：警告後 fallthrough 走打包預設(不炸)。
+    console.warn('[levelLoader] localStorage 關卡 override 驗證失敗，改用打包預設：', ov.errors);
+  }
+
   const full = resolveUrl(url);
 
   let res: Response;

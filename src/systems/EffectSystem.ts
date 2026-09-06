@@ -3,6 +3,7 @@ import { VFX_EFFECTS, VFX_FRAME_PAD, type VFXEffectDef } from '@/config/vfxConfi
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { UI_ICONS, UI_LAYOUT_ASSET } from '@/config/uiConfig';
 import { validateUiLayout, isVisible, type ScreenElement } from '@/config/uiLayoutSchema';
+import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 import { ENERGY_FLY, flyAlpha, flyPosition, flyScale } from '@/systems/energyFlyMath';
 import {
@@ -318,7 +319,8 @@ export class EffectSystem {
     const cached = this.cachedScreenEl[kind];
     if (cached) return cached;
     let el = fallback;
-    const raw = this.scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown;
+    const override = loadOverride(EDITOR_STORE_KEYS.uiLayout); // 匯入機制：override 優先
+    const raw = override ?? (this.scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown);
     if (raw !== undefined && raw !== null) {
       const result = validateUiLayout(raw);
       if (result.ok && result.data.screen?.[kind]) {

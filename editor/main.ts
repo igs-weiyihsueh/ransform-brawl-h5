@@ -24,6 +24,11 @@ import {
   validateLevels,
 } from '@/config/levelSchema';
 import {
+  EDITOR_STORE_KEYS,
+  applyToGame,
+  clearOverride,
+} from '@/config/editorStore';
+import {
   PREVIEW_MSG,
   PREVIEW_QUERY_FLAG,
   type PreviewMessage,
@@ -590,6 +595,27 @@ function exportJson(): void {
   setStatus(`驗證通過，已下載 levels.json（${validated.levels.length} 關）。`, 'ok');
 }
 
+/** 套用到遊戲（匯入機制）：validate 過才存 localStorage，遊戲啟動優先讀。 */
+function applyToGameFromEditor(): void {
+  const candidate: LevelsFile = { version: state.version, levels: state.levels };
+  const result = validateLevels(candidate);
+  if (!result.ok) {
+    setStatus(`套用被擋下：資料不合法（${result.errors.length} 項）：\n${result.errors.map((m) => `  - ${m}`).join('\n')}`, 'err');
+    return;
+  }
+  const ok = applyToGame(EDITOR_STORE_KEYS.levels, assertValidLevels(candidate));
+  setStatus(
+    ok ? '✅ 已套用到遊戲（存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。',
+    ok ? 'ok' : 'err',
+  );
+}
+
+/** 清除套用（回打包預設）：移除 localStorage override。 */
+function clearAppliedFromEditor(): void {
+  clearOverride(EDITOR_STORE_KEYS.levels);
+  setStatus('已清除套用，遊戲將回到打包預設關卡。', 'info');
+}
+
 // ---- 試玩（iframe + postMessage + ready 交握） ----------------------------
 //
 // 流程（協定見 @/config/previewProtocol）：
@@ -785,6 +811,8 @@ function bindUI(): void {
   $('schema-version').textContent = `schema v${LEVELS_SCHEMA_VERSION}`;
   $('btn-load-default').addEventListener('click', () => void loadDefault());
   $('btn-export').addEventListener('click', exportJson);
+  $('btn-apply').addEventListener('click', applyToGameFromEditor);
+  $('btn-clear-apply').addEventListener('click', clearAppliedFromEditor);
   $('btn-add-level').addEventListener('click', addLevel);
   $('btn-preview').addEventListener('click', startPreview);
   $('btn-preview-reapply').addEventListener('click', reapplyPreview);
