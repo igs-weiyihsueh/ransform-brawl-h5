@@ -148,6 +148,16 @@ QA（測騎）維護。記錄「**當前實作下是等價 mutant、但條件性
 
 ---
 
+## #7 — ENEMY_PLAY_BOUNDS.maxY 的 `Math.min(MAP_BOUNDS.maxY, PANEL_TOP_Y)`（四輪#1，888c698）
+
+- **所在**：`src/config/mapConfig.ts` `ENEMY_PLAY_BOUNDS.maxY = Math.min(MAP_BOUNDS.maxY, PANEL_TOP_Y)`。
+- **當前等價**：MAP_BOUNDS.maxY=940、PANEL_TOP_Y=944 → `min(940,944)===940===MAP_BOUNDS.maxY`。把 `Math.min(...)` 改成只 `MAP_BOUNDS.maxY`（拿掉面板感知），**全綠、無測試變紅**（怪 branch 目前不承重）。
+- **為何等價**：怪的下界目前由 MAP_BOUNDS.maxY(940) 把守，且它比面板頂(944)更緊 → 面板感知 `min` 的第二臂（PANEL_TOP_Y）永遠不 binding。怪底邊到面板頂之間的緩衝來自 MAP_BOUNDS 本身，非來自面板 clamp。
+- **真鑑別力從哪來**：`playAreaBounds.test` 的怪測斷言 `ENEMY_PLAY_BOUNDS.maxY === min(MAP_BOUNDS.maxY, PANEL_TOP_Y)`——當兩者相等時無法鑑別「只 MAP_BOUNDS.maxY vs min」。玩家 branch 不同：PLAYER 用 `min(940, 868.4)=868.4`，面板感知**有** binding（868.4<940）→ 玩家的 margin/腳底=面板頂/非寫死三條會紅，已測、承重。
+- **何時變真回歸點（觸發補測）**：任一改動使 **PANEL_TOP_Y < MAP_BOUNDS.maxY**（面板變高、或 MAP_BOUNDS 下界放寬到 >944），此時怪的面板感知 `min` 開始 binding、第二臂承重 → 需補「怪底邊停面板頂、非 MAP_BOUNDS.maxY」的鑑別測試。review 動到 PANEL_TOP_Y / MAP_BOUNDS_UNITS.maxY / 面板高(PANEL_DEPTH) 的 PR 時對照這裡。
+
+---
+
 ## 已從清單移出（改為防禦契約測試）
 
 - **Chest `addCharge` 的 `if (amount <= 0) return` guard**（原 #4，batch8 曾列入）：

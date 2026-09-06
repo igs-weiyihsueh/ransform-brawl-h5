@@ -26,19 +26,21 @@ import { PPU } from '@/config/gameConfig';
 const PLAYER_BODY_R = PLAYER_HIT_RADIUS * PPU * GLOBAL_CHARACTER_SCALE; // 60
 
 describe('地圖邊界 — 玩家下界不進面板（clamp 行為，bug1）', () => {
-  it('玩家往下走超過可走下界 → clamp 到 PLAYER_BOUNDS.maxY(884)、不進面板', () => {
-    // 想走到面板裡(y=940，場地下界但在面板頂緣944之下的身體會露)。
+  it('玩家往下走超過可走下界 → clamp 到 PLAYER_BOUNDS.maxY(868.4)、不進面板', () => {
+    // 想走到面板裡(y=940，場地下界但腳底會穿進面板頂緣944)。
     const c = clampToBounds(960, 940, PLAYER_BOUNDS);
-    expect(c.y).toBe(PLAYER_BOUNDS.maxY); // 被收到 884
+    expect(c.y).toBe(PLAYER_BOUNDS.maxY); // 被收到 868.4（四輪#1：下邊距用腳底偏移 75.6）
     expect(c.changed).toBe(true);
     // 夾限後「角色 body 底緣」= y + body半徑，必須 <= 面板頂緣（整個身體不重疊面板）。
     expect(c.y + PLAYER_BODY_R).toBeLessThanOrEqual(PANEL_TOP_Y);
   });
 
-  it('玩家在可走區內(y<=884) → 不夾（changed=false、座標原樣）', () => {
-    const c = clampToBounds(960, 884, PLAYER_BOUNDS);
+  it('玩家在可走區內(y<=maxY 868.4) → 不夾（changed=false、座標原樣）', () => {
+    // 用可走下界內一點(maxY-1)驗不夾；避免寫死過時 884（四輪#1 已收到 868.4）。
+    const yIn = PLAYER_BOUNDS.maxY - 1;
+    const c = clampToBounds(960, yIn, PLAYER_BOUNDS);
     expect(c.changed).toBe(false);
-    expect(c.y).toBe(884);
+    expect(c.y).toBe(yIn);
   });
 
   it('X 仍用全場寬(160~1760)、只有下界被收（上界/左右不變）', () => {
