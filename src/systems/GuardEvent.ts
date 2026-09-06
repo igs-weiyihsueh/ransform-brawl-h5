@@ -2,7 +2,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { PPU } from '@/config/gameConfig';
 import { CHEST_OPEN_THRESHOLD } from '@/config/chestConfig';
 import { PLAYER_CONFIG } from '@/config/combatConfig';
-import { pickGuardEnemy, guardSideSpawnPoint, type GuardPreset } from '@/config/guardConfig';
+import { pickGuardEnemy, guardSideSpawnPoint, resolveGuardDrip, type GuardPreset, type GuardDrip, type GuardSpawnEntry } from '@/config/guardConfig';
 import { getResolvedGuardPreset } from '@/config/guardSchema';
 import { GuardTarget } from '@/entities/GuardTarget';
 import { guardCornerTargets, scriptedMoveStep, allScriptedArrived } from '@/systems/guardIntro';
@@ -46,10 +46,17 @@ export class GuardEvent {
   private spotlight: { fadeOut: () => void } | null = null;
   /** 七輪#5：「協力合作，守護雕像」大字 handle（聚焦時滑進、解聚焦時滑出，對齊 Unity GuardTextUI）。 */
   private guardTextHandle: { fadeOut: () => void } | null = null;
+  /** 七輪：有效補怪 drip = node per-node 覆蓋 preset（resolveGuardDrip）。 */
+  private readonly drip: GuardDrip;
 
-  constructor(ctx: GameContext, presetName: string) {
+  constructor(
+    ctx: GameContext,
+    presetName: string,
+    dripOverride?: { maxAlive?: number; spawnThreshold?: number; spawnInterval?: number; spawns?: GuardSpawnEntry[] },
+  ) {
     this.ctx = ctx;
     this.preset = getResolvedGuardPreset(presetName);
+    this.drip = resolveGuardDrip(dripOverride, this.preset); // 七輪：node.X ?? preset.X（0-nullish 安全）
     this.remaining = this.preset.timeLimit;
 
     // 生雕像於場中央（先隱藏，開場玩家就定位後才 reveal 顯現）。敵人攻擊改打雕像（在 combat 階段前不 drip）。
@@ -115,12 +122,12 @@ export class GuardEvent {
     this.spawnCooldown -= dt;
     const alive = this.ctx.getEnemies().length;
     if (
-      alive < this.preset.spawnThreshold &&
+      alive < this.drip.spawnThreshold &&
       this.spawnCooldown <= 0 &&
-      alive < this.preset.maxAlive
+      alive < this.drip.maxAlive
     ) {
       this.spawnAroundTarget();
-      this.spawnCooldown = this.preset.spawnInterval;
+      this.spawnCooldown = this.drip.spawnInterval;
     }
     return false;
   }
@@ -189,7 +196,7 @@ export class GuardEvent {
     // 三輪#9：守護波怪從左右兩側場地邊緣交替生成（往雕像靠攏包圍感，對照 Unity FindGuardSideSpawnPos）。
     const pos = guardSideSpawnPoint(this.guardSpawnNextLeft, MAP_BOUNDS);
     this.guardSpawnNextLeft = !this.guardSpawnNextLeft; // 翻轉 → 下隻另一側（兩側平均）
-    const type = pickGuardEnemy(this.preset.spawns);
+    const type = pickGuardEnemy(this.drip.spawns);
     this.ctx.spawner.spawn(type, pos.x, pos.y);
   }
 

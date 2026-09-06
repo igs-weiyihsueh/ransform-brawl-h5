@@ -227,8 +227,13 @@ export class WaveSystem implements GameSystem {
     }
     // 守護波（含可選 attachFireRain）。
     if (!this.guardEvent) {
-      // 守護波敵種/drip 全由 preset 決定（不動凍結的 levelSchema）。
-      this.guardEvent = new GuardEvent(this.ctx, node.eventPresetName);
+      // 七輪：守護 preset 決定時限/HP/演出；drip（補怪）可由 Event 節點 per-node 覆蓋（node.X ?? preset.X）。
+      this.guardEvent = new GuardEvent(this.ctx, node.eventPresetName, {
+        maxAlive: (node as { maxAlive?: number }).maxAlive,
+        spawnThreshold: (node as { spawnThreshold?: number }).spawnThreshold,
+        spawnInterval: (node as { spawnInterval?: number }).spawnInterval,
+        spawns: (node as { spawns?: { enemyType: string; weight: number }[] }).spawns,
+      });
     }
     const done = this.guardEvent.update(dt);
     if (done) {

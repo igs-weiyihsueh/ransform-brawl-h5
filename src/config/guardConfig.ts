@@ -104,6 +104,34 @@ export function getGuardPreset(name: string | undefined): GuardPreset {
   return (name && GUARD_PRESETS[name]) || GUARD_FALLBACK;
 }
 
+/** 守護補怪 drip 有效值（七輪：node per-node 覆蓋 preset）。 */
+export interface GuardDrip {
+  maxAlive: number;
+  spawnThreshold: number;
+  spawnInterval: number;
+  spawns: GuardSpawnEntry[];
+}
+
+/**
+ * 解析守護補怪 drip（純函式，抽給測騎）：per-node 覆蓋 preset（node.X ?? preset.X）。
+ * ★0-nullish 安全：用 ?? 非 ||（maxAlive/spawnThreshold=0 是合法值，不可被 || 當 falsy 吃掉）。
+ * spawns：node.spawns 有給（且非空陣列）→ 用 node 的；否則 preset.spawns。
+ * @param node Event 節點的 optional drip（maxAlive?/spawnThreshold?/spawnInterval?/spawns?）；欄位省略＝沿用 preset。
+ * @param preset 該守護 preset（getResolvedGuardPreset）。
+ */
+export function resolveGuardDrip(
+  node: { maxAlive?: number; spawnThreshold?: number; spawnInterval?: number; spawns?: GuardSpawnEntry[] } | undefined,
+  preset: GuardPreset,
+): GuardDrip {
+  const n = node ?? {};
+  return {
+    maxAlive: n.maxAlive ?? preset.maxAlive,
+    spawnThreshold: n.spawnThreshold ?? preset.spawnThreshold,
+    spawnInterval: n.spawnInterval ?? preset.spawnInterval,
+    spawns: n.spawns && n.spawns.length > 0 ? n.spawns : preset.spawns,
+  };
+}
+
 /** 依權重從 preset.spawns 挑一種敵種。 */
 export function pickGuardEnemy(
   spawns: GuardSpawnEntry[],

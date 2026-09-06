@@ -122,6 +122,21 @@ export interface EventNodeData {
    *   preset 名合法性由編輯器下拉（只給合法）與遊戲端 getFireRainPreset(fallback) 把關（同 attachFireRain/eventPresetName 慣例）。
    */
   attachFireRain?: string;
+  /**
+   * 七輪 守護補怪 drip per-node 覆蓋（additive optional，§4）：覆蓋守護 preset（guardConfig）的補怪設定。
+   * 省略/undefined → 沿用該守護 preset 的對應值（現行為 100% 不變）；有值 → 覆蓋該欄。
+   * 讓「同一種守護 preset」在不同關卡放不同密度/敵種（preset 定時限/HP/演出，節點定這場放哪些怪多密）。
+   * 遊戲端 GuardEvent 讀 resolveGuardDrip(node, preset)：node.X ?? preset.X（0-nullish 安全，用 ?? 非 ||）。
+   * 註：零遊戲依賴，只驗型別/範圍；spawns.enemyType 非空字串（軟白名單，合法性交遊戲端 getResolvedEnemies）。
+   */
+  /** 場上同時存活上限（覆蓋 preset.maxAlive）。 */
+  maxAlive?: number;
+  /** 補怪門檻：存活 < 此值才補（覆蓋 preset.spawnThreshold）。 */
+  spawnThreshold?: number;
+  /** 補怪間隔秒（覆蓋 preset.spawnInterval）。 */
+  spawnInterval?: number;
+  /** 敵種權重表（覆蓋 preset.spawns）。敵種 key 動態＝enemies 定義（getEnemyTypeKeys）。 */
+  spawns?: SpawnEntry[];
 }
 
 /** 節點聯集。 */
@@ -311,9 +326,52 @@ function validateNode(
           `${at}（${typeLabel}）的「附加火雨 attachFireRain」若提供必須是非空字串（'none' 或火雨 preset 名）。`,
         );
       }
+      // 七輪 守護補怪 drip per-node 覆蓋（optional）：省略=沿用 preset；有給才驗型別/範圍。
+      validateEventDrip(node, `${at}（${typeLabel}）`, errors);
       break;
     default:
       break;
+  }
+}
+
+/**
+ * 七輪 守護補怪 drip per-node 覆蓋驗證（optional）：僅在該欄有提供時驗型別/範圍；省略＝沿用 preset。
+ * spawns.enemyType 非空字串即過（軟白名單，合法性交遊戲端 getResolvedEnemies）；同已做的敵種動態化慣例。
+ */
+function validateEventDrip(
+  node: Record<string, unknown>,
+  at: string,
+  errors: string[],
+): void {
+  const posInt = (key: string, label: string): void => {
+    const v = node[key];
+    if (v === undefined) return; // 省略＝沿用 preset
+    if (!isFiniteNumber(v)) errors.push(`${at} 的「${label}」若提供必須是數字。`);
+    else if (v < 0) errors.push(`${at} 的「${label}」=${v} 不可為負。`);
+  };
+  posInt('maxAlive', '場上上限 maxAlive');
+  posInt('spawnThreshold', '補怪門檻 spawnThreshold');
+  posInt('spawnInterval', '生怪間隔 spawnInterval');
+  if (node.spawns !== undefined) {
+    if (!Array.isArray(node.spawns)) {
+      errors.push(`${at} 的「敵人配置 spawns」若提供必須是陣列。`);
+    } else {
+      if (node.spawns.length === 0) errors.push(`${at} 的「敵人配置 spawns」若提供至少要有一種可生怪。`);
+      node.spawns.forEach((entryRaw, si) => {
+        const eAt = `${at} 的第 ${si + 1} 筆敵人配置`;
+        const entry = entryRaw as Record<string, unknown> | null;
+        if (typeof entryRaw !== 'object' || entryRaw === null) {
+          errors.push(`${eAt} 必須是物件（含 敵種、權重）。`);
+          return;
+        }
+        if (!isNonEmptyString(entry!.enemyType)) {
+          errors.push(`${eAt} 的「敵種 enemyType」="${String(entry!.enemyType)}" 不合法（需非空字串；敵種合法性由 enemies 定義把關）。`);
+        }
+        if (!isFiniteNumber(entry!.weight) || (entry!.weight as number) <= 0) {
+          errors.push(`${eAt} 的「權重 weight」缺少或非正數。`);
+        }
+      });
+    }
   }
 }
 
