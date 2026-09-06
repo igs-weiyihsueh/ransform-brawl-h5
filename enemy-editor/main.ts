@@ -349,7 +349,9 @@ function renderInspector(): void {
   insp.appendChild(numberRow('蓄力/前搖 chargeTime', e.chargeTime, (v) => { e.chargeTime = v; }, { min: 0, max: 5, step: 0.1, slider: true }));
   insp.appendChild(numberRow('冷卻 attackCooldown', e.attackCooldown, (v) => { e.attackCooldown = v; }, { min: 0, max: 10, step: 0.1, slider: true }));
   insp.appendChild(numberRow('硬直 hitStun', e.hitStun, (v) => { e.hitStun = v; }, { min: 0, max: 3, step: 0.05, slider: true }));
-  insp.appendChild(numberRow('被擊退力 knockbackForce（自己被打）', e.knockbackForce, (v) => { e.knockbackForce = v; }, { min: 0, max: 10, step: 0.1, slider: true }));
+  // 被擊退力 knockbackForce 已移除 editor 欄位（用戶擊退定案：怪不需要「被擊退力」，擊退看玩家招式）。
+  // 欄位值仍保留在資料中（schema/型別 knockbackForce 目前為必填，來自遊戲 enemyConfig），
+  // 只是不顯示不可編；schema 相容性由異靈協調（UI-only 移除，遊戲端 takeHit 已不讀 knockbackForce）。
 
   insp.appendChild(selectRow('攻擊方式 attackKind', e.attackKind, ATTACK_KINDS as readonly string[], (v) => {
     e.attackKind = v as EnemyAttackKind;
