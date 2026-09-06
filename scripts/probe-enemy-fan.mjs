@@ -42,6 +42,11 @@ const fanInfo = await page.evaluate(()=>{
   const p=ctx.players[0]; const psp=p.sprite||p.anim?.sprite; if(psp){psp.x=300;psp.y=300;}
   if(ctx.spawner.clearAllEnemies) ctx.spawner.clearAllEnemies();
   const texExists = gs.textures.exists('vfx-enemy-fan');
+  // 隔離: 清道具(消 guide arrow)、玩家挪到角落, 只留中央 fan。
+  if(ctx.spawner.clearAllEnemies) ctx.spawner.clearAllEnemies();
+  const ts=(gs.systems||[]).find((x)=>x&&x.name==='TransformSystem');
+  if(ts && ts.items){ for(const it of [...ts.items]){ if(it.forceRemove) it.forceRemove(); } ts.items.length=0; if(ts.guideGfx) ts.guideGfx.clear(); }
+  const pp=ctx.players[0]; const pspx=pp.sprite||pp.anim?.sprite; if(pspx){pspx.x=120;pspx.y=120;}
   // 攔截 add.image 抓 fan sprite。
   let spr=null; const orig=gs.add.image.bind(gs.add);
   gs.add.image=function(...a){ const s=orig(...a); if(a[2]==='vfx-enemy-fan') spr=s; return s; };
