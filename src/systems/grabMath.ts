@@ -93,3 +93,15 @@ export function tickGrabCountdown(remaining: number, dt: number): { remaining: n
   const next = remaining - dt;
   return { remaining: Math.max(0, next), autoEscape: next <= 0 };
 }
+
+/**
+ * 掙脫判定（用戶第九輪 #1：被抓時衝刺也能掙脫，與攻擊掙脫同級）。
+ * 任一條件成立 → 掙脫：
+ *  - attackEdge：本幀新起攻擊（原有掙脫手段）。
+ *  - dashEdge：本幀新起衝刺（新增，被抓時按衝刺=掙脫並衝出去）。
+ *  - autoEscape：倒數歸零自動掙脫。
+ * @returns true = 應掙脫。
+ */
+export function shouldEscapeGrab(attackEdge: boolean, dashEdge: boolean, autoEscape: boolean): boolean {
+  return attackEdge || dashEdge || autoEscape;
+}

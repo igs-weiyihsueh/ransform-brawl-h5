@@ -13,6 +13,7 @@ import {
   grabberTouchesPlayer,
   shouldTriggerGrab,
   tickGrabCountdown,
+  shouldEscapeGrab,
 } from '@/systems/grabMath';
 
 /** 每個玩家的抓人狀態。 */
@@ -23,6 +24,7 @@ interface GrabState {
   grabbed: boolean; // 已被抓（倒數中）
   countdown: number; // 被抓倒數剩餘
   wasAttacking: boolean; // 上幀是否攻擊中（偵測攻擊掙脫）
+  wasDashing: boolean; // 上幀是否衝刺中（偵測衝刺掙脫，用戶第九輪 #1）
   hint: Phaser.GameObjects.Text | null; // 被抓 UI 提示（按攻擊掙脫! + 倒數）
 }
 
@@ -43,7 +45,7 @@ export class GrabSystem implements GameSystem {
   private stateOf(pid: number): GrabState {
     let s = this.states.get(pid);
     if (!s) {
-      s = { idle: 0, prevCombo: 0, grabber: null, grabbed: false, countdown: 0, wasAttacking: false, hint: null };
+      s = { idle: 0, prevCombo: 0, grabber: null, grabbed: false, countdown: 0, wasAttacking: false, wasDashing: false, hint: null };
       this.states.set(pid, s);
     }
     return s;
@@ -107,6 +109,7 @@ export class GrabSystem implements GameSystem {
       player.setGrabbed(true);
       grabber.setGrabberLocked?.(true); // 抓住→grabber 站著維持 idle（用戶新#5）
       s.wasAttacking = true; // 觸碰當幀若玩家正攻擊，不立即誤判為掙脫（等下一次新起攻擊）
+      s.wasDashing = player.isDashing?.() ?? false; // 觸碰當幀若正衝刺，不立即誤判掙脫（等新起衝刺）
     }
   }
 
@@ -115,6 +118,11 @@ export class GrabSystem implements GameSystem {
     const attackingNow = typeof player.isAttacking === 'function' ? player.isAttacking() : false;
     const attackEdge = attackingNow && !s.wasAttacking; // 本幀新起攻擊 = 掙脫
     s.wasAttacking = attackingNow;
+
+    // 用戶第九輪 #1：被抓時衝刺=掙脫（與攻擊同級）。偵測本幀新起衝刺 edge。
+    const dashingNow = typeof player.isDashing === 'function' ? player.isDashing() : false;
+    const dashEdge = dashingNow && !s.wasDashing; // 本幀新起衝刺 = 掙脫
+    s.wasDashing = dashingNow;
 
     const { remaining, autoEscape } = tickGrabCountdown(s.countdown, dt);
     s.countdown = remaining;
@@ -140,7 +148,7 @@ export class GrabSystem implements GameSystem {
     s.hint.setText(`按攻擊掙脫！\n${secs}`);
     s.hint.setVisible(true);
 
-    if (attackEdge || autoEscape) {
+    if (shouldEscapeGrab(attackEdge, dashEdge, autoEscape)) {
       this.escape(player, s);
     }
   }
@@ -157,6 +165,7 @@ export class GrabSystem implements GameSystem {
     s.countdown = 0;
     s.idle = 0;
     s.wasAttacking = false;
+    s.wasDashing = false;
   }
 
   private nearestEnemy(from: Vec2, enemies: readonly Enemy[]): Enemy | null {

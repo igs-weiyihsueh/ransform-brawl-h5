@@ -510,8 +510,13 @@ export class Player implements Hittable {
   setGrabbed(on: boolean): void {
     if (this.grabbed === on) return;
     this.grabbed = on;
-    if (on) this.anim.sprite.setTint(0x4488ff); // 藍閃提示
-    else this.anim.sprite.clearTint();
+    if (on) {
+      this.anim.sprite.setTint(0x4488ff); // 藍閃提示
+      this.anim.play('idle'); // 用戶第九輪 #2：被抓站定→切待機動畫（原只 setTint，move early-return 使被抓前 move 動畫卡住續播）
+    } else {
+      this.anim.sprite.clearTint();
+      // 解除不強制切動畫：move/idle/dash 下幀自然接管（掙脫若走衝刺，dash 動畫續播不被打斷）。
+    }
   }
 
   private setFacing(dir: number): void {
