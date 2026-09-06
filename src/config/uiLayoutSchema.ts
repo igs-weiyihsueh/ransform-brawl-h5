@@ -26,11 +26,33 @@
 export const UI_LAYOUT_SCHEMA_VERSION = 1 as const;
 
 // ---------------------------------------------------------------------------
+// 顯示開關（用戶第五輪 #6）
+// ---------------------------------------------------------------------------
+
+/**
+ * 顯示開關 mixin（additive optional）。所有可編輯元素 extends 這個以取得 visible 欄位。
+ * 語意：visible 省略 / undefined / true = 顯示；false = 隱藏（翼騎讀取端不畫）。
+ * ★預設顯示：舊 JSON 無 visible 欄位一律當顯示，向後相容不破凍結。
+ */
+export interface HasVisible {
+  /** 顯示開關。省略/true=顯示、false=隱藏。 */
+  visible?: boolean;
+}
+
+/**
+ * 單一真相：判斷元素是否該顯示。翼騎讀取端 + 編輯器預覽**共用此函式**，勿各自重寫判斷。
+ * 讀取端用法：if (!isVisible(el)) return; // 不畫
+ */
+export function isVisible(el: HasVisible | null | undefined): boolean {
+  return !!el && el.visible !== false;
+}
+
+// ---------------------------------------------------------------------------
 // 頭上 UI（OVERHEAD）
 // ---------------------------------------------------------------------------
 
 /** 玩家牌 + 魂力環（同心圓）。local 座標（相對容器中心）。 */
-export interface OverheadBadge {
+export interface OverheadBadge extends HasVisible {
   /** 同心圓心 x（local）。 */
   cx: number;
   /** 同心圓心 y（local）。 */
@@ -46,7 +68,7 @@ export interface OverheadBadge {
 }
 
 /** Credit（點數 + 金幣）。 */
-export interface OverheadCredit {
+export interface OverheadCredit extends HasVisible {
   x: number;
   y: number;
   width: number;
@@ -56,7 +78,7 @@ export interface OverheadCredit {
 }
 
 /** 能量格（4 格）：起點座標 + 格子外觀。 */
-export interface OverheadEnergy {
+export interface OverheadEnergy extends HasVisible {
   /** 能量格起點 x（local）。 */
   x: number;
   /** 能量格起點 y（local）。 */
@@ -71,7 +93,7 @@ export interface OverheadEnergy {
 }
 
 /** COMBO（連段）文字。 */
-export interface OverheadCombo {
+export interface OverheadCombo extends HasVisible {
   x: number;
   y: number;
   /** 後綴，如 ' HIT'。 */
@@ -111,7 +133,7 @@ export interface OverheadLayout {
  * 欄內單一元素：位置 + 尺寸。
  * 座標基準：相對「該欄左上角」原點，+x 右、+y 下，px。
  */
-export interface PanelElement {
+export interface PanelElement extends HasVisible {
   /** 元素識別（chest/ticket/progress/coin/platform…）。 */
   id: string;
   x: number;
@@ -179,7 +201,7 @@ export interface DesignResolution {
  * 全螢幕 UI 元素：以「設計解析度螢幕座標」定位（+x 右、+y 下，px，原點=螢幕左上）。
  * 用於不屬於某玩家欄/頭上容器的螢幕級 HUD（如波次訊息橫幅）。
  */
-export interface ScreenElement {
+export interface ScreenElement extends HasVisible {
   x: number;
   y: number;
   width: number;
@@ -208,7 +230,7 @@ export interface ScreenLayout {
  * searchRadiusPx 主調大小；offsetX/Y 微調圈相對角色的位置。單位 px。
  * 翼騎讀取端：layout.foot?.searchRadiusPx ?? FOOT_GLOW.radiusPx（fallback 不炸）。
  */
-export interface FootLayout {
+export interface FootLayout extends HasVisible {
   /** 搜索圈/真空帶半徑（px）。 */
   searchRadiusPx?: number;
   /** 圈相對角色的水平偏移（px，預設 0 置中）。 */
@@ -361,6 +383,18 @@ function asObject(v: unknown): Record<string, unknown> | null {
   return typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : null;
 }
 
+/** 驗證 optional boolean 欄位（用戶 #6 visible）：省略合法；存在則必須 boolean。 */
+function checkOptionalBoolean(
+  obj: Record<string, unknown>,
+  key: string,
+  label: string,
+  errors: string[],
+): void {
+  if (obj[key] !== undefined && typeof obj[key] !== 'boolean') {
+    errors.push(`${label}「${key}」若提供必須是布林（true/false）。`);
+  }
+}
+
 /** 驗證任意 JSON 是否為合法 UiLayoutFile。大聲、精準定位。 */
 export function validateUiLayout(json: unknown): ValidateUiResult {
   const errors: string[] = [];
@@ -416,6 +450,7 @@ function validateOverhead(raw: unknown, errors: string[]): void {
     checkNum(badge, 'ringRadius', b, errors, { positive: true });
     checkNum(badge, 'ringThickness', b, errors, { positive: true });
     if (!isNonEmptyString(badge.text)) errors.push(`${b}「text」缺少或非非空字串。`);
+    checkOptionalBoolean(badge, 'visible', b, errors);
   }
 
   const credit = asObject(ov.credit);
@@ -427,6 +462,7 @@ function validateOverhead(raw: unknown, errors: string[]): void {
     checkNum(credit, 'width', c, errors, { positive: true });
     checkNum(credit, 'height', c, errors, { positive: true });
     checkNum(credit, 'coinSize', c, errors, { positive: true });
+    checkOptionalBoolean(credit, 'visible', c, errors);
   }
 
   const energy = asObject(ov.energy);
@@ -440,6 +476,7 @@ function validateOverhead(raw: unknown, errors: string[]): void {
     checkNum(energy, 'cellHeight', e, errors, { positive: true });
     checkNum(energy, 'cellGap', e, errors);
     checkNum(energy, 'cornerRadius', e, errors);
+    checkOptionalBoolean(energy, 'visible', e, errors);
   }
 
   const combo = asObject(ov.combo);
@@ -452,6 +489,7 @@ function validateOverhead(raw: unknown, errors: string[]): void {
     if (typeof combo.suffix !== 'string') errors.push(`${cb}「suffix」必須是字串。`);
     if (typeof combo.hideWhenZero !== 'boolean') errors.push(`${cb}「hideWhenZero」必須是布林。`);
     if (typeof combo.warning !== 'boolean') errors.push(`${cb}「warning」必須是布林。`);
+    checkOptionalBoolean(combo, 'visible', cb, errors);
   }
 }
 
@@ -491,6 +529,7 @@ function validateScreenElement(el: Record<string, unknown>, at: string, errors: 
   if (el.align !== undefined && !['left', 'center', 'right'].includes(el.align as string)) {
     errors.push(`${at}「align」若提供必須是 left / center / right。`);
   }
+  checkOptionalBoolean(el, 'visible', at, errors);
 }
 
 /** 驗證 foot 區塊（optional）：若提供，各欄位若存在則驗；searchRadiusPx>0。 */
@@ -505,6 +544,7 @@ function validateFoot(raw: unknown, errors: string[]): void {
   if (f.searchRadiusPx !== undefined) checkNum(f, 'searchRadiusPx', at, errors, { positive: true });
   if (f.offsetX !== undefined) checkNum(f, 'offsetX', at, errors);
   if (f.offsetY !== undefined) checkNum(f, 'offsetY', at, errors);
+  checkOptionalBoolean(f, 'visible', at, errors);
 }
 
 function validatePanel(raw: unknown, errors: string[]): void {
@@ -579,6 +619,7 @@ function validatePanelElements(raw: unknown, colLabel: string, errors: string[])
     checkNum(el, 'y', label, errors);
     checkNum(el, 'width', label, errors, { positive: true });
     checkNum(el, 'height', label, errors, { positive: true });
+    checkOptionalBoolean(el, 'visible', label, errors);
   });
 }
 

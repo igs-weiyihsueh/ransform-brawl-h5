@@ -17,7 +17,9 @@ import {
   UI_LAYOUT_SCHEMA_VERSION,
   assertValidUiLayout,
   DEFAULT_UI_LAYOUT,
+  isVisible,
   validateUiLayout,
+  type HasVisible,
   type PanelElement,
   type ScreenElement,
   type UiLayoutFile,
@@ -221,6 +223,32 @@ function buildEditables(): Editable[] {
   if (currentSection === 'overhead') return buildOverheadEditables();
   if (currentSection === 'screen') return buildScreenEditables();
   return buildPanelEditables();
+}
+
+/**
+ * 由 editable key 解析底層元素物件（HasVisible），供顯示勾選讀寫 visible。
+ * 單一入口避免每個 push 都手貼 visible get/set。找不到回 null。
+ */
+function resolveVisibleTarget(key: string): HasVisible | null {
+  if (key.startsWith('screen.')) {
+    const s = layout.screen;
+    if (!s) return null;
+    if (key === 'screen.waveMessage') return s.waveMessage;
+    if (key === 'screen.eventMessage') return s.eventMessage ?? null;
+    if (key === 'screen.fireRainMessage') return s.fireRainMessage ?? null;
+    return null;
+  }
+  if (key === 'foot.searchRadius') return layout.foot ?? null;
+  if (key.startsWith('overhead.')) {
+    const ov = layout.overhead as unknown as Record<string, HasVisible>;
+    return ov[key.slice('overhead.'.length)] ?? null;
+  }
+  if (key.startsWith('panel.')) {
+    const id = key.slice('panel.'.length);
+    const col = layout.panel.columns.find((c) => c.playerIndex === 0);
+    return col?.elements.find((e) => e.id === id) ?? null;
+  }
+  return null;
 }
 
 /** 全螢幕區塊：波次/事件/火雨訊息（螢幕座標 origin 0,0）+ 腳下圈 foot（螢幕中心+offset，可調半徑/位置）。 */
@@ -441,6 +469,19 @@ function renderStage(): void {
     box.style.width = `${r.width}px`;
     box.style.height = `${r.height}px`;
     box.title = ed.label;
+    // 隱藏元素（visible=false，用戶 #6）：畫半透明 + 虛線 + 「隱藏」標籤，設計師看得到位置但知遊戲不顯示。
+    const vt = resolveVisibleTarget(ed.key);
+    const hidden = vt ? !isVisible(vt) : false;
+    if (hidden) {
+      box.style.opacity = '0.4';
+      box.style.outline = '2px dashed #ff8f6c';
+      const tag = document.createElement('div');
+      tag.textContent = '隱藏';
+      tag.style.cssText =
+        'position:absolute;top:-2px;right:-2px;background:#ff8f6c;color:#1a1030;' +
+        'font-size:11px;font-weight:bold;padding:1px 5px;border-radius:6px;z-index:2;pointer-events:none;';
+      box.appendChild(tag);
+    }
     const visual = document.createElement('div');
     visual.className = 'ui-visual';
     visual.appendChild(buildVisual(ed.key));
@@ -763,7 +804,27 @@ function renderTree(): void {
   for (const ed of editables) {
     const item = document.createElement('div');
     item.className = 'tree-item' + (ed.key === selectedKey ? ' selected' : '');
-    item.textContent = ed.label;
+    // 顯示勾選框（用戶 #6）：一眼看哪些開/關，勾/取消即時套用。
+    const vt = resolveVisibleTarget(ed.key);
+    if (vt) {
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = isVisible(vt);
+      cb.title = '顯示 / 隱藏';
+      cb.style.cssText = 'margin-right:6px;vertical-align:middle;';
+      cb.addEventListener('click', (e) => e.stopPropagation()); // 勾選不觸發選取
+      cb.addEventListener('change', () => {
+        beginEdit();
+        vt.visible = cb.checked;
+        commitEdit();
+        renderStage();
+      });
+      item.appendChild(cb);
+    }
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = ed.label;
+    if (vt && !isVisible(vt)) labelSpan.style.opacity = '0.5'; // 隱藏元素標籤淡化
+    item.appendChild(labelSpan);
     item.addEventListener('click', () => {
       selectedKey = ed.key;
       selectedBySection[currentSection] = ed.key;
@@ -789,6 +850,28 @@ function renderInspector(): void {
   title.className = 'section-title';
   title.textContent = ed.label;
   insp.appendChild(title);
+
+  // 顯示開關（用戶 #6）：勾=顯示、不勾=隱藏（visible=false）。
+  const vt = resolveVisibleTarget(ed.key);
+  if (vt) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const lab = document.createElement('label');
+    lab.textContent = '顯示 visible';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = isVisible(vt);
+    cb.addEventListener('change', () => {
+      beginEdit();
+      // 勾=顯示（存 true）、不勾=隱藏（存 false）。
+      vt.visible = cb.checked;
+      commitEdit();
+      renderStage();
+    });
+    row.appendChild(lab);
+    row.appendChild(cb);
+    insp.appendChild(row);
+  }
 
   const r = ed.get();
   insp.appendChild(numRow(ed, 'x', 'X（local）', r.x));

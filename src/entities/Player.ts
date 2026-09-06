@@ -10,7 +10,7 @@ import { PPU } from '@/config/gameConfig';
 import { FOOT_GLOW, footGlowCenter, playerColor, resolveFoot } from '@/config/playerConfig';
 import { PANEL_DEPTH } from '@/config/uiConfig';
 import { UI_LAYOUT_ASSET } from '@/config/uiConfig';
-import { validateUiLayout } from '@/config/uiLayoutSchema';
+import { validateUiLayout, isVisible } from '@/config/uiLayoutSchema';
 import { ENTRANCE, entrancePosition } from '@/systems/entranceMath';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import type { InputSource } from '@/systems/InputSource';
@@ -33,7 +33,7 @@ const WAITING_DEPTH = PANEL_DEPTH + 10;
  * 無 JSON/未載/不合法/無 foot → undefined（呼叫端 resolveFoot fallback FOOT_GLOW，不炸）。
  */
 function readFootLayout(scene: Phaser.Scene):
-  | { searchRadiusPx?: number; offsetX?: number; offsetY?: number }
+  | { searchRadiusPx?: number; offsetX?: number; offsetY?: number; visible?: boolean }
   | undefined {
   const raw = scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown;
   if (raw === undefined || raw === null) return undefined;
@@ -98,6 +98,8 @@ export class Player implements Hittable {
   private readonly hitRadiusPx: number;
   /** 用戶 #5/#8：生效的搜索圈(真空帶)參數 = layout.foot 或 fallback FOOT_GLOW。 */
   private readonly foot: { radiusPx: number; offsetX: number; offsetY: number };
+  /** 用戶 #6：layout.foot 顯示開關（visible=false → 不畫搜索圈）。 */
+  private readonly footLayoutVisible: boolean = true;
 
   /** 腳下真空環（搜索圈）圖形；識別色圓環，depth 低於角色。 */
   private readonly footGlow!: Phaser.GameObjects.Graphics;
@@ -130,7 +132,9 @@ export class Player implements Hittable {
     this.hitRadiusPx = PLAYER_HIT_RADIUS * PPU;
 
     // 用戶 #5/#8：搜索圈(真空帶)大小/位置讀 layout.foot（可編輯器調）；無/不合法 → fallback FOOT_GLOW（不炸）。
-    this.foot = resolveFoot(readFootLayout(scene));
+    const footLayout = readFootLayout(scene);
+    this.foot = resolveFoot(footLayout);
+    this.footLayoutVisible = isVisible(footLayout); // 用戶 #6：foot 勾掉 → 不畫搜索圈
 
     // 腳下真空環（搜索圈）：玩家識別色圓環，depth 低於角色不擋，每幀跟隨位置。
     this.footGlow = scene.add.graphics();
@@ -173,7 +177,8 @@ export class Player implements Hittable {
     this.footGlow.clear();
     this.footGlow.lineStyle(FOOT_GLOW.ringWidthPx, color, FOOT_GLOW.alpha);
     this.footGlow.strokeCircle(0, 0, this.foot.radiusPx); // 用戶#5/#8：半徑讀 layout.foot（可編輯器調）
-    this.footGlow.setVisible(this.footGlowVisible);
+    // 用戶 #6：layout.foot visible=false → 不畫搜索圈（與待機/進場的 footGlowVisible 取 AND）。
+    this.footGlow.setVisible(this.footGlowVisible && this.footLayoutVisible);
   }
 
   /**
@@ -192,7 +197,7 @@ export class Player implements Hittable {
    */
   setFootGlowVisible(visible: boolean): void {
     this.footGlowVisible = visible;
-    this.footGlow.setVisible(visible);
+    this.footGlow.setVisible(visible && this.footLayoutVisible); // 用戶#6：layout.foot 勾掉則恆隱
   }
 
   /** 真空環目前是否顯示（測試/查詢用）。 */

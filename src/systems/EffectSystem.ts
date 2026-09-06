@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { VFX_EFFECTS, VFX_FRAME_PAD, type VFXEffectDef } from '@/config/vfxConfig';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { UI_ICONS, UI_LAYOUT_ASSET } from '@/config/uiConfig';
-import { validateUiLayout, type ScreenElement } from '@/config/uiLayoutSchema';
+import { validateUiLayout, isVisible, type ScreenElement } from '@/config/uiLayoutSchema';
 import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 import { ENERGY_FLY, flyAlpha, flyPosition, flyScale } from '@/systems/energyFlyMath';
 import {
@@ -349,6 +349,7 @@ export class EffectSystem {
     if (!text) return;
     // 用戶 #5：讀 layout.screen.waveMessage 的 {x,y,width,height,align}；無則 fallback 內建預設。
     const el = this.screenWaveMessage();
+    if (!isVisible(el)) return; // 用戶 #6：勾掉 waveMessage → 不顯
     const barY = el.y + el.height / 2; // 元素中心 Y
     const align = el.align ?? 'center';
     // 文字 X 依 align：center=元素中心、left=左緣、right=右緣。
@@ -539,6 +540,7 @@ export class EffectSystem {
       height: 92,
       align: 'center',
     });
+    if (!isVisible(el)) return; // 用戶 #6：勾掉 eventMessage → 不顯
     const cy = el.y + el.height / 2;
     const align = el.align ?? 'center';
     const cx = align === 'left' ? el.x : align === 'right' ? el.x + el.width : el.x + el.width / 2;
@@ -1048,6 +1050,11 @@ export class EffectSystem {
       height: 92,
       align: 'center',
     });
+    // 用戶 #6：勾掉 fireRainMessage → 不顯宣告字，但仍要呼 onDone（否則火雨被卡住不降）。
+    if (!isVisible(el)) {
+      onDone?.();
+      return;
+    }
     const cy = el.y + el.height / 2; // 元素中心 Y
     const align = el.align ?? 'center';
     const cx = align === 'left' ? el.x : align === 'right' ? el.x + el.width : el.x + el.width / 2;

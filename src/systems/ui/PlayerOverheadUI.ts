@@ -30,6 +30,10 @@ export class PlayerOverheadUI {
   private readonly comboText: Phaser.GameObjects.Text;
   private readonly maxText: Phaser.GameObjects.Text;
   private readonly energyBar: EnergyBar;
+  /** 用戶 #6：per-group 顯示物件（供 layout.overhead.{badge,credit,energy,combo}.visible 隱藏）。 */
+  private readonly groupBadge: Phaser.GameObjects.GameObject[] = [];
+  private readonly groupCredit: Phaser.GameObjects.GameObject[] = [];
+  private readonly groupCombo: Phaser.GameObjects.GameObject[] = [];
 
   private shownSoul = -1;
   private shownCredit = -1;
@@ -63,10 +67,12 @@ export class PlayerOverheadUI {
       ringImg.setDisplaySize(cfg.badge.ringRadius * 2 + cfg.badge.ringThickness, cfg.badge.ringRadius * 2 + cfg.badge.ringThickness);
       this.container.add(ringImg);
       this.ringImg = ringImg; // 用戶 #1：留參考供變身前隱藏
+      this.groupBadge.push(ringImg);
       this.hasRingSprite = true;
     }
     this.soulRing = scene.add.graphics();
     this.container.add(this.soulRing);
+    this.groupBadge.push(this.soulRing);
 
     const pnum = scene.add.graphics();
     pnum.fillStyle(badgeColor, 1);
@@ -74,6 +80,7 @@ export class PlayerOverheadUI {
     pnum.lineStyle(2, HUD_COLORS.panelStroke, 0.9);
     pnum.strokeCircle(cfg.badge.cx, cfg.badge.cy, cfg.badge.innerRadius);
     this.container.add(pnum);
+    this.groupBadge.push(pnum);
 
     const pnumText = scene.add
       .text(cfg.badge.cx, cfg.badge.cy, badgeText, {
@@ -84,12 +91,14 @@ export class PlayerOverheadUI {
       })
       .setOrigin(0.5);
     this.container.add(pnumText);
+    this.groupBadge.push(pnumText);
 
     // --- Credit 底框 + 劍 icon（sword.png，用戶 #5：credit=投幣點數改用劍）+ 數字 ---
     const creditBg = scene.add.graphics();
     creditBg.fillStyle(HUD_COLORS.creditBg, 0.55);
     creditBg.fillRoundedRect(cfg.credit.x, cfg.credit.y, cfg.credit.width, cfg.credit.height, 6);
     this.container.add(creditBg);
+    this.groupCredit.push(creditBg);
     const coinR = cfg.credit.coinSize / 2;
     const coinCx = cfg.credit.x + coinR + 6;
     const coinCy = cfg.credit.y + cfg.credit.height / 2;
@@ -97,6 +106,7 @@ export class PlayerOverheadUI {
       const swordImg = scene.add.image(coinCx, coinCy, UI_ICONS.sword.key);
       swordImg.setDisplaySize(cfg.credit.coinSize, cfg.credit.coinSize);
       this.container.add(swordImg);
+      this.groupCredit.push(swordImg);
     } else {
       // fallback：貼圖沒載到時退回金幣圓形佔位（不致空白）。
       const coin = scene.add.graphics();
@@ -105,6 +115,7 @@ export class PlayerOverheadUI {
       coin.lineStyle(2, 0x8a6d0f, 1);
       coin.strokeCircle(coinCx, coinCy, coinR);
       this.container.add(coin);
+      this.groupCredit.push(coin);
     }
     this.creditText = scene.add
       .text(coinCx + coinR + 6, coinCy, cfg.credit.placeholder, {
@@ -114,6 +125,7 @@ export class PlayerOverheadUI {
       })
       .setOrigin(0, 0.5);
     this.container.add(this.creditText);
+    this.groupCredit.push(this.creditText);
 
     // --- 能量 4 格（嵌入容器）---
     this.energyBar = new EnergyBar(scene, this.container, cfg.energy.x, cfg.energy.y);
@@ -128,6 +140,7 @@ export class PlayerOverheadUI {
       })
       .setOrigin(0.5);
     this.container.add(this.comboText);
+    this.groupCombo.push(this.comboText);
 
     // --- MAX!（一次性強調，對照 Unity ShowMaxCombo）；預設隱藏 ---
     this.maxText = scene.add
@@ -140,11 +153,24 @@ export class PlayerOverheadUI {
       .setOrigin(0.5)
       .setVisible(false);
     this.container.add(this.maxText);
+    this.groupCombo.push(this.maxText);
 
     // 初始顯示。
     this.setSoul(1);
     this.setCredit(0);
     this.setCombo(0);
+  }
+
+  /**
+   * 用戶 #6：依 layout.overhead 各元素 visible 隱藏對應 group（badge/credit/energy/combo）。
+   * false=隱藏；undefined/true=顯示（預設）。由 UISystem 建構後以 JSON layout.overhead 呼叫。
+   * 注意：badge/credit/combo 用 group 物件 setVisible；energy 用 EnergyBar.setContainerVisible。
+   */
+  setElementVisibility(vis: { badge?: boolean; credit?: boolean; energy?: boolean; combo?: boolean }): void {
+    if (vis.badge === false) for (const o of this.groupBadge) (o as unknown as { setVisible: (v: boolean) => void }).setVisible(false);
+    if (vis.credit === false) for (const o of this.groupCredit) (o as unknown as { setVisible: (v: boolean) => void }).setVisible(false);
+    if (vis.combo === false) for (const o of this.groupCombo) (o as unknown as { setVisible: (v: boolean) => void }).setVisible(false);
+    if (vis.energy === false && typeof this.energyBar.setContainerVisible === 'function') this.energyBar.setContainerVisible(false);
   }
 
   /** 每幀跟隨玩家：把容器移到玩家位置上方。 */

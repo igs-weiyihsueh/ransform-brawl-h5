@@ -6,6 +6,7 @@ import { playerColor } from '@/config/playerConfig';
 import {
   DEFAULT_UI_LAYOUT,
   validateUiLayout,
+  isVisible,
   type UiLayoutFile,
 } from '@/config/uiLayoutSchema';
 import { BottomPanel } from '@/systems/ui/BottomPanel';
@@ -77,6 +78,13 @@ export class UISystem implements GameSystem {
     return bp.slotCount?.() ?? 0;
   }
 
+  /** 用戶 #6：待機平台(platform)是否顯示（讀 layout.panel columns[0] platform 元素 visible）。 */
+  isPlatformVisible(): boolean {
+    const cols = this.layout?.panel?.columns;
+    const platform = cols?.[0]?.elements?.find((e) => e.id === 'platform');
+    return isVisible(platform);
+  }
+
   private ctx!: GameContext;
   private layout!: UiLayoutFile;
   private bottomPanel!: BottomPanel;
@@ -93,10 +101,23 @@ export class UISystem implements GameSystem {
 
     // 每個目前存在的 player 各建一份頭上 UI（P 牌底用該 player 識別色 PLAYER_COLORS）。
     for (let i = 0; i < ctx.players.length; i++) {
-      this.overheads.push(
-        new PlayerOverheadUI(scene, `P${i + 1}`, playerColor(ctx.players[i].playerId)),
-      );
+      const oh = new PlayerOverheadUI(scene, `P${i + 1}`, playerColor(ctx.players[i].playerId));
+      oh.setElementVisibility(this.overheadVisibility()); // 用戶 #6：套 layout.overhead 顯示開關
+      this.overheads.push(oh);
     }
+  }
+
+  /** 用戶 #6：讀 layout.overhead 各元素 visible（badge/credit/energy/combo）。undefined=顯示。 */
+  private overheadVisibility(): { badge?: boolean; credit?: boolean; energy?: boolean; combo?: boolean } {
+    const oh = this.layout?.overhead as
+      | Record<'badge' | 'credit' | 'energy' | 'combo', { visible?: boolean } | undefined>
+      | undefined;
+    return {
+      badge: isVisible(oh?.badge),
+      credit: isVisible(oh?.credit),
+      energy: isVisible(oh?.energy),
+      combo: isVisible(oh?.combo),
+    };
   }
 
   /** 載入並驗證 uiLayout.json；失敗（未載/不合法）退回 DEFAULT_UI_LAYOUT。 */
@@ -117,9 +138,9 @@ export class UISystem implements GameSystem {
     // 玩家加入（F2~F4）→ 補建頭上 UI + 亮對應底部欄。
     if (this.overheads.length < players.length) {
       for (let i = this.overheads.length; i < players.length; i++) {
-        this.overheads.push(
-          new PlayerOverheadUI(this.ctx.scene, `P${i + 1}`, playerColor(players[i].playerId)),
-        );
+        const oh = new PlayerOverheadUI(this.ctx.scene, `P${i + 1}`, playerColor(players[i].playerId));
+        oh.setElementVisibility(this.overheadVisibility()); // 用戶 #6：套 layout.overhead 顯示開關
+        this.overheads.push(oh);
       }
       this.bottomPanel.setActiveCount(players.length);
     }

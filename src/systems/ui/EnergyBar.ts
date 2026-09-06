@@ -42,6 +42,11 @@ export class EnergyBar {
     this.redraw();
   }
 
+  /** 用戶 #6：整條能量格顯示開關（layout.overhead.energy.visible=false → 全格隱藏）。 */
+  setContainerVisible(visible: boolean): void {
+    for (const c of this.cells) c.setVisible(visible);
+  }
+
   /**
    * 設定目前充能格數（0..cellCount）。由 UISystem 每幀以資料來源呼叫。
    * @param value 充能格數；夾到 [0, cellCount]。

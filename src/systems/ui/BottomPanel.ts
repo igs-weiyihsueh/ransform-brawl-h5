@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { HUD_COLORS, HUD_FONT_FAMILY, PANEL_DEPTH, UI_ICONS } from '@/config/uiConfig';
 import { playerColor } from '@/config/playerConfig';
-import type { PanelElement, PanelLayout } from '@/config/uiLayoutSchema';
+import { isVisible, type PanelElement, type PanelLayout } from '@/config/uiLayoutSchema';
 
 /** 單一玩家欄：可刷新元素 + 淡化控制。 */
 interface Slot {
@@ -126,7 +126,7 @@ export class BottomPanel {
     const chestCenterY = chestEl
       ? slotY + chestEl.y + chestEl.height / 2
       : slotY + panel.slotHeight / 2;
-    if (chestEl) {
+    if (chestEl && isVisible(chestEl)) {
       const cx = slotX + chestEl.x;
       const cy = slotY + chestEl.y;
       if (scene.textures.exists(UI_ICONS.chest.key)) {
@@ -148,10 +148,11 @@ export class BottomPanel {
 
     // 彩票（ticket.png icon + 數字）。icon 放 element 左端，數字接右。
     const ticketEl = this.findEl(template, 'ticket');
+    const ticketVisible = isVisible(ticketEl); // 用戶 #6：勾掉 ticket → icon+數字不顯
     const tx = slotX + (ticketEl?.x ?? 0);
     const ty = slotY + (ticketEl?.y ?? 0);
     const iconSize = 28;
-    if (scene.textures.exists(UI_ICONS.ticket.key)) {
+    if (ticketVisible && scene.textures.exists(UI_ICONS.ticket.key)) {
       const img = track(scene.add.image(tx, ty, UI_ICONS.ticket.key));
       // 等比縮放到 iconSize 見方的框內（不拉伸變形）：票券圖是直式(116×144)，
       // 若直接 setDisplaySize(28,28) 會壓扁。取原圖長寬比、fit 進 iconSize 方框。
@@ -180,7 +181,8 @@ export class BottomPanel {
         .setOrigin(0, 0.5)
         .setAlpha(alpha)
         .setScrollFactor(0)
-        .setDepth(PANEL_DEPTH),
+        .setDepth(PANEL_DEPTH)
+        .setVisible(ticketVisible), // 用戶 #6：ticket 勾掉則數字也隱
     );
 
     // 用戶 #6：移除下方面板右下角無意義的金幣顯示（layout schema 的 coin element 保留、僅不繪製，最小改動不碰波騎 schema）。
@@ -194,6 +196,7 @@ export class BottomPanel {
     const progressRadius = 6;
     const progress = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH);
     progress.setAlpha(alpha);
+    progress.setVisible(isVisible(progEl)); // 用戶 #6：progress 勾掉 → 進度條不顯
 
     // 用戶 #1：待機平台移進下方面板 + 可 ui-editor 調位置。
     // 待機站位改讀 layout element 'platform'（波騎 schema 同步中；沒有則 fallback 欄上方中心，schema 上了自動讀到）。

@@ -231,6 +231,7 @@ export class GameScene extends Phaser.Scene {
   /** 在每個有待機點的欄位畫待機台座（介於面板與待機角色之間的 depth）。 */
   private drawWaitingPlatforms(): void {
     if (!this.textures.exists(UI_ICONS.platform.key)) return; // 未載到台座圖則不畫（graceful）
+    if (this.uiSystem?.isPlatformVisible?.() === false) return; // 用戶 #6：platform 勾掉 → 不畫待機台座
     const maxColumns = this.uiSystem?.getSlotCount?.() ?? this.ctx.players.length;
     for (let i = 0; i < maxColumns; i++) {
       const w = this.uiSystem?.getWaitingAnchor(i);
