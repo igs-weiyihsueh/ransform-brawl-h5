@@ -50,3 +50,31 @@ export function shouldAdvanceSpawn(
   if (nextIsSpawn) return kills >= quota;
   return kills >= quota && alive <= 0 && pending <= 0;
 }
+
+/**
+ * 選生怪位置（七輪 spawn 位置 bug 純函式，抽給測騎）：在 bounds 內隨機取點，
+ * 且離玩家至少 minDist（跑 tries 次，回第一個滿足 minDist 的；都不滿足回最後一次隨機點）。
+ * ⚠️ bounds 應為怪可移動區(ENEMY_PLAY_BOUNDS 已 inset 體型)→生怪點在界內(不出遊戲區/不進面板)。
+ * 「回第一個滿足」而非挑最遠 → 不會總生在超遠處(用戶：離玩家太遠)。
+ * @param bounds 生成範圍 {minX,maxX,minY,maxY}(像素)。
+ * @param playerPos 玩家位置(避免生太近)。
+ * @param minDist 離玩家最小距離(像素)。
+ * @param rng 回 [0,1) 隨機源(測試可注入)。
+ * @param tries 嘗試次數(預設 8)。
+ */
+export function pickSpawnPoint(
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+  playerPos: { x: number; y: number },
+  minDist: number,
+  rng: () => number,
+  tries = 8,
+): { x: number; y: number } {
+  let x = 0;
+  let y = 0;
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    x = bounds.minX + rng() * (bounds.maxX - bounds.minX);
+    y = bounds.minY + rng() * (bounds.maxY - bounds.minY);
+    if (Math.hypot(x - playerPos.x, y - playerPos.y) >= minDist) break; // 第一個夠遠的即用(不挑最遠)
+  }
+  return { x, y };
+}

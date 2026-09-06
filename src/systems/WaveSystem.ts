@@ -1,6 +1,6 @@
-import Phaser from 'phaser';
 import { loadLevels } from '@/config/levelLoader';
-import { SPAWN_WARNING_DURATION_SEC } from '@/config/enemyConfig';
+import { SPAWN_WARNING_DURATION_SEC, ENEMY_BODY_RADIUS_PX } from '@/config/enemyConfig';
+import { ENEMY_PLAY_BOUNDS, insetBounds } from '@/config/mapConfig';
 import {
   type FireRainPreset,
   getFireRainPreset,
@@ -9,7 +9,7 @@ import {
   resolveNodeFireRain,
 } from '@/config/fireRainConfig';
 import { getGuardPreset } from '@/config/guardConfig';
-import { shouldSpawnMore, shouldAdvanceSpawn } from '@/systems/waveMath';
+import { shouldSpawnMore, shouldAdvanceSpawn, pickSpawnPoint } from '@/systems/waveMath';
 import type {
   EnemyType,
   LevelData,
@@ -386,27 +386,14 @@ export class WaveSystem implements GameSystem {
     return spawns[spawns.length - 1].enemyType;
   }
 
-  /** 選生怪位置：世界邊界內留邊距隨機取點，避免生在玩家身上。 */
+  /** 選生怪位置（七輪 spawn 位置 bug）：改用 ENEMY_PLAY_BOUNDS(怪可移動區, inset 體型)取代 worldBounds(整畫面)
+   *  → 生在界內(不出遊戲區/不進面板)；離玩家 minDist、回第一個夠遠的(非挑最遠→不會離玩家太遠)。 */
   private pickSpawnPosition(): { x: number; y: number } {
-    const bounds = this.ctx.worldBounds;
-    const margin = 80; // 邊距（像素）
-    const minX = bounds.x + margin;
-    const maxX = bounds.x + bounds.width - margin;
-    const minY = bounds.y + margin;
-    const maxY = bounds.y + bounds.height - margin;
-
+    // ENEMY_PLAY_BOUNDS inset 敵人體型 → 生怪點讓整個 body 都在可移動區內。
+    const bounds = insetBounds(ENEMY_PLAY_BOUNDS, ENEMY_BODY_RADIUS_PX);
+    const b = { minX: bounds.minX, maxX: bounds.maxX, minY: bounds.minY, maxY: bounds.maxY };
     const playerPos = this.ctx.player.getPosition();
-    const minDistFromPlayer = 300; // 像素
-
-    let x = 0;
-    let y = 0;
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      x = Phaser.Math.Between(minX, maxX);
-      y = Phaser.Math.Between(minY, maxY);
-      if (Math.hypot(x - playerPos.x, y - playerPos.y) >= minDistFromPlayer) {
-        break;
-      }
-    }
-    return { x, y };
+    const minDistFromPlayer = 260; // 離玩家(px)：夠遠不生身上、又不會太遠跑很久(用戶：別太遠)
+    return pickSpawnPoint(b, playerPos, minDistFromPlayer, Math.random);
   }
 }
