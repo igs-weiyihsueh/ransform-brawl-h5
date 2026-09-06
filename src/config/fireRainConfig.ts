@@ -90,3 +90,22 @@ export function resolveFireRainForEvent(
   if (guardAttachFireRain) return getFireRainPreset(guardAttachFireRain);
   return null;
 }
+
+/**
+ * 六輪#1：守護 Event 節點的 attachFireRain 三態解析（純函式，抽給測騎）。
+ * per-node 覆蓋守護 preset 的火雨設定：
+ *   - raw === undefined（省略）→ 沿用 preset 預設（presetDefault，即 guardConfig 那條）。
+ *   - raw === 'none'           → 明確無火雨（null，蓋掉 preset）。
+ *   - 其餘（火雨 preset 名）    → 該火雨 preset。
+ * 回傳「最終要用的火雨 preset 名」或 null（無火雨）；由呼叫端再 getFireRainPreset 取參數。
+ * @param raw 節點的 attachFireRain 原值（undefined/'none'/preset 名）。
+ * @param presetDefault 守護 preset 的 attachFireRain 預設（undefined=preset 本身也無火雨）。
+ */
+export function resolveNodeFireRain(
+  raw: string | undefined,
+  presetDefault: string | undefined,
+): string | null {
+  if (raw === undefined) return presetDefault ?? null; // 沿用 preset
+  if (raw === 'none') return null; // 明確無
+  return raw; // 指定 preset 名
+}

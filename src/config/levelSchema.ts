@@ -121,6 +121,17 @@ export interface EventNodeData {
   nodeType: 'Event';
   /** 事件預設名，如 'Guard60'。 */
   eventPresetName: string;
+  /**
+   * 守護事件附加火雨（用戶第六輪 #1，additive optional，§4）：per-node 覆蓋守護 preset 的火雨。
+   * 三態：
+   *   - 省略/undefined → 沿用該守護 preset 的 attachFireRain（guardConfig 預設）。
+   *   - 'none'         → 明確無火雨（蓋掉 preset，即使 preset 有火雨也不下）。
+   *   - 火雨 preset 名（'FireRain'/'FireRainLight'/'FireRainHeavy'）→ 用該火雨。
+   * 讀取端（翼騎）：raw===undefined→preset fallback；raw==='none'→null 無火雨；其餘→該 preset 名。
+   * 註：本 schema 零遊戲依賴，不 import FIRE_RAIN_PRESETS 交叉比對——只驗「非空字串」；
+   *   preset 名合法性由編輯器下拉（只給合法）與遊戲端 getFireRainPreset(fallback) 把關（同 attachFireRain/eventPresetName 慣例）。
+   */
+  attachFireRain?: string;
 }
 
 /** 節點聯集。 */
@@ -301,6 +312,13 @@ function validateNode(
       if (!isNonEmptyString(node.eventPresetName)) {
         errors.push(
           `${at}（${typeLabel}）的「事件預設名 eventPresetName」缺少或非非空字串（如 "Guard60"）。`,
+        );
+      }
+      // attachFireRain（optional 三態）：省略=沿用 preset、'none'=明確無、其餘=火雨 preset 名。
+      // 只驗「若提供須為非空字串」（'none' 亦為非空字串，合法）；不交叉比對 preset（零遊戲依賴）。
+      if (node.attachFireRain !== undefined && !isNonEmptyString(node.attachFireRain)) {
+        errors.push(
+          `${at}（${typeLabel}）的「附加火雨 attachFireRain」若提供必須是非空字串（'none' 或火雨 preset 名）。`,
         );
       }
       break;

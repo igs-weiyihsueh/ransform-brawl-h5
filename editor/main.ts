@@ -453,17 +453,69 @@ function renderEventInspector(node: EventNodeData): void {
   const hint = document.createElement('div');
   hint.className = 'hint';
   const guard = GUARD_PRESETS[node.eventPresetName];
-  if (guard) {
-    // 守護 preset 的 attachFireRain（火雨 preset 名）是 guardConfig 屬性，非本關卡 JSON 欄位 →
-    // 這裡唯讀顯示；要改守護是否帶火雨請於 guardConfig 設（走異靈/翼騎）。
-    const fr = guard.attachFireRain
-      ? `＋🔥火雨（${guard.attachFireRain}）`
-      : '（無附加火雨）';
-    hint.textContent = `🛡 守護事件（撐過時限勝）。此守護 preset ${fr}。附加火雨與否定義在 guardConfig 的 preset，非關卡 JSON。`;
-  } else {
-    hint.textContent = '🛡 守護事件（撐過時限勝）。';
-  }
+  hint.textContent = guard
+    ? '🛡 守護事件（撐過時限勝）。下方可為此守護選擇附加火雨（覆蓋 preset 預設）。'
+    : '🛡 守護事件（撐過時限勝）。';
   inspectorEl.appendChild(hint);
+
+  // 附加火雨（用戶第六輪 #1）：per-node 覆蓋守護 preset 的火雨。三態下拉：
+  //   沿用預設(INHERIT=delete 欄位/undefined) / 無火雨('none' 明確蓋掉) / 三種火雨 preset。
+  const fireTitle = document.createElement('div');
+  fireTitle.className = 'section-title';
+  fireTitle.style.marginTop = '12px';
+  fireTitle.textContent = '守護附加火雨';
+  inspectorEl.appendChild(fireTitle);
+
+  const INHERIT = '__inherit__';
+  const NONE = 'none';
+  const presetLabel: Record<string, string> = {
+    FireRainLight: '🔥 輕量（FireRainLight）',
+    FireRain: '🔥 標準（FireRain）',
+    FireRainHeavy: '🔥 猛烈（FireRainHeavy）',
+  };
+  const guardDefault = guard?.attachFireRain
+    ? `（目前 preset 預設：${guard.attachFireRain}）`
+    : '（目前 preset 預設：無火雨）';
+  const fireOptions: [string, string][] = [
+    [INHERIT, `沿用預設 ${guardDefault}`],
+    [NONE, '無火雨（明確關閉）'],
+    // 只列 FIRE_RAIN_PRESETS 存在的 preset（label 有中文則用中文，否則原名）。
+    ...Object.keys(FIRE_RAIN_PRESETS).map((k): [string, string] => [k, presetLabel[k] ?? `🔥 ${k}`]),
+  ];
+  // 若目前值是自訂/未知 preset 名（不在清單、且非 none）補一個當前值，避免下拉丟失。
+  if (
+    node.attachFireRain &&
+    node.attachFireRain !== NONE &&
+    !fireOptions.some(([v]) => v === node.attachFireRain)
+  ) {
+    fireOptions.push([node.attachFireRain, `（自訂）${node.attachFireRain}`]);
+  }
+  // 目前選中：undefined→沿用預設(INHERIT)、'none'→無火雨、其餘→該 preset。
+  const currentValue = node.attachFireRain === undefined ? INHERIT : node.attachFireRain;
+  inspectorEl.appendChild(
+    fieldRow('附加火雨', selectInput(currentValue, fireOptions, (v) => {
+      if (v === INHERIT) delete node.attachFireRain; // 沿用 preset 預設
+      else node.attachFireRain = v; // 'none'（明確無）或火雨 preset 名
+      renderInspector();
+    })),
+  );
+  const fireHint = document.createElement('div');
+  fireHint.className = 'hint';
+  const raw = node.attachFireRain;
+  if (raw === undefined) {
+    const g = guard?.attachFireRain;
+    fireHint.textContent = g
+      ? `沿用此守護 preset 的預設火雨（${g}）。`
+      : '沿用此守護 preset 的預設（無火雨）。';
+  } else if (raw === NONE) {
+    fireHint.textContent = '明確關閉火雨：即使 preset 預設有火雨，此守護事件也不下火雨。';
+  } else if (raw in FIRE_RAIN_PRESETS) {
+    const p = FIRE_RAIN_PRESETS[raw];
+    fireHint.textContent = `🔥 此守護附加火雨：每 ${p.intervalSec}s 齊落 ${p.burstCount} 道、半徑 ${Math.round(p.radiusPx)}px、預警 ${p.warningSec}s、傷害 ${p.damage}。（覆蓋 preset 預設）`;
+  } else {
+    fireHint.textContent = `自訂火雨 preset：${raw}（遊戲端找不到會 fallback）。`;
+  }
+  inspectorEl.appendChild(fireHint);
 }
 
 // ---- 統一重繪 -------------------------------------------------------------

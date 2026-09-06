@@ -6,6 +6,7 @@ import {
   getFireRainPreset,
   isFireRainPreset,
   resolveFireRainForEvent,
+  resolveNodeFireRain,
 } from '@/config/fireRainConfig';
 import { getGuardPreset } from '@/config/guardConfig';
 import { shouldSpawnMore, shouldAdvanceSpawn } from '@/systems/waveMath';
@@ -105,10 +106,13 @@ export class WaveSystem implements GameSystem {
     if (this.fireRainActive && node?.nodeType === 'Event') {
       return resolveFireRainForEvent((node as { eventPresetName: string }).eventPresetName, undefined);
     }
-    // 守護波 + 守護 preset 帶火雨 preset 名。
+    // 守護波 + 守護 preset 帶火雨 preset 名。六輪#1：node.attachFireRain 三態可 per-node 覆蓋 preset 預設。
     if (this.guardEvent && !this.guardEvent.isFinished()) {
       const preset = getGuardPreset((node as { eventPresetName?: string })?.eventPresetName);
-      return resolveFireRainForEvent(undefined, preset.attachFireRain);
+      const raw = (node as { attachFireRain?: string }).attachFireRain;
+      // undefined→沿用 preset.attachFireRain；'none'→null 無火雨；其餘→該 preset 名。
+      const chosen = resolveNodeFireRain(raw, preset.attachFireRain);
+      return chosen ? resolveFireRainForEvent(undefined, chosen) : null;
     }
     return null;
   }
