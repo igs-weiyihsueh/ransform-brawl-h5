@@ -209,29 +209,60 @@ function numberRow(
   lab.textContent = label;
   row.appendChild(lab);
 
+  // 夾範圍（有 min/max 時把值夾回界內）。
+  const clamp = (v: number): number => {
+    let x = v;
+    if (opts.min !== undefined && x < opts.min) x = opts.min;
+    if (opts.max !== undefined && x > opts.max) x = opts.max;
+    return x;
+  };
+  const stepStr = String(opts.step ?? 'any'); // 'any'/小數 step → 支援小數
+
   const input = document.createElement('input');
   input.type = opts.slider ? 'range' : 'number';
-  input.step = String(opts.step ?? 'any');
+  input.step = stepStr;
   if (opts.min !== undefined) input.min = String(opts.min);
   if (opts.max !== undefined) input.max = String(opts.max);
   input.value = String(value);
+
+  // slider 專用：旁邊放「可輸入的數字框」(取代舊唯讀 span)，支援打字/小數/雙向同步。
+  let numInput: HTMLInputElement | null = null;
+  if (opts.slider) {
+    numInput = document.createElement('input');
+    numInput.type = 'number';
+    numInput.className = 'val-input';
+    numInput.step = stepStr;
+    if (opts.min !== undefined) numInput.min = String(opts.min);
+    if (opts.max !== undefined) numInput.max = String(opts.max);
+    numInput.value = fmt(value);
+    numInput.style.width = '72px';
+  }
+
+  const apply = (raw: string, from: 'range' | 'number'): void => {
+    const parsed = parseFloat(raw);
+    if (!Number.isFinite(parsed)) return;
+    const v = clamp(parsed);
+    onChange(v);
+    if (from !== 'range') input.value = String(v);
+    if (numInput && from !== 'number') numInput.value = fmt(v);
+    renderPreview();
+  };
+
   input.addEventListener('focus', () => beginEdit());
   input.addEventListener('pointerdown', () => beginEdit());
   input.addEventListener('change', () => commitEdit());
-  let valEl: HTMLSpanElement | null = null;
-  input.addEventListener('input', () => {
-    const v = Number(input.value);
-    if (!Number.isFinite(v)) return;
-    onChange(v);
-    if (valEl) valEl.textContent = fmt(v);
-    renderPreview();
-  });
+  input.addEventListener('input', () => apply(input.value, 'range'));
   row.appendChild(input);
-  if (opts.slider) {
-    valEl = document.createElement('span');
-    valEl.className = 'val';
-    valEl.textContent = fmt(value);
-    row.appendChild(valEl);
+
+  if (numInput) {
+    numInput.addEventListener('focus', () => beginEdit());
+    numInput.addEventListener('change', () => {
+      const v = clamp(parseFloat(numInput!.value));
+      if (Number.isFinite(v)) numInput!.value = fmt(v);
+      commitEdit();
+    });
+    numInput.addEventListener('input', () => apply(numInput!.value, 'number'));
+    row.appendChild(numInput);
   }
   return row;
 }

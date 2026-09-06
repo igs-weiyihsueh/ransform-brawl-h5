@@ -967,16 +967,18 @@ function numRow(ed: Editable, field: keyof Rect, label: string, value: number): 
   lab.textContent = label;
   const input = document.createElement('input');
   input.type = 'number';
-  input.step = '1';
+  input.step = 'any'; // 支援小數（用戶要求可輸入小數點）
   input.value = String(value);
   input.dataset.field = field;
   // 聚焦時記快照，變更提交（change=blur/Enter）時入棧一步，避免逐字記歷史。
   input.addEventListener('focus', () => beginEdit());
   input.addEventListener('change', () => commitEdit());
   input.addEventListener('input', () => {
-    const v = Number(input.value);
+    const v = parseFloat(input.value); // parseFloat 支援小數
     if (!Number.isFinite(v)) return;
-    ed.set({ [field]: Math.round(v) } as Partial<Rect>);
+    // 保留小數但避免浮點雜訊：四捨五入到小數 2 位。
+    const rounded = Math.round(v * 100) / 100;
+    ed.set({ [field]: rounded } as Partial<Rect>);
     // 只移動對應方框，不整頁重繪（避免 input 失焦）。
     const box = stageEl.querySelector<HTMLDivElement>(`.ui-box[data-key="${ed.key}"]`);
     if (box) {
