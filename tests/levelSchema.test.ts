@@ -349,12 +349,19 @@ describe('validateLevels — spawns[]', () => {
     expect(mentionsField(errors, 'spawns')).toBe(true);
   });
 
-  it('spawns[].enemyType 非法 → 針對 enemyType 欄位報錯', () => {
-    const f = clone(makeValidFile());
-    (firstSpawnNode(f).spawns as Array<Record<string, unknown>>)[0].enemyType =
-      'Enemy_Unknown';
-    const errors = errorsOf(f);
-    expect(mentionsField(errors, 'enemyType')).toBe(true);
+  it('spawns[].enemyType 空字串/非字串 → 針對 enemyType 欄位報錯；未知敵種名(非空字串)→ 過（白名單軟化,合法性交遊戲端 9cf1425）', () => {
+    // 空字串 → 擋。
+    const fEmpty = clone(makeValidFile());
+    (firstSpawnNode(fEmpty).spawns as Array<Record<string, unknown>>)[0].enemyType = '';
+    expect(mentionsField(errorsOf(fEmpty), 'enemyType')).toBe(true);
+    // 非字串(數字) → 擋。
+    const fNum = clone(makeValidFile());
+    (firstSpawnNode(fNum).spawns as Array<Record<string, unknown>>)[0].enemyType = 123 as unknown as string;
+    expect(mentionsField(errorsOf(fNum), 'enemyType')).toBe(true);
+    // ★ 未知敵種名(非空字串) → 過（不再寫死白名單擋；enemy-editor 加新怪不用改 code）。
+    const fNew = clone(makeValidFile());
+    (firstSpawnNode(fNew).spawns as Array<Record<string, unknown>>)[0].enemyType = 'Enemy_NewBoss';
+    expect(validateLevels(fNew).ok).toBe(true);
   });
 
   it('spawns[].weight 非正數（0）→ 針對 weight 欄位報錯', () => {
@@ -404,7 +411,7 @@ describe('validateLevels — 錯誤數量鑑別', () => {
     const f = clone(makeValidFile());
     const node = firstSpawnNode(f);
     delete node.killQuota; // 壞點 1
-    (node.spawns as Array<Record<string, unknown>>)[0].enemyType = 'Nope'; // 壞點 2
+    (node.spawns as Array<Record<string, unknown>>)[0].enemyType = ''; // 壞點 2（空字串仍報 enemyType；未知名已軟化為合法 9cf1425）
     const errors = errorsOf(f);
     expect(errors.length).toBeGreaterThanOrEqual(2);
     expect(mentionsField(errors, 'killQuota')).toBe(true);

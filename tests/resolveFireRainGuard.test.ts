@@ -137,7 +137,7 @@ describe('resolveGuard — 整 preset 覆蓋 / fallback', () => {
     expect(resolveGuard(badHP, G_SENTINEL as never)).toBe(G_SENTINEL);
 
     const badEnemy = defaultGuardFile();
-    (badEnemy.presets[n].spawns as unknown as { enemyType: string }[])[0].enemyType = 'Enemy_Nope';
+    (badEnemy.presets[n].spawns as unknown as { enemyType: string }[])[0].enemyType = ''; // 空字串擋(未知名已軟化為合法 9cf1425)
     expect(validateGuard(badEnemy).ok).toBe(false);
     expect(resolveGuard(badEnemy, G_SENTINEL as never)).toBe(G_SENTINEL);
 
