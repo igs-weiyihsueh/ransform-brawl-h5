@@ -28,6 +28,7 @@ import {
   EDITOR_STORE_KEYS,
   applyToGame,
   clearOverride,
+  loadOverride,
 } from '@/config/editorStore';
 
 const PPU = 100; // 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲檔）
@@ -518,6 +519,21 @@ function loadDefault(): void {
   setStatus('已載入預設（來自遊戲 CHARACTER_COMBAT 權威值）。', 'ok');
 }
 
+/** 開啟載入（匯入回顯）：優先讀 localStorage override 回填，無/壞→打包預設（不炸）。不進 undo。 */
+function initLoad(): void {
+  const raw = loadOverride(EDITOR_STORE_KEYS.skills);
+  if (raw !== null) {
+    const r = validateSkills(raw);
+    if (r.ok) {
+      loadIntoState(r.data, false);
+      setStatus('已載入你上次套用到遊戲的招式設定（可繼續編）。', 'ok');
+      return;
+    }
+    setStatus('已套用的招式設定驗證失敗，退回打包預設。', 'err');
+  }
+  loadIntoState(defaultSkillFile(), false);
+}
+
 function loadFromFile(text: string, fileName: string): void {
   let raw: unknown;
   try { raw = JSON.parse(text); }
@@ -528,7 +544,13 @@ function loadFromFile(text: string, fileName: string): void {
     return;
   }
   loadIntoState(result.data, true);
-  setStatus(`已載入 ${fileName}：${Object.keys(result.data.characters).length} 個角色。`, 'ok');
+  const applied = applyToGame(EDITOR_STORE_KEYS.skills, result.data);
+  setStatus(
+    applied
+      ? `已載入 ${fileName}（${Object.keys(result.data.characters).length} 角色）並套用到遊戲（重開仍在）。`
+      : `已載入 ${fileName}（套用失敗：localStorage 不可用）。`,
+    applied ? 'ok' : 'err',
+  );
 }
 
 function exportJson(): void {
@@ -653,4 +675,4 @@ function bindUI(): void {
 }
 
 bindUI();
-renderAll();
+initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則打包預設

@@ -27,6 +27,7 @@ import {
   EDITOR_STORE_KEYS,
   applyToGame,
   clearOverride,
+  loadOverride,
 } from '@/config/editorStore';
 import {
   PREVIEW_MSG,
@@ -578,7 +579,28 @@ function loadFromFile(fileText: string, fileName: string): void {
     return;
   }
   loadIntoState(result.data);
-  setStatus(`已載入 ${fileName}：${result.data.levels.length} 關。`, 'ok');
+  const applied = applyToGame(EDITOR_STORE_KEYS.levels, result.data);
+  setStatus(
+    applied
+      ? `已載入 ${fileName}（${result.data.levels.length} 關）並套用到遊戲（重開仍在）。`
+      : `已載入 ${fileName}（套用失敗：localStorage 不可用）。`,
+    applied ? 'ok' : 'err',
+  );
+}
+
+/** 開啟載入（匯入回顯）：優先讀 localStorage override 回填；無→fetch 打包預設；壞→打包預設（不炸）。不進 undo。 */
+async function initLoad(): Promise<void> {
+  const raw = loadOverride(EDITOR_STORE_KEYS.levels);
+  if (raw !== null) {
+    const r = validateLevels(raw);
+    if (r.ok) {
+      loadIntoState(r.data);
+      setStatus('已載入你上次套用到遊戲的關卡（可繼續編）。', 'ok');
+      return;
+    }
+    setStatus('已套用的關卡驗證失敗，退回打包預設。', 'err');
+  }
+  await loadDefault(); // 無/壞 override → fetch 打包預設 levels.json
 }
 
 /** 匯出：先驗證（assertValidLevels 等效——用 validateLevels 攔錯顯示），過了才下載。 */
@@ -853,3 +875,4 @@ function bindUI(): void {
 
 bindUI();
 renderAll();
+void initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則 fetch 打包預設關卡

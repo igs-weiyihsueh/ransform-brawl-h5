@@ -19,6 +19,7 @@ import {
   EDITOR_STORE_KEYS,
   applyToGame,
   clearOverride,
+  loadOverride,
 } from '@/config/editorStore';
 
 const PPU = 100; // 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲檔）
@@ -135,9 +136,26 @@ function render(): void {
 
 function refreshAll(): void { buildInspector(); render(); }
 
+/** 開啟載入（匯入回顯）：優先讀 localStorage override 回填 file，無/壞→打包預設（不炸）。 */
+function initLoad(): void {
+  const raw = loadOverride(EDITOR_STORE_KEYS.dash);
+  if (raw !== null) {
+    const r = validateDash(raw);
+    if (r.ok) {
+      file = r.data;
+      refreshAll();
+      setStatus('已載入你上次套用到遊戲的衝刺設定（可繼續編）。', 'ok');
+      return;
+    }
+    setStatus('已套用的衝刺設定驗證失敗，退回打包預設。', 'err');
+  }
+  file = defaultDashFile();
+  refreshAll();
+}
+
 function main(): void {
   $('schema-version').textContent = `schema v${DASH_SCHEMA_VERSION}`;
-  refreshAll();
+  initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則打包預設
 
   $('preview-zoom').addEventListener('input', (e) => {
     previewZoom = parseFloat((e.target as HTMLInputElement).value);
@@ -158,7 +176,9 @@ function main(): void {
         const json = JSON.parse(String(reader.result));
         file = assertValidDash(json);
         refreshAll();
-        setStatus('已載入 JSON 並驗證通過。', 'ok');
+        // 上傳即生效：載入編輯器 + 同時套用到遊戲（存 localStorage，重開仍在）。
+        const applied = applyToGame(EDITOR_STORE_KEYS.dash, file);
+        setStatus(applied ? '已載入 JSON 並套用到遊戲（重開仍在）。' : '已載入 JSON（套用失敗：localStorage 不可用）。', applied ? 'ok' : 'err');
       } catch (err) {
         setStatus(`載入失敗：${(err as Error).message}`, 'err');
       }

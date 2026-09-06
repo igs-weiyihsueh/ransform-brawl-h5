@@ -19,6 +19,7 @@ import {
   EDITOR_STORE_KEYS,
   applyToGame,
   clearOverride,
+  loadOverride,
 } from '@/config/editorStore';
 
 const SCENE_W = 1920;
@@ -189,9 +190,29 @@ function render(): void {
 
 function refreshAll(): void { buildPresetSelect(); buildInspector(); render(); }
 
+/** 開啟載入（匯入回顯）：優先讀 localStorage override 回填 file（override presets 疊打包預設上），無/壞→打包預設。 */
+function initLoad(): void {
+  const raw = loadOverride(EDITOR_STORE_KEYS.guard);
+  if (raw !== null) {
+    const r = validateGuard(raw);
+    if (r.ok) {
+      const base = defaultGuardFile();
+      file = { version: base.version, presets: { ...base.presets, ...r.data.presets } };
+      currentPreset = Object.keys(file.presets)[0];
+      refreshAll();
+      setStatus('已載入你上次套用到遊戲的守護設定（可繼續編）。', 'ok');
+      return;
+    }
+    setStatus('已套用的守護設定驗證失敗，退回打包預設。', 'err');
+  }
+  file = defaultGuardFile();
+  currentPreset = Object.keys(file.presets)[0];
+  refreshAll();
+}
+
 function main(): void {
   $('schema-version').textContent = `schema v${GUARD_SCHEMA_VERSION}`;
-  refreshAll();
+  initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則打包預設
 
   $<HTMLSelectElement>('preset-select').addEventListener('change', (e) => {
     currentPreset = (e.target as HTMLSelectElement).value;
@@ -218,7 +239,8 @@ function main(): void {
         file = assertValidGuard(json);
         currentPreset = Object.keys(file.presets)[0];
         refreshAll();
-        setStatus('已載入 JSON 並驗證通過。', 'ok');
+        const applied = applyToGame(EDITOR_STORE_KEYS.guard, file);
+        setStatus(applied ? '已載入 JSON 並套用到遊戲（重開仍在）。' : '已載入 JSON（套用失敗：localStorage 不可用）。', applied ? 'ok' : 'err');
       } catch (err) {
         setStatus(`載入失敗：${(err as Error).message}`, 'err');
       }

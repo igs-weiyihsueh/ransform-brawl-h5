@@ -28,6 +28,7 @@ import {
   EDITOR_STORE_KEYS,
   applyToGame,
   clearOverride,
+  loadOverride,
 } from '@/config/editorStore';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
@@ -1059,6 +1060,25 @@ async function loadDefault(): Promise<void> {
   }
 }
 
+/**
+ * 開啟載入（匯入回顯）：優先讀 localStorage 已套用的 override 回填，讓使用者重開看到「當前生效那份」繼續編；
+ * 無/壞 override → 打包預設（不炸）。不進 undo（當前套用值即初始狀態）。
+ */
+function initLoad(): void {
+  const raw = loadOverride(EDITOR_STORE_KEYS.uiLayout);
+  if (raw !== null) {
+    const r = validateUiLayout(raw);
+    if (r.ok) {
+      loadIntoState(r.data, false);
+      setStatus('已載入你上次套用到遊戲的 UI 設定（可繼續編）。', 'ok');
+      return;
+    }
+    setStatus('已套用的 UI 設定驗證失敗，退回打包預設。', 'err');
+  }
+  renderStage();
+  selectFirstIfNone();
+}
+
 function loadFromFile(text: string, fileName: string): void {
   let raw: unknown;
   try {
@@ -1073,7 +1093,12 @@ function loadFromFile(text: string, fileName: string): void {
     return;
   }
   loadIntoState(result.data, true);
-  setStatus(`已載入 ${fileName}。`, 'ok');
+  // 上傳即生效（用戶心智）：載入編輯器 + 同時套用到遊戲（存 localStorage）。
+  const applied = applyToGame(EDITOR_STORE_KEYS.uiLayout, result.data);
+  setStatus(
+    applied ? `已載入 ${fileName} 並套用到遊戲（重開仍在）。` : `已載入 ${fileName}（套用失敗：localStorage 不可用）。`,
+    applied ? 'ok' : 'err',
+  );
 }
 
 function exportJson(): void {
@@ -1180,5 +1205,4 @@ function bindUI(): void {
 
 bindUI();
 applyZoom();
-renderStage();
-selectFirstIfNone();
+initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則打包預設

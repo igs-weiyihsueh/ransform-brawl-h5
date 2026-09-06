@@ -18,6 +18,7 @@ import {
   EDITOR_STORE_KEYS,
   applyToGame,
   clearOverride,
+  loadOverride,
 } from '@/config/editorStore';
 
 const PPU = 100; // 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲檔）
@@ -147,9 +148,30 @@ function render(): void {
 
 function refreshAll(): void { buildPresetSelect(); buildInspector(); render(); }
 
+/** 開啟載入（匯入回顯）：優先讀 localStorage override 回填 file（override presets 疊在打包預設上，全 preset 都在），無/壞→打包預設。 */
+function initLoad(): void {
+  const raw = loadOverride(EDITOR_STORE_KEYS.firerain);
+  if (raw !== null) {
+    const r = validateFireRain(raw);
+    if (r.ok) {
+      // 疊在打包預設上：override 覆蓋同名、保留未覆蓋的打包 preset（編輯器看得到全部）。
+      const base = defaultFireRainFile();
+      file = { version: base.version, presets: { ...base.presets, ...r.data.presets } };
+      currentPreset = Object.keys(file.presets)[0];
+      refreshAll();
+      setStatus('已載入你上次套用到遊戲的火雨設定（可繼續編）。', 'ok');
+      return;
+    }
+    setStatus('已套用的火雨設定驗證失敗，退回打包預設。', 'err');
+  }
+  file = defaultFireRainFile();
+  currentPreset = Object.keys(file.presets)[0];
+  refreshAll();
+}
+
 function main(): void {
   $('schema-version').textContent = `schema v${FIRE_RAIN_SCHEMA_VERSION}`;
-  refreshAll();
+  initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則打包預設
 
   $<HTMLSelectElement>('preset-select').addEventListener('change', (e) => {
     currentPreset = (e.target as HTMLSelectElement).value;
@@ -176,7 +198,8 @@ function main(): void {
         file = assertValidFireRain(json);
         currentPreset = Object.keys(file.presets)[0];
         refreshAll();
-        setStatus('已載入 JSON 並驗證通過。', 'ok');
+        const applied = applyToGame(EDITOR_STORE_KEYS.firerain, file);
+        setStatus(applied ? '已載入 JSON 並套用到遊戲（重開仍在）。' : '已載入 JSON（套用失敗：localStorage 不可用）。', applied ? 'ok' : 'err');
       } catch (err) {
         setStatus(`載入失敗：${(err as Error).message}`, 'err');
       }
