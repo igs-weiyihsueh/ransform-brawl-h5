@@ -27,17 +27,26 @@ describe('enemyAttackVfx — 出手視覺分類（看 attackVfx 語意，非命�
     expect(enemyAttackVfx('projectile', undefined)).toBe('none');
     expect(enemyAttackVfx('projectile', 'slash')).toBe('none');
     expect(enemyAttackVfx('projectile', 'aoe')).toBe('none'); // aoe 也不播（射彈優先 gate）
+    expect(enemyAttackVfx('projectile', 'fan')).toBe('none'); // fan 也不播
   });
 
-  it('三分類值域完整：melee 分 slash/aoe、projectile 恆 none', () => {
+  it('★ 近戰 + attackVfx="fan"（七輪：衝鋒兵 Enemy_Rush 扇形揮砍）→ fan', () => {
+    expect(enemyAttackVfx('melee', 'fan')).toBe('fan');
+  });
+
+  it('四分類值域完整：melee 分 slash/aoe/fan（undefined→slash）、projectile 恆 none', () => {
     const kinds: Array<'melee' | 'projectile'> = ['melee', 'projectile'];
-    const vfxs: Array<'slash' | 'aoe' | undefined> = ['slash', 'aoe', undefined];
+    const vfxs: Array<'slash' | 'aoe' | 'fan' | undefined> = ['slash', 'aoe', 'fan', undefined];
     for (const k of kinds) {
       for (const v of vfxs) {
         const r = enemyAttackVfx(k, v);
-        expect(['slash', 'aoe', 'none']).toContain(r);
+        expect(['slash', 'aoe', 'fan', 'none']).toContain(r);
         if (k === 'projectile') expect(r).toBe('none');
       }
     }
+    // 向後相容：既有三值不受 fan 新增影響。
+    expect(enemyAttackVfx('melee', 'slash')).toBe('slash');
+    expect(enemyAttackVfx('melee', undefined)).toBe('slash');
+    expect(enemyAttackVfx('melee', 'aoe')).toBe('aoe');
   });
 });
