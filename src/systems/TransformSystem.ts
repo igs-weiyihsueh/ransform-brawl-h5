@@ -116,8 +116,17 @@ export class TransformSystem implements GameSystem {
       if (typeof p.isWaiting === 'function' && p.isWaiting()) continue; // 待機中不畫(還沒進場)
       const anchor = this.ctx.getWaitingAnchor(p.playerId); // TetherAnchor=下方面板欄待機點
       if (!anchor) continue;
+      // 用戶第九輪#5 治本：牽引線要牽到「玩家看到的貼地搜索圈」邊緣。
+      // 搜索圈視覺中心＝footGlowCenter（腳部，sprite 中心往下 ~75.6px）；而 getVacuumCenter 已於 #7#8
+      //   改成 body 中心（surround/推怪對稱用）→ 比視覺圈高 ~75.6px。舊版傳 getVacuumCenter → 終點落
+      //   body 中心圈邊緣（線停在身體附近、短了 ~75.6px），視覺上沒牽到腳下搜索圈。改傳 getFootGlowCenter
+      //   → 終點落實際搜索圈邊緣（所見即所得）。半徑 getVacuumRadius()＝foot.radiusPx（與視覺圈同半徑）。
       const center =
-        typeof p.getVacuumCenter === 'function' ? p.getVacuumCenter() : p.getPosition();
+        typeof p.getFootGlowCenter === 'function'
+          ? p.getFootGlowCenter()
+          : typeof p.getVacuumCenter === 'function'
+            ? p.getVacuumCenter()
+            : p.getPosition();
       // 三輪#4 根治：getVacuumRadius() 已回像素(FOOT_GLOW.radiusPx=50, 搜索圈=真空圈同一圈)，
       // 不可再 ×PPU(原 bug: 50×100=5000px → tetherEndPoint 因 anchor 距離<5000 退回角色中心 → 線穿過整個搜索圈)。
       // 用當前搜索圈半徑(px) → 停在搜索圈外緣靠 anchor 那側(不進圈)；#5 開放調整後半徑變化會自動跟。

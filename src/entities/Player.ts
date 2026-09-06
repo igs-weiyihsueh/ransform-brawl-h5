@@ -356,6 +356,15 @@ export class Player implements Hittable {
     return this.getHitCenter(); // 身體中心（sprite origin 即中心）
   }
 
+  /**
+   * 視覺搜索圈（腳底識別光圈）中心（像素）。＝ syncFootGlow 用的 footGlowCenter（sprite 中心往下偏 foot.offsetY 到腳部）。
+   * 用戶第九輪#5：牽引線要牽到「玩家看到的貼地搜索圈」邊緣＝此中心的圈，而非 getVacuumCenter（身體中心，#7#8 為 surround/推怪對稱改成 body 中心、比視覺圈高 ~75.6px）。
+   * 與 getVacuumRadius（同 foot.radiusPx）搭配＝所見即所得的搜索圈幾何。
+   */
+  getFootGlowCenter(): Vec2 {
+    return footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.foot.offsetY);
+  }
+
   /** 目前是否處於無敵幀（iFrame 內免疫再次受擊）。 */
   isInvincible(): boolean {
     return this.iFrameRemaining > 0;
