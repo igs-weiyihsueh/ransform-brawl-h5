@@ -13,8 +13,17 @@ import { HIT_FEEL, type HitFeelConfig } from '@/config/hitFeelConfig';
 /** 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲 runtime）。 */
 const PPU = 100;
 
+/**
+ * mount 化（方案 A' 遊戲內展開）：DOM 查找 scope 進 editorRoot（overlay 容器），不吃 document 全域。
+ * 獨立頁 /hitfeel-editor/ 仍可用（並存）。hitfeel 無 localStorage 套用機制（複製/下載工作流）→ 唯讀：
+ * 保留下載/複製 JSON 鈕，無「套用到遊戲」鈕；「回到遊戲」導覽鈕在 overlay 內禁用（會離開遊戲頁）。
+ */
+let editorRoot: HTMLElement = document.body;
+let mounted = false;
+let rafId = 0;
+
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
-  const el = document.getElementById(id);
+  const el = editorRoot.querySelector<T>(`#${id}`);
   if (!el) throw new Error(`缺少元素 #${id}`);
   return el as T;
 };
@@ -132,20 +141,30 @@ function refreshExport(): void {
 }
 
 // ---- Canvas 打擊預覽（純 canvas2D，重演 EffectSystem 的視覺，吃當前 cfg） ----
+// mount 化：這些原為 import 時 $('preview') 讀取的 const，改延遲到 mount() 注入 HTML 後才綁定（let）。
 
-const canvas = $('preview') as HTMLCanvasElement;
-const g2 = canvas.getContext('2d')!;
-const W = canvas.width;
-const H = canvas.height;
-const enemy = { x: W * 0.62, y: H * 0.5, baseSize: 72 };
-const attacker = { x: W * 0.3, y: H * 0.5 };
+let canvas: HTMLCanvasElement = document.createElement('canvas');
+let g2: CanvasRenderingContext2D = canvas.getContext('2d')!;
+let W = canvas.width;
+let H = canvas.height;
+const enemy = { x: 0, y: 0, baseSize: 72 };
+const attacker = { x: 0, y: 0 };
+
+/** mount 時綁定 canvas 快取（HTML 注入後呼叫）。 */
+function bindCanvas(): void {
+  canvas = $('preview') as HTMLCanvasElement;
+  g2 = canvas.getContext('2d')!;
+  W = canvas.width;
+  H = canvas.height;
+  enemy.x = W * 0.62; enemy.y = H * 0.5;
+  attacker.x = W * 0.3; attacker.y = H * 0.5;
+}
 
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; r: number; }
 let particles: Particle[] = [];
 let flashUntil = 0;
 let punchStart = -1;
 let kbStart = -1;
-let kbFromX = 0;
 let kbDistPx = 0;
 let kbDur = 0;
 let freezeUntil = 0;
@@ -177,7 +196,6 @@ function triggerHit(): void {
   kbDistPx = distUnit * PPU;
   kbDur = cfg.knockbackDuration;
   kbStart = t;
-  kbFromX = enemy.x;
   // 火花：從敵人往右噴。
   if (cfg.hitSparkEnabled) spawnSpark(enemy.x, enemy.y, 1, 0, hexColor(cfg.hitSparkColor), 5);
   setStatus('▶ 觸發受擊：白閃/punch/火花/擊退/頓幀（當前參數）。', true);
@@ -246,7 +264,7 @@ function loop(): void {
   particles = particles.filter((p) => p.life < p.max);
 
   draw(t);
-  requestAnimationFrame(loop);
+  if (mounted) rafId = requestAnimationFrame(loop);
 }
 
 function draw(t: number): void {
@@ -319,40 +337,171 @@ function draw(t: number): void {
 
 // ---- 綁定 ----
 
-$('btn-hit').addEventListener('click', triggerHit);
-$('btn-death').addEventListener('click', triggerDeath);
-$('btn-reset').addEventListener('click', () => {
+/** 綁定所有 UI 事件（mount 時呼叫；原為 import 時的頂層綁定，改包成函式延遲到 HTML 注入後）。 */
+function bindUI(standalone: boolean): void {
+  $('btn-hit').addEventListener('click', triggerHit);
+  $('btn-death').addEventListener('click', triggerDeath);
+  $('btn-reset').addEventListener('click', () => {
+    cfg = { ...HIT_FEEL };
+    buildControls();
+    refreshExport();
+    setStatus('已重設為 hitFeelConfig 預設值。', true);
+  });
+  $('btn-copy').addEventListener('click', async () => {
+    const text = JSON.stringify(cfg, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus('已複製參數到剪貼簿，貼回 hitFeelConfig 的 HIT_FEEL 即可。', true);
+    } catch {
+      setStatus('複製失敗（瀏覽器權限）——請手動從「匯出」框選取複製。', false);
+    }
+  });
+  $('btn-export').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'hitFeel.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatus('已下載 hitFeel.json。', true);
+  });
+
+  // hitfeel-editor 無 localStorage 套用機制（複製/下載貼回 hitFeelConfig 的工作流），
+  // 「回到遊戲」只是純導覽 window.location.href='../'（獨立頁專用）。
+  // ⚠️ overlay 內（standalone=false）此鈕會離開遊戲頁弄壞 overlay → 直接移除。
+  const btnReturn = editorRoot.querySelector<HTMLButtonElement>('#btn-return');
+  if (btnReturn) {
+    if (standalone) {
+      btnReturn.addEventListener('click', () => { window.location.href = '../'; });
+    } else {
+      btnReturn.remove(); // overlay 內：關閉走 overlay 自身的 ✕，不用這顆
+    }
+  }
+}
+
+// ---- mount 化（方案 A' 遊戲內展開 + 獨立頁並存） -------------------------
+
+/** 編輯器 body HTML（從 hitfeel-editor/index.html <body> 搬來，去 <script>）。 */
+const EDITOR_BODY_HTML = `
+<header>
+  <h1>打擊手感編輯器</h1>
+  <span class="badge">hitFeelConfig · HIT_FEEL</span>
+  <div class="spacer"></div>
+  <button id="btn-reset">重設為預設值</button>
+  <button id="btn-copy" class="primary">複製參數</button>
+  <button id="btn-export">下載 JSON</button>
+  <button id="btn-return" class="primary" title="回到遊戲頁">回到遊戲</button>
+</header>
+<div class="layout">
+  <div class="stage-wrap">
+    <canvas id="preview" width="480" height="420"></canvas>
+    <div class="preview-controls">
+      <button id="btn-hit" class="primary">▶ 觸發受擊（白閃+punch+火花+擊退+頓幀）</button>
+      <button id="btn-death">💀 觸發死亡粒子</button>
+    </div>
+    <div class="hint">按鈕用「當前參數」即時播打擊表演，不用進遊戲。</div>
+  </div>
+  <div class="col-inspector">
+    <div class="section-title">總開關</div>
+    <div id="ctrl-enabled"></div>
+    <div class="section-title">受擊白閃</div>
+    <div id="ctrl-flash"></div>
+    <div class="section-title">Punch 彈跳</div>
+    <div id="ctrl-punch"></div>
+    <div class="section-title">命中火花</div>
+    <div id="ctrl-spark"></div>
+    <div class="section-title">局部頓幀</div>
+    <div id="ctrl-freeze"></div>
+    <div class="section-title">擊退（快進快出）</div>
+    <div id="ctrl-knockback"></div>
+    <div class="section-title">死亡粒子</div>
+    <div id="ctrl-death"></div>
+    <div class="section-title">匯出</div>
+    <textarea id="export-box" readonly></textarea>
+  </div>
+</div>
+<div id="status">就緒。右側調參數，左側按「觸發受擊」即時預覽。唯讀：調好用「複製參數」/「下載 JSON」貼回 hitFeelConfig。</div>
+`;
+
+/** 編輯器樣式（命名空間 .tb-editor-root）；原 100vh 併頁改吃容器高。 */
+const EDITOR_CSS = `
+.tb-editor-root {
+  --bg: #1a1a2e; --panel: #23233a; --panel2: #2c2c48; --line: #3a3a5c;
+  --text: #e6e6f0; --muted: #9a9ab5; --accent: #6c8cff; --danger: #ff6c7a; --ok: #59d98e; --stage: #10101c;
+  display: flex; flex-direction: column; height: 100%;
+  background: var(--bg); color: var(--text);
+  font-family: Arial, "Microsoft JhengHei", "Noto Sans TC", sans-serif; font-size: 14px;
+}
+.tb-editor-root * { box-sizing: border-box; }
+.tb-editor-root header { padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex: 0 0 auto; }
+.tb-editor-root header h1 { font-size: 16px; margin: 0; }
+.tb-editor-root header .spacer { flex: 1; }
+.tb-editor-root .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 1px 6px; border-radius: 10px; }
+.tb-editor-root button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.tb-editor-root button:hover { border-color: var(--accent); }
+.tb-editor-root button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tb-editor-root .layout { display: flex; flex: 1; min-height: 0; }
+.tb-editor-root .stage-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #14141f; gap: 14px; overflow: auto; }
+.tb-editor-root #preview { background: var(--stage); outline: 1px solid var(--line); }
+.tb-editor-root .preview-controls { display: flex; gap: 10px; }
+.tb-editor-root .col-inspector { width: 360px; border-left: 1px solid var(--line); padding: 12px; overflow-y: auto; background: var(--panel); }
+.tb-editor-root .section-title { color: var(--muted); font-size: 12px; text-transform: uppercase; margin: 12px 0 8px; letter-spacing: 0.5px; }
+.tb-editor-root .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tb-editor-root .row label { width: 150px; color: var(--muted); }
+.tb-editor-root .row input[type="range"] { flex: 1; }
+.tb-editor-root .row input[type="number"] { width: 72px; }
+.tb-editor-root .row .val { width: 56px; text-align: right; color: var(--muted); }
+.tb-editor-root #status { padding: 8px 16px; font-size: 13px; white-space: pre-wrap; border-top: 1px solid var(--line); background: var(--panel); max-height: 120px; overflow-y: auto; flex: 0 0 auto; }
+.tb-editor-root .status-ok { color: var(--ok); } .tb-editor-root .status-err { color: var(--danger); }
+.tb-editor-root .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.tb-editor-root textarea#export-box { width: 100%; height: 160px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-family: monospace; font-size: 12px; padding: 8px; }
+`;
+
+const EDITOR_STYLE_ID = 'tb-hitfeel-editor-style';
+
+function ensureEditorStyle(): void {
+  if (document.getElementById(EDITOR_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = EDITOR_STYLE_ID;
+  style.textContent = EDITOR_CSS;
+  document.head.appendChild(style);
+}
+
+/**
+ * 掛載打擊感編輯器到指定容器（EditorMountFn）：注入 HTML+樣式 → 綁 canvas/事件 → 起預覽 rAF。
+ * 唯讀（無 applyToGame）。unmount 停 rAF + 清 DOM。overlay 內移除「回到遊戲」導覽鈕。
+ */
+export function mount(container: HTMLElement): { unmount(): void } {
+  ensureEditorStyle();
+  container.classList.add('tb-editor-root');
+  container.innerHTML = EDITOR_BODY_HTML;
+  editorRoot = container;
+
+  // 重置狀態（反覆開關 overlay）。
   cfg = { ...HIT_FEEL };
+  particles = [];
+
+  bindCanvas();
   buildControls();
   refreshExport();
-  setStatus('已重設為 hitFeelConfig 預設值。', true);
-});
-$('btn-copy').addEventListener('click', async () => {
-  const text = JSON.stringify(cfg, null, 2);
-  try {
-    await navigator.clipboard.writeText(text);
-    setStatus('已複製參數到剪貼簿，貼回 hitFeelConfig 的 HIT_FEEL 即可。', true);
-  } catch {
-    setStatus('複製失敗（瀏覽器權限）——請手動從「匯出」框選取複製。', false);
-  }
-});
-$('btn-export').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'hitFeel.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  setStatus('已下載 hitFeel.json。', true);
-});
+  bindUI(container.id === 'tb-editor-standalone'); // 獨立頁才保留「回到遊戲」導覽
 
-// hitfeel-editor 無 localStorage 套用機制（複製/下載貼回 hitFeelConfig 的工作流），
-// 故只提供純導覽「回到遊戲」（與其他編輯器的「套用並回到遊戲」統一回遊戲 UX，但不套用）。
-$('btn-return').addEventListener('click', () => {
-  window.location.href = '../';
-});
+  mounted = true;
+  rafId = requestAnimationFrame(loop);
 
-buildControls();
-refreshExport();
-requestAnimationFrame(loop);
+  return {
+    unmount(): void {
+      mounted = false;
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+      container.innerHTML = '';
+      container.classList.remove('tb-editor-root');
+    },
+  };
+}
+
+/** 獨立頁自動啟動（並存）：有 #tb-editor-standalone 掛載點才自動 mount；overlay lazy import 時無此元素 → 不自動跑。 */
+const standaloneHost = document.getElementById('tb-editor-standalone');
+if (standaloneHost) {
+  mount(standaloneHost);
+}

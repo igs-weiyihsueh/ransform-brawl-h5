@@ -50,6 +50,12 @@ const REF_SPRITE_SIZE = 269; // 256 × 1.05，角色示意圖邊長（px，設�
 /** 角色參照 idle sprite 路徑（ui-editor 在 /ui-editor/，資產在網站根）。載不到退場成佔位人形。 */
 const REF_SPRITE_URL = '../assets/images/characters/SunWukong/idle/frame_00.png';
 
+// 搜索圈/真空帶預覽對齊遊戲（用戶第九輪 #4）：遊戲 drawFootGlow 畫「2:1 貼地橢圓圓盤」——
+// 寬 = 搜索圈直徑(radiusPx×2) × PLAYER_DISC.widthScale、高 = 寬/2（2:1 貼地透視）。中心 = footGlowCenter。
+// 編輯器自持此係數（對照 playerConfig.PLAYER_DISC.widthScale=2.2；不 import 遊戲 runtime，同其他編輯器慣例）。
+const PLAYER_DISC_WIDTH_SCALE = 2.2;
+
+
 // ---- 狀態 -----------------------------------------------------------------
 
 /** 深拷貝一份預設當初始狀態（避免改到常數）。 */
@@ -303,7 +309,8 @@ function buildScreenEditables(): Editable[] {
       },
     });
   }
-  // 腳下圈（搜索圈=真空帶）：以 2r×2r 方框表示、置於螢幕中心+offset。拖=改 offset，縮放=改半徑。
+  // 腳下圈（搜索圈=真空帶）：照遊戲畫「2:1 貼地橢圓圓盤」——寬 w=2r×widthScale、高 h=w/2，
+  // 中心=footGlowCenter(螢幕中心+offset)。拖=改 offset、縮放(拉寬)=改半徑(r=width/(2×widthScale))。
   if (!layout.foot) layout.foot = { searchRadiusPx: 50, offsetX: 0, offsetY: 75.6 };
   const foot = layout.foot;
   const cx = layout.design.width / 2;
@@ -314,15 +321,21 @@ function buildScreenEditables(): Editable[] {
       const r = foot.searchRadiusPx ?? 50;
       const ox = foot.offsetX ?? 0;
       const oy = foot.offsetY ?? 0;
-      return { x: cx + ox - r, y: cy + oy - r, width: r * 2, height: r * 2 };
+      const w = r * 2 * PLAYER_DISC_WIDTH_SCALE; // 遊戲圓盤寬
+      const h = w / 2; // 2:1 貼地
+      return { x: cx + ox - w / 2, y: cy + oy - h / 2, width: w, height: h };
     },
     set: (rc) => {
-      // 縮放：以 width 推半徑（保持圓形，取 width 為準）。
-      if (rc.width !== undefined) foot.searchRadiusPx = Math.max(1, rc.width / 2);
+      // 縮放：以 width 反推半徑（w=2r×widthScale → r=w/(2×widthScale)），維持 2:1。
+      if (rc.width !== undefined) {
+        foot.searchRadiusPx = Math.max(1, rc.width / (2 * PLAYER_DISC_WIDTH_SCALE));
+      }
       const r = foot.searchRadiusPx ?? 50;
-      // 拖移：左上角回推中心，減基準螢幕中心 = offset。
-      if (rc.x !== undefined) foot.offsetX = rc.x + r - cx;
-      if (rc.y !== undefined) foot.offsetY = rc.y + r - cy;
+      const w = r * 2 * PLAYER_DISC_WIDTH_SCALE;
+      const h = w / 2;
+      // 拖移：左上角回推中心(box 左上 + w/2, h/2)，減基準螢幕中心 = offset。
+      if (rc.x !== undefined) foot.offsetX = rc.x + w / 2 - cx;
+      if (rc.y !== undefined) foot.offsetY = rc.y + h / 2 - cy;
     },
   });
   return list;
@@ -688,12 +701,14 @@ function buildMessageBanner(sampleText: string, align?: 'left' | 'center' | 'rig
   return box;
 }
 
-/** 腳下圈（搜索圈/真空帶）示意：玩家色圓環，方框內畫成圓。 */
+/** 腳下圈（搜索圈/真空帶）示意：照遊戲畫「2:1 貼地橢圓發光圓盤」（box 已是 w×h=2:1，border-radius:50% 即橢圓）。 */
 function buildFootCircle(): HTMLElement {
   const box = document.createElement('div');
   box.style.cssText =
     'width:100%;height:100%;border-radius:50%;box-sizing:border-box;' +
-    'border:3px solid rgba(80,180,255,0.9);background:rgba(80,180,255,0.15);' +
+    // 貼地發光圓盤：徑向漸層(中心亮外緣淡)+玩家色描邊，模擬 fx_player_disc。
+    'border:3px solid rgba(80,180,255,0.9);' +
+    'background:radial-gradient(ellipse at center, rgba(80,180,255,0.35) 0%, rgba(80,180,255,0.12) 60%, rgba(80,180,255,0.02) 100%);' +
     'display:flex;align-items:center;justify-content:center;';
   const t = document.createElement('div');
   t.textContent = '搜索圈/真空帶';

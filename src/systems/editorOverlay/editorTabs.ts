@@ -40,4 +40,9 @@ export const EDITOR_TABS: readonly EditorTabDef[] = [
     label: '事件編輯器',
     loader: () => import('../../../event-editor/main'),
   },
+  {
+    id: 'hitfeel',
+    label: '打擊感編輯器',
+    loader: () => import('../../../hitfeel-editor/main'),
+  },
 ];

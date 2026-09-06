@@ -49,6 +49,8 @@ const ENEMY_ATTACK_VFX = {
   fireballImpact: { key: 'vfx-fireball-impact', path: `${BASE_PATH}/fireball_impact.png` },
   /** 七輪：玩家衝刺拖尾（160×80, 頭亮尾淡, 白青可染玩家色）。 */
   playerDash: { key: 'vfx-player-dash', path: `${BASE_PATH}/fx_player_dash.png` },
+  /** 九輪#3：玩家衝刺前方防護罩（128×128, 朝右凸弧形力場罩, 可染玩家色）。 */
+  playerDashShield: { key: 'vfx-player-dash-shield', path: `${BASE_PATH}/fx_player_dash_shield.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -964,31 +966,34 @@ export class EffectSystem {
   }
 
   /**
-   * 七輪：玩家衝刺拖尾（fx_player_dash 160×80，頭亮尾淡）。
-   * origin(1,0.5) 頭(亮端)在玩家位置、尾往後拖；rotate 對齊衝刺方向；染玩家色；scaleX 0.8→1.15 拉伸；0.18s 淡出。
+   * 九輪#3：玩家衝刺前方防護罩（fx_player_dash_shield 128×128，朝右凸弧形力場罩）。
+   * 取代原拖尾（用戶要「改成防護罩」）：罩貼角色前方（沿衝刺方向偏移半身位）、
+   * 依衝刺方向 rotate（素材弧朝右=0 度基準，對齊 angleRad）、染玩家色、scale 微張 1.0→1.12 + 淡入淡出，衝刺短時顯示。
    * @param x,y 玩家位置（世界座標）。
-   * @param angleRad 衝刺方向（拖尾頭朝此、尾往反向拖）。
+   * @param angleRad 衝刺方向（罩朝此方向凸出）。
    * @param color 玩家識別色（setTint 染色）；省略=不染。
    */
   playerDash(x: number, y: number, angleRad: number, color?: number): void {
-    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.playerDash.key)) return;
-    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.playerDash.key);
-    // 頭(亮端)在圖右緣 → origin(1,0.5) 讓頭=玩家位置、尾往後拖；rotate 對齊衝刺方向。
-    spr.setOrigin(1, 0.5).setDepth(ATTACK_VFX_DEPTH).setRotation(angleRad);
+    const shieldKey = ENEMY_ATTACK_VFX.playerDashShield.key;
+    if (!this.scene.textures.exists(shieldKey)) return;
+    // 罩貼角色前方：沿衝刺方向偏移半身位（~34px），罩凸弧朝衝刺方向。
+    const FORWARD_OFFSET_PX = 34;
+    const sx = x + Math.cos(angleRad) * FORWARD_OFFSET_PX;
+    const sy = y + Math.sin(angleRad) * FORWARD_OFFSET_PX;
+    const spr = this.scene.add.image(sx, sy, shieldKey);
+    // origin(0.5,0.5) 罩中心對齊偏移點；素材弧朝右(0 度)→ rotate angleRad 對齊衝刺方向。
+    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH).setRotation(angleRad);
     if (color !== undefined) spr.setTint(color); // 染玩家識別色
-    spr.setScale(0.8, 1).setAlpha(0.9);
-    // scaleX 0.8→1.15 拉伸（速度感）+ 0.18s 淡出。
+    spr.setScale(1.0).setAlpha(0);
+    // 淡入(快)→ 罩微張 1.0→1.12 + 淡出（衝刺短時力場感）。
+    this.scene.tweens.add({ targets: spr, alpha: 0.95, duration: 60, ease: 'Quad.easeOut' });
     this.scene.tweens.add({
       targets: spr,
-      scaleX: 1.15,
-      duration: 180,
-      ease: 'Quad.easeOut',
-    });
-    this.scene.tweens.add({
-      targets: spr,
+      scale: 1.12,
       alpha: 0,
-      duration: 180,
-      ease: 'Sine.easeIn',
+      duration: 220,
+      delay: 40,
+      ease: 'Quad.easeOut',
       onComplete: () => spr.destroy(),
     });
   }
