@@ -29,6 +29,12 @@ const ENEMY_ATTACK_VFX = {
   slash: { key: 'vfx-enemy-slash', path: `${BASE_PATH}/fx_enemy_slash.png` },
   impact: { key: 'vfx-enemy-impact', path: `${BASE_PATH}/fx_enemy_impact.png` },
   charge: { key: 'vfx-enemy-charge', path: `${BASE_PATH}/fx_enemy_charge.png` },
+  /** 集氣升級版（用戶 #4：中心聚能核 + 5 道環繞氣流臂，靠 rotation 呈現漩渦感）。 */
+  charge2: { key: 'vfx-enemy-charge2', path: `${BASE_PATH}/fx_enemy_charge2.png` },
+  /** 圓形範圍攻擊預告圈（用戶 #3：地面紅色 AOE 警示圈）。 */
+  aoeRing: { key: 'vfx-enemy-aoe-ring', path: `${BASE_PATH}/fx_enemy_aoe_ring.png` },
+  /** 圓形範圍攻擊爆發（用戶 #3：白熱核+放射+衝擊波）。 */
+  aoeBurst: { key: 'vfx-enemy-aoe-burst', path: `${BASE_PATH}/fx_enemy_aoe_burst.png` },
   /** 守護開場聚焦放射漸層（用戶 #4，中心透明→外圈壓黑；異靈畫，alpha 客觀確認）。 */
   spotlight: { key: 'vfx-spotlight-radial', path: `${BASE_PATH}/spotlight_radial.png` },
 } as const;
@@ -739,34 +745,85 @@ export class EffectSystem {
   }
 
   /**
-   * 敵人蓄力預警（用戶 #7）：出手前蓄力期播，給玩家反應時間。脈動；出手時呼叫回傳物件的 destroy 收掉。
-   * 純視覺疊加。回傳 sprite 供呼叫端在出手瞬間銷毀（接 slash）。
-   * @param x,y 生成位置（貼敵人身前/腳下，世界座標）。
-   * @param durationMs 蓄力時長（對應 chargeTime，脈動循環用；預設 500）。
-   * @returns 蓄力特效 sprite（呼叫端出手時 .destroy()）；貼圖沒載則回 null。
+   * 敵人集氣（用戶 #4 升級版 charge2）：中心聚能核 + 5 道環繞氣流臂，**靠持續 rotation 呈現漩渦/環繞感**。
+   * 出手前蓄力期播；出手時呼叫回傳物件的 destroy 收掉（接 slash/burst）。純視覺疊加。
+   * @param x,y 生成位置（貼敵人身上/腳下，世界座標）。
+   * @param durationMs 蓄力時長（對應 chargeTime；預設 500）。
+   * @returns 集氣特效 sprite（呼叫端出手時 .destroy()）；貼圖沒載則回 null。
    */
   enemyCharge(x: number, y: number, durationMs = 500): Phaser.GameObjects.Image | null {
-    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.charge.key)) return null;
-    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.charge.key);
-    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH - 1); // 蓄力在斬光之下（角色上層）
-    spr.setScale(0.85).setAlpha(0.9);
-    // scale 0.85↔1.0 脈動（充能感）+ 緩慢旋轉，直到出手被 destroy。
+    const key = this.scene.textures.exists(ENEMY_ATTACK_VFX.charge2.key)
+      ? ENEMY_ATTACK_VFX.charge2.key
+      : ENEMY_ATTACK_VFX.charge.key; // charge2 沒載則退回舊 charge
+    if (!this.scene.textures.exists(key)) return null;
+    const spr = this.scene.add.image(x, y, key);
+    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH - 1); // 集氣在斬光之下（角色上層）
+    spr.setScale(0.6).setAlpha(0);
+    // 能量匯聚：scale 0.6→1.0 漸大 + alpha 0→1 漸亮（整個蓄力期）。
     this.scene.tweens.add({
       targets: spr,
       scale: 1.0,
-      duration: Math.max(150, durationMs / 2),
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
+      alpha: 1,
+      duration: Math.max(200, durationMs),
+      ease: 'Sine.easeOut',
     });
+    // ★ 持續旋轉（氣流臂繞身盤旋的環繞感，用戶 #4 關鍵）：~120°/s → 360° 每 3s，無限。
     this.scene.tweens.add({
       targets: spr,
       angle: 360,
-      duration: Math.max(600, durationMs * 1.5),
+      duration: 3000, // 120°/s
       repeat: -1,
       ease: 'Linear',
     });
     return spr;
+  }
+
+  /**
+   * 圓形範圍攻擊預告圈（用戶 #3）：平貼地面、以敵人為圓心、依 AOE 半徑 scale，蓄力期持續 + 緩慢自轉。
+   * 回傳 sprite 供出手時 destroy（接 aoeBurst）。純視覺。
+   * @param x,y 圓心（敵人攻擊圓心，世界座標）。
+   * @param radiusPx AOE 半徑（px，預告圈直徑=2×此）。
+   * @returns 預告圈 sprite；貼圖沒載則回 null。
+   */
+  enemyAoeRing(x: number, y: number, radiusPx: number): Phaser.GameObjects.Image | null {
+    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.aoeRing.key)) return null;
+    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.aoeRing.key);
+    spr.setOrigin(0.5, 0.5).setDepth(-4); // 平貼地面（角色之下，PLAY_DEPTH=10）
+    spr.setDisplaySize(radiusPx * 2, radiusPx * 2).setAlpha(0);
+    // 淡入 + 緩慢自轉（警示感）。
+    this.scene.tweens.add({ targets: spr, alpha: 0.85, duration: 250, ease: 'Sine.easeOut' });
+    this.scene.tweens.add({ targets: spr, angle: 360, duration: 4000, repeat: -1, ease: 'Linear' });
+    return spr;
+  }
+
+  /**
+   * 圓形範圍攻擊爆發（用戶 #3）：命中/出手瞬間播。同圓心、爆開放大、隨機旋轉、後半淡出。
+   * @param x,y 圓心（世界座標）。
+   * @param radiusPx AOE 半徑（爆發覆蓋 ≈ 此）。
+   */
+  enemyAoeBurst(x: number, y: number, radiusPx: number): void {
+    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.aoeBurst.key)) return;
+    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.aoeBurst.key);
+    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH + 1); // 爆發在角色上層
+    spr.setRotation(Phaser.Math.FloatBetween(0, Math.PI * 2));
+    const target = radiusPx * 2;
+    spr.setDisplaySize(target * 0.5, target * 0.5).setAlpha(1);
+    // ~0.2s：scale 0.5→1.15 炸開 + 後半淡出。
+    this.scene.tweens.add({
+      targets: spr,
+      displayWidth: target * 1.15,
+      displayHeight: target * 1.15,
+      duration: 200,
+      ease: 'Cubic.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: spr,
+      alpha: 0,
+      delay: 100,
+      duration: 100,
+      ease: 'Sine.easeIn',
+      onComplete: () => spr.destroy(),
+    });
   }
 
   /**

@@ -34,6 +34,9 @@ export interface HitFeelFx {
   enemySlash?(x: number, y: number, angleRad: number, scale?: number): void;
   enemyImpact?(x: number, y: number, scale?: number): void;
   enemyCharge?(x: number, y: number, durationMs?: number): Phaser.GameObjects.Image | null;
+  /** 用戶 #3 圓形範圍攻擊特效（純視覺）。 */
+  enemyAoeRing?(x: number, y: number, radiusPx: number): Phaser.GameObjects.Image | null;
+  enemyAoeBurst?(x: number, y: number, radiusPx: number): void;
 }
 
 /** 敵人可用的角色美術 key（debug 預覽用循環選擇）。 */
@@ -91,6 +94,8 @@ export class Enemy implements Hittable {
   hitFeelFx: HitFeelFx | null = null;
   /** 用戶 #7：蓄力預警特效 sprite（進 charge 時建、出手/離開時 destroy）。 */
   private chargeFx: Phaser.GameObjects.Image | null = null;
+  /** 用戶 #3：圓形範圍攻擊預告圈 sprite（circle shape 敵人蓄力時建、出手/離開時 destroy）。 */
+  private aoeRingFx: Phaser.GameObjects.Image | null = null;
 
   /** 局部頓幀剩餘秒數（hitFeel microFreeze，只凍被打這隻：>0 時 update 早退不動作）。 */
   private freezeRemaining = 0;
@@ -256,11 +261,15 @@ export class Enemy implements Hittable {
     return this.dead;
   }
 
-  /** 用戶 #7：清掉蓄力預警特效（出手/受擊/死亡時，避免殘留）。 */
+  /** 用戶 #7/#3：清掉蓄力預警 + AOE 預告圈特效（出手/受擊/死亡時，避免殘留）。 */
   private clearChargeFx(): void {
     if (this.chargeFx) {
       this.chargeFx.destroy();
       this.chargeFx = null;
+    }
+    if (this.aoeRingFx) {
+      this.aoeRingFx.destroy();
+      this.aoeRingFx = null;
     }
   }
 
@@ -406,10 +415,16 @@ export class Enemy implements Hittable {
           this.state = 'charge';
           this.timer = this.cfg.chargeTime;
           this.anim.play('idle');
-          // 用戶 #7：蓄力預警特效（貼敵人身前/腳下，出手時 destroy 接 slash）。純視覺。
+          // 用戶 #7/#4：蓄力集氣特效（charge2 帶環繞氣流旋轉，貼敵人身上，出手時 destroy 接 slash/burst）。純視覺。
           const cpos = this.getHitCenter();
           this.chargeFx =
             this.hitFeelFx?.enemyCharge?.(cpos.x, cpos.y, this.cfg.chargeTime * 1000) ?? null;
+          // 用戶 #3：圓形範圍(circle shape)攻擊 → 蓄力期地面播 AOE 預告圈（以攻擊圓心、依 AOE 半徑）。
+          if (this.cfg.attack.shapeType === 'circle') {
+            const circle = buildAttackCircle(this.cfg.attack, cpos, this.facing, this.scaleFactor);
+            this.aoeRingFx =
+              this.hitFeelFx?.enemyAoeRing?.(circle.center.x, circle.center.y, circle.radius) ?? null;
+          }
         } else if (dist <= detectPx && dist > 0.001) {
           this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加（含 attackRange 內但形狀外→再逼近，根治空揮）
           this.anim.play('move');
@@ -488,12 +503,19 @@ export class Enemy implements Hittable {
     const pos = this.getHitCenter();
     const a = this.cfg.attack;
 
-    // 用戶 #7：出手當下收掉蓄力預警、播揮擊斬光（rotation 對準玩家 aim 方向、生成偏敵人手前）。純視覺。
+    // 用戶 #7/#3：出手當下收掉蓄力/預告圈，播出手特效。純視覺。
     this.clearChargeFx();
-    const aimAngle = Math.atan2(playerPos.y - pos.y, playerPos.x - pos.x);
-    const slashX = pos.x + Math.cos(aimAngle) * a.offsetX * PPU;
-    const slashY = pos.y + Math.sin(aimAngle) * a.offsetX * PPU;
-    this.hitFeelFx?.enemySlash?.(slashX, slashY, aimAngle, this.scaleFactor);
+    if (a.shapeType === 'circle') {
+      // 用戶 #3：圓形範圍攻擊 → 播 AOE 爆發（同攻擊圓心、依 AOE 半徑），取代揮擊斬光。
+      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor);
+      this.hitFeelFx?.enemyAoeBurst?.(circle.center.x, circle.center.y, circle.radius);
+    } else {
+      // 非圓形近戰 → 揮擊斬光（rotation 對準玩家 aim、生成偏敵人手前）。
+      const aimAngle = Math.atan2(playerPos.y - pos.y, playerPos.x - pos.x);
+      const slashX = pos.x + Math.cos(aimAngle) * a.offsetX * PPU;
+      const slashY = pos.y + Math.sin(aimAngle) * a.offsetX * PPU;
+      this.hitFeelFx?.enemySlash?.(slashX, slashY, aimAngle, this.scaleFactor);
+    }
 
     if (this.cfg.attackKind === 'melee') {
       // 近戰圓形判定：offset 隨 perCharScale 放大（菁英大範圍）。
