@@ -23,6 +23,9 @@ export const GUIDE_ARROW = {
   baseScale: 0.5,
   outlineScale: 1.15,
   footOffsetYUnits: -0.3,
+  /** 六輪#9：箭頭「底邊」離搜索圈邊緣的額外距離(px)。錨搜索圈中心(腳部)+此 margin=底邊位置，
+   *  三角往指向延伸(尾不觸身體)、又貼近搜索圈不飄遠。 */
+  edgeMarginPx: 28,
 } as const;
 
 /** 牽引線參數（對照 Unity TetherLine）。 */
@@ -40,6 +43,25 @@ export const TETHER = {
  */
 export function guideArrowAngle(ownerPos: Vec2, itemPos: Vec2): number {
   return Math.atan2(itemPos.y - ownerPos.y, itemPos.x - ownerPos.x);
+}
+
+/**
+ * 六輪#9：指引箭頭錨點（純函式，抽給測騎）。
+ * 箭頭中心 = 搜索圈中心 + (cos,sin)angle × (vacuumRadius + marginPx)，落在「搜索圈邊緣附近、指向道具那側」。
+ * 真因修正：舊版錨在角色身體中心 + 大 outPx → 箭頭浮身體上方離搜索圈遠；改錨搜索圈中心、貼邊，讓箭頭在圈邊指向道具。
+ * @param vacuumCenter 搜索圈中心（getVacuumCenter，腳部）。
+ * @param vacuumRadius 搜索圈半徑（getVacuumRadius）。
+ * @param angle 指向道具的角度（guideArrowAngle）。
+ * @param marginPx 圈邊外的額外距離（預設小值，貼近圈邊不推遠）。
+ */
+export function guideArrowAnchor(
+  vacuumCenter: Vec2,
+  vacuumRadius: number,
+  angle: number,
+  marginPx = GUIDE_ARROW.edgeMarginPx,
+): Vec2 {
+  const r = vacuumRadius + marginPx;
+  return { x: vacuumCenter.x + Math.cos(angle) * r, y: vacuumCenter.y + Math.sin(angle) * r };
 }
 
 /**

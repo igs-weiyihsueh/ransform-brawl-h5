@@ -16,6 +16,7 @@ import {
   GUIDE_ARROW,
   TETHER,
   guideArrowAngle,
+  guideArrowAnchor,
   shouldHideArrow,
   nextGuideTarget,
   tetherEndPoint,
@@ -157,15 +158,19 @@ export class TransformSystem implements GameSystem {
         alpha = Math.max(0, 1 - (t - fadeStart) / GUIDE_ARROW.fadeDurationSec);
         if (alpha <= 0) continue; // 淡出完不畫
       }
-      const angle = guideArrowAngle(ownerPos, itemPos);
+      const vacCenter = typeof p.getVacuumCenter === 'function' ? p.getVacuumCenter() : ownerPos;
+      const vacRadius = typeof p.getVacuumRadius === 'function' ? p.getVacuumRadius() : 40;
+      const angle = guideArrowAngle(vacCenter, itemPos); // 六輪#9：角度從搜索圈中心→道具(與錨點同基準)
       const pulse = 1 + GUIDE_ARROW.pulseScale * Math.sin(this.pulsePhase * GUIDE_ARROW.pulseSpeed);
       const size = 44 * GUIDE_ARROW.baseScale * 2 * pulse; // 箭頭長度(px，放大更醒目)
-      // 箭頭中心：從腳邊往「指向道具方向」外推一段(避開腳下搜索圈、更醒目)。
-      // 三輪#4 同修: getVacuumRadius 已是像素、不 ×PPU(原 bug 讓箭頭外推 5000+px 到畫面外, 這也是 #7 箭頭難見主因)。
-      const outPx = (typeof p.getVacuumRadius === 'function' ? p.getVacuumRadius() : 40) + 24;
-      const fx = ownerPos.x + Math.cos(angle) * outPx;
-      const fy = ownerPos.y + GUIDE_ARROW.footOffsetYUnits * PPU + Math.sin(angle) * outPx;
-      this.drawArrow(g, fx, fy, angle, size, playerColor(p.playerId), alpha);
+      // 六輪#9：箭頭錨在「搜索圈中心 + 貼圈邊(vacuumRadius+edgeMargin)、指向道具那側」，
+      //   取代舊版「錨身體中心(getPosition)+footOffset + outPx=vacuumRadius+24」(浮身體上方離圈遠、跟角色糊)。
+      //   → 箭頭落在搜索圈邊緣附近、清楚指向道具。純視覺。
+      const anchor = guideArrowAnchor(vacCenter, vacRadius, angle);
+      // 六輪#9：整個三角往指向再推半個箭長，讓箭頭「底邊」落在圈邊(而非中心跨在圈邊)→ 尾巴不觸角色身體。
+      const cx = anchor.x + Math.cos(angle) * size * 0.5;
+      const cy = anchor.y + Math.sin(angle) * size * 0.5;
+      this.drawArrow(g, cx, cy, angle, size, playerColor(p.playerId), alpha);
     }
   }
 
