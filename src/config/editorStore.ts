@@ -15,6 +15,7 @@ export const EDITOR_STORE_KEYS = {
   levels: 'transformbrawl:levels',
   enemies: 'transformbrawl:enemies',
   skills: 'transformbrawl:skills',
+  dash: 'transformbrawl:dash',
 } as const;
 
 export type EditorStoreKey = (typeof EDITOR_STORE_KEYS)[keyof typeof EDITOR_STORE_KEYS];

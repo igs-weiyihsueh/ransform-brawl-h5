@@ -24,6 +24,7 @@ export default defineConfig({
         enemyEditor: fileURLToPath(new URL('./enemy-editor/index.html', import.meta.url)),
         skillEditor: fileURLToPath(new URL('./skill-editor/index.html', import.meta.url)),
         hitfeelEditor: fileURLToPath(new URL('./hitfeel-editor/index.html', import.meta.url)),
+        dashEditor: fileURLToPath(new URL('./dash-editor/index.html', import.meta.url)),
       },
     },
   },

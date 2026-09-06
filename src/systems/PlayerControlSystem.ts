@@ -1,4 +1,5 @@
-import { DASH_CONFIG, PLAYER_CONFIG } from '@/config/combatConfig';
+import { PLAYER_CONFIG } from '@/config/combatConfig';
+import { getResolvedDash } from '@/config/dashSchema';
 import {
   FREEZE_SEC,
   LIGHTNING_CHAIN_COUNT,
@@ -224,7 +225,7 @@ export class PlayerControlSystem implements GameSystem {
         .slice(0, LIGHTNING_CHAIN_COUNT);
       const from = this.ctx.player.getPosition();
       for (const o of others) {
-        o.e.takeHit(LIGHTNING_CHAIN_DAMAGE, DASH_CONFIG.knockback, from);
+        o.e.takeHit(LIGHTNING_CHAIN_DAMAGE, getResolvedDash().knockback, from);
         o.e.applyStun(LIGHTNING_PARALYZE_SEC);
       }
     }
@@ -264,7 +265,8 @@ export class PlayerControlSystem implements GameSystem {
     const mountMult = this.ctx.buff.isActive('mount')
       ? 1 + MOUNT_DASH_EXTRA_HITS / 3
       : 1;
-    const radiusPx = DASH_CONFIG.radius * PPU * mountMult;
+    const dash = getResolvedDash(); // 衝刺可調：override 優先 + cache
+    const radiusPx = dash.radius * PPU * mountMult;
 
     for (const e of this.ctx.getEnemies()) {
       const c = e.getHitCenter();
@@ -279,11 +281,11 @@ export class PlayerControlSystem implements GameSystem {
       const lat = lateralKnockbackDir(dir, { x: dx, y: dy });
       // Enemy.takeHit 以 (enemy - fromPos) 為擊退方向：令 fromPos = enemy - lat → 沿 lat 推。
       const fromPos = { x: c.x - lat.x, y: c.y - lat.y };
-      e.takeHit(DASH_CONFIG.damage, DASH_CONFIG.knockback, fromPos);
+      e.takeHit(dash.damage, dash.knockback, fromPos);
       const attackerId = player.playerId;
-      e.recordDamageFrom(attackerId, DASH_CONFIG.damage); // per-enemy 傷害歸屬
+      e.recordDamageFrom(attackerId, dash.damage); // per-enemy 傷害歸屬
       // 衝刺傷害貢獻（per-player，additive）；衝刺命中不充能（不呼叫 energy.reportHit）。
-      this.ctx.jp.recordDamage(attackerId, DASH_CONFIG.damage);
+      this.ctx.jp.recordDamage(attackerId, dash.damage);
       // Credit 扣 + COMBO + JP 共享池：一次衝刺最多一次。
       if (!this.dashConsumedCredit.get(attackerId)) {
         this.dashConsumedCredit.set(attackerId, true);

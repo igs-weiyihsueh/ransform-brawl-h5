@@ -1,12 +1,12 @@
 import Phaser from 'phaser';
 import {
-  DASH_CONFIG,
   PLAYER_CONFIG,
   PLAYER_HIT_RADIUS,
   PLAYER_IFRAME_DURATION,
   SPRITE_SCALE,
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
+import { getResolvedDash } from '@/config/dashSchema';
 import { FOOT_GLOW, footGlowCenter, playerColor, resolveFoot } from '@/config/playerConfig';
 import { PANEL_DEPTH } from '@/config/uiConfig';
 import { UI_LAYOUT_ASSET } from '@/config/uiConfig';
@@ -525,7 +525,7 @@ export class Player implements Hittable {
       y /= len;
     }
     this.dashing = true;
-    this.dashRemaining = DASH_CONFIG.duration;
+    this.dashRemaining = getResolvedDash().duration; // 衝刺可調：override 優先 + cache
     this.dashDir = { x, y };
     this.dashHitSet.clear();
     this.afterImageTimer = 0;
@@ -543,7 +543,7 @@ export class Player implements Hittable {
   updateDash(dt: number): boolean {
     if (!this.dashing) return false;
     if (this.hitlagRemaining > 0) return true; // hitlag：凍結衝刺推進（不滑、清前衝感），仍算 dashing
-    const speedPx = DASH_CONFIG.speed * PPU * this.dashSpeedMult;
+    const speedPx = getResolvedDash().speed * PPU * this.dashSpeedMult; // 衝刺可調
     this.anim.sprite.x += this.dashDir.x * speedPx * dt;
     this.anim.sprite.y += this.dashDir.y * speedPx * dt;
 
