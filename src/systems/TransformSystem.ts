@@ -112,8 +112,11 @@ export class TransformSystem implements GameSystem {
       if (!anchor) continue;
       const center =
         typeof p.getVacuumCenter === 'function' ? p.getVacuumCenter() : p.getPosition();
-      const radius = typeof p.getVacuumRadius === 'function' ? p.getVacuumRadius() * PPU : 40;
-      const end = tetherEndPoint(anchor, center, radius); // 停真空圈邊緣靠 anchor 那側
+      // 三輪#4 根治：getVacuumRadius() 已回像素(FOOT_GLOW.radiusPx=50, 搜索圈=真空圈同一圈)，
+      // 不可再 ×PPU(原 bug: 50×100=5000px → tetherEndPoint 因 anchor 距離<5000 退回角色中心 → 線穿過整個搜索圈)。
+      // 用當前搜索圈半徑(px) → 停在搜索圈外緣靠 anchor 那側(不進圈)；#5 開放調整後半徑變化會自動跟。
+      const radius = typeof p.getVacuumRadius === 'function' ? p.getVacuumRadius() : 40;
+      const end = tetherEndPoint(anchor, center, radius); // 停搜索圈(真空圈)邊緣靠 anchor 那側
       g.lineStyle(TETHER.widthPx, playerColor(p.playerId), TETHER.alpha);
       g.beginPath();
       g.moveTo(anchor.x, anchor.y);
@@ -155,8 +158,9 @@ export class TransformSystem implements GameSystem {
       const angle = guideArrowAngle(ownerPos, itemPos);
       const pulse = 1 + GUIDE_ARROW.pulseScale * Math.sin(this.pulsePhase * GUIDE_ARROW.pulseSpeed);
       const size = 44 * GUIDE_ARROW.baseScale * 2 * pulse; // 箭頭長度(px，放大更醒目)
-      // 箭頭中心：從腳邊往「指向道具方向」外推一段(避開腳下真空圈、更醒目)。
-      const outPx = (typeof p.getVacuumRadius === 'function' ? p.getVacuumRadius() * PPU : 40) + 24;
+      // 箭頭中心：從腳邊往「指向道具方向」外推一段(避開腳下搜索圈、更醒目)。
+      // 三輪#4 同修: getVacuumRadius 已是像素、不 ×PPU(原 bug 讓箭頭外推 5000+px 到畫面外, 這也是 #7 箭頭難見主因)。
+      const outPx = (typeof p.getVacuumRadius === 'function' ? p.getVacuumRadius() : 40) + 24;
       const fx = ownerPos.x + Math.cos(angle) * outPx;
       const fy = ownerPos.y + GUIDE_ARROW.footOffsetYUnits * PPU + Math.sin(angle) * outPx;
       this.drawArrow(g, fx, fy, angle, size, playerColor(p.playerId), alpha);
