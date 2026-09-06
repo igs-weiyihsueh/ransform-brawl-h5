@@ -44,6 +44,8 @@ export class GuardEvent {
   private moveElapsed = 0;
   private focusElapsed = 0;
   private spotlight: { fadeOut: () => void } | null = null;
+  /** 七輪#5：「協力合作，守護雕像」大字 handle（聚焦時滑進、解聚焦時滑出，對齊 Unity GuardTextUI）。 */
+  private guardTextHandle: { fadeOut: () => void } | null = null;
 
   constructor(ctx: GameContext, presetName: string) {
     this.ctx = ctx;
@@ -164,6 +166,8 @@ export class GuardEvent {
     const c = this.target.getPosition();
     this.target.setDepth(972); // 遮罩(960)+亮環(962) 之上 → 雕像在 spotlight 中被聚焦、不壓暗
     this.spotlight = this.ctx.effects?.guardSpotlight?.(c.x, c.y, this.preset.spotlightRadiusPx) ?? null;
+    // 七輪#5：聚焦壓黑同時「協力合作，守護雕像」從左滑進（對齊 Unity 序列 4：聚焦+GuardTextUI）。
+    this.guardTextHandle = this.ctx.effects?.guardText?.() ?? null;
     this.phase = 'focus';
     this.focusElapsed = 0;
   }
@@ -172,6 +176,9 @@ export class GuardEvent {
   private endFocus(): void {
     this.spotlight?.fadeOut();
     this.spotlight = null;
+    // 七輪#5：解聚焦同時「協力守護雕像」滑出（對齊 Unity：解聚焦→GuardText 滑出→守護開始）。
+    this.guardTextHandle?.fadeOut();
+    this.guardTextHandle = null;
     this.target.setDepth(15); // 還原一般 depth
     this.ctx.scriptedControl = false; // 解鎖玩家操作
     this.spawnCooldown = 0; // combat 立即第一批 drip
@@ -194,6 +201,8 @@ export class GuardEvent {
     this.ctx.scriptedControl = false;
     this.spotlight?.fadeOut();
     this.spotlight = null;
+    this.guardTextHandle?.fadeOut(); // 七輪#5：保險——開場中意外結束不殘留守護大字
+    this.guardTextHandle = null;
 
     const hpRatio = this.target.getHpRatio();
     // cleanup：清回玩家目標、清全部敵人、destroy 雕像。

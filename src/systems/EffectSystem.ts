@@ -642,6 +642,53 @@ export class EffectSystem {
   }
 
   /**
+   * 「協力合作，守護雕像」守護宣告大字（七輪#5，對照 Unity GuardTextUI）：聚焦壓黑時從左滑進、
+   * 停留（由呼叫端 fadeOut 收掉，對齊解聚焦時機）。非阻塞、純視覺。回傳 handle，呼叫端 .fadeOut() 滑出。
+   * depth 提到 spotlight(ENERGY_FLY_DEPTH+10) 之上 → 壓黑聚焦時字清楚可見。
+   */
+  guardText(): { fadeOut: () => void } {
+    const el = this.screenElement('eventMessage', {
+      x: 0,
+      y: GAME_HEIGHT * 0.42 - 46,
+      width: GAME_WIDTH,
+      height: 92,
+      align: 'center',
+    });
+    const depth = ENERGY_FLY_DEPTH + 14; // spotlight(+10)/雕像(+12ish) 之上，聚焦時字最上層
+    if (!isVisible(el)) return { fadeOut: () => {} }; // eventMessage 勾掉→不顯（但仍回無操作 handle）
+    const cy = el.y + el.height / 2;
+    const cx = GAME_WIDTH / 2;
+    const txt = this.scene.add
+      .text(cx, cy, '協力合作，守護雕像', {
+        fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+        fontSize: '56px',
+        color: '#ffe64d',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 8,
+        align: 'center',
+      })
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setDepth(depth);
+    // 從左滑進。
+    txt.x -= GAME_WIDTH;
+    this.scene.tweens.add({ targets: txt, x: cx, duration: 400, ease: 'Back.easeOut' });
+    return {
+      fadeOut: () => {
+        this.scene.tweens.add({
+          targets: txt,
+          x: cx + GAME_WIDTH,
+          alpha: 0,
+          duration: 350,
+          ease: 'Sine.easeIn',
+          onComplete: () => txt.destroy(),
+        });
+      },
+    };
+  }
+
+  /**
    * 火雨預警紅圈（#10）：落點地上紅色半透明圓（直徑=radius×2），停留 warningTime。
    * @returns Graphics（呼叫端在火柱落下時 destroy）。
    */
