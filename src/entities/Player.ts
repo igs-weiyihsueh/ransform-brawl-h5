@@ -7,6 +7,7 @@ import {
   SPRITE_SCALE,
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
+import { knockbackVelocity, HIT_FEEL } from '@/config/hitFeelConfig';
 import { FOOT_GLOW, footGlowCenter, playerColor, resolveFoot } from '@/config/playerConfig';
 import { PANEL_DEPTH } from '@/config/uiConfig';
 import { UI_LAYOUT_ASSET } from '@/config/uiConfig';
@@ -83,6 +84,9 @@ export class Player implements Hittable {
 
   /** 無敵幀剩餘秒數（>0 表示免疫且閃爍）。 */
   private iFrameRemaining = 0;
+  /** 六輪：受擊擊退剩餘時長(秒)+每秒速度向量(像素/秒)；>0 時 updateTimers 每幀推位移、線性衰減。 */
+  private knockbackRemaining = 0;
+  private knockbackPerSec: Vec2 = { x: 0, y: 0 };
   /** debug：最近被誰打到。 */
   private lastHitBy = '';
 
@@ -333,17 +337,27 @@ export class Player implements Hittable {
 
   /**
    * 玩家被敵人攻擊命中。
-   * 受擊反饋：damaged 動畫 + 0.5s iFrame 閃爍。iFrame 內呼叫會被忽略。
+   * 受擊反饋：damaged 動畫 + 0.5s iFrame 閃爍 + 六輪擊退位移（依來源方向×力道）。iFrame 內呼叫會被忽略。
    * 若已設 soulDamageSink（變身中），命中真正落地時把 damage 交給它扣魂力。
-   * @returns 是否實際受擊（false = 被 iFrame 擋掉）。
+   * @param damage 傷害。
+   * @param sourceName 來源名（debug/最近被誰打）。
+   * @param knockback 擊退力道（unit 級，敵人 attack.knockback；省略/0=不擊退，相容舊呼叫）。
+   * @param fromPos 攻擊來源位置（敵人/攻擊圓心，算擊退方向 fromPos→玩家）。
+   * @returns 是否實際受擊（false = 被 iFrame/護盾擋掉）。
    */
-  takeHit(damage: number, sourceName: string): boolean {
+  takeHit(damage: number, sourceName: string, knockback = 0, fromPos?: Vec2): boolean {
     if (this.shielded) return false; // 護盾：完全免疫（不扣血/魂力、不擊退）
     if (this.iFrameRemaining > 0) return false;
     this.lastHitBy = sourceName;
     this.iFrameRemaining = PLAYER_IFRAME_DURATION;
     this.damagedRemaining = 0.25;
     this.anim.play('damaged', { force: true });
+    // 六輪：受擊擊退——依來源方向(fromPos→玩家)×力道把玩家推開。護盾/iFrame 已在上面擋掉(免疫擊退)。
+    if (knockback > 0 && fromPos) {
+      const self = this.getHitCenter();
+      this.knockbackPerSec = knockbackVelocity(fromPos, self, knockback, PPU);
+      this.knockbackRemaining = HIT_FEEL.knockbackDuration;
+    }
     // 變身中：把傷害交給魂力扣血鉤子（TransformSystem 設定）。
     this.soulDamageSink?.(damage);
     return true;
@@ -607,6 +621,12 @@ export class Player implements Hittable {
   updateTimers(dt: number): boolean {
     if (this.cooldownRemaining > 0) {
       this.cooldownRemaining = Math.max(0, this.cooldownRemaining - dt);
+    }
+    // 六輪：受擊擊退位移（線性推進，衰減完停）。在移動/clamp 之前推，PlayerControlSystem 之後的 clamp 會夾回界內。
+    if (this.knockbackRemaining > 0) {
+      this.knockbackRemaining = Math.max(0, this.knockbackRemaining - dt);
+      this.anim.sprite.x += this.knockbackPerSec.x * dt;
+      this.anim.sprite.y += this.knockbackPerSec.y * dt;
     }
     if (this.damagedRemaining > 0) {
       this.damagedRemaining = Math.max(0, this.damagedRemaining - dt);
