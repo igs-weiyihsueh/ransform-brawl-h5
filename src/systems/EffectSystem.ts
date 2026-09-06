@@ -939,13 +939,16 @@ export class EffectSystem {
       duration: Math.max(200, durationMs),
       ease: 'Sine.easeOut',
     });
-    // ★ 持續旋轉（腳底盤旋氣流法陣，用戶 #4 關鍵，貼地更像法陣）：~120°/s → 360°/3s，無限。
+    // 五輪#2#3：不再 setAngle 旋轉整個 sprite——壓扁橢圓一轉長軸就變斜、看起來「斜面」非水平躺地(subagent 確認)。
+    // 貼地俯視盤保持長軸水平躺地; 改用「輕微 alpha 呼吸脈動」表現集氣能量感(取代旋轉、不破壞水平)。
     this.scene.tweens.add({
       targets: spr,
-      angle: 360,
-      duration: 3000, // 120°/s
+      alpha: { from: 1, to: 0.6 },
+      duration: 320,
+      yoyo: true,
       repeat: -1,
-      ease: 'Linear',
+      ease: 'Sine.inOut',
+      delay: Math.max(200, durationMs), // 匯聚亮到滿後才開始呼吸
     });
     return spr;
   }
@@ -980,7 +983,7 @@ export class EffectSystem {
     // 四輪#3#4：depth -3（角色 PLAY_DEPTH=10 之下＝貼地、在 aoeRing -4 之上），當地面爆發不蓋角色/怪。
     spr.setOrigin(0.5, 0.5).setDepth(-3);
     spr.setBlendMode(Phaser.BlendModes.ADD); // 貼地在暗地面更亮醒目
-    spr.setRotation(Phaser.Math.FloatBetween(0, Math.PI * 2));
+    // 五輪#2#3：不 setRotation——壓扁橢圓一轉長軸就斜、非水平躺地(同 charge disk 斜面問題)。保持長軸水平貼地。
     const target = radiusPx * 2;
     // 貼地俯視：高壓扁成寬的一半(2:1 橢圓)＝地面爆發透視，與 aoeRing 一致。
     spr.setDisplaySize(target * 0.5, target * 0.25).setAlpha(1);
