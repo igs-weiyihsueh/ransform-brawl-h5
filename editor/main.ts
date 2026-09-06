@@ -596,18 +596,26 @@ function exportJson(): void {
 }
 
 /** 套用到遊戲（匯入機制）：validate 過才存 localStorage，遊戲啟動優先讀。 */
-function applyToGameFromEditor(): void {
+function applyToGameFromEditor(): boolean {
   const candidate: LevelsFile = { version: state.version, levels: state.levels };
   const result = validateLevels(candidate);
   if (!result.ok) {
     setStatus(`套用被擋下：資料不合法（${result.errors.length} 項）：\n${result.errors.map((m) => `  - ${m}`).join('\n')}`, 'err');
-    return;
+    return false;
   }
   const ok = applyToGame(EDITOR_STORE_KEYS.levels, assertValidLevels(candidate));
   setStatus(
     ok ? '✅ 已套用到遊戲（存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。',
     ok ? 'ok' : 'err',
   );
+  return ok;
+}
+
+/** 套用並回到遊戲：套用成功才跳轉回遊戲頁（../）。 */
+function applyAndReturnToGame(): void {
+  if (!applyToGameFromEditor()) return;
+  setStatus('✅ 已套用，返回遊戲中…', 'ok');
+  window.location.href = '../';
 }
 
 /** 清除套用（回打包預設）：移除 localStorage override。 */
@@ -812,6 +820,7 @@ function bindUI(): void {
   $('btn-load-default').addEventListener('click', () => void loadDefault());
   $('btn-export').addEventListener('click', exportJson);
   $('btn-apply').addEventListener('click', applyToGameFromEditor);
+  $('btn-apply-return').addEventListener('click', applyAndReturnToGame);
   $('btn-clear-apply').addEventListener('click', clearAppliedFromEditor);
   $('btn-add-level').addEventListener('click', addLevel);
   $('btn-preview').addEventListener('click', startPreview);

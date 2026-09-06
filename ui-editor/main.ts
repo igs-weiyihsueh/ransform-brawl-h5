@@ -1098,18 +1098,26 @@ function resetDefault(): void {
   setStatus('已重設為預設值。', 'info');
 }
 
-/** 套用到遊戲（匯入機制）：validate 過才存 localStorage，遊戲啟動優先讀。 */
-function applyToGameFromEditor(): void {
+/** 套用到遊戲（匯入機制）：validate 過才存 localStorage，遊戲啟動優先讀。回傳是否成功。 */
+function applyToGameFromEditor(): boolean {
   const result = validateUiLayout(layout);
   if (!result.ok) {
     setStatus(`套用被擋下：資料不合法（${result.errors.length} 項）：\n${result.errors.map((m) => `  - ${m}`).join('\n')}`, 'err');
-    return;
+    return false;
   }
   const ok = applyToGame(EDITOR_STORE_KEYS.uiLayout, assertValidUiLayout(layout));
   setStatus(
     ok ? '✅ 已套用到遊戲（存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。',
     ok ? 'ok' : 'err',
   );
+  return ok;
+}
+
+/** 套用並回到遊戲：套用成功才跳轉回遊戲頁（../）。 */
+function applyAndReturnToGame(): void {
+  if (!applyToGameFromEditor()) return;
+  setStatus('✅ 已套用，返回遊戲中…', 'ok');
+  window.location.href = '../';
 }
 
 /** 清除套用（回打包預設）：移除 localStorage override。 */
@@ -1129,6 +1137,7 @@ function bindUI(): void {
   $('btn-export').addEventListener('click', exportJson);
   $('btn-reset').addEventListener('click', resetDefault);
   $('btn-apply').addEventListener('click', applyToGameFromEditor);
+  $('btn-apply-return').addEventListener('click', applyAndReturnToGame);
   $('btn-clear-apply').addEventListener('click', clearAppliedFromEditor);
 
   const fileInput = $<HTMLInputElement>('file-input');

@@ -347,6 +347,12 @@ $('btn-export').addEventListener('click', () => {
   setStatus('已下載 hitFeel.json。', true);
 });
 
+// hitfeel-editor 無 localStorage 套用機制（複製/下載貼回 hitFeelConfig 的工作流），
+// 故只提供純導覽「回到遊戲」（與其他編輯器的「套用並回到遊戲」統一回遊戲 UX，但不套用）。
+$('btn-return').addEventListener('click', () => {
+  window.location.href = '../';
+});
+
 buildControls();
 refreshExport();
 requestAnimationFrame(loop);

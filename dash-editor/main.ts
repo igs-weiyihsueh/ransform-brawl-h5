@@ -176,16 +176,25 @@ function main(): void {
     setStatus('已驗證並下載 dash.json。', 'ok');
   });
 
-  $('btn-apply').addEventListener('click', () => {
-    const res = validateDash(file);
-    if (!res.ok) { setStatus(`套用失敗（驗證未過）：\n${res.errors.join('\n')}`, 'err'); return; }
-    const ok = applyToGame(EDITOR_STORE_KEYS.dash, res.data);
-    setStatus(ok ? '✅ 已套用到遊戲（存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。', ok ? 'ok' : 'err');
+  $('btn-apply').addEventListener('click', () => void applyDashToGame());
+  $('btn-apply-return').addEventListener('click', () => {
+    if (!applyDashToGame()) return;
+    setStatus('✅ 已套用，返回遊戲中…', 'ok');
+    window.location.href = '../';
   });
   $('btn-clear-apply').addEventListener('click', () => {
     clearOverride(EDITOR_STORE_KEYS.dash);
     setStatus('已清除套用，遊戲將回到打包預設衝刺參數。', 'info');
   });
+}
+
+/** 套用 dash 設定到遊戲（匯入機制）：validate 過才存 localStorage。回傳是否成功。 */
+function applyDashToGame(): boolean {
+  const res = validateDash(file);
+  if (!res.ok) { setStatus(`套用失敗（驗證未過）：\n${res.errors.join('\n')}`, 'err'); return false; }
+  const ok = applyToGame(EDITOR_STORE_KEYS.dash, res.data);
+  setStatus(ok ? '✅ 已套用到遊戲（存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。', ok ? 'ok' : 'err');
+  return ok;
 }
 
 main();
