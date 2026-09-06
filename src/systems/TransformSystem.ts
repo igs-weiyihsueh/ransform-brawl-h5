@@ -68,7 +68,9 @@ export class TransformSystem implements GameSystem {
     const scene = ctx.scene as Phaser.Scene | undefined;
     if (scene && typeof scene.add?.graphics === 'function') {
       this.tetherGfx = scene.add.graphics().setDepth(-3); // 貼地不擋(角色 PLAY_DEPTH=10 之上)
-      this.guideGfx = scene.add.graphics().setDepth(25); // 箭頭在道具(20)之上
+      // 七輪#9(用戶指明 depth)：指引箭頭提到道具(20)+怪+角色之上、明確高於道具 sprite，
+      //   低於 HUD/面板(OVERHEAD_DEPTH=900/PANEL_DEPTH=1000)→道具指引在遊戲層最上、不被道具圖蓋、不蓋 UI。
+      this.guideGfx = scene.add.graphics().setDepth(100);
     }
   }
 
