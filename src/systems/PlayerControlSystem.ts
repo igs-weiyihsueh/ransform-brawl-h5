@@ -12,6 +12,7 @@ import { HIT_FEEL } from '@/config/hitFeelConfig';
 import { pushLoadFactor } from '@/systems/enemySeparation';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
+import { playerColor } from '@/config/playerConfig';
 import { landingX } from '@/systems/entranceMath';
 import { initialItemPos } from '@/systems/itemGuideMath';
 import type { AttackData } from '@/systems/AttackData';
@@ -118,6 +119,12 @@ export class PlayerControlSystem implements GameSystem {
     if (src.justPressedDash() && !player.isDashing() && credit.canAttack(pid)) {
       player.startDash(src.getMoveVector());
       this.dashConsumedCredit.set(pid, false);
+      // 七輪：衝刺開始播拖尾特效（玩家位置、衝刺方向、染玩家色）。純視覺。
+      const dd = player.getDashDir?.() ?? { x: player.getFacing?.() ?? 1, y: 0 };
+      const dpos = player.getPosition?.();
+      if (dpos) {
+        this.ctx.effects?.playerDash?.(dpos.x, dpos.y, Math.atan2(dd.y, dd.x), playerColor(pid));
+      }
     }
 
     if (player.isDashing()) {

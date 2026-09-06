@@ -47,6 +47,8 @@ const ENEMY_ATTACK_VFX = {
   fireballFall: { key: 'vfx-fireball-falling', path: `${BASE_PATH}/fireball_falling.png` },
   /** 三輪#11 火雨重製：落地火焰爆發。素材到位前用 aoeBurst 佔位。 */
   fireballImpact: { key: 'vfx-fireball-impact', path: `${BASE_PATH}/fireball_impact.png` },
+  /** 七輪：玩家衝刺拖尾（160×80, 頭亮尾淡, 白青可染玩家色）。 */
+  playerDash: { key: 'vfx-player-dash', path: `${BASE_PATH}/fx_player_dash.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -909,6 +911,36 @@ export class EffectSystem {
       alpha: 0,
       delay: 120,
       duration: 80,
+      ease: 'Sine.easeIn',
+      onComplete: () => spr.destroy(),
+    });
+  }
+
+  /**
+   * 七輪：玩家衝刺拖尾（fx_player_dash 160×80，頭亮尾淡）。
+   * origin(1,0.5) 頭(亮端)在玩家位置、尾往後拖；rotate 對齊衝刺方向；染玩家色；scaleX 0.8→1.15 拉伸；0.18s 淡出。
+   * @param x,y 玩家位置（世界座標）。
+   * @param angleRad 衝刺方向（拖尾頭朝此、尾往反向拖）。
+   * @param color 玩家識別色（setTint 染色）；省略=不染。
+   */
+  playerDash(x: number, y: number, angleRad: number, color?: number): void {
+    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.playerDash.key)) return;
+    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.playerDash.key);
+    // 頭(亮端)在圖右緣 → origin(1,0.5) 讓頭=玩家位置、尾往後拖；rotate 對齊衝刺方向。
+    spr.setOrigin(1, 0.5).setDepth(ATTACK_VFX_DEPTH).setRotation(angleRad);
+    if (color !== undefined) spr.setTint(color); // 染玩家識別色
+    spr.setScale(0.8, 1).setAlpha(0.9);
+    // scaleX 0.8→1.15 拉伸（速度感）+ 0.18s 淡出。
+    this.scene.tweens.add({
+      targets: spr,
+      scaleX: 1.15,
+      duration: 180,
+      ease: 'Quad.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: spr,
+      alpha: 0,
+      duration: 180,
       ease: 'Sine.easeIn',
       onComplete: () => spr.destroy(),
     });
