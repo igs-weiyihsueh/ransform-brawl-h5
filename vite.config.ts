@@ -26,6 +26,7 @@ export default defineConfig({
         hitfeelEditor: fileURLToPath(new URL('./hitfeel-editor/index.html', import.meta.url)),
         dashEditor: fileURLToPath(new URL('./dash-editor/index.html', import.meta.url)),
         eventEditor: fileURLToPath(new URL('./event-editor/index.html', import.meta.url)),
+        chestEditor: fileURLToPath(new URL('./chest-editor/index.html', import.meta.url)),
       },
     },
   },

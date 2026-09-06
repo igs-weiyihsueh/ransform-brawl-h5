@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { CHARACTERS } from '@/config/animationConfig';
-import { chestChargeFor } from '@/config/chestConfig';
+import { chestChargeForResolved, getResolvedChest } from '@/config/chestSchema';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
@@ -158,7 +158,7 @@ export class GameScene extends Phaser.Scene {
     // + 能量飛寶盒表演（第4項，純視覺）：每個有貢獻的 player 從敵人死亡位置飛一道識別色能量光
     //   到該 player 寶盒 UI 位置。⚠️ addCharge 維持即時加值、飛光只是疊加表演（數值/視覺解耦）。
     spawner.onEnemyKilled = (enemyKey, damageByPlayer, deathPos) => {
-      const total = chestChargeFor(enemyKey);
+      const total = chestChargeForResolved(getResolvedChest(), enemyKey);
       const shares = splitChestByDamage(total, damageByPlayer, player.playerId);
       for (const [pid, amount] of shares) {
         chest.addCharge(pid, amount); // 即時加值（不動時機/邏輯）

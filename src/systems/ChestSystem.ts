@@ -1,4 +1,5 @@
-import { CHEST_OPEN_THRESHOLD, type ChestRewardKind } from '@/config/chestConfig';
+import { type ChestRewardKind } from '@/config/chestConfig';
+import { getResolvedChest } from '@/config/chestSchema';
 import { BUFF_DURATION, BUFF_STAT } from '@/config/buffConfig';
 import { isTicketReward, pickChestReward } from '@/systems/chestLoot';
 import type { GameContext } from '@/systems/GameContext';
@@ -53,9 +54,10 @@ export class ChestSystem implements GameSystem {
   /** 給某玩家寶盒能量；達門檻自動連開（開箱歸該 player）。 */
   addCharge(playerId: number, amount: number): void {
     if (amount <= 0) return;
+    const threshold = getResolvedChest().openThreshold; // chest override 優先 + cache（0-nullish safe）
     let c = (this.charge.get(playerId) ?? 0) + amount;
-    while (c >= CHEST_OPEN_THRESHOLD) {
-      c -= CHEST_OPEN_THRESHOLD;
+    while (c >= threshold) {
+      c -= threshold;
       this.openChest(playerId);
     }
     this.charge.set(playerId, c);
@@ -103,12 +105,12 @@ export class ChestSystem implements GameSystem {
 
   /** 開箱門檻。 */
   getThreshold(): number {
-    return CHEST_OPEN_THRESHOLD;
+    return getResolvedChest().openThreshold;
   }
 
   /** 某玩家進度比例 0..1（charge/門檻）。 */
   getProgress(playerId: number): number {
-    return Math.min(1, this.getCharge(playerId) / CHEST_OPEN_THRESHOLD);
+    return Math.min(1, this.getCharge(playerId) / getResolvedChest().openThreshold);
   }
 
   getOpensCount(): number {

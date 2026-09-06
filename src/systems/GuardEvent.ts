@@ -1,6 +1,6 @@
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { PPU } from '@/config/gameConfig';
-import { CHEST_OPEN_THRESHOLD } from '@/config/chestConfig';
+import { getResolvedChest } from '@/config/chestSchema';
 import { PLAYER_CONFIG } from '@/config/combatConfig';
 import { pickGuardEnemy, guardSideSpawnPoint, resolveGuardDrip, type GuardPreset, type GuardDrip, type GuardSpawnEntry } from '@/config/guardConfig';
 import { getResolvedGuardPreset } from '@/config/guardSchema';
@@ -220,7 +220,7 @@ export class GuardEvent {
     if (won) {
       // 守護成功獎勵：佔位用寶盒進度（用戶決策 76f07f64，之後換正式 JP 燈號/彩金）。
       // 滿血=給一箱門檻(165)、半血=半箱。
-      const chargeReward = Math.round(CHEST_OPEN_THRESHOLD * hpRatio);
+      const chargeReward = Math.round(getResolvedChest().openThreshold * hpRatio);
       // 守護獎勵無個別歸屬 → 給本地 P1（多人守護獎勵分配之後另議）。
       this.ctx.chest.addCharge(this.ctx.player.playerId, chargeReward);
       console.info(
