@@ -13,6 +13,7 @@ import { pushLoadFactor } from '@/systems/enemySeparation';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
 import { landingX } from '@/systems/entranceMath';
+import { initialItemPos } from '@/systems/itemGuideMath';
 import type { AttackData } from '@/systems/AttackData';
 import { lateralKnockbackDir } from '@/systems/dashMath';
 import { EnergySystem, type AttackIntent } from '@/systems/EnergySystem';
@@ -90,8 +91,10 @@ export class PlayerControlSystem implements GameSystem {
     }
 
     // 進場跳躍中：只推進進場動畫，跳過一般操控/攻擊/夾限（isJumping 已豁免夾限）。
+    // 五輪#1：落地當幀（updateEntrance 由 true→回 false）→ 發該玩家的初始變身道具（有主，落點旁）。
     if (typeof player.isEntering === 'function' && player.isEntering()) {
-      player.updateEntrance(dt);
+      const stillEntering = player.updateEntrance(dt);
+      if (!stillEntering) this.giveInitialItem(player); // 剛落地 → 進場旁給初始道具
       return;
     }
 
@@ -169,6 +172,16 @@ export class PlayerControlSystem implements GameSystem {
     const endX = landingX(player.playerId, GAME_WIDTH * 0.5);
     const endY = GAME_HEIGHT * 0.5;
     player.startEntrance(start.x, start.y, endX, endY);
+  }
+
+  /**
+   * 五輪#1：玩家進場落地 → 發一個「初始變身道具」在落點旁（有主，標該玩家色 + 箭頭 + 牽引線，呼應 #6#7）。
+   * 每次進場發一個（頻率 a，異靈拍板；MAX_ITEMS_ON_FIELD 上限防反覆進出爆場）。位置從落點算(initialItemPos)、不寫死。
+   */
+  private giveInitialItem(player: GameContext['player']): void {
+    if (!this.ctx.transform || typeof this.ctx.transform.spawnItem !== 'function') return;
+    const pos = initialItemPos(player.getPosition(), PLAYER_BOUNDS);
+    this.ctx.transform.spawnItem('initial', player.playerId, pos);
   }
 
   /** 依 BuffSystem 聚合倍率設定玩家 stat 倍率/護盾（同 stat 多來源已相乘+clamp）。 */

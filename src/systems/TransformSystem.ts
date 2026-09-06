@@ -200,12 +200,13 @@ export class TransformSystem implements GameSystem {
    * 生成一個變身道具（場上未達上限才生）。可被 debug 呼叫。
    * @param source 三輪#6 來源：'random'(隨機刷,無主)/'initial'(登場,有主)/'kill'(擊落,歸打的玩家)。預設 'random'。
    * @param ownerPlayerId 初始/擊落來源的擁有者 playerId（隨機來源忽略）。
+   * @param pos 五輪#1：指定生成位置（初始道具放玩家落點旁）；省略=隨機位置（隨機刷）。
    */
-  spawnItem(source: ItemSource = 'random', ownerPlayerId?: number): void {
+  spawnItem(source: ItemSource = 'random', ownerPlayerId?: number, pos?: { x: number; y: number }): void {
     if (this.items.length >= MAX_ITEMS_ON_FIELD) return;
     const margin = 120;
-    const x = Phaser.Math.Between(margin, GAME_WIDTH - margin);
-    const y = Phaser.Math.Between(margin, GAME_HEIGHT - margin);
+    const x = pos ? pos.x : Phaser.Math.Between(margin, GAME_WIDTH - margin);
+    const y = pos ? pos.y : Phaser.Math.Between(margin, GAME_HEIGHT - margin);
     const item = new TransformItem(this.ctx.scene, x, y, ++this.itemSeq);
     // 三輪#6：owner 依來源分配。隨機刷=無主(不標色框/不畫箭頭/不連牽引)；初始/擊落=有主(標玩家色+入佇列)。
     const owner = resolveItemOwner(source, ownerPlayerId);
