@@ -411,6 +411,9 @@ export class Enemy implements Hittable {
   setGrabber(on: boolean): void {
     this.grabber = on;
     if (!on) this.grabberLocked = false;
+    // 七輪#2：轉抓人態放棄蓄力 → 收蓄力特效（否則 grabber branch early-return 跳過 clear → 特效留原地）。
+    //   對齊 die()/fireAttack 出手/canReach-fail 打斷的 clearChargeFx 慣例（轉 grabber 態也進 clear 路徑）。
+    if (on) this.clearChargeFx();
   }
 
   isGrabber(): boolean {
