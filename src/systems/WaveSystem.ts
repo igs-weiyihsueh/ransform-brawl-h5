@@ -3,12 +3,13 @@ import { SPAWN_WARNING_DURATION_SEC, ENEMY_BODY_RADIUS_PX } from '@/config/enemy
 import { ENEMY_PLAY_BOUNDS, insetBounds } from '@/config/mapConfig';
 import {
   type FireRainPreset,
-  getFireRainPreset,
-  isFireRainPreset,
-  resolveFireRainForEvent,
   resolveNodeFireRain,
 } from '@/config/fireRainConfig';
-import { getGuardPreset } from '@/config/guardConfig';
+import {
+  getResolvedFireRainPreset,
+  isResolvedFireRainPreset,
+} from '@/config/fireRainSchema';
+import { getResolvedGuardPreset } from '@/config/guardSchema';
 import { shouldSpawnMore, shouldAdvanceSpawn, pickSpawnPoint } from '@/systems/waveMath';
 import type {
   EnemyType,
@@ -100,19 +101,20 @@ export class WaveSystem implements GameSystem {
     // 用戶#2：Spawn 節點附加火雨（該波進行中即降）。
     if (node?.nodeType === 'Spawn') {
       const attach = (node as { attachFireRain?: string }).attachFireRain;
-      if (attach) return getFireRainPreset(attach);
+      if (attach) return getResolvedFireRainPreset(attach);
     }
     // 舊相容：純火雨 Event 節點（eventPresetName 為火雨 preset）。
     if (this.fireRainActive && node?.nodeType === 'Event') {
-      return resolveFireRainForEvent((node as { eventPresetName: string }).eventPresetName, undefined);
+      const en = (node as { eventPresetName: string }).eventPresetName;
+      return isResolvedFireRainPreset(en) ? getResolvedFireRainPreset(en) : null;
     }
     // 守護波 + 守護 preset 帶火雨 preset 名。六輪#1：node.attachFireRain 三態可 per-node 覆蓋 preset 預設。
     if (this.guardEvent && !this.guardEvent.isFinished()) {
-      const preset = getGuardPreset((node as { eventPresetName?: string })?.eventPresetName);
+      const preset = getResolvedGuardPreset((node as { eventPresetName?: string })?.eventPresetName);
       const raw = (node as { attachFireRain?: string }).attachFireRain;
       // undefined→沿用 preset.attachFireRain；'none'→null 無火雨；其餘→該 preset 名。
       const chosen = resolveNodeFireRain(raw, preset.attachFireRain);
-      return chosen ? resolveFireRainForEvent(undefined, chosen) : null;
+      return chosen ? getResolvedFireRainPreset(chosen) : null;
     }
     return null;
   }
@@ -120,6 +122,11 @@ export class WaveSystem implements GameSystem {
   /** 目前關卡節點索引（0-based，進度條用：已完成節點數）。 */
   getNodeIndex(): number {
     return this.nodeIndex;
+  }
+
+  /** 目前關卡索引（0-based）。FireRainSystem 用來判斷「換關」以重播火雨宣告（七輪#4）。 */
+  getLevelIndex(): number {
+    return this.levelIndex;
   }
 
   /** 目前關卡總節點數（進度條分母）；無關卡時 0。 */
@@ -205,8 +212,8 @@ export class WaveSystem implements GameSystem {
   /** Event 節點：火雨 preset → 純火雨波（計時）；否則守護波（建 GuardEvent）。 */
   private updateEventNode(node: { eventPresetName: string }, dt: number): void {
     // 純火雨 Event 節點（eventPresetName 是火雨 preset）：計時跑完前進，不建守護/雕像。
-    if (isFireRainPreset(node.eventPresetName)) {
-      const preset = getFireRainPreset(node.eventPresetName);
+    if (isResolvedFireRainPreset(node.eventPresetName)) {
+      const preset = getResolvedFireRainPreset(node.eventPresetName);
       if (this.fireRainRemaining <= 0 && !this.fireRainActive) {
         this.fireRainActive = true;
         this.fireRainRemaining = preset.durationSec;

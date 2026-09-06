@@ -13,15 +13,16 @@ export interface Vec2 {
 /**
  * 雕像四角定位點（螢幕/世界座標）：P0 左上、P1 右上、P2 左下、P3 右下（對照 Unity 四角）。
  * @param cx,cy 雕像中心。
- * @param offsetPx 角點離中心的水平/垂直距離。
+ * @param offsetXPx 角點離中心的水平距離。
+ * @param offsetYPx 角點離中心的垂直距離（省略=同 offsetXPx，維持舊「正方四角」行為）。
  * @returns 依 playerIndex(0~3) 對應的定位點陣列。
  */
-export function guardCornerTargets(cx: number, cy: number, offsetPx: number): Vec2[] {
+export function guardCornerTargets(cx: number, cy: number, offsetXPx: number, offsetYPx: number = offsetXPx): Vec2[] {
   return [
-    { x: cx - offsetPx, y: cy - offsetPx }, // P1 左上
-    { x: cx + offsetPx, y: cy - offsetPx }, // P2 右上
-    { x: cx - offsetPx, y: cy + offsetPx }, // P3 左下
-    { x: cx + offsetPx, y: cy + offsetPx }, // P4 右下
+    { x: cx - offsetXPx, y: cy - offsetYPx }, // P1 左上
+    { x: cx + offsetXPx, y: cy - offsetYPx }, // P2 右上
+    { x: cx - offsetXPx, y: cy + offsetYPx }, // P3 左下
+    { x: cx + offsetXPx, y: cy + offsetYPx }, // P4 右下
   ];
 }
 

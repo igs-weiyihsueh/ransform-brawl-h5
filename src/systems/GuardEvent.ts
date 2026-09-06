@@ -2,18 +2,17 @@ import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { PPU } from '@/config/gameConfig';
 import { CHEST_OPEN_THRESHOLD } from '@/config/chestConfig';
 import { PLAYER_CONFIG } from '@/config/combatConfig';
-import { getGuardPreset, pickGuardEnemy, guardSideSpawnPoint, type GuardPreset } from '@/config/guardConfig';
+import { pickGuardEnemy, guardSideSpawnPoint, type GuardPreset } from '@/config/guardConfig';
+import { getResolvedGuardPreset } from '@/config/guardSchema';
 import { GuardTarget } from '@/entities/GuardTarget';
 import { guardCornerTargets, scriptedMoveStep, allScriptedArrived } from '@/systems/guardIntro';
 import { MAP_BOUNDS } from '@/config/mapConfig';
 import type { GameContext } from '@/systems/GameContext';
-
-/** 守護波開場：導引走位到雕像四角的離中心距離（px）。 */
-const GUARD_CORNER_OFFSET_PX = 150;
-/** 導引走位逾時保底（秒）：超過即 snap 到位防卡。 */
-const GUARD_MOVE_TIMEOUT_SEC = 3.5;
-/** 聚焦壓暗持續（秒，對照 Unity introFocusSeconds）。 */
-const GUARD_FOCUS_SEC = 1.6;
+/**
+ * 守護波開場常數已搬進 GuardPreset（七輪#2，支援單獨編輯）：
+ * cornerOffset→preset.cornerOffsetXPx/YPx、走位逾時→preset.maxWalkSec、聚焦→preset.introFocusSec、spotlight→preset.spotlightRadiusPx。
+ * 打包預設值（Guard60/fallback）= 原常數值，行為不變。
+ */
 
 /** 守護波階段：開場導引走位 → 雕像顯現 → 聚焦壓暗 → 守護戰 → 結束。 */
 type GuardPhase = 'introMove' | 'reveal' | 'focus' | 'combat';
@@ -48,7 +47,7 @@ export class GuardEvent {
 
   constructor(ctx: GameContext, presetName: string) {
     this.ctx = ctx;
-    this.preset = getGuardPreset(presetName);
+    this.preset = getResolvedGuardPreset(presetName);
     this.remaining = this.preset.timeLimit;
 
     // 生雕像於場中央（先隱藏，開場玩家就定位後才 reveal 顯現）。敵人攻擊改打雕像（在 combat 階段前不 drip）。
@@ -60,7 +59,7 @@ export class GuardEvent {
 
     // 用戶 #4 開場序列：①鎖操作 + 導引走位到四角 + ②「限時事件」大字。
     ctx.scriptedControl = true; // 鎖玩家操作（PlayerControlSystem 跳過輸入）
-    this.moveTargets = guardCornerTargets(sx, sy, GUARD_CORNER_OFFSET_PX);
+    this.moveTargets = guardCornerTargets(sx, sy, this.preset.cornerOffsetXPx, this.preset.cornerOffsetYPx);
     this.moveArrived = (ctx.players ?? []).map(() => false);
     ctx.effects?.timedEventText?.(3); // 走位同時滑進大字顯 3s（非阻塞）
   }
@@ -89,7 +88,7 @@ export class GuardEvent {
     }
     if (this.phase === 'focus') {
       this.focusElapsed += dt;
-      if (this.focusElapsed >= GUARD_FOCUS_SEC) {
+      if (this.focusElapsed >= this.preset.introFocusSec) {
         this.endFocus();
       }
       return false;
@@ -128,7 +127,7 @@ export class GuardEvent {
   private updateIntroMove(dt: number): void {
     this.moveElapsed += dt;
     const speedPx = PLAYER_CONFIG.moveSpeed * PPU;
-    const timedOut = this.moveElapsed >= GUARD_MOVE_TIMEOUT_SEC;
+    const timedOut = this.moveElapsed >= this.preset.maxWalkSec;
     (this.ctx.players ?? []).forEach((p, i) => {
       if (this.moveArrived[i]) {
         p.move({ x: 0, y: 0 }, dt); // 到位站定播 idle
@@ -164,7 +163,7 @@ export class GuardEvent {
   private beginFocus(): void {
     const c = this.target.getPosition();
     this.target.setDepth(972); // 遮罩(960)+亮環(962) 之上 → 雕像在 spotlight 中被聚焦、不壓暗
-    this.spotlight = this.ctx.effects?.guardSpotlight?.(c.x, c.y, 200) ?? null;
+    this.spotlight = this.ctx.effects?.guardSpotlight?.(c.x, c.y, this.preset.spotlightRadiusPx) ?? null;
     this.phase = 'focus';
     this.focusElapsed = 0;
   }

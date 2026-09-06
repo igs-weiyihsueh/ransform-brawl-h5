@@ -16,6 +16,8 @@ export const EDITOR_STORE_KEYS = {
   enemies: 'transformbrawl:enemies',
   skills: 'transformbrawl:skills',
   dash: 'transformbrawl:dash',
+  firerain: 'transformbrawl:firerain',
+  guard: 'transformbrawl:guard',
 } as const;
 
 export type EditorStoreKey = (typeof EDITOR_STORE_KEYS)[keyof typeof EDITOR_STORE_KEYS];

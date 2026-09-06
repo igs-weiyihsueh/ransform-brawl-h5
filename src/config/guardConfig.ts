@@ -35,6 +35,20 @@ export interface GuardPreset {
   /** 生成環繞雕像的半徑（像素）。 */
   spawnRadiusPx: number;
   /**
+   * 七輪#2：以下 4 欄原為 GuardEvent.ts hardcode 常數，搬進 preset 以支援單獨編輯（對照 Unity GuardPreset）。
+   * 打包預設值 = 原常數值（行為不變）。
+   */
+  /** 玩家定位雕像四角的 X 偏移（像素，對照 Unity cornerOffsetX；原 GUARD_CORNER_OFFSET_PX=150）。 */
+  cornerOffsetXPx: number;
+  /** 玩家定位雕像四角的 Y 偏移（像素，對照 Unity cornerOffsetY；原 GUARD_CORNER_OFFSET_PX=150）。 */
+  cornerOffsetYPx: number;
+  /** 開場聚焦壓暗持續（秒，對照 Unity introFocusSeconds；原 GUARD_FOCUS_SEC=1.6）。 */
+  introFocusSec: number;
+  /** 導引走位最長時間（秒，逾時強制就位，對照 Unity maxWalkSeconds；原 GUARD_MOVE_TIMEOUT_SEC=3.5）。 */
+  maxWalkSec: number;
+  /** 聚焦 spotlight 亮圈半徑（像素，對照 Unity spotlightRadius；原傳 200）。 */
+  spotlightRadiusPx: number;
+  /**
    * 附帶火雨（用戶試玩#2，preset 內含非 schema）：火雨 preset 名（FIRE_RAIN_PRESETS 的 key，
    * 如 'FireRain'/'FireRainLight'/'FireRainHeavy'）→ 守護波同時降該種火雨（守護+火雨）。
    * 省略(undefined)=無火雨。（升級自舊 boolean：舊 true 語意=標準 'FireRain'。）
@@ -59,6 +73,11 @@ export const GUARD_PRESETS: Record<string, GuardPreset> = {
     spawnInterval: 1.0,
     spawns: DEFAULT_GUARD_SPAWNS,
     spawnRadiusPx: 350,
+    cornerOffsetXPx: 150,
+    cornerOffsetYPx: 150,
+    introFocusSec: 1.6,
+    maxWalkSec: 3.5,
+    spotlightRadiusPx: 200,
     attachFireRain: 'FireRain', // 六輪#1真解(異靈定):preset 預設=標準 FireRain(沒設 node 的守護波也有感火雨,比 Light 密)。editor 可 per-node 覆蓋(EventNodeData.attachFireRain 三態:省略沿用此/'none'無/指定 preset 名如 FireRainHeavy)。只設 preset 預設名、不動 preset 內部數值。
   },
 };
@@ -73,6 +92,11 @@ export const GUARD_FALLBACK: GuardPreset = {
   spawnInterval: 1.0,
   spawns: DEFAULT_GUARD_SPAWNS,
   spawnRadiusPx: 350,
+  cornerOffsetXPx: 150,
+  cornerOffsetYPx: 150,
+  introFocusSec: 1.6,
+  maxWalkSec: 3.5,
+  spotlightRadiusPx: 200,
 };
 
 /** 依名稱取守護預設（查無回 fallback）。 */

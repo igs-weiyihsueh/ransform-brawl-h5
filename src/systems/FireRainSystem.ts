@@ -31,6 +31,8 @@ export class FireRainSystem implements GameSystem {
   private announcing = false;
   /** 目前這場火雨用的參數 preset（由 WaveSystem 節點 preset 決定）。 */
   private preset: FireRainPreset | null = null;
+  /** 七輪#4：已播過「天降火雨！」宣告的關卡索引（一整關只宣告第一次）；-1=本關尚未宣告。 */
+  private announcedLevelIndex = -1;
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
@@ -69,15 +71,20 @@ export class FireRainSystem implements GameSystem {
     this.preset = preset;
     this.spawnCooldown = 0; // 立即第一批
     this.strikes = [];
-    // 火雨宣告字（只在每場火雨開始這一次）：左滑進→停3s→右滑出，演完才落第一道火雨。
-    if (typeof this.ctx.effects.fireRainAnnounce === 'function') {
+    // 七輪#4：「天降火雨！」宣告字一整關只演第一次（同關後續火雨波不再重播宣告、直接落火雨）。
+    //   換關（levelIndex 變）才重置 → 下一關第一次火雨再宣告。
+    const level = this.ctx.wave.getLevelIndex();
+    const firstThisLevel = level !== this.announcedLevelIndex;
+    if (firstThisLevel && typeof this.ctx.effects.fireRainAnnounce === 'function') {
+      this.announcedLevelIndex = level;
       this.announcing = true;
       this.ctx.effects.fireRainAnnounce(() => {
         this.announcing = false;
         this.spawnCooldown = 0; // 宣告演完 → 立刻落第一批
       });
     } else {
-      this.announcing = false; // 無宣告字 API（後備）→ 直接開始火雨
+      // 同關第二次以後 / 無宣告字 API → 不播宣告，直接開始火雨。
+      this.announcing = false;
     }
   }
 
