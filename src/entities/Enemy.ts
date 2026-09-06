@@ -12,6 +12,7 @@ import {
   calculateSeparation,
   combineWithSeparation,
   pushOutOfPlayer,
+  isChargeInvulnerable,
 } from '@/systems/enemySeparation';
 import { slotApproachDir, SLOT_REACH_THRESHOLD_PX, TRAVELER_AVOID_WEIGHT } from '@/systems/surroundSlots';
 import {
@@ -205,6 +206,7 @@ export class Enemy implements Hittable {
     }[],
   ): void {
     if (this.dead || this.state === 'death') return;
+    if (isChargeInvulnerable(this.state, this.cfg.immovable === true)) return; // 六輪#3：菁英蓄力免疫被推(站定)
     const immovable = this.cfg.immovable === true;
     for (const p of players) {
       const minDist = p.hitRadius + this.radiusPx;
@@ -251,6 +253,7 @@ export class Enemy implements Hittable {
    */
   pushOutOfObstacle(center: Vec2, radiusPx: number): void {
     if (this.dead || this.state === 'death') return;
+    if (isChargeInvulnerable(this.state, this.cfg.immovable === true)) return; // 六輪#3：菁英蓄力免疫被推(站定)
     const minDist = radiusPx + this.radiusPx;
     const fixed = pushOutOfPlayer(
       { x: this.anim.sprite.x, y: this.anim.sprite.y },
@@ -506,18 +509,20 @@ export class Enemy implements Hittable {
           // 用戶 #7/#4 + 三輪#3 + 四輪#2：蓄力集氣特效 → 腳底貼地圓盤法陣(俯視壓扁+盤旋氣流)，出手 destroy 接 slash/burst。純視覺。
           // 四輪#2 修：footY 往下讓整盤落在角色腳底「之下」(disk 上緣 ≤ 腳底、不與身體/腿重疊)，
           //   否則 depth-4 在身後、身體遮住盤中心只露側邊弧在軀幹高 → 看似「身上打轉」(用戶回歸)。不寫死: 從 radiusPx 算。
-          const cpos = this.getHitCenter();
-          const footY = cpos.y + this.radiusPx * 1.7; // 腳底之下(body 中心往下 ~1.7×body 半徑, 讓盤在腿之下不被身體蓋)
-          const diskPx = this.radiusPx * 2.8; // 圓盤直徑放大(更多面積超出角色輪廓, 地面法陣盤更明顯)
-          this.chargeFx =
-            this.hitFeelFx?.enemyCharge?.(cpos.x, footY, this.cfg.chargeTime * 1000, diskPx) ?? null;
-          // 三輪#12：只「真大範圍(attackVfx='aoe')」敵人蓄力期地面播 AOE 預告圈；
-          // 衝鋒/一般近戰(slash)不播預告圈(改由出手 slash 表現)。不可用 shapeType 判斷(近戰全 circle)。
-          if (enemyAttackVfx(this.cfg.attackKind, this.cfg.attackVfx) === 'aoe') {
+          const isAoe = enemyAttackVfx(this.cfg.attackKind, this.cfg.attackVfx) === 'aoe';
+          if (isAoe) {
+            // 六輪#2：菁英(aoe)不要腳底小蓄力盤 chargeFx，只留 aoeRing 範圍預告圈。
             // 五輪#4：預警圈圓心用視覺 body 中心(非 sprite 幾何中心, frame 上方留白會偏上)→菁英在圈正中央。
             const circle = buildAttackCircle(this.cfg.attack, this.getBodyCenter(), this.facing, this.scaleFactor);
             this.aoeRingFx =
               this.hitFeelFx?.enemyAoeRing?.(circle.center.x, circle.center.y, circle.radius) ?? null;
+          } else {
+            // 衝鋒/一般近戰(slash)：保留腳底 charge disk 法陣盤(俯視壓扁+盤旋氣流)，出手 destroy 接 slash。
+            const cpos = this.getHitCenter();
+            const footY = cpos.y + this.radiusPx * 1.7; // 腳底之下(body 中心往下 ~1.7×body 半徑, 讓盤在腿之下不被身體蓋)
+            const diskPx = this.radiusPx * 2.8; // 圓盤直徑放大(更多面積超出角色輪廓, 地面法陣盤更明顯)
+            this.chargeFx =
+              this.hitFeelFx?.enemyCharge?.(cpos.x, footY, this.cfg.chargeTime * 1000, diskPx) ?? null;
           }
         } else if (dist <= detectPx && dist > 0.001) {
           this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加（含 attackRange 內但形狀外→再逼近，根治空揮）
@@ -667,6 +672,17 @@ export class Enemy implements Hittable {
   takeHit(damage: number, knockback: number, fromPos: Vec2): void {
     if (this.dead || this.state === 'death') return;
     if (this.grabber) return; // grabber 衝來期間無敵（掙脫由 GrabSystem 處理，不走一般傷害）
+    // 六輪#3：菁英蓄力不可被打斷——charge 期間受擊照扣血，但不清蓄力特效、不進 damaged 硬直、不擊退，繼續蓄力到出手。
+    const chargeLocked = isChargeInvulnerable(this.state, this.cfg.immovable === true);
+    if (chargeLocked) {
+      this.hp -= damage; // 數值即時
+      // 純視覺受擊回饋（白閃/火花）仍給，但不打斷 charge、不改 state、不擊退。
+      if (HIT_FEEL.enabled && this.hitFeelFx) {
+        this.hitFeelFx.hitFlash(this.anim.sprite, HIT_FEEL.hitFlashColor, HIT_FEEL.hitFlashDuration);
+      }
+      if (this.hp <= 0) this.die(); // 血扣光仍會死（不可被打斷≠無敵）
+      return;
+    }
     this.clearChargeFx(); // 用戶 #7：受擊中斷蓄力 → 清蓄力預警特效
     this.hp -= damage; // 數值即時（不受 hitFeel 影響）
 

@@ -15,6 +15,17 @@ export const SEPARATION_WEIGHT = 0.8;
 export const SEPARATION_RADIUS_PX = SEPARATION_RADIUS * PPU;
 
 /**
+ * 六輪#3：菁英蓄力不可被打斷/推開的判定（純函式，抽給測騎）。
+ * 條件 = 蓄力狀態(charge) 且 immovable(菁英)。true → takeHit 不中斷 charge、被動位移(resolvePenetration/pushOutObstacle)跳過（站定蓄力）。
+ * 只菁英(immovable)：衝鋒兵/一般近戰蓄力維持可打斷（用戶只要求菁英）。
+ * @param state 敵人狀態字串。
+ * @param immovable 是否 immovable 菁英。
+ */
+export function isChargeInvulnerable(state: string, immovable: boolean): boolean {
+  return state === 'charge' && immovable === true;
+}
+
+/**
  * 計算某敵人受其他敵人的分離力（世界像素座標；已 ×PPU 的半徑）。
  * 平方加權：越近推力越大（近距爆推、自動解堆疊）。超出 separationRadius 的不計。
  * @param selfPos 自己的位置（像素）。

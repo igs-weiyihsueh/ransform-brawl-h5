@@ -987,18 +987,18 @@ export class EffectSystem {
   enemyAoeBurst(x: number, y: number, radiusPx: number): void {
     if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.aoeBurst.key)) return;
     const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.aoeBurst.key);
-    // 四輪#3#4：depth -3（角色 PLAY_DEPTH=10 之下＝貼地、在 aoeRing -4 之上），當地面爆發不蓋角色/怪。
+    // 六輪#4(用戶定調以警戒圈為準)：aoeBurst 改成跟 aoeRing「完全同套擺放」→ 預警圈=爆發圈完全重合(所見即所得)。
+    // aoeRing 擺法：origin(0.5)、depth-4 貼地、setDisplaySize(radiusPx*2, radiusPx*2) 1:1 正圓、無壓扁無 rotation。
+    // aoeBurst 對齊：同圓心(x,y=傳入 buildAttackCircle center)、同 1:1 尺寸、貼地；depth-3(在 ring -4 之上、角色 PLAY_DEPTH10 之下)當地面爆發不蓋角色。
     spr.setOrigin(0.5, 0.5).setDepth(-3);
     spr.setBlendMode(Phaser.BlendModes.ADD); // 貼地在暗地面更亮醒目
-    // 五輪#2#3：不 setRotation——壓扁橢圓一轉長軸就斜、非水平躺地(同 charge disk 斜面問題)。保持長軸水平貼地。
-    const target = radiusPx * 2;
-    // 貼地俯視：高壓扁成寬的一半(2:1 橢圓)＝地面爆發透視，與 aoeRing 一致。
-    spr.setDisplaySize(target * 0.5, target * 0.25).setAlpha(1);
-    // ~0.2s：scale 炸開 + 後半淡出（維持 2:1 壓扁）。
+    const full = radiusPx * 2; // 與 aoeRing 同直徑(1:1 正圓、無壓扁)
+    spr.setDisplaySize(full, full).setAlpha(1);
+    // ~0.2s：scale 從滿圈微爆開 + 後半淡出（維持 1:1 正圓、與 aoeRing 同形）。
     this.scene.tweens.add({
       targets: spr,
-      displayWidth: target * 1.15,
-      displayHeight: target * 0.575, // 1.15 的一半，保持 2:1 貼地
+      displayWidth: full * 1.15,
+      displayHeight: full * 1.15, // 1:1 同步放大，保持正圓與 aoeRing 重合
       duration: 200,
       ease: 'Cubic.easeOut',
     });
