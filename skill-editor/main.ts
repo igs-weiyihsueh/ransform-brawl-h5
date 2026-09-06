@@ -23,7 +23,7 @@ import {
   type EnergyMode,
   type ShapeType,
   type SkillFile,
-} from './skillSchema';
+} from '@/config/skillSchema';
 import {
   EDITOR_STORE_KEYS,
   applyToGame,

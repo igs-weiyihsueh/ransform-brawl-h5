@@ -1,4 +1,5 @@
 import type { AttackData } from '@/systems/AttackData';
+import { getResolvedSkills } from '@/config/skillSchema';
 
 /**
  * skillConfig.ts — 角色招式與能量模式設定（資料驅動，對照 Unity 決策 15fec2a4）。
@@ -143,9 +144,10 @@ export const CHARACTER_COMBAT: Record<string, CharacterCombatProfile> = {
   },
 };
 
-/** 取得角色戰鬥設定（未知角色回 Human 當保險預設）。 */
+/** 取得角色戰鬥設定（未知角色回 Human 當保險預設）。六輪 skills JSON 化：override(skill-editor 套用)優先+cache。 */
 export function getCombatProfile(charKey: string): CharacterCombatProfile {
-  return CHARACTER_COMBAT[charKey] ?? CHARACTER_COMBAT.Human;
+  const resolved = getResolvedSkills();
+  return resolved[charKey] ?? resolved.Human ?? CHARACTER_COMBAT[charKey] ?? CHARACTER_COMBAT.Human;
 }
 
 /** 悟空 Full 模式放招循環順序（index % 3）。 */
