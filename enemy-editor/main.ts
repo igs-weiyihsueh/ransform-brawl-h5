@@ -346,10 +346,10 @@ function renderInspector(): void {
   insp.appendChild(numberRow('移速 moveSpeed', e.moveSpeed, (v) => { e.moveSpeed = v; }, { min: 0, max: 10, step: 0.1, slider: true }));
   insp.appendChild(numberRow('偵測 detectRange', e.detectRange, (v) => { e.detectRange = v; }, { min: 0, max: 40, step: 0.5, slider: true }));
   insp.appendChild(numberRow('攻擊範圍 attackRange', e.attackRange, (v) => { e.attackRange = v; }, { min: 0, max: 40, step: 0.5, slider: true }));
-  insp.appendChild(numberRow('蓄力 chargeTime', e.chargeTime, (v) => { e.chargeTime = v; }, { min: 0, max: 5, step: 0.1, slider: true }));
+  insp.appendChild(numberRow('蓄力/前搖 chargeTime', e.chargeTime, (v) => { e.chargeTime = v; }, { min: 0, max: 5, step: 0.1, slider: true }));
   insp.appendChild(numberRow('冷卻 attackCooldown', e.attackCooldown, (v) => { e.attackCooldown = v; }, { min: 0, max: 10, step: 0.1, slider: true }));
   insp.appendChild(numberRow('硬直 hitStun', e.hitStun, (v) => { e.hitStun = v; }, { min: 0, max: 3, step: 0.05, slider: true }));
-  insp.appendChild(numberRow('擊退力 knockbackForce', e.knockbackForce, (v) => { e.knockbackForce = v; }, { min: 0, max: 10, step: 0.1, slider: true }));
+  insp.appendChild(numberRow('被擊退力 knockbackForce（自己被打）', e.knockbackForce, (v) => { e.knockbackForce = v; }, { min: 0, max: 10, step: 0.1, slider: true }));
 
   insp.appendChild(selectRow('攻擊方式 attackKind', e.attackKind, ATTACK_KINDS as readonly string[], (v) => {
     e.attackKind = v as EnemyAttackKind;
@@ -385,8 +385,8 @@ function renderInspector(): void {
   insp.appendChild(numberRow('offsetX', e.attack.offsetX, (v) => { e.attack.offsetX = v; }, { min: -3, max: 3, step: 0.05, slider: true }));
   insp.appendChild(numberRow('offsetY', e.attack.offsetY, (v) => { e.attack.offsetY = v; }, { min: -3, max: 3, step: 0.05, slider: true }));
   insp.appendChild(numberRow('傷害 damage', e.attack.damage, (v) => { e.attack.damage = v; }, { min: 0, step: 1 }));
-  insp.appendChild(numberRow('擊退 knockback', e.attack.knockback, (v) => { e.attack.knockback = v; }, { min: 0, max: 10, step: 0.1, slider: true }));
-  insp.appendChild(numberRow('前搖 hitDelay', e.attack.hitDelay, (v) => { e.attack.hitDelay = v; }, { min: 0, max: 3, step: 0.05, slider: true }));
+  insp.appendChild(numberRow('攻擊擊退 knockback（打玩家）', e.attack.knockback, (v) => { e.attack.knockback = v; }, { min: 0, max: 10, step: 0.1, slider: true }));
+  insp.appendChild(numberRow('命中延遲 hitDelay', e.attack.hitDelay, (v) => { e.attack.hitDelay = v; }, { min: 0, max: 3, step: 0.05, slider: true }));
 }
 
 // ---- 預覽（同心圓，×PPU）--------------------------------------------------
