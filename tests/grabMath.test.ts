@@ -6,6 +6,7 @@ import {
   accumulateIdle,
   grabberChaseStep,
   grabberTouchesPlayer,
+  shouldEscapeGrab,
   shouldTriggerGrab,
   tickGrabCountdown,
 } from '@/systems/grabMath';
@@ -113,5 +114,33 @@ describe('tickGrabCountdown — 被抓倒數→自動掙脫', () => {
     expect(r.autoEscape).toBe(true);
     const r2 = tickGrabCountdown(0, 0.016);
     expect(r2.autoEscape).toBe(true);
+  });
+});
+
+/**
+ * shouldEscapeGrab — 被抓掙脫判定（用戶九輪#1「被抓時衝刺無法掙脫」根治，翼騎 9df973c，additive）。
+ * = attackEdge || dashEdge || autoEscape：三手段任一 true → 掙脫。
+ *   attackEdge 本幀新起攻擊(原有)、★dashEdge 本幀新起衝刺(#1 新增)、autoEscape 倒數歸零。
+ * 維度3 斷 bool 契約(8 組合窮舉)。★核心壞版：少 dashEdge(=修前 attackEdge||autoEscape)→(F,T,F)紅=衝刺掙脫失效。
+ * ⚠️ GrabSystem wasDashing edge 偵測 + releaseGrabberWithKnockback + Player setGrabbed play('idle') 接線屬狀態機(翼騎 headless 驗被抓→startDash→衝出 250px 不被拉回)——不補。
+ */
+describe('shouldEscapeGrab — 被抓掙脫判定（任一手段即掙脫）', () => {
+  it('(F,F,F) → false（無任何掙脫手段,維持被抓）', () => {
+    expect(shouldEscapeGrab(false, false, false)).toBe(false);
+  });
+  it('(T,F,F) → true（攻擊掙脫）', () => {
+    expect(shouldEscapeGrab(true, false, false)).toBe(true);
+  });
+  it('★ (F,T,F) → true（衝刺掙脫,#1 新增 dashEdge——核心）', () => {
+    expect(shouldEscapeGrab(false, true, false)).toBe(true);
+  });
+  it('(F,F,T) → true（倒數歸零自動掙脫）', () => {
+    expect(shouldEscapeGrab(false, false, true)).toBe(true);
+  });
+  it('兩兩/全 true 組合 → 全 true（任一即掙脫）', () => {
+    expect(shouldEscapeGrab(true, true, false)).toBe(true);
+    expect(shouldEscapeGrab(true, false, true)).toBe(true);
+    expect(shouldEscapeGrab(false, true, true)).toBe(true);
+    expect(shouldEscapeGrab(true, true, true)).toBe(true);
   });
 });
