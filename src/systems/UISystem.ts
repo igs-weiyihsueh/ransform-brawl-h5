@@ -131,7 +131,10 @@ export class UISystem implements GameSystem {
       const overhead = this.overheads[i];
       const pos = p.getPosition();
       overhead.followWorldPosition(pos.x, pos.y);
-      overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
+      // 用戶 #1：變身前不顯示魂力條，變身後才顯（gate 魂力環顯示 = transform.isTransformed）。
+      const transformed = this.ctx.transform.isTransformed(pid);
+      overhead.setSoulVisible(transformed);
+      if (transformed) overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
       overhead.setCredit(this.ctx.credit.getCredit(pid));
       overhead.setCombo(this.ctx.combo.getCombo(pid));
       overhead.setComboWarning(this.ctx.combo.isWarning(pid));

@@ -23,7 +23,7 @@ export const ENEMY_SCHEMA_VERSION = 1 as const;
 /** 合法攻擊方式。 */
 export const ATTACK_KINDS: readonly EnemyAttackKind[] = ['melee', 'projectile'] as const;
 /** 合法判定形狀。 */
-export const SHAPE_TYPES = ['circle', 'rectangle'] as const;
+export const SHAPE_TYPES = ['circle', 'rectangle', 'fan'] as const;
 
 /** 從遊戲權威 ENEMY_AI 深拷貝一份當初值。 */
 export function defaultEnemies(): Record<string, EnemyAIConfig> {
@@ -86,6 +86,10 @@ function validateAttack(raw: unknown, label: string, errors: string[]): void {
     errors.push(`${label} 的 attack.shapeType="${String(shape)}" 不合法（預期 ${SHAPE_TYPES.join(' / ')}）。`);
   } else if (shape === 'circle') {
     checkNum(a, 'radius', `${label} 的 attack`, errors, { min: 0 });
+  } else if (shape === 'fan') {
+    checkNum(a, 'radius', `${label} 的 attack`, errors, { min: 0 });
+    checkNum(a, 'angle', `${label} 的 attack`, errors, { min: 0 });
+    if (isFiniteNumber(a.angle) && a.angle > 360) errors.push(`${label} 的 attack.angle=${a.angle} 不可大於 360。`);
   } else {
     checkNum(a, 'length', `${label} 的 attack`, errors, { min: 0 });
     checkNum(a, 'width', `${label} 的 attack`, errors, { min: 0 });

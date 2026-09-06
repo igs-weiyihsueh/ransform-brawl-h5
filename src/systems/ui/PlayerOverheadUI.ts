@@ -24,6 +24,8 @@ import { EnergyBar } from '@/systems/ui/EnergyBar';
 export class PlayerOverheadUI {
   private readonly container: Phaser.GameObjects.Container;
   private readonly soulRing: Phaser.GameObjects.Graphics;
+  /** 魂力環底圖（ring.png，用戶 #1：變身前隱藏魂力條）；無 sprite 則 null。 */
+  private readonly ringImg: Phaser.GameObjects.Image | null = null;
   private readonly creditText: Phaser.GameObjects.Text;
   private readonly comboText: Phaser.GameObjects.Text;
   private readonly maxText: Phaser.GameObjects.Text;
@@ -60,6 +62,7 @@ export class PlayerOverheadUI {
       const ringImg = scene.add.image(cfg.badge.cx, cfg.badge.cy, UI_ICONS.ring.key);
       ringImg.setDisplaySize(cfg.badge.ringRadius * 2 + cfg.badge.ringThickness, cfg.badge.ringRadius * 2 + cfg.badge.ringThickness);
       this.container.add(ringImg);
+      this.ringImg = ringImg; // 用戶 #1：留參考供變身前隱藏
       this.hasRingSprite = true;
     }
     this.soulRing = scene.add.graphics();
@@ -172,6 +175,16 @@ export class PlayerOverheadUI {
       g.arc(cfg.cx, cfg.cy, cfg.ringRadius, start, end, false);
       g.strokePath();
     }
+  }
+
+  /**
+   * 魂力環顯示 gate（用戶 #1：變身前不顯示魂力條，變身後才顯）。
+   * 隱藏/顯示魂力環底圖(ring.png)+充填弧(soulRing)；P 編號牌與其餘 UI 不受影響。
+   * @param visible 是否顯示（= 是否已變身，由 UISystem 傳 transform.isTransformed）。
+   */
+  setSoulVisible(visible: boolean): void {
+    this.ringImg?.setVisible(visible);
+    this.soulRing.setVisible(visible);
   }
 
   /** 設定 Credit 數字。stub：目前傳 0（Credit 系統未做）。 */

@@ -232,6 +232,38 @@ function selectRow(label: string, value: string, options: readonly string[], onC
   return row;
 }
 
+/** 形狀類型專用列：顯示中文（圓形/直線/扇形），值維持 enum（circle/rectangle/fan）。 */
+type AttackShape = 'circle' | 'rectangle' | 'fan';
+const SHAPE_LABELS: Record<AttackShape, string> = {
+  circle: '圓形（circle）',
+  rectangle: '直線 / 矩形（rectangle）',
+  fan: '扇形（fan）',
+};
+function shapeTypeRow(value: string, onChange: (v: AttackShape) => void): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const lab = document.createElement('label');
+  lab.textContent = '攻擊形狀 shapeType';
+  const sel = document.createElement('select');
+  (['circle', 'rectangle', 'fan'] as AttackShape[]).forEach((o) => {
+    const opt = document.createElement('option');
+    opt.value = o;
+    opt.textContent = SHAPE_LABELS[o];
+    if (o === value) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener('change', () => {
+    beginEdit();
+    onChange(sel.value as AttackShape);
+    commitEdit();
+    renderInspector();
+    renderPreview();
+  });
+  row.appendChild(lab);
+  row.appendChild(sel);
+  return row;
+}
+
 function renderInspector(): void {
   const insp = $('inspector');
   insp.innerHTML = '';
@@ -267,11 +299,19 @@ function renderInspector(): void {
   at.textContent = '攻擊判定 attack';
   insp.appendChild(at);
 
-  insp.appendChild(selectRow('形狀 shapeType', e.attack.shapeType, ['circle', 'rectangle'], (v) => {
-    e.attack.shapeType = v as 'circle' | 'rectangle';
+  // 攻擊形狀：圓形 / 直線(矩形/OBB) / 扇形——預覽會依此畫對應形狀，對齊遊戲 buildAttackCircle/OBB/Fan。
+  insp.appendChild(shapeTypeRow(e.attack.shapeType, (v) => {
+    e.attack.shapeType = v;
+    // 切形狀補該形狀需要的欄位預設，避免 undefined。
+    if (v === 'circle' && e.attack.radius === undefined) e.attack.radius = 0.5;
+    if (v === 'fan') { if (e.attack.radius === undefined) e.attack.radius = 1; if (e.attack.angle === undefined) e.attack.angle = 90; }
+    if (v === 'rectangle') { if (e.attack.length === undefined) e.attack.length = 1; if (e.attack.width === undefined) e.attack.width = 1; }
   }));
   if (e.attack.shapeType === 'circle') {
     insp.appendChild(numberRow('半徑 radius', e.attack.radius ?? 0.5, (v) => { e.attack.radius = v; }, { min: 0, max: 5, step: 0.05, slider: true }));
+  } else if (e.attack.shapeType === 'fan') {
+    insp.appendChild(numberRow('半徑 radius', e.attack.radius ?? 1, (v) => { e.attack.radius = v; }, { min: 0, max: 5, step: 0.05, slider: true }));
+    insp.appendChild(numberRow('張角 angle°', e.attack.angle ?? 90, (v) => { e.attack.angle = v; }, { min: 0, max: 360, step: 5, slider: true }));
   } else {
     insp.appendChild(numberRow('長 length', e.attack.length ?? 1, (v) => { e.attack.length = v; }, { min: 0, max: 5, step: 0.05, slider: true }));
     insp.appendChild(numberRow('寬 width', e.attack.width ?? 1, (v) => { e.attack.width = v; }, { min: 0, max: 5, step: 0.05, slider: true }));
@@ -320,26 +360,41 @@ function renderPreview(): void {
   ring(e.detectRange, getCss('--detect'), `偵測 ${fmt(e.detectRange)}u`);
   ring(e.attackRange, getCss('--attackR'), `攻擊 ${fmt(e.attackRange)}u`);
 
-  // 攻擊判定圈：以 offset 為中心（面向朝右示意），circle 用 radius；rectangle 畫矩形。
+  // 攻擊判定形狀（面向朝右示意，以 offset 為中心）：嚴格依 shapeType 畫——
+  // circle→圓（buildAttackCircle）、rectangle→矩形/長條（buildAttackOBB）、fan→扇形（buildAttackFan）。
   const offX = e.attack.offsetX * PPU * viewScale;
   const offY = e.attack.offsetY * PPU * viewScale;
+  const hx = cx + offX;
+  const hy = cy + offY;
   ctx.strokeStyle = getCss('--hit');
+  ctx.fillStyle = 'rgba(255,108,122,0.20)';
   ctx.lineWidth = 2;
   if (e.attack.shapeType === 'circle') {
     const rPx = (e.attack.radius ?? 0) * PPU * viewScale;
-    if (rPx > 0) {
+    if (rPx > 0) { ctx.beginPath(); ctx.arc(hx, hy, rPx, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+  } else if (e.attack.shapeType === 'fan') {
+    const rPx = (e.attack.radius ?? 0) * PPU * viewScale;
+    const ang = ((e.attack.angle ?? 0) * Math.PI) / 180;
+    if (rPx > 0 && ang > 0) {
       ctx.beginPath();
-      ctx.arc(cx + offX, cy + offY, rPx, 0, Math.PI * 2);
+      ctx.moveTo(hx, hy);
+      ctx.arc(hx, hy, rPx, -ang / 2, ang / 2); // 面向朝右(0)，±angle/2
+      ctx.closePath();
+      ctx.fill();
       ctx.stroke();
     }
   } else {
+    // rectangle / 直線(OBB)：length 沿面向(x)、width 垂直(y)，中心在判定中心。
     const lPx = (e.attack.length ?? 0) * PPU * viewScale;
     const wPx = (e.attack.width ?? 0) * PPU * viewScale;
-    ctx.strokeRect(cx + offX - lPx / 2, cy + offY - wPx / 2, lPx, wPx);
+    ctx.beginPath();
+    ctx.rect(hx - lPx / 2, hy - wPx / 2, lPx, wPx);
+    ctx.fill();
+    ctx.stroke();
   }
   ctx.fillStyle = getCss('--hit');
   ctx.font = '12px Arial, "Microsoft JhengHei", sans-serif';
-  ctx.fillText('判定', cx + offX + 4, cy + offY - 4);
+  ctx.fillText('判定', hx + 6, hy - 6);
 
   // 敵人本體（中心點 + 面向箭頭）
   ctx.fillStyle = '#e6e6f0';
