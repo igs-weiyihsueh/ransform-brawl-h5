@@ -733,6 +733,8 @@ export class Enemy implements Hittable {
     this.state = 'death';
     this.knockbackRemaining = 0;
     this.freezeRemaining = 0;
+    this.clearChargeFx(); // 七輪#6：死亡清蓄力特效(charge disk+aoeRing 預告圈)。單點根治——
+    //   六輪#3 菁英蓄力免疫「打斷」的 chargeLocked 致死分支沒清特效→殘留在場；免疫打斷≠免疫死亡，死了就清。
     // hitFeel 死亡金黃粒子（純視覺）。
     if (HIT_FEEL.enabled && this.hitFeelFx) {
       this.hitFeelFx.deathParticle(this.anim.sprite.x, this.anim.sprite.y, HIT_FEEL.deathParticleColor);
