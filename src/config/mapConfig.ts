@@ -8,7 +8,7 @@
  * 即場地是畫面正中央 1600×800 的矩形、四周留邊。玩家/敵人/生成共用這一份。
  */
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
-import { GLOBAL_CHARACTER_SCALE, PLAYER_HIT_RADIUS } from '@/config/combatConfig';
+import { FOOT_GLOW } from '@/config/playerConfig';
 
 /** Unity 世界單位邊界（中心原點）。改數值請對照 Unity MapConfig。 */
 export const MAP_BOUNDS_UNITS = {
@@ -33,15 +33,38 @@ export const MAP_BOUNDS = {
 export const PANEL_TOP_Y = GAME_HEIGHT - 16 - 120; // 944
 
 /**
- * 玩家遊玩可走邊界：X/上界同 MAP_BOUNDS；**下界收到面板上緣之上**（避免角色穿進下方面板）。
- * 下邊距 = 玩家 body 半徑(hitRadius×scale)，讓角色整個身體停在面板頂緣之上、不重疊面板。
+ * 遊玩可走區下界 Y（第四輪#1，純函式可測）：面板上緣往上留 bottomMargin。
+ * = panelTopY − bottomMargin。讓角色「腳底（中心+bottomMargin）」剛好停在面板頂、不進面板。
+ * @param panelTopY 下方面板上緣 Y（螢幕座標）。
+ * @param bottomMargin 角色中心到腳底/底邊的距離（px）。
  */
-const PLAYER_BOTTOM_MARGIN = PLAYER_HIT_RADIUS * PPU * GLOBAL_CHARACTER_SCALE; // 0.4×100×1.5 = 60
+export function playAreaMaxY(panelTopY: number, bottomMargin: number): number {
+  return panelTopY - bottomMargin;
+}
+
+/**
+ * 玩家遊玩可走邊界：X/上界同 MAP_BOUNDS；**下界收到面板上緣之上**（避免角色腳底穿進下方面板）。
+ * 第四輪#1 修：下邊距改用「腳底偏移 FOOT_GLOW.offsetYPx」（原 hitRadius=60 < 腳底 75.6 → 腳底穿面板 16px）。
+ * 別寫死：margin 從 FOOT_GLOW.offsetYPx 算、下界從 PANEL_TOP_Y 算（#5 foot.offsetY 或面板高變動→自動跟）。
+ */
+const PLAYER_BOTTOM_MARGIN = FOOT_GLOW.offsetYPx; // ≈75.6：角色中心到腳底
 export const PLAYER_BOUNDS = {
   minX: MAP_BOUNDS.minX,
   maxX: MAP_BOUNDS.maxX,
   minY: MAP_BOUNDS.minY,
-  maxY: Math.min(MAP_BOUNDS.maxY, PANEL_TOP_Y - PLAYER_BOTTOM_MARGIN), // min(940, 884) = 884
+  maxY: Math.min(MAP_BOUNDS.maxY, playAreaMaxY(PANEL_TOP_Y, PLAYER_BOTTOM_MARGIN)), // min(940, 944-75.6≈868)
+} as const;
+
+/**
+ * 敵人遊玩可走邊界（第四輪#1）：X/上界同 MAP_BOUNDS；**下界面板感知**（用 PANEL_TOP_Y，非只 MAP_BOUNDS.maxY）。
+ * Enemy 再 insetBounds(此, radiusPx) → 怪底邊(中心+radiusPx)停在面板上緣、不擦進面板。
+ * 別寫死：從 PANEL_TOP_Y 算，面板高變動自動跟。
+ */
+export const ENEMY_PLAY_BOUNDS = {
+  minX: MAP_BOUNDS.minX,
+  maxX: MAP_BOUNDS.maxX,
+  minY: MAP_BOUNDS.minY,
+  maxY: Math.min(MAP_BOUNDS.maxY, PANEL_TOP_Y), // 面板感知下界(怪底邊停面板頂)
 } as const;
 
 /** 依 inset（各邊內縮 px，如敵人 body 半徑）收縮邊界，讓「整個 body」都在界內而非只中心。 */

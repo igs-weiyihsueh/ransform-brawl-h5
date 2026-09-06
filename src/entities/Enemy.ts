@@ -3,7 +3,7 @@ import { getPerCharScale } from '@/config/animationConfig';
 import { SPRITE_SCALE, PLAYER_HIT_RADIUS } from '@/config/combatConfig';
 import { ENEMY_AI, ENEMY_BODY_RADIUS_PX, type EnemyAIConfig } from '@/config/enemyConfig';
 import { PPU } from '@/config/gameConfig';
-import { MAP_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
+import { ENEMY_PLAY_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import {
   attackFacing,
@@ -197,7 +197,8 @@ export class Enemy implements Hittable {
   clampToMapBounds(): void {
     if (this.dead || this.state === 'death') return;
     // 用 body 半徑內縮邊界，確保敵人整個身體都在界內、不會被推擠推到邊界外露出。
-    const bounds = insetBounds(MAP_BOUNDS, this.radiusPx);
+    // 第四輪#1：下界改用面板感知 ENEMY_PLAY_BOUNDS（怪底邊停面板上緣、不擦進下方面板）。
+    const bounds = insetBounds(ENEMY_PLAY_BOUNDS, this.radiusPx);
     const c = clampToBounds(this.anim.sprite.x, this.anim.sprite.y, bounds);
     if (c.changed) {
       this.anim.sprite.x = c.x;
