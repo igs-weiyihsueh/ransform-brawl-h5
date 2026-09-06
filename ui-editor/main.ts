@@ -139,6 +139,10 @@ const stageEl = $('stage');
 
 /** 當前區塊的內容邊界矩形（1920×1080 座標系內）。 */
 function contentRect(): Rect {
+  if (currentSection === 'screen') {
+    // 全螢幕：顯示整個 1920×1080 設計畫布（波次訊息以螢幕座標定位）。
+    return { x: 0, y: 0, width: layout.design.width, height: layout.design.height };
+  }
   if (currentSection === 'overhead') {
     const c = overheadContainerRect();
     const m = 60; // 容器四周留白，讓超出容器的元素(如 combo 在上方)也看得到
@@ -178,11 +182,11 @@ function boxTop(ed: Editable, r: Rect, off: { x: number; y: number }): number {
   return ed.origin.y + r.y - off.y;
 }
 
-/** 目前編輯的區塊。兩塊座標系不同，一次只顯示一塊（畫面乾淨、專注）。 */
-type Section = 'overhead' | 'panel';
+/** 目前編輯的區塊。三塊座標系不同，一次只顯示一塊（畫面乾淨、專注）。 */
+type Section = 'overhead' | 'panel' | 'screen';
 let currentSection: Section = 'overhead';
 /** 記住各區塊各自的選中元素（切換區塊時還原）。 */
-const selectedBySection: Record<Section, string | null> = { overhead: null, panel: null };
+const selectedBySection: Record<Section, string | null> = { overhead: null, panel: null, screen: null };
 
 /**
  * 頭上 UI 容器編輯錨點：置中於舞台（此區塊單獨顯示，放大看清 local 相對位置）。
@@ -213,7 +217,30 @@ function slotRect(i: number): Rect {
 
 /** 建立「目前區塊」的可編輯元素清單（一次只一塊）。 */
 function buildEditables(): Editable[] {
-  return currentSection === 'overhead' ? buildOverheadEditables() : buildPanelEditables();
+  if (currentSection === 'overhead') return buildOverheadEditables();
+  if (currentSection === 'screen') return buildScreenEditables();
+  return buildPanelEditables();
+}
+
+/** 全螢幕區塊：波次訊息（螢幕座標，origin=螢幕左上 0,0）。 */
+function buildScreenEditables(): Editable[] {
+  const list: Editable[] = [];
+  // screen 為 optional：若缺，補一份預設，讓編輯器可編（匯出時就會帶上）。
+  if (!layout.screen) {
+    layout.screen = { waveMessage: { x: 640, y: 180, width: 640, height: 90, align: 'center' } };
+  }
+  const wm = layout.screen.waveMessage;
+  list.push({
+    key: 'screen.waveMessage', label: '波次訊息 waveMessage', origin: { x: 0, y: 0 }, resizable: true,
+    get: () => ({ x: wm.x, y: wm.y, width: wm.width, height: wm.height }),
+    set: (r) => {
+      if (r.x !== undefined) wm.x = r.x;
+      if (r.y !== undefined) wm.y = r.y;
+      if (r.width !== undefined) wm.width = r.width;
+      if (r.height !== undefined) wm.height = r.height;
+    },
+  });
+  return list;
 }
 
 function buildOverheadEditables(): Editable[] {
@@ -347,7 +374,7 @@ function renderStage(): void {
       slot.appendChild(lab);
       stageEl.appendChild(slot);
     }
-  } else {
+  } else if (currentSection === 'overhead') {
     // 頭上 UI 容器框（此區塊單獨顯示，置中放大檢視）
     const oc = overheadContainerRect();
     const cont = document.createElement('div');
@@ -362,6 +389,7 @@ function renderStage(): void {
     cont.appendChild(clab);
     stageEl.appendChild(cont);
   }
+  // screen 區塊：整個 1920×1080 畫布當背景（stage 本身即設計畫布），不需額外框。
 
   // 各元素方框（聚焦模式）：只有「選中」那一個高亮 + 可拖拉/縮放；
   // 其餘半透明背景參考（不可拖，點一下=切換選中）。
@@ -427,6 +455,8 @@ function iconImg(name: string, label: string): HTMLElement {
 /** 依元素 key 建視覺內容（對照 uiConfig 樣式值）。 */
 function buildVisual(key: string): HTMLElement {
   switch (key) {
+    case 'screen.waveMessage':
+      return buildWaveMessage();
     case 'panel.platform':
       return iconImg('platform', '待機平台');
     case 'panel.chest':
@@ -538,6 +568,21 @@ function buildCombo(): HTMLElement {
   t.style.cssText =
     'color:#ffb300;font-size:24px;font-weight:bold;white-space:nowrap;display:flex;align-items:center;height:100%;';
   return t;
+}
+
+/** 波次訊息橫幅（示意：半透明底 + 置中大字，對齊依 align）。 */
+function buildWaveMessage(): HTMLElement {
+  const align = layout.screen?.waveMessage.align ?? 'center';
+  const justify = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
+  const box = document.createElement('div');
+  box.style.cssText =
+    `width:100%;height:100%;display:flex;align-items:center;justify-content:${justify};` +
+    'background:rgba(20,20,40,0.55);border:1px dashed rgba(255,255,255,0.5);border-radius:8px;padding:0 12px;';
+  const t = document.createElement('div');
+  t.textContent = '第 1 波';
+  t.style.cssText = 'color:#fff;font-size:40px;font-weight:bold;text-shadow:0 2px 6px rgba(0,0,0,0.6);white-space:nowrap;';
+  box.appendChild(t);
+  return box;
 }
 
 /** P2~P4 佔位欄：alpha 0.4 複製 P1 欄底框 + P1 template 元素 icon（唯讀，不可拖）。 */
@@ -652,7 +697,9 @@ function renderTree(): void {
   const tree = $('tree');
   tree.innerHTML = '';
   // 只列目前區塊的元素（一次一塊）。
-  const groupName = currentSection === 'overhead' ? '頭上 UI' : '底部面板（P1）';
+  const groupName = currentSection === 'overhead' ? '頭上 UI'
+    : currentSection === 'screen' ? '全螢幕 UI'
+    : '底部面板（P1）';
   const gl = document.createElement('div');
   gl.className = 'tree-group';
   gl.textContent = groupName;
@@ -772,16 +819,21 @@ function switchSection(section: Section): void {
   // 更新 tab 樣式。
   const tOv = document.getElementById('tab-overhead');
   const tPn = document.getElementById('tab-panel');
+  const tSc = document.getElementById('tab-screen');
   if (tOv) tOv.classList.toggle('active', section === 'overhead');
   if (tPn) tPn.classList.toggle('active', section === 'panel');
-  // 各塊預設 zoom：頭上塊小尺寸放大看(200%)、面板大尺寸縮小看全欄(45%)。同步滑桿。
-  zoom = section === 'overhead' ? 2.0 : 0.45;
+  if (tSc) tSc.classList.toggle('active', section === 'screen');
+  // 各塊預設 zoom：頭上塊小(200%)、面板(45%)、全螢幕看整個 1920×1080(30%)。同步滑桿。
+  zoom = section === 'overhead' ? 2.0 : section === 'screen' ? 0.3 : 0.45;
   const zoomInput = document.getElementById('zoom') as HTMLInputElement | null;
   if (zoomInput) zoomInput.value = String(Math.round(zoom * 100));
   applyZoom();
   renderStage();
   selectFirstIfNone();
-  setStatus(section === 'overhead' ? '編輯：頭上 UI（跟隨玩家）。' : '編輯：下方面板（P1）。', 'info');
+  const msg = section === 'overhead' ? '編輯：頭上 UI（跟隨玩家）。'
+    : section === 'screen' ? '編輯：全螢幕 UI（波次訊息）。'
+    : '編輯：下方面板（P1）。';
+  setStatus(msg, 'info');
 }
 
 async function loadDefault(): Promise<void> {
@@ -842,6 +894,7 @@ function bindUI(): void {
   $('schema-version').textContent = `schema v${UI_LAYOUT_SCHEMA_VERSION}`;
   $('tab-overhead').addEventListener('click', () => switchSection('overhead'));
   $('tab-panel').addEventListener('click', () => switchSection('panel'));
+  $('tab-screen').addEventListener('click', () => switchSection('screen'));
   $('btn-load-default').addEventListener('click', () => void loadDefault());
   $('btn-export').addEventListener('click', exportJson);
   $('btn-reset').addEventListener('click', resetDefault);

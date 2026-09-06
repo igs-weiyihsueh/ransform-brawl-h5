@@ -175,6 +175,28 @@ export interface DesignResolution {
   height: number;
 }
 
+/**
+ * 全螢幕 UI 元素：以「設計解析度螢幕座標」定位（+x 右、+y 下，px，原點=螢幕左上）。
+ * 用於不屬於某玩家欄/頭上容器的螢幕級 HUD（如波次訊息橫幅）。
+ */
+export interface ScreenElement {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** 文字對齊（顯示提示，遊戲端可用；預設 center）。 */
+  align?: 'left' | 'center' | 'right';
+}
+
+/**
+ * 全螢幕 UI 區塊（用戶 #5，additive optional）：螢幕座標定位的 HUD 元素。
+ * 目前含 waveMessage（每波開始的波次宣告文字位置）。舊 JSON 無 screen 仍合法。
+ */
+export interface ScreenLayout {
+  /** 波次訊息/宣告的顯示位置（螢幕座標）。 */
+  waveMessage: ScreenElement;
+}
+
 /** UI 佈局檔頂層結構。 */
 export interface UiLayoutFile {
   version: number;
@@ -182,6 +204,8 @@ export interface UiLayoutFile {
   design: DesignResolution;
   overhead: OverheadLayout;
   panel: PanelLayout;
+  /** 全螢幕 UI（波次訊息等）。additive optional，舊 JSON 缺此區塊仍合法。 */
+  screen?: ScreenLayout;
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +274,16 @@ export const DEFAULT_UI_LAYOUT: UiLayoutFile = {
       { playerIndex: 2, active: false, elements: [] },
       { playerIndex: 3, active: false, elements: [] },
     ],
+  },
+  // 全螢幕 UI（用戶 #5）：波次訊息預設螢幕中上方橫幅（1920×1080 基準）。
+  screen: {
+    waveMessage: {
+      x: 640, // (1920-640)/2 水平置中
+      y: 180,
+      width: 640,
+      height: 90,
+      align: 'center',
+    },
   },
 };
 
@@ -326,6 +360,7 @@ export function validateUiLayout(json: unknown): ValidateUiResult {
 
   validateOverhead(root.overhead, errors);
   validatePanel(root.panel, errors);
+  validateScreen(root.screen, errors); // optional
 
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, data: root as unknown as UiLayoutFile };
@@ -389,6 +424,29 @@ function validateOverhead(raw: unknown, errors: string[]): void {
     if (typeof combo.suffix !== 'string') errors.push(`${cb}「suffix」必須是字串。`);
     if (typeof combo.hideWhenZero !== 'boolean') errors.push(`${cb}「hideWhenZero」必須是布林。`);
     if (typeof combo.warning !== 'boolean') errors.push(`${cb}「warning」必須是布林。`);
+  }
+}
+
+/** 驗證 screen 區塊（optional）：若提供，需含合法的 waveMessage ScreenElement。 */
+function validateScreen(raw: unknown, errors: string[]): void {
+  if (raw === undefined) return; // optional：省略合法
+  const s = asObject(raw);
+  if (!s) {
+    errors.push('「全螢幕 UI screen」若提供必須是物件。');
+    return;
+  }
+  const wm = asObject(s.waveMessage);
+  if (!wm) {
+    errors.push('screen 的「波次訊息 waveMessage」缺少或不是物件。');
+    return;
+  }
+  const at = 'screen.waveMessage（波次訊息）的';
+  checkNum(wm, 'x', at, errors);
+  checkNum(wm, 'y', at, errors);
+  checkNum(wm, 'width', at, errors, { positive: true });
+  checkNum(wm, 'height', at, errors, { positive: true });
+  if (wm.align !== undefined && !['left', 'center', 'right'].includes(wm.align as string)) {
+    errors.push(`${at}「align」若提供必須是 left / center / right。`);
   }
 }
 

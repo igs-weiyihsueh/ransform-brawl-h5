@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { VFX_EFFECTS, VFX_FRAME_PAD, type VFXEffectDef } from '@/config/vfxConfig';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
-import { UI_ICONS } from '@/config/uiConfig';
+import { UI_ICONS, UI_LAYOUT_ASSET } from '@/config/uiConfig';
+import { validateUiLayout, type ScreenElement } from '@/config/uiLayoutSchema';
 import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 import { ENERGY_FLY, flyAlpha, flyPosition, flyScale } from '@/systems/energyFlyMath';
 import {
@@ -65,6 +66,8 @@ function animKey(effectKey: string): string {
  */
 export class EffectSystem {
   private readonly scene: Phaser.Scene;
+  /** 用戶 #5：波次訊息位置（讀 layout.screen.waveMessage，lazy 快取）；null=尚未讀。 */
+  private cachedWaveMsgEl: ScreenElement | null = null;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -297,19 +300,51 @@ export class EffectSystem {
   }
 
   /**
-   * 波次過場提示（#9，純視覺）：螢幕中央醒目文字，淡入放大 → 停留 → 淡出。
+   * 用戶 #5：波次訊息定位 = layout.screen.waveMessage（螢幕座標 1920×1080）；lazy 讀 scene 快取 + schema 驗證，
+   * 無 screen（舊資料/未載/不合法）→ fallback 內建預設（原寫死位置：中央略高 GAME_HEIGHT*0.42、高 100）。
+   */
+  private screenWaveMessage(): ScreenElement {
+    if (this.cachedWaveMsgEl) return this.cachedWaveMsgEl;
+    const fallback: ScreenElement = {
+      x: 0,
+      y: GAME_HEIGHT * 0.42 - 50,
+      width: GAME_WIDTH,
+      height: 100,
+      align: 'center',
+    };
+    let el = fallback;
+    const raw = this.scene.cache.json.get(UI_LAYOUT_ASSET.key) as unknown;
+    if (raw !== undefined && raw !== null) {
+      const result = validateUiLayout(raw);
+      if (result.ok && result.data.screen?.waveMessage) {
+        el = result.data.screen.waveMessage;
+      }
+    }
+    this.cachedWaveMsgEl = el;
+    return el;
+  }
+
+  /**
+   * 波次過場提示（#9/#5，純視覺）：讀 layout.screen.waveMessage 定位（螢幕座標 1920×1080 基準），
+   * 淡入放大 → 停留 → 淡出。無 screen（舊資料）→ fallback 內建預設位置。align 給文字對齊。
    * @param text 過場文字（空字串不顯示）。
    */
   waveMessage(text: string): void {
     if (!text) return;
-    const cx = GAME_WIDTH * 0.5;
-    const cy = GAME_HEIGHT * 0.42; // 略高於正中，不擋角色
-    // 半透明背景條，讓文字醒目。
+    // 用戶 #5：讀 layout.screen.waveMessage 的 {x,y,width,height,align}；無則 fallback 內建預設。
+    const el = this.screenWaveMessage();
+    const barY = el.y + el.height / 2; // 元素中心 Y
+    const align = el.align ?? 'center';
+    // 文字 X 依 align：center=元素中心、left=左緣、right=右緣。
+    const textX =
+      align === 'left' ? el.x : align === 'right' ? el.x + el.width : el.x + el.width / 2;
+    const originX = align === 'left' ? 0 : align === 'right' ? 1 : 0.5;
+    // 半透明背景條（橫幅，鋪滿螢幕寬、以元素中心 Y 為中線），讓文字醒目。
     const bar = this.scene.add.graphics();
     bar.fillStyle(0x000000, 0.5);
-    bar.fillRect(0, cy - 50, GAME_WIDTH, 100);
+    bar.fillRect(0, barY - el.height / 2, GAME_WIDTH, el.height);
     bar.setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 5);
-    const txt = this.scene.add.text(cx, cy, text, {
+    const txt = this.scene.add.text(textX, barY, text, {
       fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
       fontSize: `${WAVE_MESSAGE_FX.fontSize}px`,
       color: '#ffffff',
@@ -317,7 +352,7 @@ export class EffectSystem {
       stroke: '#000000',
       strokeThickness: 6,
     });
-    txt.setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 6).setScale(0.6).setAlpha(0);
+    txt.setOrigin(originX, 0.5).setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 6).setScale(0.6).setAlpha(0);
 
     const total = WAVE_MESSAGE_FX.durationSec * 1000;
     const fadeIn = total * 0.2;

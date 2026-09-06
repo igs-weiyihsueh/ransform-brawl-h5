@@ -57,5 +57,8 @@
       { "playerIndex": 2, "active": false, "elements": [] },
       { "playerIndex": 3, "active": false, "elements": [] }
     ]
+  },
+  "screen": {
+    "waveMessage": { "x": 640, "y": 180, "width": 640, "height": 90, "align": "center" }
   }
 }
