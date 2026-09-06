@@ -70,6 +70,7 @@ export class GameScene extends Phaser.Scene {
       CharacterAnimator.preload(this, charKey);
     }
     EffectSystem.preload(this);
+    Player.preload(this); // 七輪：腳下識別圓盤 fx_player_disc
     UISystem.preload(this); // 載入 UI icon（coin/ticket/ring/chest/lamp）
   }
 

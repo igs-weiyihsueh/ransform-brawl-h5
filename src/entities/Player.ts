@@ -7,7 +7,7 @@ import {
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
 import { getResolvedDash } from '@/config/dashSchema';
-import { FOOT_GLOW, footGlowCenter, playerColor, resolveFoot } from '@/config/playerConfig';
+import { FOOT_GLOW, PLAYER_DISC, footGlowCenter, playerColor, resolveFoot } from '@/config/playerConfig';
 import { PANEL_DEPTH } from '@/config/uiConfig';
 import { UI_LAYOUT_ASSET } from '@/config/uiConfig';
 import { validateUiLayout, isVisible } from '@/config/uiLayoutSchema';
@@ -103,8 +103,10 @@ export class Player implements Hittable {
   /** 用戶 #6：layout.foot 顯示開關（visible=false → 不畫搜索圈）。 */
   private readonly footLayoutVisible: boolean = true;
 
-  /** 腳下真空環（搜索圈）圖形；識別色圓環，depth 低於角色。 */
-  private readonly footGlow!: Phaser.GameObjects.Graphics;
+  /** 腳下識別標記：七輪換 fx_player_disc 貼地發光圓盤（染玩家色）；素材缺 → fallback strokeCircle 環。depth 低於角色。 */
+  private readonly footGlow!: Phaser.GameObjects.Image | Phaser.GameObjects.Graphics;
+  /** footGlow 是否為圓盤圖（true=Image disc；false=Graphics 環後備）。 */
+  private readonly footGlowIsDisc: boolean = false;
   /** 真空環顯示旗標（項目3 進場鉤子：待機隱藏、進場顯示；現預設顯示）。 */
   private footGlowVisible = true;
 
@@ -138,11 +140,26 @@ export class Player implements Hittable {
     this.foot = resolveFoot(footLayout);
     this.footLayoutVisible = isVisible(footLayout); // 用戶 #6：foot 勾掉 → 不畫搜索圈
 
-    // 腳下真空環（搜索圈）：玩家識別色圓環，depth 低於角色不擋，每幀跟隨位置。
-    this.footGlow = scene.add.graphics();
-    this.footGlow.setDepth(FOOT_GLOW.depth);
+    // 腳下識別標記：七輪 fx_player_disc 貼地發光圓盤（染玩家色、跟腳下、depth 低於角色不擋）；
+    //   素材缺 → fallback 舊 strokeCircle 識別環（不炸）。
+    if (scene.textures.exists(PLAYER_DISC.key)) {
+      const disc = scene.add.image(0, 0, PLAYER_DISC.key);
+      disc.setDepth(FOOT_GLOW.depth); // decision d5d4527c：sortingOrder=-10 低於角色 body
+      this.footGlow = disc;
+      this.footGlowIsDisc = true;
+    } else {
+      this.footGlow = scene.add.graphics();
+      this.footGlow.setDepth(FOOT_GLOW.depth);
+    }
     this.drawFootGlow();
     this.syncFootGlow();
+  }
+
+  /** preload 識別圓盤素材（GameScene.preload 呼叫）。 */
+  static preload(scene: Phaser.Scene): void {
+    if (!scene.textures.exists(PLAYER_DISC.key)) {
+      scene.load.image(PLAYER_DISC.key, PLAYER_DISC.path);
+    }
   }
 
   private readonly scene: Phaser.Scene;
@@ -173,14 +190,25 @@ export class Player implements Hittable {
 
   // --- 腳下真空環（搜索圈） ---
 
-  /** 重畫真空環（識別色、半徑、線寬固定；只在建立/顯示切換時呼叫）。 */
+  /** 重畫/設定腳下識別標記（圓盤染色+尺寸 或 後備環）；建立/顯示切換時呼叫。 */
   private drawFootGlow(): void {
     const color = playerColor(this.playerId);
-    this.footGlow.clear();
-    this.footGlow.lineStyle(FOOT_GLOW.ringWidthPx, color, FOOT_GLOW.alpha);
-    this.footGlow.strokeCircle(0, 0, this.foot.radiusPx); // 用戶#5/#8：半徑讀 layout.foot（可編輯器調）
-    // 用戶 #6：layout.foot visible=false → 不畫搜索圈（與待機/進場的 footGlowVisible 取 AND）。
-    this.footGlow.setVisible(this.footGlowVisible && this.footLayoutVisible);
+    const visible = this.footGlowVisible && this.footLayoutVisible;
+    if (this.footGlowIsDisc) {
+      const disc = this.footGlow as Phaser.GameObjects.Image;
+      disc.setTint(color); // 中性白圓盤染玩家色（P1藍/P2紅/P3綠/P4黃）
+      // 圓盤寬 = 搜索圈直徑 × widthScale；2:1 貼地 → 高 = 寬/2（素材已內建透視，不再壓扁）。
+      const w = this.foot.radiusPx * 2 * PLAYER_DISC.widthScale;
+      disc.setDisplaySize(w, w / 2);
+      disc.setAlpha(PLAYER_DISC.alpha);
+      disc.setVisible(visible);
+    } else {
+      const g = this.footGlow as Phaser.GameObjects.Graphics;
+      g.clear();
+      g.lineStyle(FOOT_GLOW.ringWidthPx, color, FOOT_GLOW.alpha);
+      g.strokeCircle(0, 0, this.foot.radiusPx); // 用戶#5/#8：半徑讀 layout.foot（可編輯器調）
+      g.setVisible(visible); // 用戶 #6：layout.foot visible=false → 不畫
+    }
   }
 
   /**

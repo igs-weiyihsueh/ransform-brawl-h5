@@ -57,6 +57,20 @@ export const FOOT_GLOW = {
 } as const;
 
 /**
+ * 七輪 識別圓盤素材（fx_player_disc.png，256×128 2:1 貼地俯視柔和發光站位圈，中性白 setTint 染玩家色）。
+ * 取代舊 strokeCircle 識別環：貼地、跟腳下、染玩家色、depth=FOOT_GLOW.depth(-10 低於角色不擋)。
+ * discScale：圓盤顯示寬 = 搜索圈直徑（radiusPx×2）× 此係數（略大於圈讓發光暈圍住圈；2:1 高=寬/2 貼地）。
+ */
+export const PLAYER_DISC = {
+  key: 'vfx-player-disc',
+  path: 'assets/images/vfx/fx_player_disc.png',
+  /** 圓盤顯示寬相對搜索圈直徑的倍率（1.0=剛好圈直徑；略放大讓柔光暈罩住圈）。 */
+  widthScale: 2.2,
+  /** 常駐 alpha（可選極輕微呼吸 0.85↔1.0；先常駐）。 */
+  alpha: 0.9,
+} as const;
+
+/**
  * 真空環中心座標（純函式，可測）：sprite 位置（origin=畫布中心）加校正 offset 到腳部視覺中心。
  * H5 Y 下為正 → offsetY 正值往下到腳部；offsetX 負值往左修美術在畫布內的偏移。
  */
