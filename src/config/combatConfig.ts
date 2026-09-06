@@ -40,13 +40,13 @@ export const PLAYER_CONFIG = {
 
 /** 衝刺（Dash）設定（對齊 Unity PlayerConfig）。單位 unit，判定時 ×PPU。 */
 export const DASH_CONFIG = {
-  /** 衝刺速度（unit/s）。 */
-  speed: 8,
-  /** 衝刺持續時間（秒）。 */
-  duration: 0.2,
-  /** 衝刺命中傷害。 */
+  /** 衝刺速度（unit/s）。七輪對齊 Unity dashSpeed=15（用戶定案：更快更遠更衝）。 */
+  speed: 15,
+  /** 衝刺持續時間（秒）。七輪對齊 Unity dashDuration=0.15（距離=speed×duration=2.25unit）。 */
+  duration: 0.15,
+  /** 衝刺命中傷害（Unity dashDamage=1）。 */
   damage: 1,
-  /** 衝刺命中側向擊退力道（輕微）。 */
+  /** 衝刺命中側向擊退力道（Unity dashKnockback=1，輕微）。 */
   knockback: 1,
   /** 衝刺命中判定圓半徑（unit）。 */
   radius: 0.5,
