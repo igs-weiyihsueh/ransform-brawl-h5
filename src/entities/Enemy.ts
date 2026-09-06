@@ -34,7 +34,7 @@ export interface HitFeelFx {
   /** 用戶 #7 敵人攻擊特效（純視覺）。實作於 EffectSystem。 */
   enemySlash?(x: number, y: number, angleRad: number, scale?: number): void;
   enemyImpact?(x: number, y: number, scale?: number): void;
-  enemyCharge?(x: number, y: number, durationMs?: number): Phaser.GameObjects.Image | null;
+  enemyCharge?(x: number, y: number, durationMs?: number, diskPx?: number): Phaser.GameObjects.Image | null;
   /** 用戶 #3 圓形範圍攻擊特效（純視覺）。 */
   enemyAoeRing?(x: number, y: number, radiusPx: number): Phaser.GameObjects.Image | null;
   enemyAoeBurst?(x: number, y: number, radiusPx: number): void;
@@ -421,10 +421,12 @@ export class Enemy implements Hittable {
           this.state = 'charge';
           this.timer = this.cfg.chargeTime;
           this.anim.play('idle');
-          // 用戶 #7/#4：蓄力集氣特效（charge2 帶環繞氣流旋轉，貼敵人身上，出手時 destroy 接 slash/burst）。純視覺。
+          // 用戶 #7/#4 + 三輪#3：蓄力集氣特效 charge2 → 放腳底貼地圓盤(俯視壓扁+盤旋氣流)，出手 destroy 接 slash/burst。純視覺。
           const cpos = this.getHitCenter();
+          const footY = cpos.y + this.radiusPx * 0.9; // 腳底(body 中心往下約一個 body 半徑)
+          const diskPx = this.radiusPx * 2.2; // 圓盤直徑略大於 body 視覺圈
           this.chargeFx =
-            this.hitFeelFx?.enemyCharge?.(cpos.x, cpos.y, this.cfg.chargeTime * 1000) ?? null;
+            this.hitFeelFx?.enemyCharge?.(cpos.x, footY, this.cfg.chargeTime * 1000, diskPx) ?? null;
           // 三輪#12：只「真大範圍(attackVfx='aoe')」敵人蓄力期地面播 AOE 預告圈；
           // 衝鋒/一般近戰(slash)不播預告圈(改由出手 slash 表現)。不可用 shapeType 判斷(近戰全 circle)。
           if (enemyAttackVfx(this.cfg.attackKind, this.cfg.attackVfx) === 'aoe') {

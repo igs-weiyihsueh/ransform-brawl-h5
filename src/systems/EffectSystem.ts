@@ -786,23 +786,41 @@ export class EffectSystem {
    * @param durationMs 蓄力時長（對應 chargeTime；預設 500）。
    * @returns 集氣特效 sprite（呼叫端出手時 .destroy()）；貼圖沒載則回 null。
    */
-  enemyCharge(x: number, y: number, durationMs = 500): Phaser.GameObjects.Image | null {
-    const key = this.scene.textures.exists(ENEMY_ATTACK_VFX.charge2.key)
-      ? ENEMY_ATTACK_VFX.charge2.key
-      : ENEMY_ATTACK_VFX.charge.key; // charge2 沒載則退回舊 charge
+  /**
+   * 敵人集氣（用戶 #4 charge2 + 三輪#3 改腳底貼地圓盤）：charge2 螺旋氣流盤，
+   * **平貼地面、放角色腳底、壓扁成俯視橢圓圓盤（像地面充能法陣）**，靠持續 rotation 呈現盤旋氣流。
+   * 出手前蓄力期播；出手時呼叫回傳物件的 destroy 收掉（接 slash/burst）。純視覺疊加。
+   * @param x 腳底 x（世界座標）。
+   * @param y 腳底 y（世界座標，呼叫端已加腳底 offset）。
+   * @param durationMs 蓄力時長（對應 chargeTime；預設 500）。
+   * @param diskPx 圓盤直徑（px，預設 96）；壓扁後高=此×0.5 呈俯視透視。
+   * @returns 集氣特效 sprite（呼叫端出手時 .destroy()）；貼圖沒載則回 null。
+   */
+  enemyCharge(
+    x: number,
+    y: number,
+    durationMs = 500,
+    diskPx = 96,
+  ): Phaser.GameObjects.Image | null {
+    // 三輪#2：一律用 charge2（不 fallback 舊 charge，避免舊特效路徑再現）。charge2 沒載則不播。
+    const key = ENEMY_ATTACK_VFX.charge2.key;
     if (!this.scene.textures.exists(key)) return null;
     const spr = this.scene.add.image(x, y, key);
-    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH - 1); // 集氣在斬光之下（角色上層）
-    spr.setScale(0.6).setAlpha(0);
-    // 能量匯聚：scale 0.6→1.0 漸大 + alpha 0→1 漸亮（整個蓄力期）。
+    // 三輪#3：貼地圓盤 → depth 壓在角色之下（角色 PLAY_DEPTH=10）、壓扁成俯視橢圓。
+    spr.setOrigin(0.5, 0.5).setDepth(-4);
+    const w = diskPx;
+    const h = diskPx * 0.5; // 俯視透視壓扁（高=寬一半）呈貼地圓盤感
+    spr.setDisplaySize(w * 0.6, h * 0.6).setAlpha(0); // 從小漸大
+    // 能量匯聚：圓盤 0.6→1.0 漸大 + alpha 0→1 漸亮（整個蓄力期）。
     this.scene.tweens.add({
       targets: spr,
-      scale: 1.0,
+      displayWidth: w,
+      displayHeight: h,
       alpha: 1,
       duration: Math.max(200, durationMs),
       ease: 'Sine.easeOut',
     });
-    // ★ 持續旋轉（氣流臂繞身盤旋的環繞感，用戶 #4 關鍵）：~120°/s → 360° 每 3s，無限。
+    // ★ 持續旋轉（腳底盤旋氣流法陣，用戶 #4 關鍵，貼地更像法陣）：~120°/s → 360°/3s，無限。
     this.scene.tweens.add({
       targets: spr,
       angle: 360,
