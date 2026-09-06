@@ -59,7 +59,7 @@ export const GUARD_PRESETS: Record<string, GuardPreset> = {
     spawnInterval: 1.0,
     spawns: DEFAULT_GUARD_SPAWNS,
     spawnRadiusPx: 350,
-    attachFireRain: 'FireRainLight', // 三輪#10：守護波追加火雨(用戶要)。可調 FireRain/FireRainHeavy 或由波騎 editor 開放。
+    attachFireRain: 'FireRainHeavy', // 六輪#1(異靈定調B)：守護波火雨要「多顆同時、一眼看得到」。標準 FireRain(interval1.5>warning1.0)仍是一次1顆(不重疊)→改 Heavy(interval1.0/burst2/maxConcurrent5/warning0.8)每批2顆、最多5顆在途=明顯。只換守護波用的 preset 名、不動 preset 內部數值。
   },
 };
 
