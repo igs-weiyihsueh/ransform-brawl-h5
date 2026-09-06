@@ -460,9 +460,17 @@ export class Enemy implements Hittable {
         // 蓄力期間維持 idle 姿勢（別移動），時間到 → 進 attack 狀態出手。
         this.anim.play('idle');
         if (this.timer <= 0) {
-          this.state = 'attack';
-          this.attackAnimDone = false;
-          this.fireAttack(aim); // 對準目標（守護波為雕像，否則玩家）出手
+          // 六輪#8：出手前再 gate 一次 canReachTarget（與進 charge 同基準 getBodyCenter，五輪#4 已對齊）。
+          // 真因=gate 只擋「進 charge」那刻、沒擋「出手」那刻，蓄力期玩家跑出範圍仍照揮→空揮。
+          // 搆不到 → 取消出手、收蓄力特效、回 chase 繼續逼近（不空揮、不發呆；下一幀 chase 重新逼近/gate）。
+          if (this.canReachTarget(aim)) {
+            this.state = 'attack';
+            this.attackAnimDone = false;
+            this.fireAttack(aim); // 對準目標（守護波為雕像，否則玩家）出手
+          } else {
+            this.clearChargeFx(); // 收掉蓄力集氣/預告圈殘留
+            this.state = 'chase';
+          }
         }
         break;
 

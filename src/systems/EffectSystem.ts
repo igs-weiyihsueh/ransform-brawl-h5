@@ -737,9 +737,14 @@ export class EffectSystem {
     const spr = this.scene.add.image(x, startY, key);
     spr.setOrigin(0.5, 0.5).setDepth(ENERGY_FLY_DEPTH - 1); // 火球在角色上層、爆炸之下
     const isReal = key === fallKey;
-    // 真火球 fireball_falling 為 96×128(3:4, 頭下尾上) → 60×80 保比例; 佔位 burst 用方形。
-    if (isReal) spr.setDisplaySize(60, 80);
-    else {
+    // 六輪#8順帶：真火球尺寸依素材原始長寬比推導(不寫死)，特效 agent 換 96×160 長拖尾版自動跟隨(舊 96×128 也對)。
+    // 目標寬 60px，高 = 60 × (原高/原寬)；拖尾越長高越大，一眼是天降火球。
+    if (isReal) {
+      const src = this.scene.textures.get(fallKey).getSourceImage() as { width: number; height: number };
+      const ratio = src?.width && src?.height ? src.height / src.width : 128 / 96;
+      const w = 72; // 六輪#8順帶：略放大(60→72)讓強化長拖尾在遊戲一眼看得到(96×160 版拖尾佔 70% 高)。
+      spr.setDisplaySize(w, w * ratio);
+    } else {
       spr.setDisplaySize(54, 72).setTint(0xff5522); // 佔位染火焰紅
     }
     spr.setAlpha(1);
