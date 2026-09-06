@@ -5,6 +5,12 @@ import type { Vec2 } from '@/systems/hitDetection';
 /** 撿取半徑（unit）。距離判定，非物理碰撞。 */
 export const ITEM_PICKUP_RADIUS = 0.8;
 
+/** 七輪#9 乙：初始道具進場後撿取免疫秒（給玩家看箭頭走過去的時間，箭頭 3s showDuration 內不被秒撿）。 */
+export const INITIAL_ITEM_PICKUP_IMMUNITY_SEC = 1.5;
+
+/** 道具來源（與 itemGuideMath.ItemSource 對齊）。 */
+export type ItemSourceKind = 'initial' | 'kill' | 'random';
+
 /**
  * TransformItem — 變身道具（場上可撿取的實體）。
  *
@@ -22,10 +28,15 @@ export class TransformItem {
   private ownerBorder: Phaser.GameObjects.Graphics | null = null;
   /** 唯一 id（排隊制/佇列追蹤用）。 */
   readonly id: number;
+  /** 七輪#9 乙：道具來源（'initial' 引導去撿 → 箭頭跳過距離 gate + 進場短暫免撿取）。 */
+  readonly source: ItemSourceKind;
+  /** 七輪#9 乙：撿取免疫剩餘秒（初始道具進場後短暫不可撿，給玩家看箭頭走過去的時間）；每幀由 TransformSystem 扣。 */
+  private pickupImmunitySec = 0;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, id = 0) {
+  constructor(scene: Phaser.Scene, x: number, y: number, id = 0, source: ItemSourceKind = 'random') {
     this.scene = scene;
     this.id = id;
+    this.source = source;
     const ring = scene.add.circle(0, 0, 22, 0xffe64d, 0.25);
     ring.setStrokeStyle(3, 0xffe64d);
     const core = scene.add.star(0, 0, 5, 8, 18, 0xffe64d);
@@ -68,11 +79,22 @@ export class TransformItem {
     return this.picked;
   }
 
-  /** 玩家是否在撿取半徑內。 */
+  /** 玩家是否在撿取半徑內（撿取免疫中一律 false，七輪#9 乙：初始道具進場短暫不可撿）。 */
   isInPickupRange(playerPos: Vec2): boolean {
+    if (this.pickupImmunitySec > 0) return false;
     const dx = playerPos.x - this.container.x;
     const dy = playerPos.y - this.container.y;
     return dx * dx + dy * dy <= this.pickupRadiusPx * this.pickupRadiusPx;
+  }
+
+  /** 設定撿取免疫秒數（七輪#9 乙：初始道具進場後短暫不可撿）。 */
+  setPickupImmunity(sec: number): void {
+    this.pickupImmunitySec = Math.max(0, sec);
+  }
+
+  /** 每幀扣減撿取免疫（由 TransformSystem update 呼叫）。 */
+  tickImmunity(dt: number): void {
+    if (this.pickupImmunitySec > 0) this.pickupImmunitySec = Math.max(0, this.pickupImmunitySec - dt);
   }
 
   /** 標記已撿並銷毀視覺。 */

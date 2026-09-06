@@ -15,6 +15,7 @@ import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
 import { playerColor } from '@/config/playerConfig';
 import { landingX } from '@/systems/entranceMath';
+import { ITEM_PICKUP_RADIUS } from '@/entities/TransformItem';
 import { initialItemPos } from '@/systems/itemGuideMath';
 import type { AttackData } from '@/systems/AttackData';
 import { lateralKnockbackDir } from '@/systems/dashMath';
@@ -188,7 +189,12 @@ export class PlayerControlSystem implements GameSystem {
    */
   private giveInitialItem(player: GameContext['player']): void {
     if (!this.ctx.transform || typeof this.ctx.transform.spawnItem !== 'function') return;
-    const pos = initialItemPos(player.getPosition(), PLAYER_BOUNDS);
+    // 七輪#9 乙：初始道具放「真空吸取半徑 + 撿取半徑 + 緩衝」外（別寫死；確保進場不落在吸取/撿取範圍內，
+    //   玩家得看箭頭走過去撿）。derive 自 getVacuumRadius（可編輯器調→自動跟）。
+    const vacR = typeof player.getVacuumRadius === 'function' ? player.getVacuumRadius() : 50;
+    const pickupR = ITEM_PICKUP_RADIUS * PPU; // 80
+    const offsetPx = Math.max(180, Math.round(vacR + pickupR + 60)); // 至少 180，且保證在吸取+撿取外
+    const pos = initialItemPos(player.getPosition(), PLAYER_BOUNDS, offsetPx);
     this.ctx.transform.spawnItem('initial', player.playerId, pos);
   }
 

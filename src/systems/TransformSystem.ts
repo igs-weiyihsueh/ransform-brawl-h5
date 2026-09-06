@@ -9,7 +9,7 @@ import {
   SUNWUKONG_KEY,
   TRANSFORM_IFRAME,
 } from '@/config/transformConfig';
-import { TransformItem } from '@/entities/TransformItem';
+import { TransformItem, INITIAL_ITEM_PICKUP_IMMUNITY_SEC } from '@/entities/TransformItem';
 import { playerColor } from '@/config/playerConfig';
 import { PPU } from '@/config/gameConfig';
 import {
@@ -94,6 +94,7 @@ export class TransformSystem implements GameSystem {
     const player = this.ctx.player;
     const playerPos = player.getPosition();
     for (const item of this.items) {
+      item.tickImmunity(dt); // 七輪#9 乙：扣減初始道具撿取免疫
       if (!item.isPicked() && item.isInPickupRange(playerPos)) {
         this.onPickup(item, player);
       }
@@ -150,7 +151,9 @@ export class TransformSystem implements GameSystem {
       const ownerPos = p.getPosition();
       const itemPos = item.getPosition();
       const distUnits = Math.hypot(itemPos.x - ownerPos.x, itemPos.y - ownerPos.y) / PPU;
-      if (shouldHideArrow(distUnits)) continue; // 已靠近→不指
+      // 七輪#9 乙：初始道具（引導去撿）箭頭跳過距離 gate（近距離也顯示，別因 <hideDistance 提早吃）；
+      //   3s showDuration 時間淡出保留（對齊 Unity arrowShowDuration，非永久顯示）。一般道具 gate 照舊。
+      if (item.source !== 'initial' && shouldHideArrow(distUnits)) continue; // 已靠近→不指（一般道具）
       // 顯示計時（3s 後淡出）。
       const t = (this.arrowElapsed.get(targetId) ?? 0) + this.ctx.scene.game.loop.delta / 1000;
       this.arrowElapsed.set(targetId, t);
@@ -225,7 +228,9 @@ export class TransformSystem implements GameSystem {
     const margin = 120;
     const x = pos ? pos.x : Phaser.Math.Between(margin, GAME_WIDTH - margin);
     const y = pos ? pos.y : Phaser.Math.Between(margin, GAME_HEIGHT - margin);
-    const item = new TransformItem(this.ctx.scene, x, y, ++this.itemSeq);
+    const item = new TransformItem(this.ctx.scene, x, y, ++this.itemSeq, source);
+    // 七輪#9 乙：初始道具進場後短暫免撿取（給玩家看箭頭走過去的時間，箭頭 3s showDuration 內不被秒撿）。
+    if (source === 'initial') item.setPickupImmunity(INITIAL_ITEM_PICKUP_IMMUNITY_SEC);
     // 三輪#6：owner 依來源分配。隨機刷=無主(不標色框/不畫箭頭/不連牽引)；初始/擊落=有主(標玩家色+入佇列)。
     const owner = resolveItemOwner(source, ownerPlayerId);
     if (owner !== null) {
