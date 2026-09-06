@@ -24,7 +24,7 @@ import {
   assertValidGuard,
   type GuardFile,
 } from '@/config/guardSchema';
-import type { GuardPreset } from '@/config/guardConfig';
+import { GUARD_STATUE_UI_DEFAULTS, type GuardPreset } from '@/config/guardConfig';
 import {
   EDITOR_STORE_KEYS,
   applyToGame,
@@ -184,6 +184,14 @@ function gdBuildInspector(): void {
   guard.appendChild(numberRow('雕像 HP targetHP', p.targetHP, (v) => { p.targetHP = v; }, { min: 1, max: 1000, step: 5 }, on));
   guard.appendChild(numberRow('獎券 rewardTickets', p.rewardTickets, (v) => { p.rewardTickets = v; }, { min: 0, max: 100, step: 1 }, on));
   guard.appendChild(numberRow('生成環繞半徑 spawnRadius (px)', p.spawnRadiusPx, (v) => { p.spawnRadiusPx = v; }, { min: 0, max: 800, step: 10 }, on));
+  // 雕像 / 血條 UI（用戶第十輪 #1#4，5 optional 欄位覆蓋 GUARD_STATUE_UI_DEFAULTS）：
+  //   省略=沿用打包預設，調了才存進 guard preset override。遊戲端 resolveGuardStatueUi 讀。
+  const d = GUARD_STATUE_UI_DEFAULTS;
+  guard.appendChild(numberRow('雕像高度 statueHeightPx', p.statueHeightPx ?? d.statueHeightPx, (v) => { p.statueHeightPx = v; }, { min: 50, max: 400, step: 5 }, on));
+  guard.appendChild(numberRow('血條寬 barWidthPx', p.barWidthPx ?? d.barWidthPx, (v) => { p.barWidthPx = v; }, { min: 20, max: 400, step: 5 }, on));
+  guard.appendChild(numberRow('血條高 barHeightPx', p.barHeightPx ?? d.barHeightPx, (v) => { p.barHeightPx = v; }, { min: 2, max: 60, step: 1 }, on));
+  guard.appendChild(numberRow('血條 Y 位移 barOffsetYPx', p.barOffsetYPx ?? d.barOffsetYPx, (v) => { p.barOffsetYPx = v; }, { min: -200, max: 300, step: 5 }, on));
+  guard.appendChild(numberRow('標籤 Y 位移 labelOffsetYPx', p.labelOffsetYPx ?? d.labelOffsetYPx, (v) => { p.labelOffsetYPx = v; }, { min: -300, max: 200, step: 5 }, on));
   // ※補怪 drip（maxAlive/spawnThreshold/spawnInterval/spawns）已搬 level editor 守護節點，此處不編。
 
   const intro = $('gd-intro-inspector'); intro.innerHTML = '';
