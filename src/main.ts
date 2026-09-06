@@ -39,4 +39,14 @@ if (isPreviewMode()) {
     game.scene.start('GameScene', { previewLevels: levels });
   });
   bridge.start();
+} else {
+  // 遊戲內展開編輯器（方案 A'）：非試玩模式才掛 overlay（右下浮動鈕→展開編輯器面板）。
+  // 動態 import 殼（遊戲主 bundle 不含編輯器 code，點開浮動鈕/tab 才 lazy 載各編輯器）。
+  void (async () => {
+    const { EditorOverlay } = await import('@/systems/editorOverlay/EditorOverlay');
+    const { EDITOR_TABS } = await import('@/systems/editorOverlay/editorTabs');
+    // 收合 overlay 時 soft-reload（三決策②用戶定：收合 reload 讀新 override 生效）。
+    const overlay = new EditorOverlay(EDITOR_TABS, () => window.location.reload());
+    overlay.attach();
+  })();
 }

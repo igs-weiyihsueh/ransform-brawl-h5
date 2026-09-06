@@ -56,8 +56,15 @@ function getSprite(characterKey: string): HTMLImageElement | null {
   return null; // 首次尚未載完，本次先畫 fallback
 }
 
+/**
+ * mount 化（方案 A' 遊戲內展開）：DOM 查找 scope 進 editorRoot（overlay 分配的 .tb-editor-root 容器），
+ * 不再吃 document 全域（避免與遊戲頁 / 其他編輯器 id 撞）。獨立頁 /enemy-editor/ 仍可用（並存）：
+ * index.html 呼叫 mount(document.body 內的容器)。
+ */
+let editorRoot: HTMLElement = document.body;
+
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
-  const el = document.getElementById(id);
+  const el = editorRoot.querySelector<T>(`#${id}`);
   if (!el) throw new Error(`缺少元素 #${id}`);
   return el as T;
 };
@@ -679,11 +686,11 @@ function bindUI(): void {
   $('btn-clear-apply').addEventListener('click', clearAppliedFromEditor);
 
   // 預覽放大滑桿（1×=完整場景真實比例；放大只為看細節，比例仍真實）。
-  const zoomInput = document.getElementById('preview-zoom') as HTMLInputElement | null;
+  const zoomInput = editorRoot.querySelector('#preview-zoom') as HTMLInputElement | null;
   if (zoomInput) {
     zoomInput.addEventListener('input', () => {
       previewZoom = Number(zoomInput.value) || 1;
-      const val = document.getElementById('preview-zoom-val');
+      const val = editorRoot.querySelector('#preview-zoom-val');
       if (val) val.textContent = `${previewZoom}×`;
       renderPreview();
     });
@@ -703,17 +710,162 @@ function bindUI(): void {
     fileInput.value = '';
   });
 
-  window.addEventListener('keydown', (e) => {
-    const tag = (e.target as HTMLElement | null)?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-    const ctrl = e.ctrlKey || e.metaKey;
-    if (!ctrl) return;
-    const key = e.key.toLowerCase();
-    if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
-    else if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
-  });
+  window.addEventListener('keydown', keydownHandler);
   updateHistoryButtons();
 }
 
-bindUI();
-initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則打包預設
+/** 快捷鍵處理（Ctrl+Z/Y）：抽成具名 handler 供 unmount 移除（overlay 收合不殘留全域監聽）。 */
+function keydownHandler(e: KeyboardEvent): void {
+  const tag = (e.target as HTMLElement | null)?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (!ctrl) return;
+  const key = e.key.toLowerCase();
+  if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+}
+
+// ---- mount 化（方案 A' 遊戲內展開 + 獨立頁並存） -------------------------
+
+/**
+ * 編輯器 body HTML（從 enemy-editor/index.html 的 <body> 搬來，去掉 <script>）。
+ * mount 時注入 container，讓 $() scope 進來查得到。id 維持原樣（scope 在 container 內不與遊戲頁撞）。
+ */
+const EDITOR_BODY_HTML = `
+<header>
+  <h1>怪物編輯器</h1>
+  <span class="badge" id="schema-version"></span>
+  <button id="btn-undo" title="復原 (Ctrl+Z)" disabled>↶ 復原</button>
+  <button id="btn-redo" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
+  <div class="spacer"></div>
+  <button id="btn-load-default">載入預設</button>
+  <button id="btn-load-file">載入 JSON 檔…</button>
+  <input id="file-input" type="file" accept="application/json,.json" hidden />
+  <button id="btn-reset">重設為預設值</button>
+  <button id="btn-export" class="primary">驗證並下載 JSON</button>
+  <button id="btn-apply" class="primary" title="驗證後存入瀏覽器，重開遊戲即生效">套用到遊戲</button>
+  <button id="btn-apply-return" class="primary" title="套用並立即返回遊戲">套用並回到遊戲</button>
+  <button id="btn-clear-apply" title="移除套用，遊戲回打包預設">清除套用</button>
+</header>
+<div class="layout">
+  <div class="col-list">
+    <div class="section-title">敵人</div>
+    <div id="enemy-list"></div>
+    <button id="btn-add" style="width:100%; margin-top:6px;">+ 新增敵人（複製選中）</button>
+  </div>
+  <div class="stage-wrap">
+    <canvas id="preview" width="640" height="360"></canvas>
+    <div style="margin-top:6px;font-size:12px;color:#9a9ab5;display:flex;align-items:center;gap:8px;">
+      <span>放大檢視</span>
+      <input id="preview-zoom" type="range" min="1" max="6" step="0.5" value="1" style="flex:1;" />
+      <span id="preview-zoom-val">1×</span>
+      <span>（1×＝完整場景真實比例）</span>
+    </div>
+  </div>
+  <div class="col-inspector">
+    <div class="section-title">Inspector</div>
+    <div id="inspector"><div class="hint">左側選一隻敵人以編輯。</div></div>
+  </div>
+</div>
+<div class="legend">
+  <span><span class="dot" style="background:var(--detect)"></span>偵測範圍 detectRange</span>
+  <span><span class="dot" style="background:var(--attackR)"></span>攻擊範圍 attackRange</span>
+  <span><span class="dot" style="background:var(--hit)"></span>攻擊判定 attack.radius</span>
+</div>
+<div id="status">就緒。左側選一隻敵人，右側調數值，中間圈圈即時預覽。</div>
+`;
+
+/**
+ * 編輯器樣式（從 index.html <style> 搬來，全部命名空間在 .tb-editor-root 下，不污染遊戲頁/其他編輯器）。
+ * 原 html/body 100% + header/.layout 100vh 改成吃 .tb-editor-root 容器高度（overlay host 給的 100%）。
+ */
+const EDITOR_CSS = `
+.tb-editor-root {
+  --bg: #1a1a2e; --panel: #23233a; --panel2: #2c2c48; --line: #3a3a5c;
+  --text: #e6e6f0; --muted: #9a9ab5; --accent: #6c8cff; --danger: #ff6c7a; --ok: #59d98e;
+  --stage: #10101c; --detect: #6c8cff; --attackR: #ffb300; --hit: #ff6c7a;
+  display: flex; flex-direction: column; height: 100%;
+  background: var(--bg); color: var(--text);
+  font-family: Arial, "Microsoft JhengHei", "Noto Sans TC", sans-serif; font-size: 14px;
+}
+.tb-editor-root * { box-sizing: border-box; }
+.tb-editor-root header { padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex: 0 0 auto; }
+.tb-editor-root header h1 { font-size: 16px; margin: 0; }
+.tb-editor-root header .spacer { flex: 1; }
+.tb-editor-root .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 1px 6px; border-radius: 10px; }
+.tb-editor-root button { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.tb-editor-root button:hover { border-color: var(--accent); }
+.tb-editor-root button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tb-editor-root button:disabled { opacity: 0.4; cursor: not-allowed; }
+.tb-editor-root select, .tb-editor-root input { background: var(--bg); color: var(--text); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+.tb-editor-root .layout { display: flex; flex: 1; min-height: 0; }
+.tb-editor-root .col-list { width: 220px; border-right: 1px solid var(--line); padding: 12px; background: var(--panel); overflow-y: auto; }
+.tb-editor-root .stage-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #14141f; overflow: auto; }
+.tb-editor-root #preview { background: var(--stage); outline: 1px solid var(--line); position: relative; }
+.tb-editor-root .col-inspector { width: 320px; border-left: 1px solid var(--line); padding: 12px; overflow-y: auto; background: var(--panel); }
+.tb-editor-root .section-title { color: var(--muted); font-size: 12px; text-transform: uppercase; margin: 10px 0 8px; letter-spacing: 0.5px; }
+.tb-editor-root .list-item { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; cursor: pointer; background: var(--panel2); display: flex; align-items: center; gap: 8px; }
+.tb-editor-root .list-item.selected { border-color: var(--accent); background: #34345a; }
+.tb-editor-root .list-item .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-editor-root .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.tb-editor-root .row label { width: 130px; color: var(--muted); }
+.tb-editor-root .row input, .tb-editor-root .row select { flex: 1; }
+.tb-editor-root .row .val { width: 52px; text-align: right; color: var(--muted); }
+.tb-editor-root .legend { display: flex; gap: 14px; padding: 6px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); background: var(--panel); flex: 0 0 auto; }
+.tb-editor-root .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.tb-editor-root #status { padding: 8px 16px; font-size: 13px; white-space: pre-wrap; border-top: 1px solid var(--line); background: var(--panel); max-height: 120px; overflow-y: auto; flex: 0 0 auto; }
+.tb-editor-root .status-ok { color: var(--ok); } .tb-editor-root .status-err { color: var(--danger); }
+.tb-editor-root .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+`;
+
+const EDITOR_STYLE_ID = 'tb-enemy-editor-style';
+
+/** 注入一次編輯器樣式（命名空間 .tb-editor-root，重複 mount 不重注）。 */
+function ensureEditorStyle(): void {
+  if (document.getElementById(EDITOR_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = EDITOR_STYLE_ID;
+  style.textContent = EDITOR_CSS;
+  document.head.appendChild(style);
+}
+
+/**
+ * 掛載怪物編輯器到指定容器（EditorMountFn）：注入 HTML + 樣式 → bindUI → initLoad（波騎回顯）。
+ * 回傳 { unmount() } 清掉 DOM + 移除全域 keydown 監聽（overlay 收合/切 tab 用）。
+ */
+export function mount(container: HTMLElement): { unmount(): void } {
+  ensureEditorStyle();
+  container.classList.add('tb-editor-root');
+  container.innerHTML = EDITOR_BODY_HTML;
+  editorRoot = container;
+
+  // 重置狀態（同一 session 反覆開關 overlay：回到乾淨初值，initLoad 再讀 override 回顯）。
+  file = defaultEnemyFile();
+  selectedKey = Object.keys(file.enemies)[0] ?? null;
+  undoStack = [];
+  redoStack = [];
+
+  bindUI();
+  initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則打包預設
+
+  return {
+    unmount(): void {
+      window.removeEventListener('keydown', keydownHandler);
+      container.innerHTML = '';
+      container.classList.remove('tb-editor-root');
+    },
+  };
+}
+
+/**
+ * 獨立頁自動啟動（並存）：/enemy-editor/ 頁的 index.html 有 #tb-editor-standalone 掛載點時自動 mount。
+ * overlay lazy import 本模組時無此元素 → 不自動跑（無 module 頂層副作用），由 overlay 呼叫 mount(container)。
+ */
+const standaloneHost = document.getElementById('tb-editor-standalone');
+if (standaloneHost) {
+  mount(standaloneHost);
+}
+

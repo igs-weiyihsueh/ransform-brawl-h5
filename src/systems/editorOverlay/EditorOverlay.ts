@@ -1,0 +1,286 @@
+import type { EditorInstance, EditorTabDef } from '@/systems/editorOverlay/editorMount';
+
+/**
+ * EditorOverlay — 遊戲內展開編輯器的 overlay 殼（方案 A' 骨架）。
+ *
+ * 職責：遊戲頁右下角浮動鈕 → 點開全螢幕 overlay（遊戲之上）→ tab 列切換各編輯器 →
+ * 選 tab 時 lazy import() 對應編輯器模組 + mount 到分配容器 → 關閉時 unmount + 可選 soft-reload。
+ *
+ * 隔離：CSS 全部命名空間在 .tb-editor-overlay / .tb-editor-root 下，不污染遊戲頁樣式；
+ * 編輯器 code 走動態 import()（遊戲主 bundle 不含編輯器）。
+ *
+ * 即時生效策略（三決策②待用戶定，先做「收合 reload」保底）：關閉 overlay 時若編輯器有套用過
+ * override（applyToGame 寫了 localStorage），呼叫 onClose 回呼讓遊戲決定重載（soft-reload 場景 or location.reload）。
+ * 之後若用戶要「真即時」，再在此加 override 快取 invalidate 鉤子（不影響本殼結構）。
+ */
+export class EditorOverlay {
+  private readonly tabs: readonly EditorTabDef[];
+  private readonly onClose: (() => void) | undefined;
+
+  private root: HTMLDivElement | null = null;
+  private overlayEl: HTMLDivElement | null = null;
+  private editorHost: HTMLDivElement | null = null;
+  private tabBar: HTMLDivElement | null = null;
+  private statusEl: HTMLDivElement | null = null;
+
+  private activeTabId: string | null = null;
+  private activeInstance: EditorInstance | null = null;
+  private open = false;
+  private styleInjected = false;
+
+  /**
+   * @param tabs 編輯器 tab 定義（id/label/lazy loader）。
+   * @param onClose overlay 關閉時回呼（遊戲決定是否 soft-reload 讀新 override）。
+   */
+  constructor(tabs: readonly EditorTabDef[], onClose?: () => void) {
+    this.tabs = tabs;
+    this.onClose = onClose;
+  }
+
+  /** 掛到遊戲頁（建浮動鈕 + 樣式）。呼叫一次即可（一般在遊戲 main.ts boot 後）。 */
+  attach(parent: HTMLElement = document.body): void {
+    if (this.root) return; // 已掛載
+    this.injectStyle();
+
+    const root = document.createElement('div');
+    root.className = 'tb-editor-overlay';
+
+    const btn = document.createElement('button');
+    btn.className = 'tb-editor-entry-btn';
+    btn.type = 'button';
+    btn.textContent = '⚙ 編輯器';
+    btn.addEventListener('click', () => this.openOverlay());
+
+    root.appendChild(btn);
+    parent.appendChild(root);
+    this.root = root;
+  }
+
+  /** 展開 overlay（首次建 DOM，之後顯示）。 */
+  openOverlay(): void {
+    if (!this.root) this.attach();
+    if (!this.overlayEl) this.buildOverlay();
+    if (!this.overlayEl) return;
+    this.overlayEl.style.display = 'flex';
+    this.open = true;
+    // 首次展開預設載第一個 tab。
+    if (!this.activeTabId && this.tabs.length > 0) {
+      void this.selectTab(this.tabs[0].id);
+    }
+  }
+
+  /** 收合 overlay：unmount 當前編輯器、隱藏、觸發 onClose（遊戲決定重載）。 */
+  closeOverlay(): void {
+    if (!this.open) return;
+    this.unmountActive();
+    if (this.overlayEl) this.overlayEl.style.display = 'none';
+    this.open = false;
+    this.onClose?.();
+  }
+
+  /** 是否展開中（查詢/測試用）。 */
+  isOpen(): boolean {
+    return this.open;
+  }
+
+  /** 目前 tab id（查詢/測試用）。 */
+  getActiveTabId(): string | null {
+    return this.activeTabId;
+  }
+
+  // --- 內部 ---
+
+  private buildOverlay(): void {
+    if (!this.root) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'tb-editor-panel';
+
+    // 頂列：tab 列 + 關閉鈕。
+    const topBar = document.createElement('div');
+    topBar.className = 'tb-editor-topbar';
+
+    const tabBar = document.createElement('div');
+    tabBar.className = 'tb-editor-tabs';
+    for (const t of this.tabs) {
+      const tabBtn = document.createElement('button');
+      tabBtn.type = 'button';
+      tabBtn.className = 'tb-editor-tab';
+      tabBtn.dataset.tabId = t.id;
+      tabBtn.textContent = t.label;
+      tabBtn.addEventListener('click', () => void this.selectTab(t.id));
+      tabBar.appendChild(tabBtn);
+    }
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'tb-editor-close';
+    closeBtn.textContent = '✕ 關閉';
+    closeBtn.addEventListener('click', () => this.closeOverlay());
+
+    topBar.appendChild(tabBar);
+    topBar.appendChild(closeBtn);
+
+    // 編輯器掛載區（各編輯器 mount 到這個 host 內的 .tb-editor-root 容器）。
+    const host = document.createElement('div');
+    host.className = 'tb-editor-host';
+
+    // 狀態列（載入中/錯誤提示）。
+    const status = document.createElement('div');
+    status.className = 'tb-editor-status';
+
+    overlay.appendChild(topBar);
+    overlay.appendChild(host);
+    overlay.appendChild(status);
+    this.root.appendChild(overlay);
+
+    this.overlayEl = overlay;
+    this.editorHost = host;
+    this.tabBar = tabBar;
+    this.statusEl = status;
+  }
+
+  /** 切換到某 tab：unmount 舊、lazy import 新、mount 到新容器。 */
+  private async selectTab(tabId: string): Promise<void> {
+    if (tabId === this.activeTabId) return;
+    const def = this.tabs.find((t) => t.id === tabId);
+    if (!def || !this.editorHost) return;
+
+    this.unmountActive();
+    this.activeTabId = tabId;
+    this.highlightActiveTab();
+    this.setStatus(`載入 ${def.label}…`);
+
+    // 分配乾淨容器（命名空間 .tb-editor-root，scoped DOM 查找不撞遊戲頁 id）。
+    const container = document.createElement('div');
+    container.className = 'tb-editor-root';
+    this.editorHost.innerHTML = '';
+    this.editorHost.appendChild(container);
+
+    try {
+      const mod = await def.loader();
+      // 切 tab 競態保護：await 期間若又切走，放棄本次 mount。
+      if (this.activeTabId !== tabId) return;
+      this.activeInstance = mod.mount(container);
+      this.setStatus('');
+    } catch (err) {
+      this.setStatus(`載入 ${def.label} 失敗：${String(err)}`);
+    }
+  }
+
+  private unmountActive(): void {
+    if (this.activeInstance) {
+      try {
+        this.activeInstance.unmount();
+      } catch {
+        /* 卸載失敗不擋 UI，容器會被清掉 */
+      }
+      this.activeInstance = null;
+    }
+    if (this.editorHost) this.editorHost.innerHTML = '';
+  }
+
+  private highlightActiveTab(): void {
+    if (!this.tabBar) return;
+    for (const el of Array.from(this.tabBar.children)) {
+      const btn = el as HTMLButtonElement;
+      btn.classList.toggle('active', btn.dataset.tabId === this.activeTabId);
+    }
+  }
+
+  private setStatus(msg: string): void {
+    if (this.statusEl) this.statusEl.textContent = msg;
+  }
+
+  private injectStyle(): void {
+    if (this.styleInjected || document.getElementById('tb-editor-overlay-style')) {
+      this.styleInjected = true;
+      return;
+    }
+    const style = document.createElement('style');
+    style.id = 'tb-editor-overlay-style';
+    style.textContent = OVERLAY_CSS;
+    document.head.appendChild(style);
+    this.styleInjected = true;
+  }
+}
+
+/**
+ * overlay 殼樣式（全部命名空間在 .tb-editor-* 下，不污染遊戲/編輯器內部樣式）。
+ * 編輯器內部樣式由各編輯器自己在 .tb-editor-root 下注入（mount 化時搬進來）。
+ */
+const OVERLAY_CSS = `
+.tb-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  pointer-events: none;
+  font-family: Arial, "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+}
+.tb-editor-entry-btn {
+  position: fixed;
+  right: 12px;
+  bottom: 56px;
+  pointer-events: auto;
+  padding: 8px 14px;
+  border-radius: 20px;
+  background: rgba(20, 20, 40, 0.72);
+  color: #fff;
+  font-size: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  opacity: 0.72;
+  transition: background 0.15s, opacity 0.15s;
+}
+.tb-editor-entry-btn:hover { background: rgba(40, 40, 70, 0.92); opacity: 1; }
+.tb-editor-panel {
+  position: fixed;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  background: #1a1a2e;
+  color: #e6e6f0;
+  pointer-events: auto;
+}
+.tb-editor-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #23233a;
+  border-bottom: 1px solid #3a3a5c;
+  flex-wrap: wrap;
+}
+.tb-editor-tabs { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+.tb-editor-tab {
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: #2c2c48;
+  color: #e6e6f0;
+  border: 1px solid #3a3a5c;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tb-editor-tab:hover { border-color: #6c8cff; }
+.tb-editor-tab.active { background: #6c8cff; border-color: #6c8cff; color: #fff; }
+.tb-editor-close {
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: #2c2c48;
+  color: #ff6c7a;
+  border: 1px solid #3a3a5c;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tb-editor-close:hover { border-color: #ff6c7a; }
+.tb-editor-host { flex: 1; overflow: hidden; position: relative; }
+.tb-editor-root { width: 100%; height: 100%; overflow: auto; }
+.tb-editor-status {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #9a9ab5;
+  background: #23233a;
+  border-top: 1px solid #3a3a5c;
+  min-height: 14px;
+}
+`;
