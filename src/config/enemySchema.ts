@@ -210,6 +210,16 @@ export function getResolvedEnemy(charKey: string): EnemyAIConfig | undefined {
   return getResolvedEnemies()[charKey];
 }
 
+/**
+ * 敵種「有哪些怪」的唯一來源（可維護性根治，用戶關切「新增怪不改 code」）：
+ * = getResolvedEnemies 的 keys（含 enemy-editor override 新增的怪）。
+ * level/guard 編輯器敵種下拉、權重表都從此讀 → enemy-editor 加怪自動出現在所有敵種選單。
+ * 遊戲端敵種合法性交 getResolvedEnemies fallback（查無回 undefined），故 validate 只驗非空字串（軟白名單）。
+ */
+export function getEnemyTypeKeys(): string[] {
+  return Object.keys(getResolvedEnemies());
+}
+
 /** 清空 cache（測試/熱重載用；正式遊戲不需）。 */
 export function clearResolvedEnemiesCache(): void {
   resolvedEnemiesCache = null;

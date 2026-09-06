@@ -34,6 +34,7 @@ import {
   type PreviewMessage,
 } from '@/config/previewProtocol';
 import { enemyTypeLabel, nodeTypeLabel } from './labels';
+import { getEnemyTypeKeys } from '@/config/enemySchema';
 import { GUARD_PRESETS } from '@/config/guardConfig';
 import { FIRE_RAIN_PRESETS } from '@/config/fireRainConfig';
 
@@ -354,10 +355,14 @@ function renderSpawnInspector(node: SpawnNodeData): void {
     row.className = 'spawn-entry';
 
     const sel = document.createElement('select');
-    for (const t of ENEMY_TYPES) {
+    // 可維護性根治：敵種清單動態讀 enemies 單一來源（enemy-editor 加怪自動出現）；
+    //   ∪ 目前值（確保現有 preset 值即使不在清單也顯示、不遺失）。
+    const dyn = getEnemyTypeKeys();
+    const typeList = dyn.includes(entry.enemyType) ? dyn : [...dyn, entry.enemyType];
+    for (const t of typeList) {
       const opt = document.createElement('option');
-      opt.value = t; // JSON 值維持英文 enum
-      opt.textContent = enemyTypeLabel(t); // 顯示中文（英文）
+      opt.value = t; // JSON 值維持英文 key
+      opt.textContent = enemyTypeLabel(t); // 顯示中文（英文），未知怪 fallback 原 key
       if (t === entry.enemyType) opt.selected = true;
       sel.appendChild(opt);
     }
@@ -392,7 +397,8 @@ function renderSpawnInspector(node: SpawnNodeData): void {
   const addBtn = document.createElement('button');
   addBtn.textContent = '+ 新增敵種';
   addBtn.addEventListener('click', () => {
-    node.spawns.push({ enemyType: ENEMY_TYPES[0], weight: 1 });
+    const keys = getEnemyTypeKeys();
+    node.spawns.push({ enemyType: keys[0] ?? ENEMY_TYPES[0], weight: 1 });
     renderInspector();
   });
   inspectorEl.appendChild(addBtn);

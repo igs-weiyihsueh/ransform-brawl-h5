@@ -14,6 +14,7 @@ import {
   type GuardFile,
 } from '@/config/guardSchema';
 import type { GuardPreset } from '@/config/guardConfig';
+import { getEnemyTypeKeys } from '@/config/enemySchema';
 import {
   EDITOR_STORE_KEYS,
   applyToGame,
@@ -111,8 +112,38 @@ function buildInspector(): void {
   const spawns = $('spawns-inspector');
   spawns.innerHTML = '';
   p.spawns.forEach((s, i) => {
-    spawns.appendChild(numberRow(`${s.enemyType} 權重`, s.weight, (v) => { p.spawns[i].weight = v; }, { min: 0, max: 1, step: 0.05 }));
+    const row = document.createElement('div');
+    row.className = 'row';
+    const inner = numberRow(`${s.enemyType} 權重`, s.weight, (v) => { p.spawns[i].weight = v; }, { min: 0, max: 1, step: 0.05 });
+    // 移到 row 裡並加刪除鈕。
+    while (inner.firstChild) row.appendChild(inner.firstChild);
+    const del = document.createElement('button');
+    del.textContent = '✕'; del.title = '移除此敵種';
+    del.addEventListener('click', () => { p.spawns.splice(i, 1); buildInspector(); render(); });
+    row.appendChild(del);
+    spawns.appendChild(row);
   });
+  // 可維護性根治：「＋新增敵種」下拉＝動態讀 enemies 單一來源，列出尚未在 spawns 的怪。
+  const already = new Set(p.spawns.map((s) => s.enemyType));
+  const addable = getEnemyTypeKeys().filter((k) => !already.has(k));
+  if (addable.length > 0) {
+    const addRow = document.createElement('div');
+    addRow.className = 'row';
+    const sel = document.createElement('select');
+    const ph = document.createElement('option');
+    ph.value = ''; ph.textContent = '＋新增敵種…'; sel.appendChild(ph);
+    for (const k of addable) {
+      const opt = document.createElement('option');
+      opt.value = k; opt.textContent = k; sel.appendChild(opt);
+    }
+    sel.addEventListener('change', () => {
+      if (!sel.value) return;
+      p.spawns.push({ enemyType: sel.value, weight: 0.2 });
+      buildInspector(); render();
+    });
+    addRow.appendChild(sel);
+    spawns.appendChild(addRow);
+  }
 }
 
 /** 預覽：畫雕像（場中央）+ 四角定位藍點 + spotlight 黃圈 + 生成環繞圈（真實比例）。 */

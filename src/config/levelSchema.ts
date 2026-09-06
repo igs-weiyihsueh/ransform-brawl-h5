@@ -22,9 +22,16 @@ export const LEVELS_SCHEMA_VERSION = 1 as const;
  * 編輯器匯出的 enemyType 必須是這些值，否則遊戲生不出對應怪。
  * 對應 Unity：AI_Rush / AI_Ranged / AI_Elite。
  */
-export type EnemyType = 'Enemy_Rush' | 'Enemy_Ranged' | 'Enemy_Elite';
+/**
+ * 敵人類型 — 敵種 key（字串）。可維護性根治（用戶關切「新增怪不改 code」）：
+ * 型別放寬為 string（不再寫死 union），「有哪些怪」的唯一來源 = enemies 定義（enemySchema.getEnemyTypeKeys）。
+ * 合法性交 runtime：validate 只驗非空字串（軟白名單）、遊戲端 getResolvedEnemies fallback。
+ * 同 platform/attachFireRain 等 preset 名慣例（字串不 union 限制，decision da06fa9e）。
+ * 對應 Unity：AI_Rush / AI_Ranged / AI_Elite（打包預設見 ENEMY_TYPES）。
+ */
+export type EnemyType = string;
 
-/** 執行期用的合法 EnemyType 清單（驗證與編輯器下拉選單共用）。 */
+/** 打包預設敵種清單（編輯器無 enemies override 時的 fallback；權威清單見 enemySchema.getEnemyTypeKeys）。 */
 export const ENEMY_TYPES: readonly EnemyType[] = [
   'Enemy_Rush',
   'Enemy_Ranged',
@@ -50,32 +57,15 @@ const NODE_TYPE_MSG_LABELS: Readonly<Record<NodeType, string>> = {
   Event: '事件',
 };
 
-const ENEMY_TYPE_MSG_LABELS: Readonly<Record<EnemyType, string>> = {
-  Enemy_Rush: '衝鋒兵',
-  Enemy_Ranged: '遠程兵',
-  Enemy_Elite: '菁英兵',
-};
-
 /** 訊息用：節點類型「中文（英文enum）」，找不到退回原值。 */
 function nodeTypeMsg(type: string): string {
   const zh = (NODE_TYPE_MSG_LABELS as Record<string, string>)[type];
   return zh ? `${zh}（${type}）` : type;
 }
 
-/** 訊息用：敵種「中文（英文enum）」，找不到退回原值。 */
-function enemyTypeMsg(type: string): string {
-  const zh = (ENEMY_TYPE_MSG_LABELS as Record<string, string>)[type];
-  return zh ? `${zh}（${type}）` : type;
-}
-
 /** 訊息用：合法節點類型的顯示清單。 */
 function nodeTypesDisplay(): string {
   return NODE_TYPES.map((t) => nodeTypeMsg(t)).join(' / ');
-}
-
-/** 訊息用：合法敵種的顯示清單。 */
-function enemyTypesDisplay(): string {
-  return ENEMY_TYPES.map((t) => enemyTypeMsg(t)).join(' / ');
 }
 
 /** 生怪權重項：{敵種, 相對權重}。對應 Unity spawns[] 元素。 */
@@ -381,12 +371,9 @@ function validateSpawnNode(
       return;
     }
     const entry = entryRaw as Record<string, unknown>;
-    if (
-      !isNonEmptyString(entry.enemyType) ||
-      !ENEMY_TYPES.includes(entry.enemyType as EnemyType)
-    ) {
+    if (!isNonEmptyString(entry.enemyType)) {
       errors.push(
-        `${eAt} 的「敵種 enemyType」="${String(entry.enemyType)}" 不合法（預期 ${enemyTypesDisplay()}）。`,
+        `${eAt} 的「敵種 enemyType」="${String(entry.enemyType)}" 不合法（需非空字串；敵種合法性由 enemies 定義把關）。`,
       );
     }
     if (!isFiniteNumber(entry.weight) || entry.weight <= 0) {

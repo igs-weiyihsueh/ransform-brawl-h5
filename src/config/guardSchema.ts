@@ -20,9 +20,6 @@ export interface GuardFile {
 
 export const GUARD_SCHEMA_VERSION = 1 as const;
 
-/** 有效敵種（守護 spawns 的 enemyType 白名單，對照 levelSchema EnemyType）。 */
-const VALID_ENEMY_TYPES = ['Enemy_Rush', 'Enemy_Ranged', 'Enemy_Elite'] as const;
-
 /** 從打包預設深拷貝一份 preset 表當初值（editor 初值 / resolve fallback）。 */
 export function defaultGuardPresets(): Record<string, GuardPreset> {
   const out: Record<string, GuardPreset> = {};
@@ -80,8 +77,8 @@ function checkSpawns(p: Record<string, unknown>, label: string, errors: string[]
       errors.push(`${label} spawns[${i}] 不是物件。`);
       return;
     }
-    if (typeof s.enemyType !== 'string' || !(VALID_ENEMY_TYPES as readonly string[]).includes(s.enemyType)) {
-      errors.push(`${label} spawns[${i}]「enemyType」=${String(s.enemyType)} 無效（限 ${VALID_ENEMY_TYPES.join('/')}）。`);
+    if (typeof s.enemyType !== 'string' || s.enemyType.trim() === '') {
+      errors.push(`${label} spawns[${i}]「enemyType」=${String(s.enemyType)} 需非空字串（敵種合法性由 enemies 定義把關）。`);
     }
     checkNum(s, 'weight', `${label} spawns[${i}]`, errors, { min: 0 });
   });
