@@ -61,8 +61,14 @@ function getSprite(charKey: string): HTMLImageElement | null {
   return null;
 }
 
+/**
+ * mount 化（方案 A' 遊戲內展開）：DOM 查找 scope 進 editorRoot（overlay 容器），不吃 document 全域。
+ * 獨立頁 /skill-editor/ 仍可用（並存）。
+ */
+let editorRoot: HTMLElement = document.body;
+
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
-  const el = document.getElementById(id);
+  const el = editorRoot.querySelector<T>(`#${id}`);
   if (!el) throw new Error(`缺少元素 #${id}`);
   return el as T;
 };
@@ -638,11 +644,11 @@ function bindUI(): void {
   $('btn-clear-apply').addEventListener('click', clearAppliedFromEditor);
 
   // 預覽放大滑桿（1×=完整場景真實比例；放大只為看細節，比例仍真實）。
-  const zoomInput = document.getElementById('preview-zoom') as HTMLInputElement | null;
+  const zoomInput = editorRoot.querySelector('#preview-zoom') as HTMLInputElement | null;
   if (zoomInput) {
     zoomInput.addEventListener('input', () => {
       previewZoom = Number(zoomInput.value) || 1;
-      const val = document.getElementById('preview-zoom-val');
+      const val = editorRoot.querySelector('#preview-zoom-val');
       if (val) val.textContent = `${previewZoom}×`;
       renderPreview();
     });
@@ -662,17 +668,150 @@ function bindUI(): void {
     fileInput.value = '';
   });
 
-  window.addEventListener('keydown', (e) => {
-    const tag = (e.target as HTMLElement | null)?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-    const ctrl = e.ctrlKey || e.metaKey;
-    if (!ctrl) return;
-    const key = e.key.toLowerCase();
-    if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
-    else if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
-  });
+  window.addEventListener('keydown', keydownHandler);
   updateHistoryButtons();
 }
 
-bindUI();
-initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則打包預設
+/** 快捷鍵處理（Ctrl+Z/Y）：具名 handler 供 unmount 移除。 */
+function keydownHandler(e: KeyboardEvent): void {
+  const tag = (e.target as HTMLElement | null)?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (!ctrl) return;
+  const key = e.key.toLowerCase();
+  if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+}
+
+// ---- mount 化（方案 A' 遊戲內展開 + 獨立頁並存） -------------------------
+
+/** 編輯器 body HTML（從 skill-editor/index.html <body> 搬來，去 <script>）。 */
+const EDITOR_BODY_HTML = `
+<header>
+  <h1>招式編輯器</h1>
+  <span class="badge" id="schema-version"></span>
+  <button id="btn-undo" title="復原 (Ctrl+Z)" disabled>↶ 復原</button>
+  <button id="btn-redo" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
+  <div class="spacer"></div>
+  <button id="btn-load-default">載入預設</button>
+  <button id="btn-load-file">載入 JSON 檔…</button>
+  <input id="file-input" type="file" accept="application/json,.json" hidden />
+  <button id="btn-reset">重設為預設值</button>
+  <button id="btn-export" class="primary">驗證並下載 JSON</button>
+  <button id="btn-apply" class="primary" title="驗證後存入瀏覽器，重開遊戲即生效">套用到遊戲</button>
+  <button id="btn-apply-return" class="primary" title="套用並立即返回遊戲">套用並回到遊戲</button>
+  <button id="btn-clear-apply" title="移除套用，遊戲回打包預設">清除套用</button>
+</header>
+<div class="layout">
+  <div class="col-list">
+    <div class="section-title">角色</div>
+    <div id="char-list"></div>
+    <button id="btn-add-char" style="width:100%; margin-top:6px;">+ 新增角色（複製選中）</button>
+    <div class="section-title">招式</div>
+    <div id="skill-tabs" class="tabs"></div>
+  </div>
+  <div class="stage-wrap">
+    <canvas id="preview" width="640" height="360"></canvas>
+    <div style="margin-top:6px;font-size:12px;color:#9a9ab5;display:flex;align-items:center;gap:8px;">
+      <span>放大檢視</span>
+      <input id="preview-zoom" type="range" min="1" max="6" step="0.5" value="1" style="flex:1;" />
+      <span id="preview-zoom-val">1×</span>
+      <span>（1×＝完整場景真實比例）</span>
+    </div>
+  </div>
+  <div class="col-inspector">
+    <div class="section-title">角色設定</div>
+    <div id="char-inspector"></div>
+    <div class="section-title">招式判定（AttackData）</div>
+    <div id="skill-inspector"><div class="hint">選一個招式以編輯。</div></div>
+  </div>
+</div>
+<div id="status">就緒。左側選角色→選招式，右側調數值，中間即時預覽判定形狀（含扇形）。</div>
+`;
+
+/** 編輯器樣式（命名空間 .tb-editor-root）。 */
+const EDITOR_CSS = `
+.tb-editor-root {
+  --bg: #1a1a2e; --panel: #23233a; --panel2: #2c2c48; --line: #3a3a5c;
+  --text: #e6e6f0; --muted: #9a9ab5; --accent: #6c8cff; --danger: #ff6c7a; --ok: #59d98e;
+  --stage: #10101c; --hit: #ff9d5c;
+  display: flex; flex-direction: column; height: 100%;
+  background: var(--bg); color: var(--text);
+  font-family: Arial, "Microsoft JhengHei", "Noto Sans TC", sans-serif; font-size: 14px;
+}
+.tb-editor-root * { box-sizing: border-box; }
+.tb-editor-root header { padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex: 0 0 auto; }
+.tb-editor-root header h1 { font-size: 16px; margin: 0; }
+.tb-editor-root header .spacer { flex: 1; }
+.tb-editor-root .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 1px 6px; border-radius: 10px; }
+.tb-editor-root button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.tb-editor-root button:hover { border-color: var(--accent); }
+.tb-editor-root button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tb-editor-root button:disabled { opacity: 0.4; cursor: not-allowed; }
+.tb-editor-root select, .tb-editor-root input { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+.tb-editor-root .layout { display: flex; flex: 1; min-height: 0; }
+.tb-editor-root .col-list { width: 220px; border-right: 1px solid var(--line); padding: 12px; background: var(--panel); overflow-y: auto; }
+.tb-editor-root .stage-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #14141f; overflow: auto; }
+.tb-editor-root #preview { background: var(--stage); outline: 1px solid var(--line); }
+.tb-editor-root .col-inspector { width: 330px; border-left: 1px solid var(--line); padding: 12px; overflow-y: auto; background: var(--panel); }
+.tb-editor-root .section-title { color: var(--muted); font-size: 12px; text-transform: uppercase; margin: 10px 0 8px; letter-spacing: 0.5px; }
+.tb-editor-root .list-item { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; cursor: pointer; background: var(--panel2); display: flex; align-items: center; gap: 8px; }
+.tb-editor-root .list-item.selected { border-color: var(--accent); background: #34345a; }
+.tb-editor-root .list-item .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-editor-root .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.tb-editor-root .tab { padding: 5px 8px; font-size: 12px; }
+.tb-editor-root .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tb-editor-root .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.tb-editor-root .row label { width: 128px; color: var(--muted); }
+.tb-editor-root .row input, .tb-editor-root .row select { flex: 1; }
+.tb-editor-root .row .val { width: 50px; text-align: right; color: var(--muted); }
+.tb-editor-root #status { padding: 8px 16px; font-size: 13px; white-space: pre-wrap; border-top: 1px solid var(--line); background: var(--panel); max-height: 120px; overflow-y: auto; flex: 0 0 auto; }
+.tb-editor-root .status-ok { color: var(--ok); } .tb-editor-root .status-err { color: var(--danger); }
+.tb-editor-root .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+`;
+
+const EDITOR_STYLE_ID = 'tb-skill-editor-style';
+
+function ensureEditorStyle(): void {
+  if (document.getElementById(EDITOR_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = EDITOR_STYLE_ID;
+  style.textContent = EDITOR_CSS;
+  document.head.appendChild(style);
+}
+
+/**
+ * 掛載招式編輯器到指定容器（EditorMountFn）：注入 HTML+樣式 → bindUI → initLoad（回顯）。
+ * 回傳 { unmount() } 清 DOM + 移除全域 keydown。
+ */
+export function mount(container: HTMLElement): { unmount(): void } {
+  ensureEditorStyle();
+  container.classList.add('tb-editor-root');
+  container.innerHTML = EDITOR_BODY_HTML;
+  editorRoot = container;
+
+  // 重置狀態（反覆開關 overlay：回乾淨初值，initLoad 再讀 override 回顯）。
+  file = defaultSkillFile();
+  selectedChar = Object.keys(file.characters)[0] ?? null;
+  selectedSkill = 'normalAttack';
+  undoStack = [];
+  redoStack = [];
+
+  bindUI();
+  initLoad(); // 匯入回顯：開啟優先讀 localStorage override 回填，無則打包預設
+
+  return {
+    unmount(): void {
+      window.removeEventListener('keydown', keydownHandler);
+      container.innerHTML = '';
+      container.classList.remove('tb-editor-root');
+    },
+  };
+}
+
+/** 獨立頁自動啟動（並存）：有 #tb-editor-standalone 掛載點才自動 mount；overlay lazy import 時無此元素 → 不自動跑。 */
+const standaloneHost = document.getElementById('tb-editor-standalone');
+if (standaloneHost) {
+  mount(standaloneHost);
+}
+

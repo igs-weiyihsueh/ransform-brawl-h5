@@ -25,4 +25,19 @@ export const EDITOR_TABS: readonly EditorTabDef[] = [
     label: '關卡編輯器',
     loader: () => import('../../../editor/main'),
   },
+  {
+    id: 'skill',
+    label: '招式編輯器',
+    loader: () => import('../../../skill-editor/main'),
+  },
+  {
+    id: 'dash',
+    label: '衝刺編輯器',
+    loader: () => import('../../../dash-editor/main'),
+  },
+  {
+    id: 'event',
+    label: '事件編輯器',
+    loader: () => import('../../../event-editor/main'),
+  },
 ];

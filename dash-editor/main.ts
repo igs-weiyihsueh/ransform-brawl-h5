@@ -12,7 +12,6 @@ import {
   validateDash,
   assertValidDash,
   dashDistance,
-  type DashConfig,
   type DashFile,
 } from '@/config/dashSchema';
 import {
@@ -25,11 +24,17 @@ import {
 const PPU = 100; // 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲檔）
 const REF_SPRITE_SIZE = 269; // 角色 sprite 顯示尺寸（FRAME_SIZE256×SPRITE_SCALE≈1.05）
 const SCENE_W = 1920;
-const SCENE_H = 1080;
 let previewZoom = 1;
 
+/**
+ * mount 化（方案 A' 遊戲內展開）：DOM 查找 scope 進 editorRoot（overlay 容器），不吃 document 全域。
+ * 獨立頁 /dash-editor/ 仍可用（並存）。mounted 旗標防「HTML 未注入時 refSprite 載入回呼觸發 render() 找不到元素而炸」。
+ */
+let editorRoot: HTMLElement = document.body;
+let mounted = false;
+
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
-  const el = document.getElementById(id);
+  const el = editorRoot.querySelector<T>(`#${id}`);
   if (!el) throw new Error(`缺少元素 #${id}`);
   return el as T;
 };
@@ -38,8 +43,8 @@ let file: DashFile = defaultDashFile();
 
 const refSprite = new Image();
 let refLoaded = false;
-refSprite.addEventListener('load', () => { refLoaded = true; render(); });
-refSprite.addEventListener('error', () => { refLoaded = false; render(); });
+refSprite.addEventListener('load', () => { refLoaded = true; if (mounted) render(); });
+refSprite.addEventListener('error', () => { refLoaded = false; if (mounted) render(); });
 refSprite.src = '../assets/images/characters/SunWukong/idle/frame_00.png';
 
 function setStatus(msg: string, kind: 'ok' | 'err' | 'info' = 'info'): void {
@@ -217,4 +222,115 @@ function applyDashToGame(): boolean {
   return ok;
 }
 
-main();
+// ---- mount 化（方案 A' 遊戲內展開 + 獨立頁並存） -------------------------
+
+/** 編輯器 body HTML（從 dash-editor/index.html <body> 搬來，去 <script>）。 */
+const EDITOR_BODY_HTML = `
+<header>
+  <h1>衝刺編輯器</h1>
+  <span class="badge" id="schema-version"></span>
+  <div class="spacer"></div>
+  <button id="btn-load-default">載入預設</button>
+  <button id="btn-load-file">載入 JSON 檔…</button>
+  <input id="file-input" type="file" accept="application/json,.json" hidden />
+  <button id="btn-reset">重設為預設值</button>
+  <button id="btn-export" class="primary">驗證並下載 JSON</button>
+  <button id="btn-apply" class="primary" title="驗證後存入瀏覽器，重開遊戲即生效">套用到遊戲</button>
+  <button id="btn-apply-return" class="primary" title="套用並立即返回遊戲">套用並回到遊戲</button>
+  <button id="btn-clear-apply" title="移除套用，遊戲回打包預設">清除套用</button>
+</header>
+<div class="layout">
+  <div class="stage-wrap">
+    <canvas id="preview" width="640" height="360"></canvas>
+    <div style="font-size:12px;color:#9a9ab5;display:flex;align-items:center;gap:8px;width:640px;">
+      <span>放大檢視</span>
+      <input id="preview-zoom" type="range" min="1" max="6" step="0.5" value="1" style="flex:1;" />
+      <span id="preview-zoom-val">1×</span>
+      <span>（1×＝完整場景真實比例）</span>
+    </div>
+    <div class="dist" id="dist-label"></div>
+  </div>
+  <div class="col-inspector">
+    <div class="section-title">衝刺參數（Dash）</div>
+    <div id="dash-inspector"></div>
+    <div class="hint">距離 = 速度 × 持續時間（unit）。調完按「套用到遊戲」，重開遊戲即生效。</div>
+  </div>
+</div>
+<div id="status">就緒。右側調衝刺參數，中間預覽衝刺距離（角色參照 + 真實比例）。</div>
+`;
+
+/** 編輯器樣式（命名空間 .tb-editor-root）。 */
+const EDITOR_CSS = `
+.tb-editor-root {
+  --bg: #1a1a2e; --panel: #23233a; --panel2: #2c2c48; --line: #3a3a5c;
+  --text: #e6e6f0; --muted: #9a9ab5; --accent: #6c8cff; --danger: #ff6c7a; --ok: #59d98e; --stage: #10101c;
+  display: flex; flex-direction: column; height: 100%;
+  background: var(--bg); color: var(--text);
+  font-family: Arial, "Microsoft JhengHei", "Noto Sans TC", sans-serif; font-size: 14px;
+}
+.tb-editor-root * { box-sizing: border-box; }
+.tb-editor-root header { padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex: 0 0 auto; }
+.tb-editor-root header h1 { font-size: 16px; margin: 0; }
+.tb-editor-root header .spacer { flex: 1; }
+.tb-editor-root .badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); padding: 1px 6px; border-radius: 10px; }
+.tb-editor-root button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.tb-editor-root button:hover { border-color: var(--accent); }
+.tb-editor-root button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tb-editor-root select, .tb-editor-root input { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+.tb-editor-root .layout { display: flex; flex: 1; min-height: 0; }
+.tb-editor-root .stage-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #14141f; overflow: auto; gap: 6px; }
+.tb-editor-root #preview { background: var(--stage); outline: 1px solid var(--line); }
+.tb-editor-root .col-inspector { width: 360px; border-left: 1px solid var(--line); padding: 12px; overflow-y: auto; background: var(--panel); }
+.tb-editor-root .section-title { color: var(--muted); font-size: 12px; text-transform: uppercase; margin: 10px 0 8px; letter-spacing: 0.5px; }
+.tb-editor-root .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tb-editor-root .row label { width: 150px; color: var(--muted); }
+.tb-editor-root .row input[type=range] { flex: 1; }
+.tb-editor-root .row input[type=number] { width: 74px; text-align: right; }
+.tb-editor-root #status { padding: 8px 16px; font-size: 13px; white-space: pre-wrap; border-top: 1px solid var(--line); background: var(--panel); max-height: 120px; overflow-y: auto; flex: 0 0 auto; }
+.tb-editor-root .status-ok { color: var(--ok); } .tb-editor-root .status-err { color: var(--danger); }
+.tb-editor-root .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.tb-editor-root .dist { font-size: 13px; color: var(--text); margin-top: 8px; }
+.tb-editor-root .dist b { color: var(--accent); }
+`;
+
+const EDITOR_STYLE_ID = 'tb-dash-editor-style';
+
+function ensureEditorStyle(): void {
+  if (document.getElementById(EDITOR_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = EDITOR_STYLE_ID;
+  style.textContent = EDITOR_CSS;
+  document.head.appendChild(style);
+}
+
+/**
+ * 掛載衝刺編輯器到指定容器（EditorMountFn）：注入 HTML+樣式 → main()（含 initLoad 回顯 + 綁事件）。
+ * 回傳 { unmount() } 清 DOM。dash 無全域 keydown / 無試玩 iframe，unmount 只清容器。
+ */
+export function mount(container: HTMLElement): { unmount(): void } {
+  ensureEditorStyle();
+  container.classList.add('tb-editor-root');
+  container.innerHTML = EDITOR_BODY_HTML;
+  editorRoot = container;
+  mounted = true;
+
+  // 重置狀態（反覆開關 overlay）。
+  file = defaultDashFile();
+
+  main(); // 含 $('schema-version') + initLoad 回顯 + 綁全部事件
+
+  return {
+    unmount(): void {
+      mounted = false;
+      container.innerHTML = '';
+      container.classList.remove('tb-editor-root');
+    },
+  };
+}
+
+/** 獨立頁自動啟動（並存）：有 #tb-editor-standalone 掛載點才自動 mount；overlay lazy import 時無此元素 → 不自動跑。 */
+const standaloneHost = document.getElementById('tb-editor-standalone');
+if (standaloneHost) {
+  mount(standaloneHost);
+}
+
