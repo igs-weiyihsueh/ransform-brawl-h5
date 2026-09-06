@@ -126,6 +126,10 @@ function validateEnemy(raw: unknown, key: string, errors: string[]): void {
   if (kind === 'projectile') {
     checkNum(e, 'projectileSpeed', label, errors, { min: 0 });
   }
+  // 第十輪#3：scale 為 optional override，存在時須為正數（>0）；缺省=不檢（走 getPerCharScale fallback）。
+  if (e.scale !== undefined) {
+    checkNum(e, 'scale', label, errors, { min: 0.01 });
+  }
   validateAttack(e.attack, label, errors);
 
   // 合理性：attackRange 不應大於 detectRange（否則永遠追不到就想打）。

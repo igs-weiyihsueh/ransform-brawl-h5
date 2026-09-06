@@ -293,3 +293,34 @@ export function resolveEnemyOverlap(
   }
   return pos;
 }
+
+/**
+ * 進入蓄力（charge）判定（第十輪#2 治本，對齊決策 34b0be5b「停止=攻擊基準」）。
+ *
+ * 舊 gate＝`dist <= attackRangePx && canReach`。問題：近戰的 `canReach`（isPlayerInEnemyAttackShape）
+ * 才是「攻擊 shape 真的搆得到」的權威判定；粗 gate `dist <= attackRangePx` 對「攻擊半徑 > attackRange」
+ * 的大範圍怪（菁英 attack.radius=1.5unit→225px > attackRange 2unit=200px）會誤殺：菁英環繞槽(minLayer=2)
+ * 半徑=200px 剛好＝attackRangePx，鄰居分離力/浮點把 dist 推過 200 → 粗 gate false → 明明 shape 搆得到卻不揮
+ * → 卡外圈空轉（用戶第十輪#2 菁英打不到雕像）。
+ *
+ * 治本：**近戰只信 canReach（攻擊 shape 權威判定）**，不再受粗 dist gate 誤殺；
+ *      **非近戰（射彈）canReach 恆 true → 仍用 dist<=attackRangePx 當射程 gate**（否則會超遠亂射）。
+ *
+ * @param attackKind 'melee' | 'projectile'（非 melee 皆視為射彈類）。
+ * @param dist 敵人→目標中心距離（像素）。
+ * @param attackRangePx 攻擊射程（attackRange×PPU，像素）。
+ * @param canReach 近戰攻擊 shape 是否已涵蓋目標（isPlayerInEnemyAttackShape 結果；射彈端傳 true）。
+ */
+export function shouldEnterCharge(
+  attackKind: string,
+  dist: number,
+  attackRangePx: number,
+  canReach: boolean,
+): boolean {
+  if (attackKind === 'melee') {
+    // 近戰：攻擊 shape 搆得到就能揮（canReach 已是精確 shape 判定，含大範圍怪 radius>attackRange 情形）。
+    return canReach;
+  }
+  // 射彈：canReach 恆 true → 用射程 gate 限制開火距離。
+  return dist <= attackRangePx && canReach;
+}

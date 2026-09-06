@@ -62,6 +62,11 @@ export interface EnemyAIConfig {
   attackVfx?: 'slash' | 'aoe' | 'fan';
   /** 射彈速度（unit/s），attackKind='projectile' 時使用。 */
   projectileSpeed?: number;
+  /**
+   * 體型縮放（第十輪#3，enemy-editor 大小欄位遊戲端型別）：override 優先。
+   * 省略 → fallback getPerCharScale(characterKey)（舊行為）。scaleFactor 一改全動 body 半徑/攻擊圓/視覺（所見即所得）。
+   */
+  scale?: number;
   /** 受擊硬直時間（秒）。 */
   hitStun: number;
   /** 被擊退力道（對應玩家 knockback 語意：unit → 像素/秒等效）。 */

@@ -14,6 +14,7 @@ import {
   combineWithSeparation,
   pushOutOfPlayer,
   isChargeInvulnerable,
+  shouldEnterCharge,
 } from '@/systems/enemySeparation';
 import { slotApproachDir, SLOT_REACH_THRESHOLD_PX, TRAVELER_AVOID_WEIGHT } from '@/systems/surroundSlots';
 import {
@@ -330,7 +331,8 @@ export class Enemy implements Hittable {
   constructor(scene: Phaser.Scene, x: number, y: number, charKey: string = ENEMY_CHARACTERS[0]) {
     // 六輪 enemies JSON 化：override(enemy-editor 套用)優先 + cache，無/壞→打包預設 ENEMY_AI。
     this.cfg = getResolvedEnemy(charKey) ?? getResolvedEnemy(ENEMY_CHARACTERS[0]) ?? ENEMY_AI[ENEMY_CHARACTERS[0]];
-    this.scaleFactor = getPerCharScale(this.cfg.characterKey);
+    // 第十輪#3：體型縮放 override 優先（?? 非 ||，scale=0... 實務不會但保 0-nullish 一致），舊資料無 scale → getPerCharScale fallback。
+    this.scaleFactor = this.cfg.scale ?? getPerCharScale(this.cfg.characterKey);
     this.anim = new CharacterAnimator(scene, this.cfg.characterKey, x, y);
     this.anim.setScale(SPRITE_SCALE);
     // 第三大輪#1 回歸根治：出生就同步視覺面向 = 資料 facing(預設 1)。
@@ -540,7 +542,10 @@ export class Enemy implements Hittable {
         break;
 
       case 'chase': {
-        if (dist <= attackPx && this.canReachTarget(aim)) {
+        // 第十輪#2 治本(決策 34b0be5b 停止=攻擊基準)：近戰只信 canReach(攻擊 shape 權威判定)，
+        //   不再被粗 gate dist<=attackPx 誤殺(大範圍菁英 attack.radius 225px>attackRange 200px、環繞槽=200px
+        //   邊界抖動→卡外圈空轉)；射彈仍用 dist<=attackPx 當射程 gate。
+        if (shouldEnterCharge(this.cfg.attackKind, dist, attackPx, this.canReachTarget(aim))) {
           // 進入攻擊距離 + 攻擊形狀確認搆得到 → 開始蓄力（否則不揮，繼續逼近/面向等下一幀）。
           this.state = 'charge';
           this.timer = this.cfg.chargeTime;
