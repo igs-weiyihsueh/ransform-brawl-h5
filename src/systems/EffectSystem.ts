@@ -925,6 +925,8 @@ export class EffectSystem {
     const spr = this.scene.add.image(x, y, key);
     // 三輪#3：貼地圓盤 → depth 壓在角色之下（角色 PLAY_DEPTH=10）、壓扁成俯視橢圓。
     spr.setOrigin(0.5, 0.5).setDepth(-4);
+    // 四輪#2：加 ADD 疊加混合 → 紅金法陣在暗色地面更亮更醒目（原本太暗、subagent 看圖偏暗褐 smudge）。
+    spr.setBlendMode(Phaser.BlendModes.ADD);
     const w = diskPx;
     const h = diskPx * 0.5; // 俯視透視壓扁（高=寬一半）呈貼地圓盤感
     spr.setDisplaySize(w * 0.6, h * 0.6).setAlpha(0); // 從小漸大

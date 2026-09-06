@@ -422,10 +422,12 @@ export class Enemy implements Hittable {
           this.state = 'charge';
           this.timer = this.cfg.chargeTime;
           this.anim.play('idle');
-          // 用戶 #7/#4 + 三輪#3：蓄力集氣特效 charge2 → 放腳底貼地圓盤(俯視壓扁+盤旋氣流)，出手 destroy 接 slash/burst。純視覺。
+          // 用戶 #7/#4 + 三輪#3 + 四輪#2：蓄力集氣特效 → 腳底貼地圓盤法陣(俯視壓扁+盤旋氣流)，出手 destroy 接 slash/burst。純視覺。
+          // 四輪#2 修：footY 往下讓整盤落在角色腳底「之下」(disk 上緣 ≤ 腳底、不與身體/腿重疊)，
+          //   否則 depth-4 在身後、身體遮住盤中心只露側邊弧在軀幹高 → 看似「身上打轉」(用戶回歸)。不寫死: 從 radiusPx 算。
           const cpos = this.getHitCenter();
-          const footY = cpos.y + this.radiusPx * 0.9; // 腳底(body 中心往下約一個 body 半徑)
-          const diskPx = this.radiusPx * 2.2; // 圓盤直徑略大於 body 視覺圈
+          const footY = cpos.y + this.radiusPx * 1.7; // 腳底之下(body 中心往下 ~1.7×body 半徑, 讓盤在腿之下不被身體蓋)
+          const diskPx = this.radiusPx * 2.8; // 圓盤直徑放大(更多面積超出角色輪廓, 地面法陣盤更明顯)
           this.chargeFx =
             this.hitFeelFx?.enemyCharge?.(cpos.x, footY, this.cfg.chargeTime * 1000, diskPx) ?? null;
           // 三輪#12：只「真大範圍(attackVfx='aoe')」敵人蓄力期地面播 AOE 預告圈；
