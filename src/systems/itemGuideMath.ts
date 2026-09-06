@@ -26,6 +26,8 @@ export const GUIDE_ARROW = {
   /** 六輪#9：箭頭「底邊」離搜索圈邊緣的額外距離(px)。錨搜索圈中心(腳部)+此 margin=底邊位置，
    *  三角往指向延伸(尾不觸身體)、又貼近搜索圈不飄遠。 */
   edgeMarginPx: 28,
+  /** 七輪#9：箭頭尖端與道具的最小間距(px)。道具近時尖端頂到道具 sprite(被道具擋)→尖端退到保持此間距。 */
+  itemClearancePx: 44,
 } as const;
 
 /** 牽引線參數（對照 Unity TetherLine）。 */

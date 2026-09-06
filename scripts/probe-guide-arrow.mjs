@@ -19,24 +19,30 @@ const r = await page.evaluate(async ()=>{
   const ts=(gs.systems||[]).find((x)=>x&&x.name==='TransformSystem');
   const p=ctx.players[0]; const psp=p.sprite||p.anim?.sprite; psp.x=640; psp.y=400;
   // 生一個有主道具(owner=P1)在遠處(讓箭頭顯示、不 hide)。
-  ts.spawnItem && ts.spawnItem('initial', p.playerId, { x: 640+400, y: 400 });
+  ts.spawnItem && ts.spawnItem('initial', p.playerId, { x: 640+170, y: 400 });
   await new Promise((r)=>setTimeout(r,300));
   const vc = p.getVacuumCenter(); const vr = p.getVacuumRadius();
-  // 攔截 drawArrow, 記錄本幀箭頭錨點。
-  let anchor=null;
+  const item = (ts.items&&ts.items[0]) ? ts.items[0].getPosition() : null;
+  // 攔截 drawArrow, 記錄本幀箭頭 cx,cy,angle,size → 算尖端。
+  let arrow=null;
   const orig = ts.drawArrow ? ts.drawArrow.bind(ts) : null;
-  if(orig){ ts.drawArrow = function(g,cx,cy,angle,size,color,alpha){ anchor={x:Math.round(cx),y:Math.round(cy),angle:Number(angle.toFixed(2)),size:Math.round(size)}; return orig(g,cx,cy,angle,size,color,alpha); }; }
-  // 跑幾幀觸發 drawGuideArrows。
+  if(orig){ ts.drawArrow = function(g,cx,cy,angle,size,color,alpha){ arrow={cx,cy,angle,size}; return orig(g,cx,cy,angle,size,color,alpha); }; }
   for(let f=0;f<5;f++) await new Promise((r)=>setTimeout(r,16));
   if(orig) ts.drawArrow = orig;
-  const distFromVac = anchor ? Math.round(Math.hypot(anchor.x-vc.x, anchor.y-vc.y)) : null;
-  return { vacuumCenter:{x:Math.round(vc.x),y:Math.round(vc.y)}, vacuumRadius:Math.round(vr), anchor, distFromVac };
+  let tip=null, tipToItem=null, playerToItem=null;
+  if(arrow){ tip={x:Math.round(arrow.cx+Math.cos(arrow.angle)*arrow.size), y:Math.round(arrow.cy+Math.sin(arrow.angle)*arrow.size)}; }
+  if(tip&&item){ tipToItem=Math.round(Math.hypot(tip.x-item.x, tip.y-item.y)); }
+  if(item){ const pp=p.getPosition(); playerToItem=Math.round(Math.hypot(pp.x-item.x, pp.y-item.y)); }
+  return { vacuumCenter:{x:Math.round(vc.x),y:Math.round(vc.y)}, vacuumRadius:Math.round(vr),
+    item: item?{x:Math.round(item.x),y:Math.round(item.y)}:null, playerToItem,
+    arrow: arrow?{cx:Math.round(arrow.cx),cy:Math.round(arrow.cy),angDeg:Math.round(arrow.angle*180/Math.PI),size:Math.round(arrow.size)}:null,
+    tip, tipToItem };
 });
-console.log('[#9 指引箭頭驗]'); console.log(JSON.stringify(r, null, 1));
-if(r.anchor){
-  const edge = r.vacuumRadius; const near = Math.abs(r.distFromVac - edge) <= 20; // 錨點距圈心 ≈ 圈半徑(貼邊)
-  console.log('  箭頭錨點距搜索圈中心:', r.distFromVac, 'px vs 圈半徑', r.vacuumRadius, 'px →', near ? 'PASS(貼近圈邊, 差≤20px)' : 'FAIL(離圈遠, 差'+(r.distFromVac-edge)+'px)');
-} else console.log('  FAIL: 沒攔到箭頭(可能被 hide/未顯)');
+console.log('[#9 箭頭 vs 道具 診斷]'); console.log(JSON.stringify(r, null, 1));
+if(r.arrow){
+  console.log('  玩家→道具', r.playerToItem, 'px; 箭頭尖端→道具', r.tipToItem, 'px');
+  console.log('  診斷:', r.tipToItem!=null && r.tipToItem < 40 ? 'BUG: 箭頭尖端太靠道具('+r.tipToItem+'px)→戳到/重疊道具 sprite' : '箭頭尖端離道具 '+r.tipToItem+'px');
+}
 await page.screenshot({ path:'/tmp/guide-arrow.png' });
 console.log('  截圖 /tmp/guide-arrow.png');
 await browser.close(); server.close();

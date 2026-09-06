@@ -168,8 +168,19 @@ export class TransformSystem implements GameSystem {
       //   → 箭頭落在搜索圈邊緣附近、清楚指向道具。純視覺。
       const anchor = guideArrowAnchor(vacCenter, vacRadius, angle);
       // 六輪#9：整個三角往指向再推半個箭長，讓箭頭「底邊」落在圈邊(而非中心跨在圈邊)→ 尾巴不觸角色身體。
-      const cx = anchor.x + Math.cos(angle) * size * 0.5;
-      const cy = anchor.y + Math.sin(angle) * size * 0.5;
+      let cx = anchor.x + Math.cos(angle) * size * 0.5;
+      let cy = anchor.y + Math.sin(angle) * size * 0.5;
+      // 七輪#9：箭頭尖端不戳進道具——道具近(剛過 hide 門檻)時尖端會頂到道具 sprite(被道具擋)。
+      //   尖端 = (cx,cy) + dir×size；若尖端離道具 < ARROW_ITEM_GAP，把整個三角沿反方向退，讓尖端保持間距。
+      const tipX = cx + Math.cos(angle) * size;
+      const tipY = cy + Math.sin(angle) * size;
+      const gap = GUIDE_ARROW.itemClearancePx;
+      const tipToItem = Math.hypot(itemPos.x - tipX, itemPos.y - tipY);
+      if (tipToItem < gap) {
+        const pull = gap - tipToItem; // 需往回退的量
+        cx -= Math.cos(angle) * pull;
+        cy -= Math.sin(angle) * pull;
+      }
       this.drawArrow(g, cx, cy, angle, size, playerColor(p.playerId), alpha);
     }
   }
