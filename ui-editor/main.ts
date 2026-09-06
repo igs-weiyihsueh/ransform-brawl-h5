@@ -583,18 +583,14 @@ function buildVisual(key: string): HTMLElement {
 }
 
 /** Credit（頭上點數）：點數 icon + 數字（白）。注意這是「點數」HUD，非已移除的面板金幣。 */
-function buildIconWithNumber(key: string): HTMLElement {
+/** 頭上點數 credit：只顯示數字（用戶第七輪 #12：拿掉沒用的金幣 icon，保留點數數字）。 */
+function buildIconWithNumber(_key: string): HTMLElement {
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex;align-items:center;gap:4px;width:100%;height:100%;';
-  const coin = iconImg('coin', '金幣');
-  coin.style.cssText = 'width:auto;height:100%;object-fit:contain;';
-  wrap.appendChild(coin);
-  if (key === 'overhead.credit') {
-    const num = document.createElement('span');
-    num.textContent = '1234';
-    num.style.cssText = 'color:#fff;font-size:22px;font-weight:bold;white-space:nowrap;';
-    wrap.appendChild(num);
-  }
+  wrap.style.cssText = 'display:flex;align-items:center;width:100%;height:100%;';
+  const num = document.createElement('span');
+  num.textContent = '1234';
+  num.style.cssText = 'color:#fff;font-size:22px;font-weight:bold;white-space:nowrap;';
+  wrap.appendChild(num);
   return wrap;
 }
 
