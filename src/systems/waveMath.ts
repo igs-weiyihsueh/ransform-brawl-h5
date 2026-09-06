@@ -43,6 +43,10 @@ export function shouldAdvanceSpawn(
   quota: number,
   alive: number,
   pending: number,
+  nextIsSpawn = false,
 ): boolean {
+  // 六輪#5(Unity dripMaintainThroughToNext)：下一節點也是 Spawn → 殺滿 quota 即前進(殘怪接續帶進下一波、場面不提前變空)。
+  //   下一節點非 Spawn(Reward/Event) → 維持原本「殺滿且場上清空才進」(不把戰鬥拖進獎勵/守護畫面)。
+  if (nextIsSpawn) return kills >= quota;
   return kills >= quota && alive <= 0 && pending <= 0;
 }

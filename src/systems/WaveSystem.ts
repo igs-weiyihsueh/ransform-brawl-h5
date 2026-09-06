@@ -240,6 +240,20 @@ export class WaveSystem implements GameSystem {
     return this.currentLevel()?.nodes[this.nodeIndex];
   }
 
+  /**
+   * 六輪#5：下一節點是否也是 Spawn（同關內；本關尾則看下一關首節點；皆無則 false）。
+   * 用於 shouldAdvanceSpawn：Spawn→Spawn 不清場、殘怪接續帶進下一波（維持場面不空一下）。
+   */
+  private nextNodeIsSpawn(): boolean {
+    const level = this.currentLevel();
+    if (!level) return false;
+    const next = level.nodes[this.nodeIndex + 1];
+    if (next) return next.nodeType === 'Spawn';
+    // 本關跑完：看下一關首節點（跨關銜接也維持）。
+    const nl = this.levels?.[this.levelIndex + 1];
+    return nl?.nodes[0]?.nodeType === 'Spawn';
+  }
+
   /** 進入目前關卡的指定節點索引，重置節點狀態。 */
   private enterNode(index: number): void {
     this.nodeIndex = index;
@@ -291,11 +305,12 @@ export class WaveSystem implements GameSystem {
     const maxAlive = Math.round(node.maxAlive * scale);
     const spawnThreshold = Math.round(node.spawnThreshold * scale);
 
-    const alive = this.tracked.length; // 場上存活（tracked 已在 tallyKills 移除死亡）
+    const alive = this.ctx.getEnemies().length; // 六輪#5：場上實際敵人數(含前一波接續帶進的殘怪)，維持場面/清空 gate 都用真實佔用
     const pending = this.pendingSpawns; // 預警中（即將生成）
 
-    // 用戶 #6 (2) gate 清空：殺滿 quota 且場上清空（無 alive/pending）才 advance → 不帶殘怪進下一節點（如 Reward）。
-    if (shouldAdvanceSpawn(this.kills, killQuota, alive, pending)) {
+    // 用戶 #6 (2) gate 清空 + 六輪#5 維持場面：下一節點也是 Spawn → 殺滿 quota 即前進(殘怪接續帶進下一波、不空一下)；
+    //   下一節點非 Spawn(Reward/Event) → 維持「殺滿且場上清空才進」(不把戰鬥拖進獎勵/守護)。
+    if (shouldAdvanceSpawn(this.kills, killQuota, alive, pending, this.nextNodeIsSpawn())) {
       this.advanceNode();
       return;
     }

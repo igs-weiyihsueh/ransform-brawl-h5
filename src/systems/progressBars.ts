@@ -30,10 +30,10 @@ export const PROGRESS_BAR = {
   guard: { width: 600, height: 16, offsetY: 46 },
 } as const;
 
-/** 三態節點染色（對照 Unity）。 */
+/** 三態節點染色（六輪#6，對照 Unity LevelProgressUI：i<cur 已過黃、i==cur 當前白、i>cur 未到暗）。 */
 export const NODE_COLORS = {
-  past: 0x4dd9ff, // 已過＝亮青 rgb(0.3,0.85,1)
-  current: 0xfff24d, // 當前＝亮黃 rgb(1,0.95,0.3)
+  past: 0xfff24d, // 已過/已觸發＝亮黃(維持黃, Unity nodeCurrentColor)；用戶#6：觸發過的一直黃
+  current: 0xffffff, // 當前＝白(Unity)
   future: 0x595959, // 未到＝暗灰 rgb(0.35,0.35,0.35)
 } as const;
 
@@ -93,11 +93,12 @@ export function nodeMarkerState(index: number, nodeIndex: number): NodeMarkerSta
 }
 
 /**
- * 當前節點是否該「放大脈動」（用戶改：變黃≠放大，只有快完成才放大）。
- * 僅當前節點(index===nodeIndex) 且 當前段進度 > pulseThreshold(0.75) 才 true。
+ * 節點是否「放大脈動」（六輪#7，對照 Unity LevelProgressUI）：
+ * 只「下一顆(index===nodeIndex+1)」在**當前段進度 > pulseThreshold(0.75)** 時脈動（預告即將觸發下一節點）。
+ * 修正舊版錯誤：舊版脈動當前節點(index===nodeIndex)=上一顆在動、跟 Unity 反了；改成下一顆(cur+1)脈動。
  */
 export function shouldPulse(index: number, nodeIndex: number, segmentRatio: number): boolean {
-  return index === nodeIndex && segmentRatio > PROGRESS_BAR.pulseThreshold;
+  return index === nodeIndex + 1 && segmentRatio > PROGRESS_BAR.pulseThreshold;
 }
 
 /**
