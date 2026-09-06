@@ -72,3 +72,31 @@ describe('shouldAdvanceSpawn — gate 清空才推進（不帶殘怪進下節點
     expect(shouldAdvanceSpawn(10, 10, 3, 0)).toBe(false);
   });
 });
+
+describe('shouldAdvanceSpawn — nextIsSpawn（六輪#5 Spawn接Spawn維持場面，781c58a）', () => {
+  // behavior：下一節點也是 Spawn → 殺滿 quota 即前進(殘怪接續帶進下一波、場面不提前變空)；
+  //          下一節點非 Spawn → 維持原本「殺滿且清空才進」。nextIsSpawn 預設 false=舊邏輯。
+  it('★ next=Spawn（nextIsSpawn=true）：kills>=quota 即 true（殘怪 alive>0 仍前進）', () => {
+    expect(shouldAdvanceSpawn(10, 10, 3, 0, true)).toBe(true); // 殘怪 3 仍 advance
+    expect(shouldAdvanceSpawn(10, 10, 0, 2, true)).toBe(true); // pending 2 也不擋
+    expect(shouldAdvanceSpawn(12, 10, 5, 3, true)).toBe(true);
+  });
+
+  it('next=Spawn 但 kills<quota → false（沒殺滿仍不前進）', () => {
+    expect(shouldAdvanceSpawn(9, 10, 0, 0, true)).toBe(false);
+  });
+
+  it('★ next 非 Spawn（nextIsSpawn=false/省略）：要 alive=0 pending=0 才 true（維持原 gate）', () => {
+    expect(shouldAdvanceSpawn(10, 10, 3, 0, false)).toBe(false); // 殘怪擋
+    expect(shouldAdvanceSpawn(10, 10, 0, 0, false)).toBe(true);
+    // 省略 nextIsSpawn = false（backward-compat，舊測不受影響）。
+    expect(shouldAdvanceSpawn(10, 10, 3, 0)).toBe(false);
+    expect(shouldAdvanceSpawn(10, 10, 0, 0)).toBe(true);
+  });
+
+  // 🔴 壞版對照：nextIsSpawn 分支若也 gate alive/pending（沒差異化）→ 殘怪 next=Spawn 那條紅。
+  it('壞版對照：next=Spawn 殘怪 vs next非Spawn 殘怪 結果相反（差異化生效）', () => {
+    expect(shouldAdvanceSpawn(10, 10, 3, 0, true)).toBe(true); // Spawn 接續
+    expect(shouldAdvanceSpawn(10, 10, 3, 0, false)).toBe(false); // 非 Spawn 要清空
+  });
+});

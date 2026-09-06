@@ -144,19 +144,27 @@ describe('progressBars — 節點狀態 / 段填充 / icon 類型', () => {
   });
 });
 
-describe('progressBars — shouldPulse（#2 變黃≠放大：快完成才脈動放大）', () => {
-  it('當前節點 且 段進度 > 0.75 → true（快完成才放大）', () => {
-    expect(shouldPulse(2, 2, 0.8)).toBe(true);
-    expect(shouldPulse(2, 2, 0.76)).toBe(true);
+describe('progressBars — shouldPulse（#7 脈動「下一顆」cur+1 預告即將觸發）', () => {
+  // 六輪#7(781c58a) behavior change：脈動從「當前節點 index===cur」改為「下一顆 index===cur+1」
+  //（對照 Unity LevelProgressUI，預告即將觸發的下一節點）。cur=2 → 脈動格 = index 3。
+  it('★ 下一顆（index===cur+1）且 段進度 > 0.75 → true（預告即將觸發）', () => {
+    expect(shouldPulse(3, 2, 0.8)).toBe(true); // cur+1=3
+    expect(shouldPulse(3, 2, 0.76)).toBe(true);
   });
 
-  it('當前節點 但 段進度 <= 0.75 → false（變黃但不放大）', () => {
-    expect(shouldPulse(2, 2, 0.3)).toBe(false);
-    expect(shouldPulse(2, 2, 0.75)).toBe(false); // 邊界不含
+  it('下一顆 但 段進度 <= 0.75 → false（未快滿不預告）', () => {
+    expect(shouldPulse(3, 2, 0.3)).toBe(false);
+    expect(shouldPulse(3, 2, 0.75)).toBe(false); // 邊界不含
   });
 
-  it('非當前節點 → false（已過/未到都不脈動）', () => {
+  it('★ 當前節點（index===cur）→ false（不再脈動當前，改脈動下一顆）', () => {
+    expect(shouldPulse(2, 2, 0.9)).toBe(false); // 當前不脈動
+    expect(shouldPulse(2, 2, 0.8)).toBe(false);
+  });
+
+  it('非「下一顆」的其他 index → false（已過/更遠都不脈動）', () => {
     expect(shouldPulse(1, 2, 0.9)).toBe(false); // 已過
-    expect(shouldPulse(3, 2, 0.9)).toBe(false); // 未到
+    expect(shouldPulse(4, 2, 0.9)).toBe(false); // cur+2 更遠
+    expect(shouldPulse(0, 2, 0.9)).toBe(false);
   });
 });
