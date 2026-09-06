@@ -8,6 +8,7 @@ import {
   resolveFireRainForEvent,
 } from '@/config/fireRainConfig';
 import { getGuardPreset } from '@/config/guardConfig';
+import { shouldSpawnMore, shouldAdvanceSpawn } from '@/systems/waveMath';
 import type {
   EnemyType,
   LevelData,
@@ -286,7 +287,11 @@ export class WaveSystem implements GameSystem {
     const maxAlive = Math.round(node.maxAlive * scale);
     const spawnThreshold = Math.round(node.spawnThreshold * scale);
 
-    if (this.kills >= killQuota) {
+    const alive = this.tracked.length; // 場上存活（tracked 已在 tallyKills 移除死亡）
+    const pending = this.pendingSpawns; // 預警中（即將生成）
+
+    // 用戶 #6 (2) gate 清空：殺滿 quota 且場上清空（無 alive/pending）才 advance → 不帶殘怪進下一節點（如 Reward）。
+    if (shouldAdvanceSpawn(this.kills, killQuota, alive, pending)) {
       this.advanceNode();
       return;
     }
@@ -295,9 +300,11 @@ export class WaveSystem implements GameSystem {
       this.spawnCooldown -= dt;
     }
 
-    const alive = this.tracked.length + this.pendingSpawns; // 含預警中(pending)避免超生
-    // 存活 < spawnThreshold 時，滴流補到 maxAlive（每 spawnInterval 生一隻）。
-    if (alive < spawnThreshold && this.spawnCooldown <= 0 && alive < maxAlive) {
+    // 用戶 #6 (1) 不超生：生產總數（kills+alive+pending）< quota 且維持場面條件成立才 drip。
+    if (
+      this.spawnCooldown <= 0 &&
+      shouldSpawnMore(this.kills, alive, pending, killQuota, maxAlive, spawnThreshold)
+    ) {
       this.spawnOne(node.spawns);
       this.spawnCooldown = node.spawnInterval;
     }
