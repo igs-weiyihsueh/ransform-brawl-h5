@@ -59,6 +59,7 @@ export const GUARD_PRESETS: Record<string, GuardPreset> = {
     spawnInterval: 1.0,
     spawns: DEFAULT_GUARD_SPAWNS,
     spawnRadiusPx: 350,
+    attachFireRain: 'FireRainLight', // 三輪#10：守護波追加火雨(用戶要)。可調 FireRain/FireRainHeavy 或由波騎 editor 開放。
   },
 };
 
@@ -93,4 +94,35 @@ export function pickGuardEnemy(
     if (r < 0) return s.enemyType;
   }
   return spawns[spawns.length - 1].enemyType;
+}
+
+/**
+ * 守護波側邊生成內縮（像素，對照 Unity guardSideSpawnInset=2 units×PPU）：
+ * 從場地左/右緣往中間內縮此距離生成（「走進來」感、不緊貼邊）。
+ */
+export const GUARD_SIDE_SPAWN_INSET_PX = 2 * 100; // 2 units × PPU(100) = 200
+
+/**
+ * 守護波側邊生成點（三輪#9，對照 Unity EnemySpawnerRuntime.FindGuardSideSpawnPos）：
+ * 左右交替、X=場地左/右緣±inset、Y=場地 Y 範圍隨機。純函式（side 由 nextLeft 決定，翻轉在呼叫端）。
+ * @param nextLeft true=這隻生左側、false=右側（呼叫端每次生成後翻轉→兩側平均）。
+ * @param bounds 場地邊界 {minX,maxX,minY,maxY}（像素）。
+ * @param insetPx 邊緣內縮（預設 GUARD_SIDE_SPAWN_INSET_PX）。
+ * @param marginPx Y 上下邊距（避免貼頂/底，預設 60）。
+ * @param rng 隨機源（預設 Math.random）。
+ * @returns 生成點 {x,y}（已 clamp 在界內）。
+ */
+export function guardSideSpawnPoint(
+  nextLeft: boolean,
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+  insetPx = GUARD_SIDE_SPAWN_INSET_PX,
+  marginPx = 60,
+  rng: () => number = Math.random,
+): { x: number; y: number } {
+  const rawX = nextLeft ? bounds.minX + insetPx : bounds.maxX - insetPx;
+  const x = Math.max(bounds.minX, Math.min(bounds.maxX, rawX)); // clamp 界內
+  const yMin = Math.min(bounds.minY + marginPx, bounds.maxY);
+  const yMax = Math.max(bounds.maxY - marginPx, yMin);
+  const y = yMin + rng() * (yMax - yMin);
+  return { x, y };
 }

@@ -2,9 +2,10 @@ import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { PPU } from '@/config/gameConfig';
 import { CHEST_OPEN_THRESHOLD } from '@/config/chestConfig';
 import { PLAYER_CONFIG } from '@/config/combatConfig';
-import { getGuardPreset, pickGuardEnemy, type GuardPreset } from '@/config/guardConfig';
+import { getGuardPreset, pickGuardEnemy, guardSideSpawnPoint, type GuardPreset } from '@/config/guardConfig';
 import { GuardTarget } from '@/entities/GuardTarget';
 import { guardCornerTargets, scriptedMoveStep, allScriptedArrived } from '@/systems/guardIntro';
+import { MAP_BOUNDS } from '@/config/mapConfig';
 import type { GameContext } from '@/systems/GameContext';
 
 /** 守護波開場：導引走位到雕像四角的離中心距離（px）。 */
@@ -34,6 +35,8 @@ export class GuardEvent {
   private spawnCooldown = 0;
   private finished = false;
   private won = false;
+  /** 三輪#9：守護波側邊生成左右交替 flag（每次生成後翻轉，兩側數量平均）。 */
+  private guardSpawnNextLeft = true;
 
   // --- 開場演出（用戶 #4）狀態 ---
   private phase: GuardPhase = 'introMove';
@@ -177,12 +180,11 @@ export class GuardEvent {
   }
 
   private spawnAroundTarget(): void {
-    const c = this.target.getPosition();
-    const ang = Math.random() * Math.PI * 2;
-    const x = c.x + Math.cos(ang) * this.preset.spawnRadiusPx;
-    const y = c.y + Math.sin(ang) * this.preset.spawnRadiusPx;
+    // 三輪#9：守護波怪從左右兩側場地邊緣交替生成（往雕像靠攏包圍感，對照 Unity FindGuardSideSpawnPos）。
+    const pos = guardSideSpawnPoint(this.guardSpawnNextLeft, MAP_BOUNDS);
+    this.guardSpawnNextLeft = !this.guardSpawnNextLeft; // 翻轉 → 下隻另一側（兩側平均）
     const type = pickGuardEnemy(this.preset.spawns);
-    this.ctx.spawner.spawn(type, x, y);
+    this.ctx.spawner.spawn(type, pos.x, pos.y);
   }
 
   /** 結束：cleanup + 結算獎券。 */
