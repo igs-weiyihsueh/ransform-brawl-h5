@@ -30,7 +30,7 @@ console.log('[setup]', JSON.stringify(setup));
 async function snap(lbl){
   return page.evaluate((l)=>{
     const gs=window.__gs; const list=gs.children.list;
-    const charged=list.filter((o)=>o.type==='Image'&&o.texture&&['vfx-enemy-charge','vfx-enemy-charge2','vfx-enemy-aoe-ring'].includes(o.texture.key));
+    const charged=list.filter((o)=>o.type==='Image'&&o.texture&&['vfx-enemy-charge','vfx-enemy-charge2','vfx-enemy-charge-disk','vfx-enemy-aoe-ring'].includes(o.texture.key));
     return { lbl:l, count:charged.length, keys:charged.map((o)=>({key:o.texture.key.replace('vfx-enemy-',''), depth:o.depth, alpha:Math.round(o.alpha*100)/100, angle:Math.round(o.angle), dw:Math.round(o.displayWidth), dh:Math.round(o.displayHeight), y:Math.round(o.y)})) };
   }, lbl);
 }

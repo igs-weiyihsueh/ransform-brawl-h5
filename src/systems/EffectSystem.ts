@@ -30,8 +30,10 @@ const ENEMY_ATTACK_VFX = {
   slash: { key: 'vfx-enemy-slash', path: `${BASE_PATH}/fx_enemy_slash.png` },
   impact: { key: 'vfx-enemy-impact', path: `${BASE_PATH}/fx_enemy_impact.png` },
   charge: { key: 'vfx-enemy-charge', path: `${BASE_PATH}/fx_enemy_charge.png` },
-  /** 集氣升級版（用戶 #4：中心聚能核 + 5 道環繞氣流臂，靠 rotation 呈現漩渦感）。 */
+  /** 集氣升級版（用戶 #4：中心聚能核 + 5 道環繞氣流臂，靠 rotation 呈現漩渦感）。正視漩渦，保留備用。 */
   charge2: { key: 'vfx-enemy-charge2', path: `${BASE_PATH}/fx_enemy_charge2.png` },
+  /** 三輪#3：俯視腳底充能法陣盤（特效 agent 畫，徑向紅金+同心圓+白熱核+放射刻度+氣流臂+符文，專為貼地壓扁旋轉）。 */
+  chargeDisk: { key: 'vfx-enemy-charge-disk', path: `${BASE_PATH}/fx_enemy_charge_disk.png` },
   /** 圓形範圍攻擊預告圈（用戶 #3：地面紅色 AOE 警示圈）。 */
   aoeRing: { key: 'vfx-enemy-aoe-ring', path: `${BASE_PATH}/fx_enemy_aoe_ring.png` },
   /** 圓形範圍攻擊爆發（用戶 #3：白熱核+放射+衝擊波）。 */
@@ -802,8 +804,10 @@ export class EffectSystem {
     durationMs = 500,
     diskPx = 96,
   ): Phaser.GameObjects.Image | null {
-    // 三輪#2：一律用 charge2（不 fallback 舊 charge，避免舊特效路徑再現）。charge2 沒載則不播。
-    const key = ENEMY_ATTACK_VFX.charge2.key;
+    // 三輪#2/#3：用專屬俯視腳底法陣盤(chargeDisk)；沒載才退回 charge2(正視漩渦)。不再退回最舊 charge。
+    const key = this.scene.textures.exists(ENEMY_ATTACK_VFX.chargeDisk.key)
+      ? ENEMY_ATTACK_VFX.chargeDisk.key
+      : ENEMY_ATTACK_VFX.charge2.key;
     if (!this.scene.textures.exists(key)) return null;
     const spr = this.scene.add.image(x, y, key);
     // 三輪#3：貼地圓盤 → depth 壓在角色之下（角色 PLAY_DEPTH=10）、壓扁成俯視橢圓。
