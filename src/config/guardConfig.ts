@@ -54,6 +54,62 @@ export interface GuardPreset {
    * 省略(undefined)=無火雨。（升級自舊 boolean：舊 true 語意=標準 'FireRain'。）
    */
   attachFireRain?: string;
+  /**
+   * 第十輪#1#4：雕像大小 / 血條 UI（optional，additive；省略＝用 GUARD_STATUE_UI_DEFAULTS）。
+   * 由 resolveGuardStatueUi(preset) 逐欄 ?? 解析（0-nullish 安全）。GuardTarget 讀解析值繪製。
+   */
+  /** 雕像顯示高度（像素，等比縮放；hitRadius=顯示寬/2 跟著變→雕像大更好打，與 #2 shouldEnterCharge 協調）。預設 150。 */
+  statueHeightPx?: number;
+  /** 血條寬（像素）。#1 血條放大＝預設調大到 160（原 hardcode 100）。 */
+  barWidthPx?: number;
+  /** 血條高（像素）。預設 16（原 hardcode bg 12/fill 10）。 */
+  barHeightPx?: number;
+  /** 血條相對雕像中心的 Y 偏移（像素，正=下方）。預設 90。 */
+  barOffsetYPx?: number;
+  /** 「守護目標」標籤相對雕像中心的 Y 偏移（像素，負=上方）。預設 -80。 */
+  labelOffsetYPx?: number;
+}
+
+/**
+ * 雕像 / 血條 UI 打包預設（第十輪#1#4）。#1 血條放大：barWidthPx 100→160、barHeightPx 12/10→16。
+ * statueHeightPx 150＝原 hardcode（雕像大小可由 preset override 調大）。
+ */
+export const GUARD_STATUE_UI_DEFAULTS = {
+  statueHeightPx: 150,
+  barWidthPx: 160,
+  barHeightPx: 16,
+  barOffsetYPx: 90,
+  labelOffsetYPx: -80,
+} as const;
+
+/** 解析後的雕像/血條 UI（全必填像素值）。 */
+export interface GuardStatueUi {
+  statueHeightPx: number;
+  barWidthPx: number;
+  barHeightPx: number;
+  barOffsetYPx: number;
+  labelOffsetYPx: number;
+}
+
+/**
+ * 解析雕像/血條 UI（純函式，抽給測騎；同 resolveGuardDrip 模式）：preset optional 欄位 ?? 預設。
+ * ★0-nullish 安全：用 ?? 非 ||（offsetY 可為 0/負值，不可被 || 當 falsy 吃掉）。
+ * @param preset 守護 preset（statueHeightPx?/barWidthPx?/barHeightPx?/barOffsetYPx?/labelOffsetYPx? 皆 optional）。
+ */
+export function resolveGuardStatueUi(preset: {
+  statueHeightPx?: number;
+  barWidthPx?: number;
+  barHeightPx?: number;
+  barOffsetYPx?: number;
+  labelOffsetYPx?: number;
+}): GuardStatueUi {
+  return {
+    statueHeightPx: preset.statueHeightPx ?? GUARD_STATUE_UI_DEFAULTS.statueHeightPx,
+    barWidthPx: preset.barWidthPx ?? GUARD_STATUE_UI_DEFAULTS.barWidthPx,
+    barHeightPx: preset.barHeightPx ?? GUARD_STATUE_UI_DEFAULTS.barHeightPx,
+    barOffsetYPx: preset.barOffsetYPx ?? GUARD_STATUE_UI_DEFAULTS.barOffsetYPx,
+    labelOffsetYPx: preset.labelOffsetYPx ?? GUARD_STATUE_UI_DEFAULTS.labelOffsetYPx,
+  };
 }
 
 const DEFAULT_GUARD_SPAWNS: GuardSpawnEntry[] = [

@@ -64,6 +64,17 @@ function checkNum(
   }
 }
 
+/** 選填數字檢查（第十輪#1#4 雕像/血條 UI 欄位）：省略(undefined)＝合法（用預設）；有給才檢型別/範圍。 */
+function checkNumOptional(
+  obj: Record<string, unknown>, key: string, label: string, errors: string[], opts: { min?: number; int?: boolean } = {},
+): void {
+  const v = obj[key];
+  if (v === undefined) return; // 省略＝沿用預設，合法
+  if (!isFiniteNumber(v)) { errors.push(`${label}「${key}」必須是數字或省略。`); return; }
+  if (opts.min !== undefined && v < opts.min) errors.push(`${label}「${key}」=${v} 不可小於 ${opts.min}。`);
+  if (opts.int && !Number.isInteger(v)) errors.push(`${label}「${key}」=${v} 必須是整數。`);
+}
+
 function checkSpawns(p: Record<string, unknown>, label: string, errors: string[]): void {
   const spawns = p.spawns;
   if (!Array.isArray(spawns)) {
@@ -123,6 +134,12 @@ export function validateGuard(json: unknown): ValidateGuardResult {
     checkNum(p, 'maxWalkSec', label, errors, { min: 0 });
     checkNum(p, 'spotlightRadiusPx', label, errors, { min: 0 });
     checkSpawns(p, label, errors);
+    // 第十輪#1#4 雕像/血條 UI（皆選填，省略＝預設）：尺寸須>0；offset 允許任意有限值（barOffsetY 正/labelOffsetY 負）。
+    checkNumOptional(p, 'statueHeightPx', label, errors, { min: 1 });
+    checkNumOptional(p, 'barWidthPx', label, errors, { min: 1 });
+    checkNumOptional(p, 'barHeightPx', label, errors, { min: 1 });
+    checkNumOptional(p, 'barOffsetYPx', label, errors, {});
+    checkNumOptional(p, 'labelOffsetYPx', label, errors, {});
     // attachFireRain 選填：省略或字串皆可（火雨 preset 名，遊戲端 getFireRainPreset fallback 不炸）。
     if (p.attachFireRain !== undefined && typeof p.attachFireRain !== 'string') {
       errors.push(`${label}「attachFireRain」必須是字串（火雨 preset 名）或省略。`);

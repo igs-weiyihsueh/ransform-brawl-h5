@@ -2,7 +2,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { PPU } from '@/config/gameConfig';
 import { getResolvedChest } from '@/config/chestSchema';
 import { PLAYER_CONFIG } from '@/config/combatConfig';
-import { pickGuardEnemy, guardSideSpawnPoint, resolveGuardDrip, type GuardPreset, type GuardDrip, type GuardSpawnEntry } from '@/config/guardConfig';
+import { pickGuardEnemy, guardSideSpawnPoint, resolveGuardDrip, resolveGuardStatueUi, type GuardPreset, type GuardDrip, type GuardSpawnEntry } from '@/config/guardConfig';
 import { getResolvedGuardPreset } from '@/config/guardSchema';
 import { GuardTarget } from '@/entities/GuardTarget';
 import { guardCornerTargets, scriptedMoveStep, allScriptedArrived } from '@/systems/guardIntro';
@@ -62,7 +62,7 @@ export class GuardEvent {
     // 生雕像於場中央（先隱藏，開場玩家就定位後才 reveal 顯現）。敵人攻擊改打雕像（在 combat 階段前不 drip）。
     const sx = GAME_WIDTH / 2;
     const sy = GAME_HEIGHT / 2;
-    this.target = new GuardTarget(ctx.scene, sx, sy, this.preset.targetHP);
+    this.target = new GuardTarget(ctx.scene, sx, sy, this.preset.targetHP, resolveGuardStatueUi(this.preset));
     this.target.setVisible(false);
     ctx.spawner.setGuardTarget(this.target);
 

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { UI_ICONS } from '@/config/uiConfig';
+import { GUARD_STATUE_UI_DEFAULTS, type GuardStatueUi } from '@/config/guardConfig';
 import type { Hittable, Vec2 } from '@/systems/hitDetection';
 
 /** 守護波雕像貼圖 key。 */
@@ -21,12 +22,21 @@ export class GuardTarget implements Hittable {
   /** 碰撞/命中半徑（像素）：換雕像圖後對齊新圖尺寸（非舊方塊 90×120）。constructor 依實際 body 設定。 */
   private radiusPx = 60;
   private defeated = false;
+  /** 血條寬（像素）：#4 可由 guard preset 開放調整；refreshBar 依此縮放 barFill。 */
+  private readonly barWidthPx: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, maxHp: number) {
+  /**
+   * @param ui 雕像/血條 UI（第十輪#1#4，resolveGuardStatueUi 解析值）；省略＝打包預設（行為不變 + #1 血條放大）。
+   */
+  constructor(scene: Phaser.Scene, x: number, y: number, maxHp: number, ui?: GuardStatueUi) {
     this.maxHp = maxHp;
     this.hp = maxHp;
 
-    // 雕像本體：優先用 Unity 原圖 statue.png（148×292 直式），等比縮到視覺高度 ~150px（不變形）；
+    // 第十輪#1#4：雕像大小/血條 UI 讀 config（省略→打包預設；0-nullish 已在 resolveGuardStatueUi 處理）。
+    const cfg: GuardStatueUi = ui ?? { ...GUARD_STATUE_UI_DEFAULTS };
+    this.barWidthPx = cfg.barWidthPx;
+
+    // 雕像本體：優先用 Unity 原圖 statue.png（148×292 直式），等比縮到視覺高度 statueHeightPx（不變形）；
     // 未載到則退回原方塊佔位（不壞）。origin 中心對齊 container，配合上方 label/下方血條位置。
     let body: Phaser.GameObjects.GameObject;
     if (scene.textures.exists(STATUE_KEY)) {
@@ -35,14 +45,14 @@ export class GuardTarget implements Hittable {
         width: number;
         height: number;
       };
-      const targetH = 150;
+      const targetH = cfg.statueHeightPx; // 第十輪#4：雕像高可由 preset 調整（原 hardcode 150）
       const ratio = src.width && src.height ? src.width / src.height : 0.5;
       const dispW = targetH * ratio;
-      img.setDisplaySize(dispW, targetH); // 等比：高 150、寬按 148:292 比例(~76)
+      img.setDisplaySize(dispW, targetH); // 等比：高 targetH、寬按 148:292 比例
       body = img;
       // 命中/碰撞半徑對齊新雕像圖尺寸（非舊方塊）：取顯示寬的一半當身體圓半徑
-      // （直式雕像的立足/身體足跡；命中判定與防穿透共用此圓）。
-      this.radiusPx = dispW / 2; // ≈ 38
+      // （直式雕像的立足/身體足跡；命中判定與防穿透共用此圓）。雕像調大→hitRadius 大→菁英/怪更好打（與 #2 協調）。
+      this.radiusPx = dispW / 2;
     } else {
       const rect = scene.add.rectangle(0, 0, 90, 120, 0x9c8f6a);
       rect.setStrokeStyle(3, 0xffffff);
@@ -50,14 +60,19 @@ export class GuardTarget implements Hittable {
       this.radiusPx = 60; // 方塊 fallback 用舊半徑
     }
     const label = scene.add
-      .text(0, -80, '守護目標', {
+      .text(0, cfg.labelOffsetYPx, '守護目標', {
         fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
         fontSize: '20px',
         color: '#ffe64d',
       })
       .setOrigin(0.5);
-    this.barBg = scene.add.rectangle(0, 90, 100, 12, 0x333333).setOrigin(0.5);
-    this.barFill = scene.add.rectangle(-50, 90, 100, 10, 0x66bb6a).setOrigin(0, 0.5);
+    // #1 血條放大 + #4 位置/尺寸可調（bg 比 fill 略高 2px 當外框，維持原視覺比例）。
+    this.barBg = scene.add
+      .rectangle(0, cfg.barOffsetYPx, cfg.barWidthPx, cfg.barHeightPx, 0x333333)
+      .setOrigin(0.5);
+    this.barFill = scene.add
+      .rectangle(-cfg.barWidthPx / 2, cfg.barOffsetYPx, cfg.barWidthPx, Math.max(1, cfg.barHeightPx - 2), 0x66bb6a)
+      .setOrigin(0, 0.5);
 
     this.container = scene.add.container(x, y, [body, label, this.barBg, this.barFill]);
     this.container.setDepth(15);
@@ -126,7 +141,7 @@ export class GuardTarget implements Hittable {
   }
 
   private refreshBar(): void {
-    this.barFill.width = 100 * this.getHpRatio();
+    this.barFill.width = this.barWidthPx * this.getHpRatio();
     this.barFill.fillColor = this.hp > this.maxHp * 0.3 ? 0x66bb6a : 0xef5350;
   }
 
