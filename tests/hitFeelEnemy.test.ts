@@ -11,7 +11,6 @@ import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import Phaser from 'phaser';
 import { Enemy } from '@/entities/Enemy';
 import { HIT_FEEL, knockbackDistancePx } from '@/config/hitFeelConfig';
-import { ENEMY_AI } from '@/config/enemyConfig';
 import { PPU } from '@/config/gameConfig';
 import type { Vec2 } from '@/systems/hitDetection';
 
@@ -52,10 +51,9 @@ function clearMicroFreeze(e: Enemy): void {
 }
 
 describe('Enemy 擊退曲線（hitFeel 快進快出）', () => {
-  it('一般敵人擊退：總位移 = knockbackDistancePx(force,PPU)×hitStun，0.18s 內走完', () => {
+  it('一般敵人擊退：總位移 = knockbackDistancePx(招式 knockback, PPU)（純招式、不乘 hitStun），0.18s 內走完', () => {
     const e = makeEnemy(500, 500, 'Enemy_Rush');
-    const hitStun = ENEMY_AI.Enemy_Rush.hitStun; // 0.8
-    const force = 4; // 4×0.15=0.6<1.5 → 比例區
+    const force = 4; // 招式 knockback；4×0.15=0.6<1.5 → 比例區
     // 打它：來源在左(0,500) → 往右(+x)擊退。damage 小(1)保留 hp>0(Rush hp3)→會 microFreeze。
     e.takeHit(1, force, { x: 0, y: 500 });
     clearMicroFreeze(e); // 先跑掉 0.06s 頓幀（頓幀期間不位移）
@@ -64,7 +62,8 @@ describe('Enemy 擊退曲線（hitFeel 快進快出）', () => {
     for (let i = 0; i < 6; i += 1) e.update(FAR, 0.03); // 6×0.03=0.18s
     const end = e.getHitCenter();
     const moved = Math.hypot(end.x - start.x, end.y - start.y);
-    const expected = knockbackDistancePx(force, PPU) * hitStun; // 0.6×100×0.8 = 48
+    // 擊退定案(2b5278b)：所有非 immovable 怪統一照招式 knockback，移除 per-enemy hitStun 抗性倍率。
+    const expected = knockbackDistancePx(force, PPU); // 0.6×100 = 60（不再 ×hitStun）
     expect(moved).toBeCloseTo(expected, 0); // 累計走完總距離
     // 方向：往 +x（遠離來源）。
     expect(end.x).toBeGreaterThan(start.x);
