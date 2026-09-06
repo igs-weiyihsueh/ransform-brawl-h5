@@ -204,7 +204,6 @@ export class EnemySpawner {
     }));
     for (const e of this.enemies) {
       e.resolvePenetration(players);
-      e.clampToMapBounds(); // 地圖邊界：敵人不走出場地
     }
 
     // #1 修正：菁英「像牆」——玩家主動撞 immovable 菁英時，把玩家擋在菁英外緣（玩家穿不進）。
@@ -242,6 +241,12 @@ export class EnemySpawner {
       // 敵人不穿進雕像：把敵人頂到雕像外緣（守護波敵人圍攻雕像時不重疊進體內）。
       for (const e of this.enemies) e.pushOutOfObstacle(sc, sr);
     }
+
+    // 六輪#10 根本修：clamp 是「單一最後防線」——排在所有位移/推力
+    //（moveChase/surround + resolvePenetration + 守護 pushOutOfObstacle）之後，統一跑一次。
+    // 真因=舊 clamp 排在守護 pushOutOfObstacle 之前，雕像貼界時怪被頂出界沒再 clamp（頂出 122px）。
+    // ★此後不得有任何敵人位移/推力排在這道之後（clamp 永遠是每幀敵人位置最後一步）。
+    for (const e of this.enemies) e.clampToMapBounds();
 
     // 守護波：射彈打雕像；否則打玩家。
     const target = this.guardTarget ?? this.player;
