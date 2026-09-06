@@ -5,7 +5,7 @@ import { initialItemPos } from '@/systems/itemGuideMath';
 /**
  * initialItemPos — 角色進場發初始變身道具的位置（用戶五輪#1，翼騎 752ace8）。
  * 落地後在落點正上方 offsetPx 發一個有主初始道具（source='initial'→owner，resolveItemOwner 已測）。
- * 簽章(讀 src 752ace8)：initialItemPos(landing:Vec2, bounds{minX,maxX,minY,maxY}, offsetPx=90) → {x,y}。
+ * 簽章(讀 src 6c3d296)：initialItemPos(landing:Vec2, bounds{minX,maxX,minY,maxY}, offsetPx=180) → {x,y}。
  * 邏輯：y = clamp(landing.y − offsetPx, minY, maxY)；x = clamp(landing.x, minX, maxX)。
  * 維度3 斷 x/y 座標值。含壞版必紅（上方 offset 方向 / 上界 clamp / x clamp）。
  * ⚠️ giveInitialItem 進場落地當幀呼 spawnItem 屬狀態機接線(需 boot,翼騎 headless 驗前0後1、hasBorder、subagent 看圖)——不補;
@@ -21,8 +21,8 @@ describe('initialItemPos — 落點正上方 offsetPx、clamp 界內', () => {
     expect(p.y).toBeLessThan(500); // 確在落點上方
   });
 
-  it('offsetPx 預設 90：不傳 offsetPx → y = landing.y − 90', () => {
-    expect(initialItemPos({ x: 900, y: 500 }, B).y).toBe(410);
+  it('offsetPx 預設 180：不傳 offsetPx → y = landing.y − 180（七輪#10：初始道具離角色遠一點，90→180）', () => {
+    expect(initialItemPos({ x: 900, y: 500 }, B).y).toBe(320); // 500 − 180
   });
 
   it('★ 上界 clamp：落點靠上邊（y=180，−90=90<minY140）→ y clamp 到 minY(140)、不出上界', () => {
