@@ -24,6 +24,7 @@ import {
   clearOverride,
   loadOverride,
 } from '@/config/editorStore';
+import { getPerCharScale } from '@/config/animationConfig';
 
 /** Pixels-Per-Unit：對照 gameConfig.PPU=100（本檔自持常數，不 import 遊戲檔）。 */
 const PPU = 100;
@@ -350,6 +351,8 @@ function renderInspector(): void {
   insp.appendChild(title);
 
   insp.appendChild(textRow('characterKey', e.characterKey, (v) => { e.characterKey = v; }));
+  // 大小 scale（用戶第十輪 #3）：體型倍率，覆蓋 getPerCharScale 預設。省略=沿用預設；遊戲端 scaleFactor=cfg.scale??getPerCharScale，一改全動 body/攻擊圓/視覺。
+  insp.appendChild(numberRow('大小 scale', e.scale ?? getPerCharScale(e.characterKey), (v) => { e.scale = v; }, { min: 0.5, max: 3, step: 0.05, slider: true }));
   insp.appendChild(numberRow('生命 hp', e.hp, (v) => { e.hp = v; }, { min: 1, step: 1 }));
   insp.appendChild(numberRow('移速 moveSpeed', e.moveSpeed, (v) => { e.moveSpeed = v; }, { min: 0, max: 10, step: 0.1, slider: true }));
   insp.appendChild(numberRow('偵測 detectRange', e.detectRange, (v) => { e.detectRange = v; }, { min: 0, max: 40, step: 0.5, slider: true }));
@@ -439,9 +442,13 @@ function renderPreview(): void {
   const cx2 = cxScene;
   const cy2 = cyScene;
 
-  // 敵人角色參照：畫在場景中心(=敵人 getBodyCenter)，尺寸=遊戲實際 269px×sceneScale（完整場景裡的實際大小）。
+  // 體型倍率（用戶第十輪 #3）：effScale = e.scale ?? getPerCharScale(characterKey)，對齊遊戲 scaleFactor。
+  //   影響 sprite 顯示 + 攻擊判定形狀（body/攻擊圓一起縮）；detectRange/attackRange AI 距離環不縮（遊戲亦然）。
+  const effScale = e.scale ?? getPerCharScale(e.characterKey);
+
+  // 敵人角色參照：畫在場景中心(=敵人 getBodyCenter)，尺寸=269px × effScale × sceneScale（含體型倍率，所見即所得）。
   const spr = getSprite(e.characterKey);
-  const sprPx = REF_SPRITE_SIZE * viewScale;
+  const sprPx = REF_SPRITE_SIZE * effScale * viewScale;
   if (spr) {
     ctx.save();
     ctx.globalAlpha = 0.9;
@@ -480,18 +487,20 @@ function renderPreview(): void {
 
   // 攻擊判定形狀（面向朝右示意，以 offset 為中心）：嚴格依 shapeType 畫——
   // circle→圓（buildAttackCircle）、rectangle→矩形/長條（buildAttackOBB）、fan→扇形（buildAttackFan）。
-  const offX = e.attack.offsetX * PPU * viewScale;
-  const offY = e.attack.offsetY * PPU * viewScale;
+  // ★×effScale：對齊遊戲 buildAttack* 都 ×scaleFactor（攻擊圓隨體型縮放，所見即所得）。
+  const shapeScale = PPU * viewScale * effScale;
+  const offX = e.attack.offsetX * shapeScale;
+  const offY = e.attack.offsetY * shapeScale;
   const hx = cx + offX;
   const hy = cy + offY;
   ctx.strokeStyle = getCss('--hit');
   ctx.fillStyle = 'rgba(255,108,122,0.20)';
   ctx.lineWidth = 2;
   if (e.attack.shapeType === 'circle') {
-    const rPx = (e.attack.radius ?? 0) * PPU * viewScale;
+    const rPx = (e.attack.radius ?? 0) * shapeScale;
     if (rPx > 0) { ctx.beginPath(); ctx.arc(hx, hy, rPx, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
   } else if (e.attack.shapeType === 'fan') {
-    const rPx = (e.attack.radius ?? 0) * PPU * viewScale;
+    const rPx = (e.attack.radius ?? 0) * shapeScale;
     const ang = ((e.attack.angle ?? 0) * Math.PI) / 180;
     if (rPx > 0 && ang > 0) {
       ctx.beginPath();
@@ -503,8 +512,8 @@ function renderPreview(): void {
     }
   } else {
     // rectangle / 直線(OBB)：length 沿面向(x)、width 垂直(y)，中心在判定中心。
-    const lPx = (e.attack.length ?? 0) * PPU * viewScale;
-    const wPx = (e.attack.width ?? 0) * PPU * viewScale;
+    const lPx = (e.attack.length ?? 0) * shapeScale;
+    const wPx = (e.attack.width ?? 0) * shapeScale;
     ctx.beginPath();
     ctx.rect(hx - lPx / 2, hy - wPx / 2, lPx, wPx);
     ctx.fill();
