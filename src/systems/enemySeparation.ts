@@ -26,6 +26,18 @@ export function isChargeInvulnerable(state: string, immovable: boolean): boolean
 }
 
 /**
+ * 七輪#7：到 surround 槽後是否該「繼續逼近攻擊範圍」（純函式，抽給測騎）。
+ * surround 外圈槽半徑可能 > 攻擊範圍 → 怪到槽即停會搆不到、卡 chase 不攻擊。
+ * 若到槽但「離目標 body 距離仍 > 攻擊像素」→ 繼續逼近（true）；已在攻擊範圍內 → 停在槽（false）。
+ * slot 只給環繞骨架/方向，不阻止進攻。
+ * @param distBodyPx 敵人到目標 body 中心的距離（像素）。
+ * @param attackPx 攻擊範圍（像素，= attackRange×PPU）。
+ */
+export function shouldApproachAfterSlot(distBodyPx: number, attackPx: number): boolean {
+  return distBodyPx > attackPx;
+}
+
+/**
  * 計算某敵人受其他敵人的分離力（世界像素座標；已 ×PPU 的半徑）。
  * 平方加權：越近推力越大（近距爆推、自動解堆疊）。超出 separationRadius 的不計。
  * @param selfPos 自己的位置（像素）。

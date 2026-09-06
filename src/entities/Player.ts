@@ -317,11 +317,15 @@ export class Player implements Hittable {
   }
 
   /**
-   * 真空帶中心（像素，用戶試玩#1 次因）：= 視覺搜索圈中心 footGlowCenter（腳部，含 offset），
-   * 讓推怪判定中心與視覺圈同一點（不再用身體中心 getHitCenter 差 ~75px），眼見即實際。
+   * 真空帶中心（像素）。七輪#8 治本（對齊 Unity vacuumVisualOffsetY=0.5unit「環中心相對 pivot 往上到身體中心」）：
+   * 改用「身體中心」= sprite 幾何中心（getHitCenter），不再用腳底 footGlowCenter。
+   * → 真空推怪判定/surround 環繞圓心/牽引線/箭頭/負重 都以身體中心為圓心 = 上下對稱（不再下方特別大、
+   *   下方槽位不離玩家 body 更遠 → 修 #7#8）。
+   * 註（coupling 解耦）：視覺腳底識別光(syncFootGlow)仍用 footGlowCenter(腳部)＝暫留腳底(先 Y，X/Y 用戶拍板)；
+   *   PLAYER_BOUNDS 下界 margin 另用 FOOT_GLOW.offsetYPx(角色中心→腳底物理距離)＝與真空中心分開，互不影響。
    */
   getVacuumCenter(): Vec2 {
-    return footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.foot.offsetY);
+    return this.getHitCenter(); // 身體中心（sprite origin 即中心）
   }
 
   /** 目前是否處於無敵幀（iFrame 內免疫再次受擊）。 */

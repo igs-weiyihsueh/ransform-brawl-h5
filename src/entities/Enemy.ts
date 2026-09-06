@@ -14,6 +14,7 @@ import {
   combineWithSeparation,
   pushOutOfPlayer,
   isChargeInvulnerable,
+  shouldApproachAfterSlot,
 } from '@/systems/enemySeparation';
 import { slotApproachDir, SLOT_REACH_THRESHOLD_PX, TRAVELER_AVOID_WEIGHT } from '@/systems/surroundSlots';
 import {
@@ -266,21 +267,33 @@ export class Enemy implements Hittable {
   }
 
   /**
-   * 追擊移動（整合 surround，征騎）：
-   *  - 有槽位目標（slotPos）→ 繞圈趨近該槽（slotApproachDir：徑向靠層半徑 + 切線繞行，不穿中央人群）；
-   *    趕路中 separation weight 較高（TRAVELER_AVOID_WEIGHT，繞開彼此不死推）；到槽（<SLOT_REACH_THRESHOLD_PX）停下不動。
-   *  - 無槽（未 claim/全滿/目標不可環繞）→ fallback 原分離力直線追擊（朝 aim 疊加分離力）。
+   * 追擊移動（整合 surround，征騎；七輪#7 到槽後逼近攻擊範圍）：
+   *  - 有槽位目標（slotPos）→ 繞圈趨近該槽（slotApproachDir）；到槽後**若離目標 body 仍 > 攻擊範圍**
+   *    （shouldApproachAfterSlot）→ 繼續朝 aim(玩家 body)逼近到 attackRange 內才停（slot 給環繞骨架、不擋進攻，
+   *    修 #7 外圈槽半徑>攻擊範圍→卡 chase 不打）；已在攻擊範圍內 → 停在槽。
+   *  - 無槽 → fallback 原分離力直線追擊。
    */
   private moveChase(aimDx: number, aimDy: number, dt: number): void {
     const speedPx = this.cfg.moveSpeed * PPU;
     const selfPos = { x: this.anim.sprite.x, y: this.anim.sprite.y };
 
     if (this.slotPos && this.slotRingCenter) {
-      // 到槽：dist<SLOT_REACH_THRESHOLD_PX → 停下（不位移），由狀態機面向目標。
       const ddx = this.slotPos.x - selfPos.x;
       const ddy = this.slotPos.y - selfPos.y;
-      if (Math.hypot(ddx, ddy) < SLOT_REACH_THRESHOLD_PX) return;
-      // 繞圈趨近方向 + 趕路避讓（較高 separation weight 繞開彼此）。
+      const atSlot = Math.hypot(ddx, ddy) < SLOT_REACH_THRESHOLD_PX;
+      // 七輪#7：到槽但離目標 body 仍 > 攻擊範圍 → 繼續逼近(不停在遠槽搆不到)；否則到槽停。
+      const distBody = Math.hypot(aimDx, aimDy); // aim=玩家 body(getPosition)，aimDx/Dy=aim-sprite
+      const attackPx = this.cfg.attackRange * PPU;
+      if (atSlot) {
+        if (!shouldApproachAfterSlot(distBody, attackPx)) return; // 已在攻擊範圍→停在槽
+        // 到槽但搆不到 → 直接朝玩家 body 逼近(疊分離力)，進攻擊範圍才停。
+        const sep = calculateSeparation(selfPos, this.neighbors);
+        const dir = combineWithSeparation({ x: aimDx, y: aimDy }, sep);
+        this.anim.sprite.x += dir.x * speedPx * dt;
+        this.anim.sprite.y += dir.y * speedPx * dt;
+        return;
+      }
+      // 未到槽：繞圈趨近方向 + 趕路避讓（較高 separation weight 繞開彼此）。
       const approach = slotApproachDir(selfPos, this.slotRingCenter, this.slotPos);
       const sep = calculateSeparation(selfPos, this.neighbors);
       const dir = combineWithSeparation(approach, sep, TRAVELER_AVOID_WEIGHT);
