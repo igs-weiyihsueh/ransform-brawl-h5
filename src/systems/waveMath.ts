@@ -4,16 +4,20 @@
  */
 
 /**
- * 一般 Spawn 節點「該不該再 drip 生怪」（用戶 #6 不超生）：
- * 只在**生產總數（已殺 kills + 場上 alive + 預警中 pending）< killQuota** 且維持場面條件成立時才生。
- * → 生產總數封頂於 quota，殺滿 quota 時場上自然清空（不會超生留殘怪帶進下一節點）。
+ * 一般 Spawn 節點「該不該再 drip 生怪」（用戶 #6 不超生 + 用戶：補怪門檻補到 maxAlive）：
  * @param kills 已擊殺數。
  * @param alive 場上存活敵人數。
  * @param pending 預警中（即將生成）敵人數。
  * @param quota 該波 killQuota（已依人數縮放）。
- * @param maxAlive 場上上限（已縮放）。
- * @param threshold 低於此存活數才補（已縮放）。
+ * @param maxAlive 場上上限（已縮放）＝補怪目標。
+ * @param threshold 補怪觸發門檻（存活 < 此值才「開始」補；已縮放）。
+ * @param nextIsSpawn 下一節點是否也是 Spawn（true→不套 quota 上限，維持滿場）。
+ * @param refilling 補怪遲滯 latch（WaveSystem 維護）：已在補怪中→持續補到 maxAlive。
  * @returns 是否再生一隻。
+ *
+ * ★補怪語意（對齊 Unity + levelSchema 註解「存活 < spawnThreshold 時補到 maxAlive」）：
+ *   threshold 是「觸發門檻」、maxAlive 是「補怪目標」。存活跌破 threshold → 開始補、一路補到 maxAlive
+ *   （非只補到 threshold）。用遲滯 latch 避免在 threshold 上下抖動：跌破 threshold 開 latch、達 maxAlive 關 latch。
  */
 export function shouldSpawnMore(
   kills: number,
@@ -22,12 +26,18 @@ export function shouldSpawnMore(
   quota: number,
   maxAlive: number,
   threshold: number,
+  nextIsSpawn = false,
+  refilling = false,
 ): boolean {
   // 用戶 #6：生產總數不超過 quota（quota 即該波總生產量）→ 殺滿 quota 場上自然空。
-  if (kills + alive + pending >= quota) return false;
-  // 維持場面（原本 drip 條件）：存活(含 pending) < threshold 且未達 maxAlive 才補。
+  //   ★但 Spawn→Spawn（nextIsSpawn）要「刷怪波間怪數維持」：不套 quota 上限（否則殺數逼近 quota 時
+  //   停止補生 → 節點尾端場面枯竭、切節點瞬間掏空）。此時只靠 maxAlive/threshold 維持滿場，
+  //   quota 僅作為 shouldAdvanceSpawn 的前進門檻（殺滿即接續下一波、殘怪帶過去、不空窗）。
+  if (!nextIsSpawn && kills + alive + pending >= quota) return false;
   const occupancy = alive + pending;
-  return occupancy < threshold && occupancy < maxAlive;
+  // ★補到 maxAlive（非 threshold）：達上限不補；否則「跌破門檻」或「補怪中(latch)」→ 補。
+  if (occupancy >= maxAlive) return false;
+  return occupancy < threshold || refilling;
 }
 
 /**

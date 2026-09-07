@@ -68,6 +68,8 @@ export class WaveSystem implements GameSystem {
   private spawnWaveNumber = 0;
   /** 距下一次可生怪的倒數（秒）；受 spawnInterval 節流。 */
   private spawnCooldown = 0;
+  /** 補怪遲滯 latch（用戶：補怪門檻補到 maxAlive）：存活跌破 spawnThreshold 開、達 maxAlive 關；補怪中持續補到滿。 */
+  private spawnRefilling = false;
   /** 本系統生出、目前仍追蹤中的敵人（用來偵測擊殺）。 */
   private tracked: Enemy[] = [];
   /** 預警中（登場預警圈淡入中、敵人尚未生成）的數量：計入 alive，避免預警期間超生。 */
@@ -316,6 +318,7 @@ export class WaveSystem implements GameSystem {
     this.nodeIndex = index;
     this.kills = 0;
     this.spawnCooldown = 0;
+    this.spawnRefilling = true; // 新節點：先補到 maxAlive（達上限才關 latch）
     this.tracked = [];
     this.pendingSpawns = 0; // 換節點清預警帳
     this.spawnGeneration += 1; // 遞增世代 → 作廢舊節點已排程但未觸發的 spawnWarning doSpawn（N skip/換節點都清「正在出生的怪」）
@@ -378,10 +381,17 @@ export class WaveSystem implements GameSystem {
 
     const alive = this.ctx.getEnemies().length; // 六輪#5：場上實際敵人數(含前一波接續帶進的殘怪)，維持場面/清空 gate 都用真實佔用
     const pending = this.pendingSpawns; // 預警中（即將生成）
+    const nextIsSpawn = this.nextNodeIsSpawn(); // Spawn→Spawn：維持滿場（不套 quota 上限）；否則 drain-to-clear
+
+    // 補怪遲滯 latch（用戶：補怪門檻補到 maxAlive，非只補到門檻）：
+    //   佔用跌破 spawnThreshold → 開始補（latch on）；補到 maxAlive → 停（latch off）。之間持續補（不在門檻抖動）。
+    const occupancy = alive + pending;
+    if (occupancy < spawnThreshold) this.spawnRefilling = true;
+    else if (occupancy >= maxAlive) this.spawnRefilling = false;
 
     // 用戶 #6 (2) gate 清空 + 六輪#5 維持場面：下一節點也是 Spawn → 殺滿 quota 即前進(殘怪接續帶進下一波、不空一下)；
     //   下一節點非 Spawn(Reward/Event) → 維持「殺滿且場上清空才進」(不把戰鬥拖進獎勵/守護)。
-    if (shouldAdvanceSpawn(this.kills, killQuota, alive, pending, this.nextNodeIsSpawn())) {
+    if (shouldAdvanceSpawn(this.kills, killQuota, alive, pending, nextIsSpawn)) {
       this.advanceNode();
       return;
     }
@@ -391,9 +401,11 @@ export class WaveSystem implements GameSystem {
     }
 
     // 用戶 #6 (1) 不超生：生產總數（kills+alive+pending）< quota 且維持場面條件成立才 drip。
+    //   ★Spawn→Spawn（nextIsSpawn）：略過 quota 上限，持續補生維持 maxAlive → 刷怪波間怪數不掉、無空窗。
+    //   ★補怪目標=maxAlive（refilling latch）：跌破門檻後一路補到滿，非只補到門檻（對齊 Unity/用戶）。
     if (
       this.spawnCooldown <= 0 &&
-      shouldSpawnMore(this.kills, alive, pending, killQuota, maxAlive, spawnThreshold)
+      shouldSpawnMore(this.kills, alive, pending, killQuota, maxAlive, spawnThreshold, nextIsSpawn, this.spawnRefilling)
     ) {
       this.spawnOne(node.spawns);
       this.spawnCooldown = node.spawnInterval;

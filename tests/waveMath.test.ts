@@ -47,6 +47,44 @@ describe('shouldSpawnMore — 不超生（生產總數封頂 quota）+ 場面節
   });
 });
 
+describe('shouldSpawnMore — Spawn→Spawn（nextIsSpawn）維持滿場（用戶：刷怪波間怪數維持）', () => {
+  it('★ nextIsSpawn=true：略過 quota 上限，殺數逼近/超過 quota 仍補生維持 maxAlive（不枯竭）', () => {
+    // 舊 bug：kills+alive+pending>=quota → false（節點尾端停止補生、場面枯竭、切節點掏空）。
+    // 修後 nextIsSpawn=true：只看 threshold/maxAlive → 佔用未滿仍生。
+    expect(shouldSpawnMore(10, 0, 0, 10, 8, 5, true)).toBe(true); // 殺滿 quota 但場空 → 仍補（維持）
+    expect(shouldSpawnMore(20, 3, 0, 10, 8, 5, true)).toBe(true); // 遠超 quota、佔用 3<threshold → 補
+    // 對照：同參數 nextIsSpawn=false（drain-to-clear）→ false（達 quota 停生）。
+    expect(shouldSpawnMore(10, 0, 0, 10, 8, 5, false)).toBe(false);
+  });
+
+  it('nextIsSpawn=true 仍受 maxAlive/threshold 節流（不無限塞爆）', () => {
+    expect(shouldSpawnMore(10, 5, 0, 10, 8, 5, true)).toBe(false); // 佔用 5 >= threshold5 且 refilling=false → 不生
+    expect(shouldSpawnMore(10, 8, 0, 10, 8, 20, true)).toBe(false); // 佔用 8 >= maxAlive8 → 不生
+    expect(shouldSpawnMore(10, 4, 0, 10, 8, 5, true)).toBe(true); // 佔用 4 < threshold5 → 生
+  });
+});
+
+describe('shouldSpawnMore — 補怪門檻補到 maxAlive（用戶：繼續吃補怪門檻持續補到滿；遲滯 latch）', () => {
+  it('★ refilling=true：佔用介於 threshold~maxAlive 之間仍補（補到 maxAlive，非停在 threshold）', () => {
+    // 舊 bug：occupancy>=threshold 就停 → 場面停在 threshold(如 10) 而非 maxAlive(15)。
+    // 修後 refilling latch：跌破 threshold 開 latch → 一路補到 maxAlive。
+    // threshold=10 maxAlive=15：佔用 12（>threshold、<maxAlive）+ refilling → 仍補。
+    expect(shouldSpawnMore(0, 12, 0, 40, 15, 10, false, true)).toBe(true);
+    expect(shouldSpawnMore(0, 14, 0, 40, 15, 10, false, true)).toBe(true); // 補到 14<15 仍補
+  });
+
+  it('★ 達 maxAlive → 不補（latch 該關）；佔用 < threshold → 補（latch 該開）', () => {
+    expect(shouldSpawnMore(0, 15, 0, 40, 15, 10, false, true)).toBe(false); // 達 maxAlive15 → 停
+    expect(shouldSpawnMore(0, 16, 0, 40, 15, 10, false, true)).toBe(false); // 超過也停
+    expect(shouldSpawnMore(0, 8, 0, 40, 15, 10, false, false)).toBe(true); // 佔用 8 < threshold10 → 補（不需 latch）
+  });
+
+  it('對照舊行為：refilling=false 且 佔用介於 threshold~maxAlive → 不補（需先跌破門檻觸發）', () => {
+    // threshold=10 maxAlive=15：佔用 12 >= threshold 但 latch 未開 → 不補（等跌破 10 才觸發補怪）。
+    expect(shouldSpawnMore(0, 12, 0, 40, 15, 10, false, false)).toBe(false);
+  });
+});
+
 describe('shouldAdvanceSpawn — gate 清空才推進（不帶殘怪進下節點）', () => {
   it('★ kills>=quota 但 alive>0（有殘怪）→ false（不帶殘怪進 Reward，根治核心）', () => {
     expect(shouldAdvanceSpawn(10, 10, 2, 0)).toBe(false); // 殺滿但場上還有 2 隻
