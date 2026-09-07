@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import {
+  comboTierColorHex,
   HUD_COLORS,
   HUD_FONT_FAMILY,
   OVERHEAD_DEPTH,
@@ -45,6 +46,8 @@ export class PlayerOverheadUI {
   private warnTween?: Phaser.Tweens.Tween;
   /** MAX! 一次性強調 tween（播放中存在）。 */
   private maxTween?: Phaser.Tweens.Tween;
+  /** COMBO 跳動放大 tween（PunchEffect；連續 combo 防重入重啟）。 */
+  private comboPunchTween?: Phaser.Tweens.Tween;
   /** 保存 scene 以供 tween 使用。 */
   private readonly scene: Phaser.Scene;
   /** 是否已用 ring.png 當魂力環底圖（true 時 setSoul 不再畫底槽環，只畫填充弧）。 */
@@ -230,15 +233,48 @@ export class PlayerOverheadUI {
     this.creditText.setText(`${Math.max(0, Math.floor(value))}`.padStart(5, '0'));
   }
 
-  /** 設定 COMBO 數。stub：目前傳 0（COMBO 系統未做）。 */
+  /**
+   * 設定 COMBO 數（對照 Unity ComboUI ShowCombo）。
+   * - 顏色階層：>=20 紅 / >=10 橙 / else 金（warning 啟用時警告色 override，見 setComboWarning）。
+   * - 跳動放大：combo 數「增加」時文字 punch 彈跳一下（scale 1→peak→1）。
+   * 由 UISystem 每幀傳 combo.getCombo(pid)。
+   */
   setCombo(value: number): void {
     const cfg = OVERHEAD_LAYOUT.combo;
     const n = Math.max(0, Math.floor(value));
     if (n === this.shownCombo) return;
+    const increased = n > this.shownCombo && this.shownCombo >= 0;
     this.shownCombo = n;
+
     const visible = !(cfg.hideWhenZero && n === 0);
     this.comboText.setVisible(visible);
-    if (visible) this.comboText.setText(`${n}${cfg.suffix}`);
+    if (!visible) return;
+    this.comboText.setText(`${n}${cfg.suffix}`);
+
+    // 顏色階層（warning 中不覆蓋，警告色優先）。
+    if (!this.comboWarning) {
+      this.comboText.setColor(comboTierColorHex(n));
+    }
+
+    // 跳動放大：combo 增加時 punch（防重入：先停舊的、從 peak 彈回 1）。
+    if (increased) this.punchCombo();
+  }
+
+  /** COMBO 文字跳動放大（Unity PunchEffect）：scale 1→peak→1 回彈。連續 combo 重啟。 */
+  private punchCombo(): void {
+    const p = OVERHEAD_LAYOUT.combo.punch;
+    this.comboPunchTween?.stop();
+    this.comboText.setScale(1);
+    this.comboPunchTween = this.scene.tweens.add({
+      targets: this.comboText,
+      scale: { from: p.peakScale, to: 1 },
+      duration: p.durationMs,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.comboText.setScale(1);
+        this.comboPunchTween = undefined;
+      },
+    });
   }
 
   /**
@@ -262,11 +298,11 @@ export class PlayerOverheadUI {
         repeat: -1,
       });
     } else {
-      // 停止閃爍、復原顏色與透明度。
+      // 停止閃爍、復原透明度；顏色復原成當前 combo 數的階層色（非固定色）。
       this.warnTween?.stop();
       this.warnTween = undefined;
       this.comboText.setAlpha(1);
-      this.comboText.setColor(HUD_COLORS.comboText);
+      this.comboText.setColor(comboTierColorHex(Math.max(0, this.shownCombo)));
     }
   }
 
@@ -318,6 +354,7 @@ export class PlayerOverheadUI {
   destroy(): void {
     this.warnTween?.stop();
     this.maxTween?.stop();
+    this.comboPunchTween?.stop();
     this.energyBar.destroy();
     this.container.destroy(); // 連同容器內所有子物件一併銷毀
   }

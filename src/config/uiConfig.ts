@@ -173,6 +173,31 @@ export const OVERHEAD_LAYOUT = {
       minAlpha: 0.25,
     },
     /**
+     * 顏色階層（對照 Unity ComboUI ShowCombo）：正常 COMBO 顯示色隨連段數變。
+     * count>=tier2 紅 / >=tier1 橙 / else 金。warning 啟用時警告色 override 此階層色。
+     */
+    tier: {
+      /** 橙色門檻（Unity colorTier1）。 */
+      tier1: 10,
+      /** 紅色門檻（Unity colorTier2）。 */
+      tier2: 20,
+      /** 金（<tier1，Unity color1 = (1,0.85,0)）。 */
+      color1: 0xffd900,
+      /** 橙（>=tier1，Unity color2 = (1,0.5,0)）。 */
+      color2: 0xff8000,
+      /** 紅（>=tier2，Unity color3 = Color.red）。 */
+      color3: 0xff0000,
+    },
+    /**
+     * 跳動放大（對照 Unity ComboUI PunchEffect）：每次 combo 數增加時文字彈跳一下。
+     */
+    punch: {
+      /** 彈跳峰值倍率（scale 1→peak→1）。 */
+      peakScale: 1.3,
+      /** 一次彈跳時間（毫秒）。 */
+      durationMs: 150,
+    },
+    /**
      * MAX!（對照 Unity ShowMaxCombo）：COMBO 滿檔時的一次性放大強調。
      * 由 showMaxCombo() 觸發，播放後淡出。
      */
@@ -191,6 +216,22 @@ export const OVERHEAD_LAYOUT = {
     },
   },
 } as const;
+
+/**
+ * COMBO 顏色階層（純函式，對齊 Unity ComboUI ShowCombo）：
+ * count>=tier2 紅 / >=tier1 橙 / else 金。抽純函式方便單元測試（測騎）。
+ */
+export function comboTierColor(count: number): number {
+  const t = OVERHEAD_LAYOUT.combo.tier;
+  if (count >= t.tier2) return t.color3; // 紅
+  if (count >= t.tier1) return t.color2; // 橙
+  return t.color1; // 金
+}
+
+/** COMBO 階層色（hex number）轉 Phaser Text 用的 '#rrggbb' 字串。 */
+export function comboTierColorHex(count: number): string {
+  return `#${comboTierColor(count).toString(16).padStart(6, '0')}`;
+}
 
 /**
  * 七輪 overhead override 補接：把 uiLayout override 的 overhead 位置/尺寸「合併進」OVERHEAD_LAYOUT（純函式，抽給測騎）。
