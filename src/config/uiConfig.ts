@@ -415,3 +415,59 @@ export const BOTTOM_PANEL_LAYOUT = {
   /** 欄標籤字級（P1~P4）。 */
   labelFontSize: '22px',
 } as const;
+
+/**
+ * JP 介面佈局（對齊 Unity JPPanel，1920×1080 螢幕座標）。
+ * 畫面中央橫幅 1600×300 深藍黑底 + 三組（左金/中橘/右紫）水平排，每組：
+ * 主題色外框數字框 + 90px 大字金額（主題色）+ 下方 5 顆實心圓燈（暗/亮主題色）。
+ * 座標換算 Unity anchoredPos → 螢幕：ScreenX=960+posX、ScreenY=540-posY。
+ * 保留 JP 邏輯（JpSystem），此處純外觀/位置。
+ */
+export const JP_PANEL_LAYOUT = {
+  /** 橫幅容器（螢幕座標，左上原點）。 */
+  panel: {
+    x: 160,
+    y: 385,
+    width: 1600,
+    height: 300,
+    /** 背景深藍黑半透明 RGBA(13,13,26,0.7)。 */
+    bgColor: 0x0d0d1a,
+    bgAlpha: 0.7,
+  },
+  /** 三組中心（螢幕座標）＋主題色（亮）＋暗色（未點亮）。順序對應 JP_GROUPS[red,blue,purple]=JP1金/JP2橘/JP3紫。 */
+  groups: [
+    { cx: 440, cy: 564, themeColor: 0xffd600, dimColor: 0x4d4000 }, // JP1 金黃 / 暗金(77,64,0)
+    { cx: 960, cy: 561, themeColor: 0xff7333, dimColor: 0x4d220f }, // JP2 橘紅 / 暗橘(77,34,15)
+    { cx: 1477, cy: 564, themeColor: 0x9959f2, dimColor: 0x2e1b49 }, // JP3 紫 / 暗紫(46,27,73)
+  ],
+  /** 每組數字框（相對該組中心）。 */
+  amount: {
+    borderOffsetY: 40,
+    borderWidth: 452,
+    borderHeight: 142,
+    borderAlpha: 0.9,
+    bgWidth: 440,
+    bgHeight: 130,
+    bgColor: 0x05050d,
+    bgAlpha: 0.85,
+    cornerRadius: 10,
+    fontSize: '90px',
+    textOffsetY: 40,
+  },
+  /** 5 顆實心圓燈（相對該組中心）。 */
+  lights: {
+    count: 5,
+    radius: 28, // size 56×56 → r=28
+    posY: -70, // 數字下方一排
+    gap: 56, // 五顆 x：-112/-56/0/+56/+112（間距 56 緊貼）
+    strokeWidth: 2,
+  },
+} as const;
+
+/** JP 燈相對 x（對稱、間距 gap）。純函式（可測）。 */
+export function jpLightOffsetsX(count: number, gap: number): number[] {
+  const xs: number[] = [];
+  const mid = (count - 1) / 2;
+  for (let i = 0; i < count; i += 1) xs.push((i - mid) * gap);
+  return xs;
+}

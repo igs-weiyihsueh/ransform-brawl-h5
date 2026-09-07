@@ -24,7 +24,7 @@ import { HelmetSystem } from '@/systems/HelmetSystem';
 import { InputSystem } from '@/systems/InputSystem';
 import { JpSystem } from '@/systems/JpSystem';
 import { JpLampHud } from '@/systems/ui/JpLampHud';
-import { pickLightGroup } from '@/config/jpConfig';
+import { pickLightGroup, JP_TICKET_FACE } from '@/config/jpConfig';
 import { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import { TransformSystem } from '@/systems/TransformSystem';
 import { TicketSystem } from '@/systems/TicketSystem';
@@ -303,7 +303,11 @@ export class GameScene extends Phaser.Scene {
       sys.update(focusPause && sys.name !== 'WaveSystem' ? 0 : dt);
     }
     // 用戶 #3：JP 燈 HUD 反映 JpSystem 各組 litCount（純顯示，僅變動時重繪）。
-    this.jpLampHud?.update((g) => this.ctx.jp.getLights(g));
+    // 十五輪：amountOf 傳派彩票面（倍數×JP_TICKET_FACE）→ JP 金額 live 反映 JpSystem。
+    this.jpLampHud?.update(
+      (g) => this.ctx.jp.getLights(g),
+      (g) => this.ctx.jp.getMultiplier(g) * JP_TICKET_FACE,
+    );
   }
 
   /** 場景關閉：依序清理每個 system，清空 registry。由 SHUTDOWN 事件觸發。 */
