@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ENERGY_BAR_LAYOUT, HUD_COLORS } from '@/config/uiConfig';
+import { ENERGY_BAR_LAYOUT, HUD_COLORS, energyStageColor } from '@/config/uiConfig';
 
 /**
  * EnergyBar — 能量 4 格 UI 元件（對照 Unity SkillGauge Slot0~3）。
@@ -19,6 +19,8 @@ export class EnergyBar {
   private full = false;
   /** 閃爍相位計時（秒）。 */
   private flashTime = 0;
+  /** 當前招式階段（0=skill1/1=skill2/2=ultimate）→ 決定充能格與閃爍的顏色。 */
+  private stage = 0;
 
   /**
    * @param scene 場景。
@@ -64,6 +66,17 @@ export class EnergyBar {
   }
 
   /**
+   * 設定當前招式階段（0=skill1/1=skill2/2=ultimate，對齊 Unity）。
+   * 充能格與滿格閃爍顏色依階段變（黃→青→紅）。由 UISystem 每幀傳
+   * energy.getSkillStage(pid)。值沒變不重畫。
+   */
+  setStage(stage: number): void {
+    if (stage === this.stage) return;
+    this.stage = stage;
+    this.redraw();
+  }
+
+  /**
    * 每幀更新：滿格時推進閃爍相位並重畫。未滿格不做事（靜態）。
    * 由 UISystem.update 傳 dt 呼叫。
    */
@@ -73,17 +86,20 @@ export class EnergyBar {
     this.redraw();
   }
 
-  /** 依目前 value / full / flashTime 重畫所有格子。 */
+  /** 依目前 value / full / flashTime / stage 重畫所有格子。 */
   private redraw(): void {
     const cfg = ENERGY_BAR_LAYOUT;
+    // 充能格 / 滿格閃爍都用「當前階段色」（黃→青→紅，對齊 Unity）。
+    const stageColor = energyStageColor(this.stage);
     let fullColor = 0;
     if (this.full) {
       const f = cfg.readyFlash;
       const phase = (this.flashTime % f.periodSec) / f.periodSec; // 0..1
       const t = 1 - Math.abs(phase * 2 - 1); // 三角波 0→1→0
+      // 白 ↔ 階段色 來回閃（保留「可放招」脈動，顏色改隨階段）。
       fullColor = Phaser.Display.Color.Interpolate.ColorWithColor(
         Phaser.Display.Color.IntegerToColor(f.colorA),
-        Phaser.Display.Color.IntegerToColor(f.colorB),
+        Phaser.Display.Color.IntegerToColor(stageColor),
         100,
         Math.round(t * 100),
       ).color;
@@ -93,10 +109,11 @@ export class EnergyBar {
       const gfx = this.cells[i];
       const on = i < this.value;
       gfx.clear();
+      // 滿格→整條同步閃；否則已充能格用階段色、未充能暗色。
       const fill = this.full
         ? fullColor
         : on
-          ? HUD_COLORS.energyOn
+          ? stageColor
           : HUD_COLORS.energyOff;
       gfx.fillStyle(fill, 1);
       gfx.fillRoundedRect(0, 0, cfg.cellWidth, cfg.cellHeight, cfg.cornerRadius);

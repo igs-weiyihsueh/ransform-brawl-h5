@@ -257,7 +257,8 @@ export const ENERGY_BAR_LAYOUT = {
   cornerRadius: 3,
   /**
    * 滿格「可放招」閃爍（對照 Unity SkillGaugeUI.ShowReady：
-   * 4 格在白↔亮色之間來回閃爍當可放招提示，非靜態）。
+   * 4 格在白↔階段色之間來回閃爍當可放招提示，非靜態）。
+   * colorB 已改為「隨階段」(見 stageColors)；此處 colorB 僅作無階段時的 fallback。
    */
   readyFlash: {
     colorA: 0xffffff,
@@ -265,7 +266,27 @@ export const ENERGY_BAR_LAYOUT = {
     /** 一次來回（A→B→A）的週期（秒）。 */
     periodSec: 0.5,
   },
+  /**
+   * 能量格「隨階段變色」調色盤（對齊 Unity PlayerController GetCurrentGaugeColor）：
+   * 依當前這輪充滿要放的招階段循環：skill1→黃、skill2→青、ultimate→紅。
+   * index 對應 EnergySystem 的 cycleIndex（0/1/2；FULL_SKILL_CYCLE = skill1/skill2/ultimate）。
+   */
+  stageColors: [
+    0xffff00, // 階段0 skill1  = 黃 (Unity Color.yellow)
+    0x00ffff, // 階段1 skill2  = 青 (Unity Color.cyan)
+    0xff0000, // 階段2 ultimate = 紅 (Unity Color.red)
+  ],
 } as const;
+
+/**
+ * 能量格階段色（純函式，對齊 Unity）：stage 0/1/2 → 黃/青/紅；超出範圍循環（% 3）。
+ * 抽成純函式方便單元測試（測騎）。stage 為 EnergySystem.getSkillStage 回傳。
+ */
+export function energyStageColor(stage: number): number {
+  const palette = ENERGY_BAR_LAYOUT.stageColors;
+  const idx = ((Math.floor(stage) % palette.length) + palette.length) % palette.length;
+  return palette[idx];
+}
 
 /**
  * B. 下方面板（螢幕底部固定，4 欄 P1~P4 橫排）。

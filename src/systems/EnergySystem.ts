@@ -124,4 +124,14 @@ export class EnergySystem implements GameSystem {
   isReady(playerId: number): boolean {
     return this.stateOf(playerId).ready;
   }
+
+  /**
+   * 當前招式階段（純讀取，供 UI 能量格變色，對齊 Unity GetCurrentGaugeColor）。
+   * Full 模式：cycleIndex % 3（0=skill1/1=skill2/2=ultimate）。
+   * HumanSimple 模式：永遠 skill1 → 0。不改任何充能狀態。
+   */
+  getSkillStage(playerId: number): number {
+    if (this.profileOf(playerId).mode !== 'Full') return 0;
+    return this.stateOf(playerId).cycleIndex % FULL_SKILL_CYCLE.length;
+  }
 }

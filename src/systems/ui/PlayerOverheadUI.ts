@@ -305,6 +305,11 @@ export class PlayerOverheadUI {
     this.energyBar.setEnergy(value);
   }
 
+  /** 設定能量階段（0=skill1/1=skill2/2=ultimate）→ 能量格黃/青/紅。接 energy.getSkillStage。 */
+  setEnergyStage(stage: number): void {
+    this.energyBar.setStage(stage);
+  }
+
   /** 每幀推進能量滿格閃爍。 */
   updateEnergy(dt: number): void {
     this.energyBar.update(dt);

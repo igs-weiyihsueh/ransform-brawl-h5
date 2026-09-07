@@ -168,6 +168,7 @@ export class UISystem implements GameSystem {
       overhead.setComboWarning(this.ctx.combo.isWarning(pid));
       if (this.ctx.combo.consumeMaxTriggered(pid)) overhead.showMaxCombo();
       overhead.setEnergy(this.ctx.energy.getEnergy(pid));
+      overhead.setEnergyStage(this.ctx.energy.getSkillStage(pid));
       overhead.updateEnergy(dt);
     }
 
