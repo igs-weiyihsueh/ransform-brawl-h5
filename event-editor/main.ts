@@ -183,6 +183,11 @@ function frApply(): boolean {
 let gdFile: GuardFile = defaultGuardFile();
 let gdCurrent: string = Object.keys(gdFile.presets)[0] ?? 'Guard60';
 let gdZoom = 1;
+// 實際雕像圖（遊戲用 ui-statue = assets/images/ui/statue.png，148×292 直式）：預覽畫真圖非文字方塊。
+const gdStatueRef = new Image();
+let gdStatueLoaded = false;
+gdStatueRef.addEventListener('load', () => { gdStatueLoaded = true; gdRender(); });
+gdStatueRef.src = '../assets/images/ui/statue.png';
 
 function gdPreset(): GuardPreset { return gdFile.presets[gdCurrent]; }
 
@@ -237,10 +242,30 @@ function gdRender(): void {
   ctx.strokeStyle = '#59d98e'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]);
   ctx.beginPath(); ctx.arc(cx, cy, p.spawnRadiusPx * scale, 0, Math.PI * 2); ctx.stroke();
   ctx.setLineDash([]);
-  const stW = 60 * scale, stH = 90 * scale;
-  ctx.fillStyle = '#6c8cff'; ctx.fillRect(cx - stW / 2, cy - stH / 2, stW, stH);
-  ctx.fillStyle = '#9a9ab5'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('雕像', cx, cy + stH / 2 + 14);
+  // 雕像：實際 ui-statue 圖（148×292 直式），等比縮到視覺高 statueHeightPx（對齊遊戲 GuardTarget）；未載到退回方塊佔位。
+  const d2 = GUARD_STATUE_UI_DEFAULTS;
+  const statueHpx = (p.statueHeightPx ?? d2.statueHeightPx) * scale;
+  let dispW: number;
+  if (gdStatueLoaded && gdStatueRef.naturalWidth > 0) {
+    const ratio = gdStatueRef.naturalWidth / gdStatueRef.naturalHeight; // 148/292
+    dispW = statueHpx * ratio;
+    ctx.drawImage(gdStatueRef, cx - dispW / 2, cy - statueHpx / 2, dispW, statueHpx);
+  } else {
+    dispW = statueHpx * 0.507; // 148:292 比例佔位
+    ctx.fillStyle = '#6c8cff'; ctx.fillRect(cx - dispW / 2, cy - statueHpx / 2, dispW, statueHpx);
+    ctx.fillStyle = '#9a9ab5'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('雕像(圖載入中)', cx, cy + statueHpx / 2 + 14);
+  }
+  // 「守護目標」標籤（labelOffsetYPx，負=上方；對齊遊戲）。
+  const labelOy = (p.labelOffsetYPx ?? d2.labelOffsetYPx) * scale;
+  ctx.fillStyle = '#ffe64d'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('守護目標', cx, cy + labelOy);
+  // 血條視覺（barWidthPx/barHeightPx/barOffsetYPx，底框 0x333333 + 填充 0x66bb6a，對齊遊戲 GuardTarget；預覽填滿示意）。
+  const barW = (p.barWidthPx ?? d2.barWidthPx) * scale;
+  const barH = (p.barHeightPx ?? d2.barHeightPx) * scale;
+  const barOy = cy + (p.barOffsetYPx ?? d2.barOffsetYPx) * scale;
+  ctx.fillStyle = '#333333'; ctx.fillRect(cx - barW / 2, barOy - barH / 2, barW, barH); // 底框
+  ctx.fillStyle = '#66bb6a'; ctx.fillRect(cx - barW / 2, barOy - (barH - 2 * scale) / 2, barW, Math.max(1, barH - 2 * scale)); // 填充（滿）
   const ox = p.cornerOffsetXPx * scale, oy = p.cornerOffsetYPx * scale;
   const corners = [[cx - ox, cy - oy], [cx + ox, cy - oy], [cx - ox, cy + oy], [cx + ox, cy + oy]];
   corners.forEach(([x, y], i) => {
