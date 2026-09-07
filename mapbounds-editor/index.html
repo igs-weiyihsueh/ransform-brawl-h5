@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>地圖邊界編輯器 — 變身大亂鬥 H5</title>
+    <style>
+      /* 獨立頁：掛載點吃滿視窗（樣式本體由 main.ts 注入，命名空間 .tb-editor-root）。 */
+      html, body { margin: 0; padding: 0; height: 100%; background: #1a1a2e; }
+      #tb-editor-standalone { height: 100vh; }
+    </style>
+  </head>
+  <body>
+    <!-- mount 化（方案 A'）：主體 HTML/樣式由 main.ts 於 mount() 注入到此掛載點。 -->
+    <div id="tb-editor-standalone"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

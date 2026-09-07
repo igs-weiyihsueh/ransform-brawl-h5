@@ -9,8 +9,9 @@
  */
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { FOOT_GLOW } from '@/config/playerConfig';
+import { getResolvedMapBoundsUnits } from '@/config/mapBoundsSchema';
 
-/** Unity 世界單位邊界（中心原點）。改數值請對照 Unity MapConfig。 */
+/** Unity 世界單位邊界（中心原點）打包預設。改數值請對照 Unity MapConfig；地圖邊界編輯器可 override。 */
 export const MAP_BOUNDS_UNITS = {
   minX: -8,
   maxX: 8,
@@ -18,12 +19,18 @@ export const MAP_BOUNDS_UNITS = {
   maxY: 4,
 } as const;
 
-/** H5 螢幕像素邊界（左上原點）：由 Unity 中心原點邊界換算。 */
+/**
+ * 生效的地圖邊界（unit）：localStorage override 優先，無則打包 MAP_BOUNDS_UNITS（第十五輪 地圖邊界編輯器）。
+ * 模組初始化讀一次（cache）；「套用→重開遊戲生效」。★座標可負可 0（resolveMapBounds 用 ??）。
+ */
+const RESOLVED_MAP_BOUNDS_UNITS = getResolvedMapBoundsUnits(MAP_BOUNDS_UNITS);
+
+/** H5 螢幕像素邊界（左上原點）：由 Unity 中心原點邊界換算（用生效的 resolved units）。 */
 export const MAP_BOUNDS = {
-  minX: GAME_WIDTH / 2 + MAP_BOUNDS_UNITS.minX * PPU, // 160
-  maxX: GAME_WIDTH / 2 + MAP_BOUNDS_UNITS.maxX * PPU, // 1760
-  minY: GAME_HEIGHT / 2 + MAP_BOUNDS_UNITS.minY * PPU, // 140
-  maxY: GAME_HEIGHT / 2 + MAP_BOUNDS_UNITS.maxY * PPU, // 940
+  minX: GAME_WIDTH / 2 + RESOLVED_MAP_BOUNDS_UNITS.minX * PPU, // 預設 160
+  maxX: GAME_WIDTH / 2 + RESOLVED_MAP_BOUNDS_UNITS.maxX * PPU, // 預設 1760
+  minY: GAME_HEIGHT / 2 + RESOLVED_MAP_BOUNDS_UNITS.minY * PPU, // 預設 140
+  maxY: GAME_HEIGHT / 2 + RESOLVED_MAP_BOUNDS_UNITS.maxY * PPU, // 預設 940
 } as const;
 
 /**

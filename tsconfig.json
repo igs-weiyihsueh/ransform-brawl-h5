@@ -27,5 +27,5 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src", "editor", "ui-editor", "enemy-editor", "skill-editor", "dash-editor", "event-editor", "hitfeel-editor", "chest-editor"]
+  "include": ["src", "editor", "ui-editor", "enemy-editor", "skill-editor", "dash-editor", "event-editor", "hitfeel-editor", "chest-editor", "mapbounds-editor"]
 }

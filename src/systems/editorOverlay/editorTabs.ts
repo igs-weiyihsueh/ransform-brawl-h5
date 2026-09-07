@@ -45,4 +45,9 @@ export const EDITOR_TABS: readonly EditorTabDef[] = [
     label: '打擊感編輯器',
     loader: () => import('../../../hitfeel-editor/main'),
   },
+  {
+    id: 'mapBounds',
+    label: '地圖邊界編輯器',
+    loader: () => import('../../../mapbounds-editor/main'),
+  },
 ];

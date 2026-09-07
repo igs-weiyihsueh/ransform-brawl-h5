@@ -27,6 +27,7 @@ export default defineConfig({
         dashEditor: fileURLToPath(new URL('./dash-editor/index.html', import.meta.url)),
         eventEditor: fileURLToPath(new URL('./event-editor/index.html', import.meta.url)),
         chestEditor: fileURLToPath(new URL('./chest-editor/index.html', import.meta.url)),
+        mapBoundsEditor: fileURLToPath(new URL('./mapbounds-editor/index.html', import.meta.url)),
       },
     },
   },
