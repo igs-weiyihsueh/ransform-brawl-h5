@@ -212,6 +212,9 @@ export class WaveSystem implements GameSystem {
       this.fireRainActive = false;
       this.fireRainRemaining = 0;
       this.rewardHold = 0;
+      // 對齊 Unity：節點跳過（skip）→ ClearAllActiveEnemies 清場上所有怪，別把舊怪帶進下一節點。
+      //   守護波 forceFinish 已清（再清一次無害/冪等）；Spawn/火雨/Reward skip 靠這行補清。
+      this.ctx.spawner.clearAllEnemies();
       this.advanceNode(); // enterNode 會重置 kills/cooldown 等（進新節點）
       return;
     }
