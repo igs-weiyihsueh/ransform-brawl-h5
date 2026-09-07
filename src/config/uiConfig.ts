@@ -142,6 +142,25 @@ export const OVERHEAD_LAYOUT = {
     coinSize: 22,
     /** stub 佔位顯示值。 */
     placeholder: '00000',
+    /**
+     * 沒 Credit（耗盡）演出（對齊 Unity credit=0：閃紅 + 投幣提示 + 倒數回待機）。
+     * 角色本體閃紅由核心 CreditSystem 處理；此處是「HUD credit 顯示區」的演出。
+     */
+    outOfCredit: {
+      /** credit 數字閃紅色。 */
+      flashColor: '#ff3b30',
+      /** 閃爍半週期（毫秒）。 */
+      blinkMs: 300,
+      /** 投幣提示文字（對照 Unity CoinHint）。 */
+      hintText: '投幣 (C)',
+      /** 提示文字色。 */
+      hintColor: '#ffe14d',
+      hintFontSize: '18px',
+      /** 提示文字相對 credit 底框的 y 偏移（正=下方）。 */
+      hintOffsetY: 26,
+      /** 倒數是否顯示秒數（附在提示後，如「投幣 (C) 9」）。 */
+      showCountdown: true,
+    },
   },
 
   /** 能量 4 格（SkillGauge Slot0~3，水平排；搬自原能量條）。 */

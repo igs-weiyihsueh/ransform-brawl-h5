@@ -164,6 +164,11 @@ export class UISystem implements GameSystem {
       overhead.setSoulVisible(transformed);
       if (transformed) overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
       overhead.setCredit(this.ctx.credit.getCredit(pid));
+      // 沒 Credit 演出（閃紅 + 投幣提示 + 倒數）：讀 CreditSystem 耗盡狀態（只讀）。
+      overhead.setOutOfCredit(
+        this.ctx.credit.isOutOfCredit(pid),
+        this.ctx.credit.getCountdown(pid),
+      );
       overhead.setCombo(this.ctx.combo.getCombo(pid));
       overhead.setComboWarning(this.ctx.combo.isWarning(pid));
       if (this.ctx.combo.consumeMaxTriggered(pid)) overhead.showMaxCombo();

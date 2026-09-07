@@ -29,6 +29,8 @@ export class PlayerOverheadUI {
   /** 魂力環底圖（ring.png，用戶 #1：變身前隱藏魂力條）；無 sprite 則 null。 */
   private readonly ringImg: Phaser.GameObjects.Image | null = null;
   private readonly creditText: Phaser.GameObjects.Text;
+  /** 沒 Credit 投幣提示文字（對照 Unity CoinHint），預設隱藏。 */
+  private readonly coinHintText: Phaser.GameObjects.Text;
   private readonly comboText: Phaser.GameObjects.Text;
   private readonly maxText: Phaser.GameObjects.Text;
   private readonly energyBar: EnergyBar;
@@ -48,6 +50,9 @@ export class PlayerOverheadUI {
   private maxTween?: Phaser.Tweens.Tween;
   /** COMBO 跳動放大 tween（PunchEffect；連續 combo 防重入重啟）。 */
   private comboPunchTween?: Phaser.Tweens.Tween;
+  /** 沒 Credit 閃紅旗標 + tween（防重入）。 */
+  private outOfCredit = false;
+  private creditFlashTween?: Phaser.Tweens.Tween;
   /** 保存 scene 以供 tween 使用。 */
   private readonly scene: Phaser.Scene;
   /** 是否已用 ring.png 當魂力環底圖（true 時 setSoul 不再畫底槽環，只畫填充弧）。 */
@@ -133,6 +138,20 @@ export class PlayerOverheadUI {
       .setOrigin(0, 0.5);
     this.container.add(this.creditText);
     this.groupCredit.push(this.creditText);
+
+    // 沒 Credit 投幣提示（對照 Unity CoinHint）：預設隱藏，setOutOfCredit(true) 時顯示+閃。
+    const oc = cfg.credit.outOfCredit;
+    this.coinHintText = scene.add
+      .text(cfg.credit.x, cfg.credit.y + cfg.credit.height + oc.hintOffsetY, oc.hintText, {
+        fontFamily: HUD_FONT_FAMILY,
+        fontSize: oc.hintFontSize,
+        color: oc.hintColor,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setVisible(false);
+    this.container.add(this.coinHintText);
+    this.groupCredit.push(this.coinHintText);
 
     // --- 能量 4 格（嵌入容器）---
     this.energyBar = new EnergyBar(scene, this.container, cfg.energy.x, cfg.energy.y);
@@ -231,6 +250,45 @@ export class PlayerOverheadUI {
     this.shownCredit = value;
     // 補零到 5 位（對照 Unity 99999 樣式）。
     this.creditText.setText(`${Math.max(0, Math.floor(value))}`.padStart(5, '0'));
+  }
+
+  /**
+   * 沒 Credit 演出（對齊 Unity credit=0：閃紅 + 投幣提示 + 倒數）。純顯示層：
+   * 讀 credit.isOutOfCredit(pid)/getCountdown(pid) 傳入，不回寫核心。
+   * 角色本體閃紅由核心 CreditSystem 處理；此處是 HUD credit 顯示區的演出。
+   * @param active 是否耗盡（credit=0）。
+   * @param countdown 剩餘倒數秒數（用於提示文字附秒數；可省）。
+   */
+  setOutOfCredit(active: boolean, countdown = 0): void {
+    const oc = OVERHEAD_LAYOUT.credit.outOfCredit;
+    if (active !== this.outOfCredit) {
+      this.outOfCredit = active;
+      if (active) {
+        this.coinHintText.setVisible(true);
+        // credit 數字閃紅（yoyo 無限）。
+        this.creditText.setColor(oc.flashColor);
+        this.creditFlashTween = this.scene.tweens.add({
+          targets: [this.creditText, this.coinHintText],
+          alpha: { from: 1, to: 0.3 },
+          duration: oc.blinkMs,
+          yoyo: true,
+          repeat: -1,
+        });
+      } else {
+        // 復原：停閃、還原色與透明度、藏提示。
+        this.creditFlashTween?.stop();
+        this.creditFlashTween = undefined;
+        this.creditText.setAlpha(1).setColor(HUD_COLORS.text);
+        this.coinHintText.setAlpha(1).setVisible(false);
+      }
+    }
+    // 倒數秒數附在提示後（如「投幣 (C) 9」）。
+    if (active && oc.showCountdown) {
+      const secs = Math.max(0, Math.ceil(countdown));
+      this.coinHintText.setText(`${oc.hintText} ${secs}`);
+    } else if (active) {
+      this.coinHintText.setText(oc.hintText);
+    }
   }
 
   /**
@@ -355,6 +413,7 @@ export class PlayerOverheadUI {
     this.warnTween?.stop();
     this.maxTween?.stop();
     this.comboPunchTween?.stop();
+    this.creditFlashTween?.stop();
     this.energyBar.destroy();
     this.container.destroy(); // 連同容器內所有子物件一併銷毀
   }
