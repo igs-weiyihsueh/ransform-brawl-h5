@@ -15,6 +15,7 @@ import {
   pushOutOfPlayer,
   isChargeInvulnerable,
   shouldEnterCharge,
+  SEPARATION_RADIUS_PX,
 } from '@/systems/enemySeparation';
 import { slotApproachDir, SLOT_REACH_THRESHOLD_PX, TRAVELER_AVOID_WEIGHT } from '@/systems/surroundSlots';
 import {
@@ -288,6 +289,7 @@ export class Enemy implements Hittable {
   private moveChase(aimDx: number, aimDy: number, dt: number): void {
     const speedPx = this.cfg.moveSpeed * PPU;
     const selfPos = { x: this.anim.sprite.x, y: this.anim.sprite.y };
+    const sepR = this.separationRadiusPx(); // 十五輪回歸修②：separation 半徑隨 body scale（大菁英避讓區更大）
 
     if (this.slotPos && this.slotRingCenter) {
       const ddx = this.slotPos.x - selfPos.x;
@@ -299,7 +301,7 @@ export class Enemy implements Hittable {
         const aim = { x: selfPos.x + aimDx, y: selfPos.y + aimDy }; // 還原目標絕對座標供攻擊 shape 判定
         if (this.canReachTarget(aim)) return; // 攻擊 shape 已涵蓋→停在槽
         // 到槽但攻擊 shape 搆不到 → 直接朝目標 body 逼近(疊分離力)，進攻擊 shape 才停。
-        const sep = calculateSeparation(selfPos, this.neighbors);
+        const sep = calculateSeparation(selfPos, this.neighbors, sepR);
         const dir = combineWithSeparation({ x: aimDx, y: aimDy }, sep);
         this.anim.sprite.x += dir.x * speedPx * dt;
         this.anim.sprite.y += dir.y * speedPx * dt;
@@ -307,7 +309,7 @@ export class Enemy implements Hittable {
       }
       // 未到槽：繞圈趨近方向 + 趕路避讓（較高 separation weight 繞開彼此）。
       const approach = slotApproachDir(selfPos, this.slotRingCenter, this.slotPos);
-      const sep = calculateSeparation(selfPos, this.neighbors);
+      const sep = calculateSeparation(selfPos, this.neighbors, sepR);
       const dir = combineWithSeparation(approach, sep, TRAVELER_AVOID_WEIGHT);
       this.anim.sprite.x += dir.x * speedPx * dt;
       this.anim.sprite.y += dir.y * speedPx * dt;
@@ -315,10 +317,20 @@ export class Enemy implements Hittable {
     }
 
     // fallback：無槽 → 原分離力直線追擊。
-    const sep = calculateSeparation(selfPos, this.neighbors);
+    const sep = calculateSeparation(selfPos, this.neighbors, sepR);
     const dir = combineWithSeparation({ x: aimDx, y: aimDy }, sep);
     this.anim.sprite.x += dir.x * speedPx * dt;
     this.anim.sprite.y += dir.y * speedPx * dt;
+  }
+
+  /**
+   * 十五輪回歸修②：soft-separation 避讓半徑隨 body scale。
+   * 原 SEPARATION_RADIUS_PX=60px 對大菁英(scale4 body radius 180、直徑 360)遠小於體型→ soft 避讓幾乎不作用，
+   * 只剩 hard de-overlap 硬解→大菁英趨近雕像時擠團互推。改為 base(60) + 自己 body 半徑：大菁英提早繞開彼此，
+   * 環繞趨近時避讓足不擠團。基準怪 radiusPx=45 → 60+45=105（略增，仍溫和），大菁英隨體型放大。
+   */
+  private separationRadiusPx(): number {
+    return SEPARATION_RADIUS_PX + this.radiusPx;
   }
 
   /** 定身（麻痺/凍結）剩餘秒數：>0 時 update 停止行動（移動/攻擊）。 */
@@ -579,8 +591,11 @@ export class Enemy implements Hittable {
             this.chargeFx =
               this.hitFeelFx?.enemyCharge?.(cpos.x, footY, this.cfg.chargeTime * 1000, diskPx) ?? null;
           }
-        } else if (dist <= detectPx && dist > 0.001) {
-          this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加（含 attackRange 內但形狀外→再逼近，根治空揮）
+        } else if (this.guardTarget || (dist <= detectPx && dist > 0.001)) {
+          // 十五輪回歸修①：有守護目標(雕像)＝一律朝雕像逼近（雕像是圍攻目標，非「偵測到才追」），
+          //   不受 detectRange gate → 被 de-overlap/雕像頂開推到 detectRange 外時仍走回來，不再落 else 純 idle 凍死。
+          //   對玩家維持 detectPx gate（偵測範圍外不追，行為不變）。
+          if (dist > 0.001) this.moveChase(dx, dy, dt); // 追擊 + 分離力疊加（含 attackRange 內但形狀外→再逼近，根治空揮）
           // surround(征騎)：已到槽定位→idle(停走姿)，否則 move(趕路)。
           this.anim.play(this.slotPos && this.isAtSlot(SLOT_REACH_THRESHOLD_PX) ? 'idle' : 'move');
         } else {
