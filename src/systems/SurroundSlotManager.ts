@@ -5,6 +5,7 @@ import {
   decodeSlotId,
   slotWorldPos,
   tryClaimInnerSlot,
+  tryClaimBalanceSlot,
   type SurroundParams,
 } from '@/systems/surroundSlots';
 
@@ -114,6 +115,23 @@ export class SurroundSlotManager {
     this.slotToEnemy.delete(cur);
     this.assign(enemyId, innerId);
     return innerId;
+  }
+
+  /**
+   * 十六輪③：橫向失衡矯正（明顯失衡才遷移、抗抖）——把堆在最擠象限的怪遷到明顯較空象限的同層空槽。
+   * 原子：釋放舊槽 + 佔新槽。呼叫端須以冷卻 gate（遷移後一段時間不再遷）避免抖動。
+   * @returns 遷移後新 slotId，或 -1（未失衡/無較空象限空槽/未持槽，原槽不變）。
+   */
+  tryClaimBalance(enemyId: number, enemyPos: Vec2, minLayer: number): number {
+    const cur = this.enemyToSlot.get(enemyId);
+    if (cur === undefined) return -1; // 未持槽不遷
+    const occupied = this.occupiedSet(); // ★含自己（象限擁擠統計需含）
+    const balanceId = tryClaimBalanceSlot(enemyPos, this.getRingCenter(), cur, occupied, this.params, minLayer);
+    if (balanceId < 0) return -1;
+    // 原子遷移：釋放舊、佔新。
+    this.slotToEnemy.delete(cur);
+    this.assign(enemyId, balanceId);
+    return balanceId;
   }
 
   /** 釋放敵人持有的槽（死亡/離開 chase/換目標）。無槽則 no-op。 */

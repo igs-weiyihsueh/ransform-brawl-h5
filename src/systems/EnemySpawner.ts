@@ -82,6 +82,8 @@ export class EnemySpawner {
    * 用底層物件(player/guard 實例)當 key 快取同一個 adapter，維持 manager 一對一。
    */
   private readonly surroundAdapters = new WeakMap<object, ISurroundTarget>();
+  /** 十六輪③：橫向失衡遷移的 per-enemy 冷卻（秒）——遷移後一段時間不再遷，抗抖。 */
+  private readonly balanceCooldownById = new Map<number, number>();
 
   /** 取得（或建立快取）某玩家的環繞 adapter。IsSurroundActive = 非待機 且 非衝刺（七輪#11 對齊 Unity：衝刺時 surround 失效→敵人不環繞不推玩家、真空圈判定失效，衝刺直直穿）。 */
   private playerAsSurroundTarget(p: Player): ISurroundTarget {
@@ -138,7 +140,9 @@ export class EnemySpawner {
    * 目標不可環繞/全滿 → 釋放舊槽 + slotTarget(null)（fallback 一般 moveChase 分離力追擊）。
    * claim 後持有、不被動遞補，只 tryClaimInner 往更內層遞補（避免抖動；Unity 設計）。
    */
-  private coordinateSurround(): void {
+  private coordinateSurround(dt: number): void {
+    // 十六輪③：橫向失衡遷移冷卻（秒）——遷移後 1.5s 內不再遷同一隻（抗抖，同時夠快讓下方堆積散開）。
+    const BALANCE_COOLDOWN_SEC = 1.5;
     for (const e of this.enemies) {
       if (e.isDead()) continue;
       // grabber（抓人者）不走環繞（由 GrabSystem 驅動）。
@@ -163,6 +167,18 @@ export class EnemySpawner {
       if (slotId >= 0) {
         const inner = mgr.tryClaimInner(e.id, enemyPos, minLayer);
         if (inner >= 0) slotId = inner;
+      }
+
+      // 十六輪③：橫向失衡矯正（附加層，明顯失衡+冷卻才遷移，抗抖；不改就近入槽主邏輯）。
+      const cd = this.balanceCooldownById.get(e.id) ?? 0;
+      if (cd > 0) {
+        this.balanceCooldownById.set(e.id, cd - dt);
+      } else if (slotId >= 0) {
+        const balanced = mgr.tryClaimBalance(e.id, enemyPos, minLayer);
+        if (balanced >= 0) {
+          slotId = balanced;
+          this.balanceCooldownById.set(e.id, BALANCE_COOLDOWN_SEC); // 遷移後冷卻，避免反覆換槽
+        }
       }
 
       if (slotId < 0) {
@@ -199,7 +215,7 @@ export class EnemySpawner {
     // separation：每幀給每個敵人「其他敵人位置」清單。
     const positions = this.enemies.map((e) => e.getHitCenter());
     // 槽位環繞協調：每幀在 update 前 claim/遞補/釋放，設好各敵人本幀 slot 目標（e.update 讀它決定繞圈到槽或 fallback 追擊）。
-    this.coordinateSurround();
+    this.coordinateSurround(dt);
     for (let i = 0; i < this.enemies.length; i += 1) {
       const e = this.enemies[i];
       e.setNeighbors(positions.filter((_, j) => j !== i));
@@ -300,7 +316,10 @@ export class EnemySpawner {
     this.projectiles = this.projectiles.filter((p) => !p.isDead());
     // 死亡敵人移除前先釋放其環繞槽（前排死→內圈空→外層怪 tryClaimInner 遞補進來）。
     const dead = this.enemies.filter((e) => e.isDead());
-    for (const e of dead) this.releaseSurroundFor(e);
+    for (const e of dead) {
+      this.releaseSurroundFor(e);
+      this.balanceCooldownById.delete(e.id); // 十六輪③：清失衡遷移冷卻（避免 map 洩漏）
+    }
     this.enemies = this.enemies.filter((e) => !e.isDead());
   }
 

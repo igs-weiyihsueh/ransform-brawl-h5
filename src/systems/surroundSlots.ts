@@ -192,6 +192,82 @@ export function tryClaimInnerSlot(
   return -1;
 }
 
+
+/**
+ * 十六輪③：橫向失衡矯正（純函式，抽給測騎）——怪從單一方向逼近會堆同側、對側空槽沒補（用戶：卡搜索圈下方）。
+ * 把環依角度分 4 象限（右/下/左/上，以 ringCenter 為心），統計各象限「已佔槽數」。
+ * 只在「明顯失衡」時觸發遷移（保守抗抖，不違 Unity 就近入槽主邏輯，只當附加矯正層）：
+ *   - 敵人當前槽所在象限為「最擠」，且存在某象限 count <= 本象限 count − imbalanceThreshold（明顯較空）；
+ *   - 在較空象限找離敵人最近的空槽（同層優先：限定與當前槽同層，避免跨層改變環形結構/與 tryClaimInner 打架）。
+ * 回傳可遷移的 slotId，或 -1（未失衡/無更空象限空槽/不該動）。呼叫端做原子釋放+claim，並加冷卻。
+ *
+ * @param enemyPos 敵人當前位置（像素）。
+ * @param ringCenter 環中心（像素）。
+ * @param currentSlotId 敵人當前持有的 slotId。
+ * @param occupied 已佔用 slotId 集合（★需含本敵人當前槽，統計象限擁擠才正確）。
+ * @param params 幾何參數。
+ * @param imbalanceThreshold 失衡閾值（本象限 − 目標象限 槽數差 >= 此值才遷移，預設 2，保守抗抖）。
+ * @returns 遷移目標 slotId，或 -1。
+ */
+export function tryClaimBalanceSlot(
+  enemyPos: Vec2,
+  ringCenter: Vec2,
+  currentSlotId: number,
+  occupied: ReadonlySet<number>,
+  params: SurroundParams,
+  minLayer: number = 0,
+  imbalanceThreshold: number = 1,
+): number {
+  // 角度→象限 index（0=右 -45..45 / 1=下 45..135 / 2=左 135..-135 / 3=上 -135..-45）。
+  const quadOf = (x: number, y: number): number => {
+    const deg = (Math.atan2(y - ringCenter.y, x - ringCenter.x) * 180) / Math.PI;
+    if (deg >= -45 && deg < 45) return 0; // 右
+    if (deg >= 45 && deg < 135) return 1; // 下
+    if (deg >= 135 || deg < -135) return 2; // 左
+    return 3; // 上
+  };
+
+  // 統計各象限已佔槽數（含自己）。
+  const counts = [0, 0, 0, 0];
+  for (const id of occupied) {
+    const { layer, index } = decodeSlotId(id);
+    const pos = slotWorldPos(ringCenter, layer, index, params);
+    counts[quadOf(pos.x, pos.y)] += 1;
+  }
+
+  const curDec = decodeSlotId(currentSlotId);
+  const curPos = slotWorldPos(ringCenter, curDec.layer, curDec.index, params);
+  const curQuad = quadOf(curPos.x, curPos.y);
+
+  // 只在「本象限是最擠之一」時才考慮遷移（避免本來就空的象限亂遷）。
+  const maxCount = Math.max(...counts);
+  if (counts[curQuad] < maxCount) return -1; // 本象限非最擠 → 不動
+
+  // 找「明顯較空」象限的空槽（跨層 minLayer..maxLayers，多候選讓下方堆積能遷到上方空位）；
+  //   優先同層（維持環形結構）→ 同層無則其它層；同象限內取離敵人最近。
+  let bestId = -1;
+  let bestScore = Infinity; // score = distSq + 跨層懲罰（優先同層）
+  for (let layer = Math.max(0, minLayer); layer < params.maxLayers; layer += 1) {
+    const count = slotCountForLayer(layer, params);
+    for (let index = 0; index < count; index += 1) {
+      const id = encodeSlotId(layer, index);
+      if (id === currentSlotId) continue;
+      if (occupied.has(id)) continue; // 只遷到空槽
+      const pos = slotWorldPos(ringCenter, layer, index, params);
+      const q = quadOf(pos.x, pos.y);
+      if (counts[q] > counts[curQuad] - imbalanceThreshold) continue; // 該象限不夠空 → 跳過
+      const dx = pos.x - enemyPos.x;
+      const dy = pos.y - enemyPos.y;
+      const layerPenalty = layer === curDec.layer ? 0 : 40000; // 優先同層（跨層加懲罰≈200px²）
+      const score = dx * dx + dy * dy + layerPenalty;
+      if (score < bestScore) {
+        bestScore = score;
+        bestId = id;
+      }
+    }
+  }
+  return bestId; // -1=無明顯較空象限的空槽
+}
 /**
  * 繞圈趨近位移方向（純向量，趕路用）：不是直線穿過中央人群（會互卡），
  * 而是「徑向趨近該層半徑 + 切線繞到槽角度」的混合方向（未正規化的方向，由呼叫端 × 速度）。
