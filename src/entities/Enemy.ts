@@ -654,7 +654,7 @@ export class Enemy implements Hittable {
         this.facing,
         this.scaleFactor,
         gc,
-        gr, // 雕像判定半徑（非玩家半徑）
+        gr + this.guardReachBonusPx(), // 十五輪回歸修：大身體被頂到雕像外緣的補償（見 guardReachBonusPx）
         ATTACK_SIZE_SCALE, // 十五輪：到達/停止基準的攻擊範圍不隨體型（與傷害圓同 sizeScale=1）
       );
     }
@@ -667,6 +667,19 @@ export class Enemy implements Hittable {
       PLAYER_HIT_RADIUS * PPU,
       ATTACK_SIZE_SCALE, // 十五輪：同上，停止基準＝攻擊基準（範圍固定）
     );
+  }
+
+  /**
+   * 十五輪回歸修（菁英雕像旁卡死）：大身體怪被防穿透(pushOutOfObstacle)頂到雕像外緣，
+   * 距離 = 雕像半徑 + 自己 radiusPx(隨 scaleFactor 放大)。但攻擊範圍拆開後 sizeScale=1（不隨體型），
+   * 大怪在被頂開的遠距離攻擊 shape 搆不到雕像 → canReachTarget false → 判定沒到→靠近→又被頂開→來回卡死。
+   *
+   * 補償：只對 immovable 雕像，補回「大身體被頂開超出基準身體的距離」= radiusPx − 基準 radiusPx（= 45×(scaleFactor−1)，
+   * 基準怪=0 不受影響）。等同用「身體外緣＋攻擊範圍 vs 雕像」（與 de-overlap 頂開基準一致），而非怪中心。
+   * ★純用於雕像的觸及/停止 + 對雕像的傷害圓（見 fireAttack），不放大對玩家的攻擊範圍、不放大一般傷害範圍。
+   */
+  private guardReachBonusPx(): number {
+    return Math.max(0, this.radiusPx - ENEMY_BODY_RADIUS_PX);
   }
 
   private fireAttack(playerPos: Vec2): void {
@@ -714,12 +727,15 @@ export class Enemy implements Hittable {
       // 近戰圓形判定：offset 隨 perCharScale 放大（菁英大範圍）。七輪#3：offset 朝 aim(playerPos)＝與 canReachTarget 同基準。
       // 十五輪：攻擊範圍尺寸不隨體型(sizeScale=1)，offset 位置仍對變大的身體(scaleFactor)。與 canReachTarget 同 sizeScale=1 一致。
       const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, playerPos, ATTACK_SIZE_SCALE);
+      // 十五輪回歸修：打雕像(immovable)時傷害圓半徑補回大身體被頂開的距離，與 canReachTarget 對雕像的觸及基準一致
+      //   → 大菁英被頂到雕像外緣後「停下就打得到」(不再停了卻空揮)。只對雕像，不影響對玩家的傷害範圍。
+      const meleeRadius = circle.radius + (this.guardTarget ? this.guardReachBonusPx() : 0);
       this.onAttack?.({
         kind: 'melee',
         sourceName: this.cfg.characterKey,
         damage: a.damage,
         knockback: a.knockback,
-        meleeCircle: { center: circle.center, radius: circle.radius },
+        meleeCircle: { center: circle.center, radius: meleeRadius },
       });
     } else {
       // 射彈：朝玩家方向，從身體前方生成。
