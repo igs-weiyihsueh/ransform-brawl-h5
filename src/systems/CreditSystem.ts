@@ -34,14 +34,27 @@ export class CreditSystem implements GameSystem {
     this.states.clear();
   }
 
-  /** 取得（或惰性建立）某玩家的 Credit 狀態，初始 = 起始值。 */
+  /**
+   * 取得（或惰性建立）某玩家的 Credit 狀態。
+   * ★正解 B（用戶回報「按 C 進場 credit=200」根治）：waiting 玩家初始 credit=0，進場靠投幣 addCredit(100)=100；
+   * 非 waiting（已加入/測試 stub 無 isWaiting）維持 STARTING_CREDIT 語意（不破 credit 測試對「已加入玩家起始 credit」的假設、對齊 Unity 初始 100）。
+   * 真因：原惰性建立一律給 STARTING(100)，waiting 玩家首次 C 進場 stateOf(100)+addCredit(100)=200。
+   */
   private stateOf(playerId: number): CreditState {
     let s = this.states.get(playerId);
     if (!s) {
-      s = { credit: STARTING_CREDIT, outOfCredit: false, countdown: 0, justExpired: false };
+      const initial = this.playerIsWaiting(playerId) ? 0 : STARTING_CREDIT;
+      s = { credit: initial, outOfCredit: false, countdown: 0, justExpired: false };
       this.states.set(playerId, s);
     }
     return s;
+  }
+
+  /** 該玩家目前是否在待機（找 ctx.players/ctx.player；查無或無 isWaiting→視為非待機，維持 STARTING 語意）。 */
+  private playerIsWaiting(playerId: number): boolean {
+    const players = this.ctx?.players ?? (this.ctx?.player ? [this.ctx.player] : []);
+    const p = players.find((pl) => pl.playerId === playerId);
+    return p?.isWaiting?.() ?? false;
   }
 
   update(dt: number): void {

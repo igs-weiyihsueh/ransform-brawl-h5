@@ -85,7 +85,8 @@ describe('投幣進場循環 — 整合（CreditSystem × playerLifecycle 狀態
   });
 
   it('active 命中扣 Credit：非耗盡可操控、扣到 0 進耗盡→凍結(canControlWhenActive=false)', () => {
-    const { sys } = makeLoop(1);
+    const { sys, players } = makeLoop(1);
+    players.forEach((p) => (p.lifecycle = 'active')); // 十五輪 CREDIT-B：此測驗「active 玩家」扣 credit → 需先進場(非 waiting)才有 STARTING credit
     expect(canControlWhenActive(sys.isOutOfCredit(0))).toBe(true); // 開場非耗盡可控
     sys.consumeOnHit(0);
     expect(sys.getCredit(0)).toBe(STARTING_CREDIT - CREDIT_PER_HIT);
@@ -152,7 +153,8 @@ describe('投幣進場循環 — per-player 獨立（多人各自 waiting/進場
   });
 
   it('P1 單獨耗盡倒數不影響 P0：各自倒數獨立', () => {
-    const { sys } = makeLoop(2);
+    const { sys, players } = makeLoop(2);
+    players.forEach((p) => (p.lifecycle = 'active')); // 十五輪 CREDIT-B：active 玩家才有 STARTING credit（waiting 初始 0）
     drainToExhaust(sys, 1);
     expect(sys.isOutOfCredit(1)).toBe(true);
     expect(sys.isOutOfCredit(0)).toBe(false);
