@@ -341,6 +341,23 @@ function buildScreenEditables(): Editable[] {
   return list;
 }
 
+/**
+ * 沒 credit 投幣提示 override（additive，schema 未定義 → 附掛在 credit.outOfCredit）。
+ * 惰性建立預設（對齊遊戲端 uiConfig 打包預設；編輯器不 import 遊戲模組故在此內聯）。
+ */
+interface OutOfCreditOverride {
+  flashColor?: string; blinkMs?: number; hintText?: string; hintColor?: string;
+  hintFontSize?: string; hintOffsetX?: number; hintOffsetY?: number; showCountdown?: boolean;
+}
+const OUT_OF_CREDIT_DEFAULT: Required<OutOfCreditOverride> = {
+  flashColor: '#ff3b30', blinkMs: 300, hintText: '投幣 (C)', hintColor: '#ffe14d',
+  hintFontSize: '18px', hintOffsetX: 0, hintOffsetY: 26, showCountdown: true,
+};
+function ensureOutOfCredit(credit: { outOfCredit?: OutOfCreditOverride }): OutOfCreditOverride {
+  if (!credit.outOfCredit) credit.outOfCredit = { ...OUT_OF_CREDIT_DEFAULT };
+  return credit.outOfCredit;
+}
+
 function buildOverheadEditables(): Editable[] {
   const list: Editable[] = [];
   const ov = layout.overhead;
@@ -355,6 +372,23 @@ function buildOverheadEditables(): Editable[] {
       if (r.y !== undefined) ov.credit.y = r.y;
       if (r.width !== undefined) ov.credit.width = r.width;
       if (r.height !== undefined) ov.credit.height = r.height;
+    },
+  });
+
+  // overhead.creditHint（沒 credit 投幣提示文字：位置可拖，文字/字級/顏色在 Inspector 調）
+  // schema 未定義 outOfCredit（additive，走 override 附掛），這裡惰性建立預設。
+  list.push({
+    key: 'overhead.creditHint', label: '沒credit投幣提示', origin: oOrigin, resizable: false,
+    get: () => {
+      const oc = ensureOutOfCredit(ov.credit as { outOfCredit?: OutOfCreditOverride });
+      const bx = ov.credit.x + (oc.hintOffsetX ?? 0);
+      const by = ov.credit.y + ov.credit.height + (oc.hintOffsetY ?? 26);
+      return { x: bx, y: by - 12, width: 96, height: 24 };
+    },
+    set: (r) => {
+      const oc = ensureOutOfCredit(ov.credit as { outOfCredit?: OutOfCreditOverride });
+      if (r.x !== undefined) oc.hintOffsetX = r.x - ov.credit.x;
+      if (r.y !== undefined) oc.hintOffsetY = r.y + 12 - (ov.credit.y + ov.credit.height);
     },
   });
 
@@ -977,6 +1011,60 @@ function renderInspector(): void {
     hint.textContent = '此元素尺寸由專屬參數（半徑/格數等）決定，這裡只調位置；細部尺寸請在 JSON 或請界騎調。';
     insp.appendChild(hint);
   }
+
+  // 沒 credit 投幣提示：額外開放文字/字級/顏色可調（override）。
+  if (ed.key === 'overhead.creditHint') {
+    const oc = ensureOutOfCredit(
+      (layout.overhead.credit as unknown) as { outOfCredit?: OutOfCreditOverride },
+    );
+    insp.appendChild(strRow('提示文字', oc.hintText ?? OUT_OF_CREDIT_DEFAULT.hintText, (v) => { oc.hintText = v; }));
+    insp.appendChild(strRow('字級 fontSize', oc.hintFontSize ?? OUT_OF_CREDIT_DEFAULT.hintFontSize, (v) => { oc.hintFontSize = v; }));
+    insp.appendChild(strRow('文字色 hintColor', oc.hintColor ?? OUT_OF_CREDIT_DEFAULT.hintColor, (v) => { oc.hintColor = v; }));
+    insp.appendChild(strRow('閃紅色 flashColor', oc.flashColor ?? OUT_OF_CREDIT_DEFAULT.flashColor, (v) => { oc.flashColor = v; }));
+    insp.appendChild(numStrRow('閃爍週期 blinkMs', oc.blinkMs ?? OUT_OF_CREDIT_DEFAULT.blinkMs, (v) => { oc.blinkMs = v; }));
+    const noteHint = document.createElement('div');
+    noteHint.className = 'hint';
+    noteHint.textContent = '文字/字級/顏色/位置皆可調；匯出 uiLayout.json 套用到遊戲。';
+    insp.appendChild(noteHint);
+  }
+}
+
+/** 字串欄位 Inspector row（文字內容/字級/顏色）。 */
+function strRow(label: string, value: string, onChange: (v: string) => void): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const lab = document.createElement('label');
+  lab.textContent = label;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = value;
+  input.addEventListener('focus', () => beginEdit());
+  input.addEventListener('change', () => { commitEdit(); renderStage(); });
+  input.addEventListener('input', () => { onChange(input.value); });
+  row.appendChild(lab);
+  row.appendChild(input);
+  return row;
+}
+
+/** 數字（存 number）Inspector row，供 blinkMs 等非座標數值。 */
+function numStrRow(label: string, value: number, onChange: (v: number) => void): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const lab = document.createElement('label');
+  lab.textContent = label;
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.step = 'any';
+  input.value = String(value);
+  input.addEventListener('focus', () => beginEdit());
+  input.addEventListener('change', () => { commitEdit(); renderStage(); });
+  input.addEventListener('input', () => {
+    const v = parseFloat(input.value);
+    if (Number.isFinite(v)) onChange(v);
+  });
+  row.appendChild(lab);
+  row.appendChild(input);
+  return row;
 }
 
 function numRow(ed: Editable, field: keyof Rect, label: string, value: number): HTMLDivElement {

@@ -53,6 +53,8 @@ export class PlayerOverheadUI {
   /** 沒 Credit 閃紅旗標 + tween（防重入）。 */
   private outOfCredit = false;
   private creditFlashTween?: Phaser.Tweens.Tween;
+  /** 解析後（含 override）的沒 credit 演出設定，供 setOutOfCredit 用。 */
+  private readonly outOfCreditCfg: typeof OVERHEAD_LAYOUT.credit.outOfCredit;
   /** 保存 scene 以供 tween 使用。 */
   private readonly scene: Phaser.Scene;
   /** 是否已用 ring.png 當魂力環底圖（true 時 setSoul 不再畫底槽環，只畫填充弧）。 */
@@ -139,15 +141,22 @@ export class PlayerOverheadUI {
     this.container.add(this.creditText);
     this.groupCredit.push(this.creditText);
 
-    // 沒 Credit 投幣提示（對照 Unity CoinHint）：預設隱藏，setOutOfCredit(true) 時顯示+閃。
+    // 沒 Credit 投幣提示（對照 Unity CoinHint）：表現/位置讀 override(resolveOverheadLayout)，
+    // 開放編輯器可調。預設隱藏，setOutOfCredit(true) 時顯示+閃。
     const oc = cfg.credit.outOfCredit;
+    this.outOfCreditCfg = oc;
     this.coinHintText = scene.add
-      .text(cfg.credit.x, cfg.credit.y + cfg.credit.height + oc.hintOffsetY, oc.hintText, {
-        fontFamily: HUD_FONT_FAMILY,
-        fontSize: oc.hintFontSize,
-        color: oc.hintColor,
-        fontStyle: 'bold',
-      })
+      .text(
+        cfg.credit.x + oc.hintOffsetX,
+        cfg.credit.y + cfg.credit.height + oc.hintOffsetY,
+        oc.hintText,
+        {
+          fontFamily: HUD_FONT_FAMILY,
+          fontSize: oc.hintFontSize,
+          color: oc.hintColor,
+          fontStyle: 'bold',
+        },
+      )
       .setOrigin(0, 0.5)
       .setVisible(false);
     this.container.add(this.coinHintText);
@@ -260,7 +269,7 @@ export class PlayerOverheadUI {
    * @param countdown 剩餘倒數秒數（用於提示文字附秒數；可省）。
    */
   setOutOfCredit(active: boolean, countdown = 0): void {
-    const oc = OVERHEAD_LAYOUT.credit.outOfCredit;
+    const oc = this.outOfCreditCfg;
     if (active !== this.outOfCredit) {
       this.outOfCredit = active;
       if (active) {

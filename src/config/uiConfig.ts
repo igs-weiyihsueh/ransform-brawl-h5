@@ -147,18 +147,21 @@ export const OVERHEAD_LAYOUT = {
      * 角色本體閃紅由核心 CreditSystem 處理；此處是「HUD credit 顯示區」的演出。
      */
     outOfCredit: {
-      /** credit 數字閃紅色。 */
+      /** credit 數字閃紅色（可 override）。 */
       flashColor: '#ff3b30',
-      /** 閃爍半週期（毫秒）。 */
+      /** 閃爍半週期（毫秒，可 override）。 */
       blinkMs: 300,
-      /** 投幣提示文字（對照 Unity CoinHint）。 */
+      /** 投幣提示文字（對照 Unity CoinHint，可 override）。 */
       hintText: '投幣 (C)',
-      /** 提示文字色。 */
+      /** 提示文字色（可 override）。 */
       hintColor: '#ffe14d',
+      /** 提示文字字級（可 override）。 */
       hintFontSize: '18px',
-      /** 提示文字相對 credit 底框的 y 偏移（正=下方）。 */
+      /** 提示文字相對 credit 底框左上的 x 偏移（可 override）。 */
+      hintOffsetX: 0,
+      /** 提示文字相對 credit 底框的 y 偏移（正=下方，可 override）。 */
       hintOffsetY: 26,
-      /** 倒數是否顯示秒數（附在提示後，如「投幣 (C) 9」）。 */
+      /** 倒數是否顯示秒數（附在提示後，如「投幣 (C) 9」，可 override）。 */
       showCountdown: true,
     },
   },
@@ -263,11 +266,18 @@ export function comboTierColorHex(count: number): string {
 export function resolveOverheadLayout(ov?: {
   offsetX?: number; offsetY?: number; width?: number; height?: number;
   badge?: { cx?: number; cy?: number; innerRadius?: number; ringRadius?: number; ringThickness?: number };
-  credit?: { x?: number; y?: number; width?: number; height?: number; coinSize?: number };
+  credit?: {
+    x?: number; y?: number; width?: number; height?: number; coinSize?: number;
+    outOfCredit?: {
+      flashColor?: string; blinkMs?: number; hintText?: string; hintColor?: string;
+      hintFontSize?: string; hintOffsetX?: number; hintOffsetY?: number; showCountdown?: boolean;
+    };
+  };
   energy?: { x?: number; y?: number };
   combo?: { x?: number; y?: number; maxOffsetY?: number };
 }): typeof OVERHEAD_LAYOUT {
   const L = OVERHEAD_LAYOUT;
+  const oc = ov?.credit?.outOfCredit;
   return {
     ...L,
     offsetY: ov?.offsetY ?? L.offsetY,
@@ -286,6 +296,18 @@ export function resolveOverheadLayout(ov?: {
       width: ov?.credit?.width ?? L.credit.width,
       height: ov?.credit?.height ?? L.credit.height,
       coinSize: ov?.credit?.coinSize ?? L.credit.coinSize,
+      // 沒 credit 投幣提示：表現/位置逐項 override（開放編輯器可調），缺→打包預設。
+      outOfCredit: {
+        ...L.credit.outOfCredit,
+        flashColor: oc?.flashColor ?? L.credit.outOfCredit.flashColor,
+        blinkMs: oc?.blinkMs ?? L.credit.outOfCredit.blinkMs,
+        hintText: oc?.hintText ?? L.credit.outOfCredit.hintText,
+        hintColor: oc?.hintColor ?? L.credit.outOfCredit.hintColor,
+        hintFontSize: oc?.hintFontSize ?? L.credit.outOfCredit.hintFontSize,
+        hintOffsetX: oc?.hintOffsetX ?? L.credit.outOfCredit.hintOffsetX,
+        hintOffsetY: oc?.hintOffsetY ?? L.credit.outOfCredit.hintOffsetY,
+        showCountdown: oc?.showCountdown ?? L.credit.outOfCredit.showCountdown,
+      },
     },
     energy: {
       ...L.energy,
