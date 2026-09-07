@@ -58,6 +58,8 @@ export class TransformSystem implements GameSystem {
     number,
     { active: boolean; ratio: number; sinceLastMashSec: number; comboStash: number }
   >();
+  /** 十五輪：連打變身腳下召喚陣特效 handle（per-player，非狀態；enter 建/tick 更新/complete·清 end）。 */
+  private mashSummonHandles = new Map<number, Phaser.GameObjects.Image | null>();
   private items: TransformItem[] = [];
   private spawnTimer = 0;
   /** 用戶 #7 牽引線（per-player 玩家色半透明線，貼地不擋）。 */
@@ -78,6 +80,7 @@ export class TransformSystem implements GameSystem {
     this.spawnTimer = ITEM_SPAWN_INTERVAL;
     this.states.clear();
     this.mashStates.clear();
+    this.mashSummonHandles.clear();
     // 用戶 #7：牽引線(貼地、角色之下)+指引箭頭(角色上層)graphics。
     // 防禦：測試用最小 ctx 無 scene → 不建 graphics（純狀態機測試不需視覺，drawTethers/Arrows 會 no-op）。
     const scene = ctx.scene as Phaser.Scene | undefined;
@@ -139,6 +142,12 @@ export class TransformSystem implements GameSystem {
         m.ratio = Math.min(1, m.ratio + autoFillDelta(dt, true));
       } else if (shouldAutoFill(m.sinceLastMashSec)) {
         m.ratio = Math.min(1, m.ratio + autoFillDelta(dt, false));
+      }
+      // 十五輪：腳下召喚陣每幀更新（跟腳下位置 + 自轉/脈動 + 依 ratio 越滿越亮越大）。
+      const player = this.playerOf(pid);
+      if (player) {
+        const foot = this.mashFootPos(player);
+        this.ctx.effects?.mashSummonCircleUpdate?.(this.mashSummonHandles.get(pid) ?? null, foot.x, foot.y, m.ratio, dt);
       }
       if (isMashComplete(m.ratio)) this.completeMashTransform(pid);
     }
@@ -315,6 +324,17 @@ export class TransformSystem implements GameSystem {
     this.ctx.combo?.setMashPaused?.(pid, true); // 暫停 COMBO 倒數（不中斷）
     player.setMashLocked?.(true); // 鎖定+免疫（複用 outOfCredit 類比免疫路徑）
     player.setFloating?.(true); // 身體浮起（純視覺，Player 提供）
+    // 十五輪：腳下金黃召喚陣（persistent handle，tick 更新自轉/脈動/越滿越亮，完成/中斷 end 清）。
+    const foot = this.mashFootPos(player);
+    this.mashSummonHandles.set(pid, this.ctx.effects?.mashSummonCircleStart?.(foot.x, foot.y) ?? null);
+  }
+
+  /** 連打變身召喚陣的腳下位置（角色中心下方；有 getFootGlowCenter 用之，否則 getHitCenter 下移）。 */
+  private mashFootPos(player: GameContext['player']): { x: number; y: number } {
+    const fg = player.getFootGlowCenter?.();
+    if (fg) return fg;
+    const c = player.getHitCenter?.() ?? player.getPosition?.() ?? { x: 0, y: 0 };
+    return { x: c.x, y: c.y + 40 };
   }
 
   /**
@@ -341,6 +361,7 @@ export class TransformSystem implements GameSystem {
     if (!m.active) return;
     m.active = false;
     m.ratio = 1;
+    this.endMashSummon(playerId); // 十五輪：召喚陣爆亮淡出清除（完成）
     const player = this.playerOf(playerId);
     if (player) {
       player.setMashLocked?.(false); // 解鎖（恢復移動/攻擊/可被攻擊）
@@ -348,6 +369,28 @@ export class TransformSystem implements GameSystem {
       this.transform(player); // 換悟空 visual + 魂力 100 + 掛扣魂鉤子（EnergySystem 自動 Full）
     }
     this.ctx.combo?.setMashPaused?.(playerId, false); // COMBO 恢復倒數繼續（暫存值接回）
+  }
+
+  /** 十五輪：中斷連打變身（沒 credit revert 等外部觸發，非填滿完成）→ 清狀態+召喚陣+解鎖（不殘留）。 */
+  cancelMashTransform(playerId: number): void {
+    const m = this.mashStateOf(playerId);
+    if (!m.active) return;
+    m.active = false;
+    m.ratio = 0;
+    this.endMashSummon(playerId);
+    const player = this.playerOf(playerId);
+    if (player) {
+      player.setMashLocked?.(false);
+      player.setFloating?.(false);
+    }
+    this.ctx.combo?.setMashPaused?.(playerId, false);
+  }
+
+  /** 清除某玩家的召喚陣 handle（爆亮淡出銷毀 + map 移除）。冪等。 */
+  private endMashSummon(playerId: number): void {
+    const h = this.mashSummonHandles.get(playerId);
+    if (h) this.ctx.effects?.mashSummonCircleEnd?.(h);
+    this.mashSummonHandles.delete(playerId);
   }
 
   private mashStateOf(playerId: number) {
@@ -416,6 +459,8 @@ export class TransformSystem implements GameSystem {
    * 冪等：未變身則不動作。走與魂力歸 0 相同的 detransform（換凡人 visual、EnergySystem 回 HumanSimple、藏魂力環）。
    */
   revertToHuman(playerId: number): void {
+    // 十五輪：若玩家正在連打變身中（尚未變身）→ 一併中斷清除（召喚陣/鎖定/浮起不殘留，同 dashShield 教訓）。
+    if (this.mashStateOf(playerId).active) this.cancelMashTransform(playerId);
     if (!this.stateOf(playerId).transformed) return;
     const player = this.playerOf(playerId);
     if (player) this.detransform(player);

@@ -55,6 +55,8 @@ const ENEMY_ATTACK_VFX = {
   guardFocusVignette: { key: 'vfx-guard-focus-vignette', path: `${BASE_PATH}/fx_guard_focus_vignette.png` },
   /** 十五輪：守護聚焦暖白柔光暈（1024×1024，中心 alpha 0.57→邊緣 0，疊雕像後增強聚光）。 */
   guardFocusGlow: { key: 'vfx-guard-focus-glow', path: `${BASE_PATH}/fx_guard_focus_glow.png` },
+  /** 十五輪：連打變身腳下金黃召喚陣（1024×1024 RGBA，暖金魔法陣：同心環+六芒+符文+發光核，壓扁貼地自轉脈動）。 */
+  mashSummonCircle: { key: 'vfx-mash-summon-circle', path: `${BASE_PATH}/fx_mash_summon_circle.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -1208,6 +1210,73 @@ export class EffectSystem {
    * 十五輪：連打變身「每次連打」從角色噴粒子（連打回饋，蓄力金白上升小爆散）。
    * 由 TransformSystem.registerMashHit 每按觸發一次。純視覺。
    */
+  /**
+   * 十五輪：連打變身腳下金黃召喚陣（persistent handle 式，連打變身期間顯示）。
+   * start 建 image；update 每幀自轉+脈動+依 ratio 越滿越亮越大；end 淡出爆亮清除。
+   * 壓扁貼地（scaleY=scaleX/2 俯視橢圓）、depth -3（角色 body(10) 之下、腳下地面層，類腳底光/enemyCharge 盤）。
+   */
+  mashSummonCircleStart(x: number, y: number): Phaser.GameObjects.Image | null {
+    const key = ENEMY_ATTACK_VFX.mashSummonCircle.key;
+    if (!this.scene.textures.exists(key)) return null;
+    const spr = this.scene.add.image(x, y, key);
+    spr.setOrigin(0.5, 0.5).setDepth(-3); // 腳下地面層（body 10 之下、footGlow -10 之上，可見）
+    spr.setTint(0xffe08a); // 暖金染色（素材本就暖金，微強化）
+    spr.setData('rot', 0);
+    spr.setAlpha(0); // 淡入起點
+    spr.setScale(0.0001);
+    // 淡入（連打變身起顯）。
+    this.scene.tweens.add({ targets: spr, alpha: 0.35, duration: 200, ease: 'Quad.easeOut' });
+    return spr;
+  }
+
+  /**
+   * 每幀更新召喚陣：跟腳下位置 + 自轉（~50°/s）+ 依 ratio 越滿越亮越大 + 脈動（scale 0.9↔1.05、alpha 呼吸）。
+   * @param ratio 連打填充比例 0..1（越大越滿）。@param dt 幀秒。
+   */
+  mashSummonCircleUpdate(
+    handle: Phaser.GameObjects.Image | null,
+    x: number,
+    y: number,
+    ratio: number,
+    dt: number,
+  ): void {
+    if (!handle || !handle.active) return;
+    handle.x = x;
+    handle.y = y;
+    // 自轉 ~50°/s。
+    const rot = ((handle.getData('rot') as number) ?? 0) + (50 * Math.PI) / 180 * dt;
+    handle.setData('rot', rot);
+    handle.setRotation(rot);
+    // 越滿越大：基礎顯示直徑 90→190px 隨 ratio。壓扁貼地（scaleY=半）。
+    const baseDiameter = 90 + 100 * Math.min(1, Math.max(0, ratio));
+    // 脈動疊在基礎上（呼吸 0.9↔1.05）。
+    const t = performance.now?.() ?? Date.now();
+    const pulse = 1 + 0.075 * Math.sin(t / 180);
+    const w = baseDiameter * pulse;
+    handle.setDisplaySize(w, w * 0.5); // 2:1 壓扁俯視
+    // 越滿越亮：alpha 0.35→0.85 隨 ratio + 呼吸微幅。
+    const baseAlpha = 0.35 + 0.5 * Math.min(1, Math.max(0, ratio));
+    handle.setAlpha(baseAlpha * (0.92 + 0.08 * Math.sin(t / 160)));
+  }
+
+  /** 連打變身結束（完成/中斷/沒credit revert）→ 召喚陣爆亮後淡出清除（不殘留）。 */
+  mashSummonCircleEnd(handle: Phaser.GameObjects.Image | null): void {
+    if (!handle) return;
+    this.scene.tweens.killTweensOf(handle);
+    if (!handle.active) { handle.destroy(); return; }
+    // 爆亮（快速放大提亮）→ 淡出銷毀。
+    const w = handle.displayWidth;
+    this.scene.tweens.add({
+      targets: handle,
+      displayWidth: w * 1.6,
+      displayHeight: (w * 0.5) * 1.6,
+      alpha: 0,
+      duration: 260,
+      ease: 'Quad.easeOut',
+      onComplete: () => handle.destroy(),
+    });
+  }
+
   mashHitParticle(x: number, y: number): void {
     const depth = PANEL_DEPTH + 15; // 提到面板/JP 橫幅(≤1002)之上，否則角色在 JP 橫幅帶時被遮不可見
     // 白閃爆點強調（強化連打回饋，類死亡粒子）：白圓快速放大淡出。
