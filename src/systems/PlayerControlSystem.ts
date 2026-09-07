@@ -165,32 +165,40 @@ export class PlayerControlSystem implements GameSystem {
       }
       if (src.justPressedAttack() && credit.canAttack(pid)) {
         const intent = energy.resolveAttackIntent(pid);
-        // 第十一輪#1：攻擊速度 override（per-character，讀當前變身角色 charKey）→ 冷卻/前搖/動畫倍率。
-        //   變身 Human↔SunWukong → 下次攻擊自動讀新角色 mult。無 override/缺角色→mult 1.0 原節奏。
+        // 第十一輪#1：攻擊速度 override（per-character）→ 冷卻/前搖/動畫倍率。
         const as = getResolvedAttackSpeedFor(
           typeof player.getCharacterKey === 'function' ? player.getCharacterKey() : '',
         );
-        if (player.tryStartAttack(intent.attack.hitDelay / as.mult, as.cooldown, as.animTimeScale)) {
+        // 十三輪#1#2：先決定「面向左/右」（軟鎖：玩家推左右優先，否則 auto-aim 最近怪那側，否則維持 facing）——
+        //   在 tryStartAttack 前決定，讓斬光特效（綁揮擊幀）用正確 facing。攻擊全走水平 facing（不上下）。
+        const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
+        const mvNow = src.getMoveVector();
+        let sideDirX = 0;
+        if (Math.abs(mvNow.x) > 1e-6) {
+          sideDirX = Math.sign(mvNow.x); // 軟鎖：玩家意志優先（即使背對怪）
+        } else if (ppos) {
+          const nearest = nearestPoint(ppos, this.enemyHitCenters());
+          if (nearest) sideDirX = Math.sign(nearest.x - ppos.x); // 無輸入→auto-aim 最近怪那側
+        }
+        if (sideDirX !== 0 && ppos && typeof player.faceTowards === 'function') {
+          player.faceTowards(ppos.x + sideDirX); // 依左右側轉向
+        }
+        // 十三輪#1 徹底解：斬光特效「綁揮擊幀」——動畫播到揮出幀(ATTACK_SWING_FRAME)才觸發（非計時），
+        //   嚴格對齊動作：動畫沒揮到→不出特效；連打 restart→重播到揮擊幀才出。傷害判定仍走 hitDelay（解耦、手感準）。
+        const swingVfx = intent.attack.vfxKey ? () => {
+          const p = typeof player.getPosition === 'function' ? player.getPosition() : { x: 0, y: 0 };
+          const fac = player.getFacing?.() ?? 1;
+          const vfxKey = intent.attack.vfxKey!;
+          // 攻擊 shape 中心（水平 facing，無 aim）當特效位置；scale/alpha 讓位（不蓋角色）。
+          const off = (intent.attack.offsetX ?? 0) * PPU * (this.ctx.energy.getAttackScale?.() ?? 1);
+          const ex = p.x + fac * off;
+          const ey = p.y + (intent.attack.offsetY ?? 0) * PPU;
+          const baseScale = (this.ctx.effects.getEffectScale?.(vfxKey) ?? 1) * 0.72;
+          this.ctx.effects.play(vfxKey, ex, ey, fac, baseScale, undefined, 0.7);
+        } : undefined;
+        if (player.tryStartAttack(intent.attack.hitDelay / as.mult, as.cooldown, as.animTimeScale, swingVfx)) {
           this.pendingIntent.set(pid, intent);
-          // 十三輪#1#2：auto-aim「只左右」+「軟鎖（玩家輸入優先，非硬鎖）」——
-          //   攻擊方向 = 玩家當下有推左右 ? 玩家輸入方向(意志優先，即使背對怪) : (有怪 ? 最近怪那側 : 維持 facing)。
-          //   決定的是「面向左/右」；攻擊 shape/特效/判定/lunge 全走水平 facing（不上下，對齊角色只左右揮動畫）。pendingAim=null。
-          const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
-          this.pendingAim.set(pid, null); // ★只左右：攻擊不朝上下（水平 facing）
-          const mvNow = src.getMoveVector();
-          let sideDirX = 0;
-          if (Math.abs(mvNow.x) > 1e-6) {
-            // 軟鎖：玩家有推左右 → 用玩家意志（推哪邊打哪邊，auto-aim 讓位，即使背對怪）。
-            sideDirX = Math.sign(mvNow.x);
-          } else if (ppos) {
-            // 無左右輸入 → auto-aim 朝最近怪那側（左/右）。
-            const nearest = nearestPoint(ppos, this.enemyHitCenters());
-            if (nearest) sideDirX = Math.sign(nearest.x - ppos.x);
-          }
-          // sideDirX 0（無輸入且無怪）→ 維持現有 facing。
-          if (sideDirX !== 0 && ppos && typeof player.faceTowards === 'function') {
-            player.faceTowards(ppos.x + sideDirX); // 依左右側轉向（ppos.x±1 給正確左右符號）
-          }
+          this.pendingAim.set(pid, null); // ★只左右：攻擊判定走水平 facing（不朝上下）
           // lunge 前戳「只左右」：往決定的那側（無則用 facing），dy=0。
           const lungeDirX = sideDirX !== 0 ? sideDirX : player.getFacing?.() ?? 1;
           player.startLunge?.(lungeDirX, 0);
@@ -368,19 +376,18 @@ export class PlayerControlSystem implements GameSystem {
 
   /** 依 intent 的 AttackData 形狀建立判定、查命中、套傷害；回報 EnergySystem 充能。aim=auto-aim 目標（十一輪#2，null→水平 facing）。 */
   private resolveAttack(player: GameContext['player'], intent: AttackIntent, aim: Vec2 | null): void {
-    const { effects, energy } = this.ctx;
+    const { energy } = this.ctx;
     const attack: AttackData = intent.attack;
     const pos = player.getPosition();
     const facing = player.getFacing();
     const scale = energy.getAttackScale();
-    // 十一輪#2 auto-aim：aim 非空 → 攻擊 shape 朝 aim（buildAttack* aim 參數，同第八輪敵人版）；null → 水平 facing（相容）。
+    // 十一輪#2 auto-aim：aim 非空 → 攻擊 shape 朝 aim；null → 水平 facing（十三輪#1#2 起玩家攻擊 aim 恆 null=只左右）。
     const aimArg = aim ?? undefined;
     // 傷害 = 基礎 × 能量倍率 × damage stat 聚合倍率（二段變身等，含 clamp）。
     const buffDmgMult = this.ctx.buff.getStatMultiplier('damage');
     const dmg = EnergySystem.applyMultiplier(attack.damage, intent.multiplier * buffDmgMult);
 
     const hits: Enemy[] = [];
-    let effectCenter = pos;
 
     if (attack.shapeType === 'circle') {
       const circle = buildAttackCircle(attack, pos, facing, scale, aimArg);
@@ -388,21 +395,18 @@ export class PlayerControlSystem implements GameSystem {
       this.lastCircle = circle;
       this.lastOBB = null;
       this.lastFan = null;
-      effectCenter = circle.center;
     } else if (attack.shapeType === 'fan') {
       const fan = buildAttackFan(attack, pos, facing, scale, aimArg);
       hits.push(...queryHitsFan(fan, this.ctx.getEnemies()));
       this.lastFan = fan;
       this.lastOBB = null;
       this.lastCircle = null;
-      effectCenter = fan.center;
     } else {
       const obb = buildAttackOBB(attack, pos, facing, scale, aimArg);
       hits.push(...queryHits(obb, this.ctx.getEnemies()));
       this.lastOBB = obb;
       this.lastCircle = null;
       this.lastFan = null;
-      effectCenter = obb.center;
     }
 
     const attackerId = player.playerId;
@@ -418,21 +422,8 @@ export class PlayerControlSystem implements GameSystem {
     this.applyOnHitBuffs(hits);
 
     this.shapeFlash = 0.12;
-    // 依當前 AttackData 的 vfxKey 播對應特效（資料驅動；未設則不播）。
-    // 十一輪#2 auto-aim：有 aim → 斬光朝 aim 角度 rotate；無 aim → 水平 facing 鏡像。
-    // 十三輪#1 觀感修(A)：斬光「讓位」——延後 ~0.09s（讓揮擊起手 frame 02-05 先被看見）+ 降 scale/alpha（別亮度面積蓋過角色），
-    //   玩家先看到揮再看到特效。純視覺：hitDelay 判定時機不變（傷害已在上方即時結算），只特效播放解耦延後。
-    if (attack.vfxKey) {
-      const vfxKey = attack.vfxKey;
-      const aimRot = aim ? Math.atan2(aim.y - pos.y, aim.x - pos.x) : undefined;
-      const ecx = effectCenter.x;
-      const ecy = effectCenter.y;
-      const fac = facing;
-      const baseScale = (effects.getEffectScale?.(vfxKey) ?? 1) * 0.72; // 縮小讓位
-      this.ctx.scene.time.delayedCall(90, () => {
-        effects.play(vfxKey, ecx, ecy, fac, baseScale, aimRot, 0.7); // alpha 0.7 讓位
-      });
-    }
+    // 十三輪#1 徹底解：斬光特效已改「綁 attack 揮擊幀」（tryStartAttack 的 onSwingFrame 於攻擊觸發時註冊），
+    //   非在此 hitDelay 計時播（移除原 90ms delayedCall）。此處只做傷害判定/充能（判定準時，與特效視覺解耦）。
 
     // 充能回報：普攻打到人才 +1（招式命中不充）。
     energy.reportHit(attackerId, intent.isSkill, hitAny);

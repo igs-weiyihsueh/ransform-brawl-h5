@@ -21,6 +21,12 @@ import type { Hittable, Vec2 } from '@/systems/hitDetection';
 /** 玩家可用的角色美術 key（debug 預覽用 T 鍵循環切換）。 */
 export const PLAYER_CHARACTERS = ['Human', 'SunWukong'] as const;
 
+/**
+ * 攻擊動畫「揮出」幀 index（第十三輪#1 徹底解：斬光特效綁此幀觸發，非計時）。
+ * attack 動畫 10 幀(0-9)，frame 02-07 是揮、04-05 揮出最明顯（md5/subagent 確認）→ 綁 frame 4「劍橫出」那刻。
+ */
+const ATTACK_SWING_FRAME = 4;
+
 /** 衝刺殘影：生成間隔(秒)、藍色半透明 tint、初始 alpha、fade 時長(秒)。 */
 const AFTER_IMAGE_INTERVAL = 0.05;
 const AFTER_IMAGE_TINT = 0x8080ff; // ≈ (0.5, 0.5, 1)
@@ -677,12 +683,30 @@ export class Player implements Hittable {
   /**
    * 嘗試發動攻擊：非冷卻中則開始 hitDelay 前搖、進入冷卻、播 attack 一次。
    */
-  tryStartAttack(hitDelay: number, cooldown: number, animTimeScale = 1): boolean {
+  tryStartAttack(hitDelay: number, cooldown: number, animTimeScale = 1, onSwingFrame?: () => void): boolean {
     if (this.cooldownRemaining > 0) return false;
     this.cooldownRemaining = cooldown;
     this.hitDelayRemaining = hitDelay;
     this.pendingHit = true;
     this.attacking = true;
+    // 第十三輪#1 徹底解：斬光特效「綁揮擊幀」而非計時——攻擊動畫播到揮出幀(ATTACK_SWING_FRAME)才觸發 onSwingFrame。
+    //   動畫沒揮到→不出特效；連打 restart 回 frame 0→重新播到揮擊幀才出（特效嚴格跟動畫動作，非固定計時）。
+    const sp = this.anim.sprite;
+    sp.off(Phaser.Animations.Events.ANIMATION_UPDATE); // 清前次殘留監聽（連打 restart）
+    if (onSwingFrame) {
+      let fired = false;
+      const onUpdate = (_a: unknown, frame: Phaser.Animations.AnimationFrame): void => {
+        if (fired) return;
+        // 只認 attack 動畫的揮擊幀（切其他動畫的 update 不觸發）。
+        if (!(this.anim.sprite.anims?.currentAnim?.key ?? '').endsWith('__attack')) return;
+        if (frame.index >= ATTACK_SWING_FRAME) {
+          fired = true;
+          sp.off(Phaser.Animations.Events.ANIMATION_UPDATE, onUpdate);
+          onSwingFrame();
+        }
+      };
+      sp.on(Phaser.Animations.Events.ANIMATION_UPDATE, onUpdate);
+    }
     this.anim.play('attack', {
       force: true,
       timeScale: animTimeScale, // 第十一輪#1：玩家攻擊動畫加速（attackSpeed.animTimeScale）。
