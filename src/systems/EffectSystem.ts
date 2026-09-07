@@ -1204,24 +1204,72 @@ export class EffectSystem {
    * 死亡粒子：死亡點金黃粒子向四周爆散淡出。
    * @param x,y 死亡位置。
    */
-  deathParticle(x: number, y: number, color: number): void {
-    const count = 10;
+  /**
+   * 十五輪：連打變身「每次連打」從角色噴粒子（連打回饋，蓄力金白上升小爆散）。
+   * 由 TransformSystem.registerMashHit 每按觸發一次。純視覺。
+   */
+  mashHitParticle(x: number, y: number): void {
+    const depth = PANEL_DEPTH + 15; // 十五輪回歸修：提到面板/JP 橫幅(≤1002)之上，否則死亡點在 JP 橫幅帶(螢幕中央)被遮不可見
+    const count = 6;
     for (let i = 0; i < count; i += 1) {
-      const a = (Math.PI * 2 * i) / count + Math.random() * 0.4;
-      const g = this.scene.add.graphics();
-      g.fillStyle(color, 1);
+      // 主要往上噴（-90°±60°）+ 隨機散開，蓄力上升感。
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * (Math.PI * 0.7);
+      const g = this.scene.add.graphics().setDepth(depth);
+      // 金/白交錯（蓄力色）。
+      g.fillStyle(i % 2 === 0 ? 0xffe98a : 0xffffff, 1);
       g.fillCircle(0, 0, Phaser.Math.Between(4, 7));
       g.x = x;
       g.y = y;
-      g.setDepth(ENERGY_FLY_DEPTH);
-      const dist = Phaser.Math.Between(40, 80);
+      const dist = Phaser.Math.Between(30, 60);
       this.scene.tweens.add({
         targets: g,
         x: x + Math.cos(a) * dist,
         y: y + Math.sin(a) * dist,
         alpha: 0,
         scale: 0.2,
-        duration: Phaser.Math.Between(300, 480),
+        duration: Phaser.Math.Between(280, 420),
+        ease: 'Cubic.easeOut',
+        onComplete: () => g.destroy(),
+      });
+    }
+  }
+
+  deathParticle(x: number, y: number, color: number): void {
+    // 十五輪回歸修（真因：死亡點在 JP 橫幅帶（螢幕中央 y385-685）被 JP panel(depth≤1002) 遮住看不見，
+    //   同寶盒報獎「被面板遮」教訓）→ 死亡粒子提到面板/JP 之上（PANEL_DEPTH+15=1015），戰鬥回饋恆可見。
+    const depth = PANEL_DEPTH + 15;
+    // 中央亮閃（爆點）：一顆大圓快速放大淡出，強化「死亡爆散」瞬間可見度。
+    const flash = this.scene.add.graphics().setDepth(depth);
+    flash.fillStyle(0xffffff, 0.95);
+    flash.fillCircle(0, 0, 10);
+    flash.x = x;
+    flash.y = y;
+    this.scene.tweens.add({
+      targets: flash,
+      scale: 3.5,
+      alpha: 0,
+      duration: 220,
+      ease: 'Cubic.easeOut',
+      onComplete: () => flash.destroy(),
+    });
+    // 爆散粒子（加強：16 顆、8-14px、噴 60-120px、500-700ms 更明顯久看得見）。
+    const count = 16;
+    for (let i = 0; i < count; i += 1) {
+      const a = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+      const g = this.scene.add.graphics();
+      g.fillStyle(color, 1);
+      g.fillCircle(0, 0, Phaser.Math.Between(8, 14));
+      g.x = x;
+      g.y = y;
+      g.setDepth(depth);
+      const dist = Phaser.Math.Between(60, 120);
+      this.scene.tweens.add({
+        targets: g,
+        x: x + Math.cos(a) * dist,
+        y: y + Math.sin(a) * dist,
+        alpha: 0,
+        scale: 0.2,
+        duration: Phaser.Math.Between(500, 700),
         ease: 'Cubic.easeOut',
         onComplete: () => g.destroy(),
       });

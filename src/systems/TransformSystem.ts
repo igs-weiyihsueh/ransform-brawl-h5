@@ -326,6 +326,12 @@ export class TransformSystem implements GameSystem {
     if (!m.active) return;
     m.ratio = Math.min(1, m.ratio + MASH_PER_HIT);
     m.sinceLastMashSec = 0; // 有連打 → 回連打模式（停自動填）
+    // 十五輪：每次連打從角色位置噴粒子（連打回饋，配合浮起+閃光=蓄力演出）。純視覺。
+    const player = this.playerOf(playerId);
+    if (player) {
+      const pos = player.getHitCenter?.() ?? player.getPosition?.();
+      if (pos) this.ctx.effects?.mashHitParticle?.(pos.x, pos.y);
+    }
     if (isMashComplete(m.ratio)) this.completeMashTransform(playerId);
   }
 
