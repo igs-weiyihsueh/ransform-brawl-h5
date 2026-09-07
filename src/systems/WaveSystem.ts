@@ -60,6 +60,8 @@ export class WaveSystem implements GameSystem {
   private nodeIndex = 0;
   /** 本 Spawn 節點已累計的擊殺數。 */
   private kills = 0;
+  /** spawn 世代 token（enterNode/skip 遞增）：作廢舊節點已排程但未觸發的 spawnWarning doSpawn，清「正在出生的怪」。 */
+  private spawnGeneration = 0;
   /** 累計 Spawn 波序（跨關 1-based，過場提示「第 N 波」用）。 */
   private spawnWaveNumber = 0;
   /** 距下一次可生怪的倒數（秒）；受 spawnInterval 節流。 */
@@ -301,6 +303,7 @@ export class WaveSystem implements GameSystem {
     this.spawnCooldown = 0;
     this.tracked = [];
     this.pendingSpawns = 0; // 換節點清預警帳
+    this.spawnGeneration += 1; // 遞增世代 → 作廢舊節點已排程但未觸發的 spawnWarning doSpawn（N skip/換節點都清「正在出生的怪」）
     this.fireRainActive = false; // 換節點清火雨狀態
     this.fireRainRemaining = 0;
     this.rewardHold = 0; // 換節點清獎勵演出計時（用戶 #3）
@@ -406,9 +409,11 @@ export class WaveSystem implements GameSystem {
     // 一般波 Unity 登場：生成點先冒預警圈淡入 spawnWarningDuration → 怪才原地出現（非場邊走進）。
     // 預警期間計入 pendingSpawns（維持 maxAlive 帳），淡入完才真正 spawn + 移入 tracked。
     this.pendingSpawns += 1;
+    const spawnGen = this.spawnGeneration; // 捕捉當下世代；skip/換節點 enterNode 遞增後此排程作廢
     const doSpawn = (): void => {
+      // N skip/換節點作廢：世代已變 → 放棄生怪（不把「正在出生的怪」帶進下一節點）。pendingSpawns 已在 enterNode 清 0。
+      if (spawnGen !== this.spawnGeneration) return;
       this.pendingSpawns = Math.max(0, this.pendingSpawns - 1);
-      // 若關卡已離開此節點/系統重置，pending 已在 enterNode 清零；仍生也無害（追蹤即可）。
       const enemy = this.ctx.spawner.spawn(type, x, y);
       this.tracked.push(enemy);
     };
