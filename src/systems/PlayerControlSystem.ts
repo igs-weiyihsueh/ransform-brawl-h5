@@ -172,22 +172,28 @@ export class PlayerControlSystem implements GameSystem {
         );
         if (player.tryStartAttack(intent.attack.hitDelay / as.mult, as.cooldown, as.animTimeScale)) {
           this.pendingIntent.set(pid, intent);
-          // 十三輪#1#2：auto-aim「只左右」——找最近怪只決定「面向左/右那側」（追怪感），
-          //   但攻擊 shape/特效/判定回水平 facing（不朝上下）——因玩家攻擊動畫只有左右揮，
-          //   朝任意 aim(含上下) 會「動作左右揮卻打上下特效/判定」（用戶#1#2 同源）。故 pendingAim=null（走水平 facing）。
-          // 防禦：最小 stub player（無 getPosition，如 S2 契約測）→ 跳過。
+          // 十三輪#1#2：auto-aim「只左右」+「軟鎖（玩家輸入優先，非硬鎖）」——
+          //   攻擊方向 = 玩家當下有推左右 ? 玩家輸入方向(意志優先，即使背對怪) : (有怪 ? 最近怪那側 : 維持 facing)。
+          //   決定的是「面向左/右」；攻擊 shape/特效/判定/lunge 全走水平 facing（不上下，對齊角色只左右揮動畫）。pendingAim=null。
           const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
-          const nearest = ppos ? nearestPoint(ppos, this.enemyHitCenters()) : null;
           this.pendingAim.set(pid, null); // ★只左右：攻擊不朝上下（水平 facing）
-          if (ppos && nearest) {
-            // 面向轉向最近怪那側（只取左右，依 dx 符號）。
-            if (typeof player.faceTowards === 'function') player.faceTowards(nearest.x);
+          const mvNow = src.getMoveVector();
+          let sideDirX = 0;
+          if (Math.abs(mvNow.x) > 1e-6) {
+            // 軟鎖：玩家有推左右 → 用玩家意志（推哪邊打哪邊，auto-aim 讓位，即使背對怪）。
+            sideDirX = Math.sign(mvNow.x);
+          } else if (ppos) {
+            // 無左右輸入 → auto-aim 朝最近怪那側（左/右）。
+            const nearest = nearestPoint(ppos, this.enemyHitCenters());
+            if (nearest) sideDirX = Math.sign(nearest.x - ppos.x);
           }
-          if (ppos) {
-            // 十三輪#1#2：lunge 前戳「只左右」——往最近怪的水平那側（非垂直），對齊只左右。
-            const dirX = nearest ? Math.sign(nearest.x - ppos.x) || (player.getFacing?.() ?? 1) : player.getFacing?.() ?? 1;
-            player.startLunge?.(dirX, 0);
+          // sideDirX 0（無輸入且無怪）→ 維持現有 facing。
+          if (sideDirX !== 0 && ppos && typeof player.faceTowards === 'function') {
+            player.faceTowards(ppos.x + sideDirX); // 依左右側轉向（ppos.x±1 給正確左右符號）
           }
+          // lunge 前戳「只左右」：往決定的那側（無則用 facing），dy=0。
+          const lungeDirX = sideDirX !== 0 ? sideDirX : player.getFacing?.() ?? 1;
+          player.startLunge?.(lungeDirX, 0);
         }
       }
     }
