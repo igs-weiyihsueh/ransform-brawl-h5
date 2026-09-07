@@ -236,6 +236,10 @@ export class Enemy implements Hittable {
     //   每幀推到觸碰範圍外 → 左右晃抓不到。補齊 grabber 例外（對齊環繞協調 line138 的 isGrabber 排除），抓取全交 GrabSystem。
     if (this.grabber) return;
     if (isChargeInvulnerable(this.state, this.cfg.immovable === true)) return; // 六輪#3：菁英蓄力免疫被推(站定)
+    // 十六輪④真修：任何怪(含非菁英)蓄力中免疫被玩家推(站定)——配合③ chargeAnchor 鎖定，charge 中怪真的不移動，
+    //   則 chargeFx(charge 每幀 syncChargeFx)恆貼合怪位置、不分離。真因=舊只菁英免疫→非菁英 charging 被玩家撞推走、
+    //   fx 留在 anchor(update 後 spawner 才推、那幀沒再 sync)→用戶實測特效分離。
+    if (this.state === 'charge') return;
     const immovable = this.cfg.immovable === true;
     for (const p of players) {
       const minDist = p.hitRadius + this.radiusPx;
@@ -412,6 +416,11 @@ export class Enemy implements Hittable {
     }
   }
 
+  /** 十六輪④安全帶：spawner 所有推力/clamp 之後，對蓄力中怪再補一次 chargeFx sync（保證特效恆貼合怪位置，不分離）。 */
+  syncChargeFxAfterMove(): void {
+    if (this.state === 'charge') this.syncChargeFx();
+  }
+
   /** 立即銷毀（守護波 cleanup ClearAllActiveEnemies 用，不播死亡動畫、不觸發 onKilled）。 */
   forceDestroy(): void {
     if (this.dead) return;
@@ -510,17 +519,16 @@ export class Enemy implements Hittable {
     if (this.grabber || this.knockbackRemaining > 0 || this.freezeRemaining > 0 || this.stunRemaining > 0) return;
     const cur = { x: this.anim.sprite.x, y: this.anim.sprite.y };
     const next = mashAttractStep(cur, center, dt);
-    // 十六輪①：實際被吸移動時播 move 走路動畫 + 面向移動方向（像正常走過來，非滑行）；沒位移則 idle。
+    // 十六輪①：實際被吸移動時播 move 走路動畫+面向；★沒被吸(超範圍/到 minDist)不強制 idle——
+    //   保留 update() 狀態機的動畫(chase/wander 的 move)，否則會覆蓋掉沒靠近怪的走路動畫(副作用，用戶回報)。
     const moved = Math.abs(next.x - cur.x) > 1e-4 || Math.abs(next.y - cur.y) > 1e-4;
     if (moved) {
       if (next.x > cur.x + 1e-4) this.setFacing(1);
       else if (next.x < cur.x - 1e-4) this.setFacing(-1);
       this.anim.play('move');
-    } else {
-      this.anim.play('idle');
+      this.anim.sprite.x = next.x;
+      this.anim.sprite.y = next.y;
     }
-    this.anim.sprite.x = next.x;
-    this.anim.sprite.y = next.y;
   }
 
   /**

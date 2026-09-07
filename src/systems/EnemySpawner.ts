@@ -299,6 +299,8 @@ export class EnemySpawner {
     // 真因=舊 clamp 排在守護 pushOutOfObstacle 之前，雕像貼界時怪被頂出界沒再 clamp（頂出 122px）。
     // ★此後不得有任何敵人位移/推力排在這道之後（clamp 永遠是每幀敵人位置最後一步）。
     for (const e of this.enemies) e.clampToMapBounds();
+    // 十六輪④安全帶：所有敵人位移/推力/clamp 之後，對蓄力中怪補 chargeFx sync（保證特效貼合怪，不分離）。
+    for (const e of this.enemies) e.syncChargeFxAfterMove();
 
     // 守護波：射彈打雕像；否則打玩家。
     const target = this.guardTarget ?? this.player;
