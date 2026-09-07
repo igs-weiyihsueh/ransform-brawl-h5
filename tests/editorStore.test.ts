@@ -6,6 +6,8 @@ import {
   loadOverride,
   clearOverride,
   hasOverride,
+  exportAllSettings,
+  SETTINGS_EXPORT_VERSION,
 } from '@/config/editorStore';
 
 /**
@@ -120,5 +122,54 @@ describe('editorStore — 安全 fallback（各環境不炸）', () => {
     expect(loadOverride(K)).toBeNull();
     expect(hasOverride(K)).toBe(false);
     expect(() => clearOverride(K)).not.toThrow();
+  });
+});
+
+describe('exportAllSettings — 匯出當前全部設定（純讀 localStorage，additive）', () => {
+  it('全部 EDITOR_STORE_KEYS 都出現在 settings（含未設定），format/version 正確', () => {
+    const out = exportAllSettings(new Date('2026-09-07T12:00:00Z'));
+    expect(out.format).toBe('transform-brawl-settings');
+    expect(out.version).toBe(SETTINGS_EXPORT_VERSION);
+    expect(out.exportedAt).toBe('2026-09-07T12:00:00.000Z');
+    for (const name of Object.keys(EDITOR_STORE_KEYS)) {
+      expect(out.settings[name]).toBeDefined();
+      // storageKey 對應契約字串
+      expect(out.settings[name].storageKey).toBe(
+        EDITOR_STORE_KEYS[name as keyof typeof EDITOR_STORE_KEYS],
+      );
+      expect(typeof out.settings[name].label).toBe('string');
+      expect(typeof out.settings[name].targetDefault).toBe('string');
+    }
+  });
+
+  it('沒調過任何設定 → 全 configured:false / value:null / configuredCount 0', () => {
+    const out = exportAllSettings();
+    expect(out.configuredCount).toBe(0);
+    for (const name of Object.keys(EDITOR_STORE_KEYS)) {
+      expect(out.settings[name].configured).toBe(false);
+      expect(out.settings[name].value).toBeNull();
+    }
+  });
+
+  it('★ 有調過的 key → configured:true + 帶回已 parse 的值；沒調的仍 null；count 正確', () => {
+    applyToGame(EDITOR_STORE_KEYS.uiLayout, { jp: { panelScale: 0.5 } });
+    applyToGame(EDITOR_STORE_KEYS.dash, { speed: 900 });
+    const out = exportAllSettings();
+    expect(out.configuredCount).toBe(2);
+    expect(out.settings.uiLayout.configured).toBe(true);
+    expect(out.settings.uiLayout.value).toEqual({ jp: { panelScale: 0.5 } });
+    expect(out.settings.dash.configured).toBe(true);
+    expect(out.settings.dash.value).toEqual({ speed: 900 });
+    // 未調的維持 null
+    expect(out.settings.enemies.configured).toBe(false);
+    expect(out.settings.enemies.value).toBeNull();
+  });
+
+  it('★ localStorage 不可用 → 仍回骨架（configuredCount 0，全 null），不炸', () => {
+    delete (globalThis as { localStorage?: Storage }).localStorage;
+    expect(() => exportAllSettings()).not.toThrow();
+    const out = exportAllSettings();
+    expect(out.configuredCount).toBe(0);
+    expect(Object.keys(out.settings).length).toBe(Object.keys(EDITOR_STORE_KEYS).length);
   });
 });

@@ -83,3 +83,85 @@ export function hasOverride(key: EditorStoreKey): boolean {
     return false;
   }
 }
+
+/** 匯出檔格式版本（結構改動時 bump，翼騎對應寫入時可判版）。 */
+export const SETTINGS_EXPORT_VERSION = 1;
+
+/** 各 store key 對應「設定名稱」+「翼騎寫入的 repo default 提示」（給匯出 JSON 標明用途）。 */
+const KEY_META: Record<
+  keyof typeof EDITOR_STORE_KEYS,
+  { label: string; targetDefault: string }
+> = {
+  uiLayout: { label: 'UI/HUD 版面（位置/大小/字級/顏色等）', targetDefault: 'src/config/uiConfig.ts (DEFAULT_UI_LAYOUT 及各 resolveXXX 預設)' },
+  levels: { label: '關卡/波次設定', targetDefault: 'src/config/levelConfig.ts (或關卡資料)' },
+  enemies: { label: '敵人設定', targetDefault: 'src/config/enemyConfig.ts' },
+  skills: { label: '技能設定', targetDefault: 'src/config/skillConfig.ts' },
+  dash: { label: '衝刺(dash)設定', targetDefault: 'src/config/dashConfig.ts' },
+  firerain: { label: '火雨事件設定', targetDefault: 'src/config/firerainConfig.ts' },
+  guard: { label: '守護波設定', targetDefault: 'src/config/guardConfig.ts (或事件設定)' },
+  chest: { label: '寶箱設定', targetDefault: 'src/config/chestConfig.ts' },
+  hitfeel: { label: '打擊感(hitfeel)設定', targetDefault: 'src/config/hitfeelConfig.ts' },
+  attackSpeed: { label: '攻擊速度設定', targetDefault: 'src/config/attackConfig.ts (或戰鬥設定)' },
+  mapBounds: { label: '地圖邊界設定', targetDefault: 'src/config/mapConfig.ts (或場景邊界)' },
+};
+
+/** 單一 key 匯出項。 */
+export interface ExportedSettingEntry {
+  /** localStorage key 全名（契約字串）。 */
+  storageKey: string;
+  /** 人類可讀設定名稱。 */
+  label: string;
+  /** 翼騎對應寫進哪個 repo default config 的提示。 */
+  targetDefault: string;
+  /** 使用者是否實際調過（localStorage 有值）。 */
+  configured: boolean;
+  /** 當前值（configured 才有；已 parse 的物件）。未設定為 null。 */
+  value: unknown | null;
+}
+
+/** 匯出全部設定的檔案結構。 */
+export interface SettingsExport {
+  format: 'transform-brawl-settings';
+  version: number;
+  /** ISO 匯出時間。 */
+  exportedAt: string;
+  /** 有幾個 key 被實際調過（configured）。 */
+  configuredCount: number;
+  /** 各設定 key → 值 + 用途/對應 default 提示。 */
+  settings: Record<string, ExportedSettingEntry>;
+}
+
+/**
+ * 匯出當前全部設定（純讀 localStorage，additive，不改任何既有套用/讀取邏輯）。
+ *
+ * 收集 EDITOR_STORE_KEYS 全部 key 的當前 localStorage 值，打包成結構化 JSON：
+ *  - 有調過的 key → configured:true + 已 parse 的 value；
+ *  - 沒調過 → configured:false + value:null（標明「用打包預設」）。
+ * 每個 key 附 label（設定名稱）+ targetDefault（翼騎要寫進哪個 repo default）+ version。
+ * localStorage 不可用 → 仍回一份 configuredCount:0 的骨架（呼叫端可提示無設定）。
+ */
+export function exportAllSettings(now: Date = new Date()): SettingsExport {
+  const settings: Record<string, ExportedSettingEntry> = {};
+  let configuredCount = 0;
+  const available = hasLocalStorage();
+  for (const [name, storageKey] of Object.entries(EDITOR_STORE_KEYS)) {
+    const meta = KEY_META[name as keyof typeof EDITOR_STORE_KEYS];
+    const value = available ? loadOverride(storageKey as EditorStoreKey) : null;
+    const configured = value !== null;
+    if (configured) configuredCount++;
+    settings[name] = {
+      storageKey,
+      label: meta.label,
+      targetDefault: meta.targetDefault,
+      configured,
+      value,
+    };
+  }
+  return {
+    format: 'transform-brawl-settings',
+    version: SETTINGS_EXPORT_VERSION,
+    exportedAt: now.toISOString(),
+    configuredCount,
+    settings,
+  };
+}
