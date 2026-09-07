@@ -270,6 +270,10 @@ export class GameScene extends Phaser.Scene {
     const enemy = new EnemySystem();
     // 十六輪(追加)：GrabSystem 掙脫成功→請求玩家強制真攻擊（揮開 grabber）；綁 hook 避免 GrabSystem 直接耦合 PlayerControlSystem。
     this.ctx.requestPlayerAttack = (pid: number) => playerControl.requestForcedAttack(pid);
+    // 十六輪：充能式衝刺 UI 讀取接口綁定（界騎繪製衝刺充能格 + 冷卻壓黑）。
+    this.ctx.getDashCharges = (pid: number) => playerControl.getDashCharges(pid);
+    this.ctx.getDashMaxCharges = (pid: number) => playerControl.getDashMaxCharges(pid);
+    this.ctx.getDashCooldownProgress = (pid: number) => playerControl.getDashCooldownProgress(pid);
     // InputSystem 同時是 ctx.input 服務與 registry member；排最前做輸入 snapshot。
     this.register(this.ctx.input);
     this.register(this.ctx.buff); // 計時 buff 框架（頭盔/寶盒共用）：早更新，效果供後面讀

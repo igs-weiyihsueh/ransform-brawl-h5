@@ -20,6 +20,10 @@ export interface DashConfig {
   knockback: number;
   /** 衝刺命中判定圓半徑（unit）。 */
   radius: number;
+  /** 衝刺充能最大格數（十六輪充能式衝刺）。 */
+  maxCharges: number;
+  /** 每格衝刺充能回充時間（秒）。 */
+  cooldownDuration: number;
 }
 
 /** 匯出檔頂層。 */
@@ -97,6 +101,12 @@ export function validateDash(json: unknown): ValidateDashResult {
   checkNum(dash, 'damage', errors, { min: 0 });
   checkNum(dash, 'knockback', errors, { min: 0 });
   checkNum(dash, 'radius', errors, { min: 0 });
+  // 十六輪 充能式衝刺欄位：向後相容——舊 override 沒這兩欄則以打包預設補（不報錯）；
+  //   有給才驗範圍（maxCharges>=1、cooldownDuration>0）。
+  if (dash.maxCharges === undefined) dash.maxCharges = DASH_CONFIG.maxCharges;
+  else checkNum(dash, 'maxCharges', errors, { min: 1 });
+  if (dash.cooldownDuration === undefined) dash.cooldownDuration = DASH_CONFIG.cooldownDuration;
+  else checkNum(dash, 'cooldownDuration', errors, { min: 0 });
 
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, data: root as unknown as DashFile };

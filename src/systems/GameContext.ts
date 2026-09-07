@@ -70,6 +70,15 @@ export interface GameContext {
    * GrabSystem 掙脫成功那刻呼叫 → 角色下一幀揮一次真攻擊（揮開 grabber，非只解除）。避免直接耦合 PlayerControlSystem 型別。
    */
   requestPlayerAttack?: (playerId: number) => void;
+  /**
+   * 十六輪：充能式衝刺 UI 讀取 hook（GameScene 綁 PlayerControlSystem）。供界騎繪製衝刺充能格 + 冷卻壓黑。
+   * - getDashCharges：目前可用格數（0~max）。
+   * - getDashMaxCharges：最大格數（=3）。
+   * - getDashCooldownProgress：當前回充格進度 0~1（滿格 0）。
+   */
+  getDashCharges?: (playerId: number) => number;
+  getDashMaxCharges?: (playerId: number) => number;
+  getDashCooldownProgress?: (playerId: number) => number;
   /** JP 累積獎池：三組燈/倍數池、集滿派彩（幕通關給燈、命中扣 credit 累積、灌 ticket）。 */
   readonly jp: JpSystem;
   /** 通用計時 buff 框架（頭盔能力 + 寶盒坐騎/二段變身共用）。 */

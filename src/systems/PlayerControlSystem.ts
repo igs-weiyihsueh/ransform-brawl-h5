@@ -1,6 +1,14 @@
 import { PLAYER_CONFIG } from '@/config/combatConfig';
 import { getResolvedDash } from '@/config/dashSchema';
 import {
+  type DashChargeState,
+  makeDashChargeState,
+  canDash as canDashCharge,
+  consumeDashCharge,
+  tickDashCharge,
+  dashCooldownProgress,
+} from '@/systems/dashChargeMath';
+import {
   FREEZE_SEC,
   LIGHTNING_CHAIN_COUNT,
   LIGHTNING_CHAIN_DAMAGE,
@@ -57,6 +65,9 @@ export class PlayerControlSystem implements GameSystem {
   /** 每玩家本次衝刺是否已扣過 Credit（一次衝刺最多扣 1）。 */
   private dashConsumedCredit = new Map<number, boolean>();
 
+  /** 十六輪：每玩家衝刺充能格狀態（充能式衝刺——3 格、消耗 1/次、逐格回充）。 */
+  private dashCharge = new Map<number, DashChargeState>();
+
   /** 十一輪#3：每玩家衝刺防護罩特效 handle（起手建、衝刺期間跟本體、結束淡出銷毀）。 */
   private dashShield = new Map<number, Phaser.GameObjects.Image | null>();
   /** 十六輪(追加)：被抓掙脫成功那刻請求「強制真攻擊」的 pid 集合（GrabSystem escape 觸發，下一幀 updatePlayer 消費揮擊）。 */
@@ -65,6 +76,43 @@ export class PlayerControlSystem implements GameSystem {
   /** 十六輪(追加)：GrabSystem 掙脫成功呼叫 → 該玩家下一幀強制揮一次真攻擊（揮開打退 grabber，非只解除被抓）。 */
   requestForcedAttack(playerId: number): void {
     this.forcedAttackPids.add(playerId);
+  }
+
+  // ---- 十六輪：充能式衝刺 -------------------------------------------------
+
+  /** 取某玩家衝刺充能狀態（惰性建立，初始滿格）。 */
+  private dashChargeOf(playerId: number): DashChargeState {
+    let s = this.dashCharge.get(playerId);
+    if (!s) {
+      s = makeDashChargeState(this.dashMaxChargesOf());
+      this.dashCharge.set(playerId, s);
+    }
+    return s;
+  }
+
+  /** 衝刺最大充能格數（讀已解析 dash 參數；override 優先）。 */
+  private dashMaxChargesOf(): number {
+    return getResolvedDash().maxCharges;
+  }
+
+  /** 每格衝刺回充時間（秒）。 */
+  private dashCooldownDurationOf(): number {
+    return getResolvedDash().cooldownDuration;
+  }
+
+  /** 界騎 UI 接口：目前可用衝刺充能格數（0 ~ maxCharges）。 */
+  getDashCharges(playerId: number): number {
+    return this.dashChargeOf(playerId).currentCharges;
+  }
+
+  /** 界騎 UI 接口：衝刺最大充能格數（=3）。 */
+  getDashMaxCharges(_playerId: number): number {
+    return this.dashMaxChargesOf();
+  }
+
+  /** 界騎 UI 接口：當前正在回充那一格的冷卻進度 0~1（滿格回 0）。供逆時針壓黑動畫。 */
+  getDashCooldownProgress(playerId: number): number {
+    return dashCooldownProgress(this.dashChargeOf(playerId), this.dashMaxChargesOf(), this.dashCooldownDurationOf());
   }
 
   /** 十一輪#2：每玩家本次攻擊的 auto-aim 目標點（按攻擊當下算最近怪；resolveAttack 用它建 shape 朝向）。 */
@@ -85,6 +133,8 @@ export class PlayerControlSystem implements GameSystem {
     this.applyBuffState();
     // S4：對每個 player（P1 人類 + P2-P4 AI）各自跑操控結算。
     for (const player of this.ctx.players) {
+      // 十六輪：衝刺充能逐格回充（每幀推進，不受待機/進場影響）。
+      this.dashCharge.set(player.playerId, tickDashCharge(this.dashChargeOf(player.playerId), dt, this.dashMaxChargesOf(), this.dashCooldownDurationOf()));
       this.updatePlayer(player, dt);
     }
     if (this.shapeFlash > 0) this.shapeFlash -= dt;
@@ -152,8 +202,11 @@ export class PlayerControlSystem implements GameSystem {
     // hitFeel 玩家 hitlag 推進：計時歸零 or 攻擊結束 → 恢復（在移動/衝刺前 tick，isInHitlag 期間 move/dash 自會凍結）。
     if (typeof player.tickHitlag === 'function') player.tickHitlag(dt);
 
-    // 衝刺觸發（edge；需可攻擊、非衝刺中）。
-    if (src.justPressedDash() && !player.isDashing() && credit.canAttack(pid)) {
+    // 衝刺觸發（edge；需可攻擊、非衝刺中、且有充能格）。
+    if (src.justPressedDash() && !player.isDashing() && credit.canAttack(pid) && canDashCharge(this.dashChargeOf(pid))) {
+      // 十六輪：消耗一格衝刺充能（滿格→掉格則起算該格冷卻）。
+      const consumed = consumeDashCharge(this.dashChargeOf(pid), this.dashMaxChargesOf());
+      this.dashCharge.set(pid, consumed.state);
       this.clearDashShield(pid); // 十五輪 bug④：重新衝刺前先清前一個防護罩 handle（防反覆 dash 舊 fx 殘留/洩漏）
       player.startDash(src.getMoveVector());
       this.dashConsumedCredit.set(pid, false);

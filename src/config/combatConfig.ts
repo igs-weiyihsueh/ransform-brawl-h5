@@ -59,6 +59,10 @@ export const DASH_CONFIG = {
   knockback: 1,
   /** 衝刺命中判定圓半徑（unit）。 */
   radius: 0.5,
+  /** 衝刺充能最大格數（十六輪 充能式衝刺，異靈規格=3）。 */
+  maxCharges: 3,
+  /** 每格衝刺充能回充所需時間（秒）。跑滿一圈 +1 格。 */
+  cooldownDuration: 1.2,
 } as const;
 
 /**
