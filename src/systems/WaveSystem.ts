@@ -117,7 +117,9 @@ export class WaveSystem implements GameSystem {
       return isResolvedFireRainPreset(en) ? getResolvedFireRainPreset(en) : null;
     }
     // 守護波 + 守護 preset 帶火雨 preset 名。六輪#1：node.attachFireRain 三態可 per-node 覆蓋 preset 預設。
-    if (this.guardEvent && !this.guardEvent.isFinished()) {
+    // 十四輪：★只在 combat phase 才降火雨（對齊 Unity 解暗後 StartNodeModifiers）——開場 introMove/reveal/focus
+    //   聚焦壓黑期間場上乾淨（無怪無火雨），解暗後(combat)才與生怪同時降。避免聚焦期間火雨太早下。
+    if (this.guardEvent && !this.guardEvent.isFinished() && this.guardEvent.isCombatPhase()) {
       const preset = getResolvedGuardPreset((node as { eventPresetName?: string })?.eventPresetName);
       const raw = (node as { attachFireRain?: string }).attachFireRain;
       // undefined→沿用 preset.attachFireRain；'none'→null 無火雨；其餘→該 preset 名。

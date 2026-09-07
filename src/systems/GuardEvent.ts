@@ -87,6 +87,11 @@ export class GuardEvent {
     return this.finished;
   }
 
+  /** 是否進入戰鬥階段（combat：解暗後生怪/降火雨；開場 introMove/reveal/focus 期間場上乾淨，對齊 Unity StartNodeModifiers 解暗後才啟動）。 */
+  isCombatPhase(): boolean {
+    return this.phase === 'combat';
+  }
+
   /** Debug（N 熱鍵快速過波）：強制結束守護波（視為完成/勝，跑完整 cleanup：解鎖操作/清 spotlight/守護字/清怪/destroy 雕像）。 */
   forceFinish(): void {
     if (this.finished) return;
