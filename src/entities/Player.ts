@@ -340,10 +340,11 @@ export class Player implements Hittable {
     return true;
   }
 
-  /** 直接設定位置（地圖邊界 clamp 寫回用）。 */
+  /** 直接設定位置（地圖邊界 clamp 寫回 / 守護波 scripted introMove 等）。十六輪⑤：一併同步 footGlow 搜索圈跟隨（避免 scripted 自動移動時搜索圈留原地）。 */
   setPosition(x: number, y: number): void {
     this.anim.sprite.x = x;
     this.anim.sprite.y = y;
+    this.syncFootGlow();
   }
 
   /**

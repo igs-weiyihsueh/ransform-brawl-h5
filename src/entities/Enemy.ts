@@ -125,6 +125,9 @@ export class Enemy implements Hittable {
    */
   private chargeAnchor: Vec2 | null = null;
 
+  /** 十六輪(5項)③：無目標遊走——當前遊走方向(單位向量)+重選方向倒數(秒)。 */
+  private wanderDir: Vec2 = { x: 1, y: 0 };
+  private wanderRetargetSec = 0;
   /** grabber（抓人者，用戶試玩#4）：設為 grabber 後由 GrabSystem 驅動追玩家、衝來期間無敵、暫停一般 AI。 */
   private grabber = false;
   /** grabber 已抓住玩家（鎖定）：站著維持 idle（用戶新#5），非追擊 move。 */
@@ -505,7 +508,17 @@ export class Enemy implements Hittable {
     if (this.dead || this.state === 'death') return;
     if (this.isImmovable()) return; // 菁英像牆不被吸
     if (this.grabber || this.knockbackRemaining > 0 || this.freezeRemaining > 0 || this.stunRemaining > 0) return;
-    const next = mashAttractStep({ x: this.anim.sprite.x, y: this.anim.sprite.y }, center, dt);
+    const cur = { x: this.anim.sprite.x, y: this.anim.sprite.y };
+    const next = mashAttractStep(cur, center, dt);
+    // 十六輪①：實際被吸移動時播 move 走路動畫 + 面向移動方向（像正常走過來，非滑行）；沒位移則 idle。
+    const moved = Math.abs(next.x - cur.x) > 1e-4 || Math.abs(next.y - cur.y) > 1e-4;
+    if (moved) {
+      if (next.x > cur.x + 1e-4) this.setFacing(1);
+      else if (next.x < cur.x - 1e-4) this.setFacing(-1);
+      this.anim.play('move');
+    } else {
+      this.anim.play('idle');
+    }
     this.anim.sprite.x = next.x;
     this.anim.sprite.y = next.y;
   }
@@ -593,10 +606,22 @@ export class Enemy implements Hittable {
     }
 
     // 守護波：有覆蓋目標則追/打雕像，否則玩家。
-    // 七輪 待機隔離：無雕像目標且玩家待機(playerPos=null) → 無有效目標，原地待命(idle、不追不打)。
+    // 七輪 待機隔離：無雕像目標且玩家待機(playerPos=null) → 無有效目標。
+    // 十六輪(5項)③：無目標時不再站原地發呆 → 隨機遊走（巡邏感：慢速走+定期換向+撞邊界反彈）。
     const aim = this.guardTarget ? this.guardTarget.getPosition() : playerPos;
     if (!aim) {
-      this.anim.play('idle');
+      this.wanderRetargetSec -= dt;
+      if (this.wanderRetargetSec <= 0) {
+        const ang = Math.random() * Math.PI * 2;
+        this.wanderDir = { x: Math.cos(ang), y: Math.sin(ang) };
+        this.wanderRetargetSec = 1.5 + Math.random() * 1.5; // 1.5~3s 換一次方向
+      }
+      const wanderSpeed = this.cfg.moveSpeed * PPU * 0.4; // 遊走慢速（追擊的 40%）
+      this.anim.sprite.x += this.wanderDir.x * wanderSpeed * dt;
+      this.anim.sprite.y += this.wanderDir.y * wanderSpeed * dt;
+      if (this.wanderDir.x > 0.01) this.setFacing(1);
+      else if (this.wanderDir.x < -0.01) this.setFacing(-1);
+      this.anim.play('move');
       return;
     }
     const dx = aim.x - this.anim.sprite.x;
