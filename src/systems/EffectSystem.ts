@@ -1209,25 +1209,40 @@ export class EffectSystem {
    * 由 TransformSystem.registerMashHit 每按觸發一次。純視覺。
    */
   mashHitParticle(x: number, y: number): void {
-    const depth = PANEL_DEPTH + 15; // 十五輪回歸修：提到面板/JP 橫幅(≤1002)之上，否則死亡點在 JP 橫幅帶(螢幕中央)被遮不可見
-    const count = 6;
+    const depth = PANEL_DEPTH + 15; // 提到面板/JP 橫幅(≤1002)之上，否則角色在 JP 橫幅帶時被遮不可見
+    // 白閃爆點強調（強化連打回饋，類死亡粒子）：白圓快速放大淡出。
+    const flash = this.scene.add.graphics().setDepth(depth);
+    flash.fillStyle(0xffffff, 0.9);
+    flash.fillCircle(0, 0, 14);
+    flash.x = x;
+    flash.y = y;
+    this.scene.tweens.add({
+      targets: flash,
+      scale: 2.6,
+      alpha: 0,
+      duration: 200,
+      ease: 'Cubic.easeOut',
+      onComplete: () => flash.destroy(),
+    });
+    // 爆散粒子（加強：14 顆、8-13px、噴 70-130px、320-460ms 更強烈有感）。
+    const count = 14;
     for (let i = 0; i < count; i += 1) {
-      // 主要往上噴（-90°±60°）+ 隨機散開，蓄力上升感。
-      const a = -Math.PI / 2 + (Math.random() - 0.5) * (Math.PI * 0.7);
+      // 主要往上噴（-90°±70°）+ 隨機散開，蓄力上升感。
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * (Math.PI * 0.78);
       const g = this.scene.add.graphics().setDepth(depth);
       // 金/白交錯（蓄力色）。
       g.fillStyle(i % 2 === 0 ? 0xffe98a : 0xffffff, 1);
-      g.fillCircle(0, 0, Phaser.Math.Between(4, 7));
+      g.fillCircle(0, 0, Phaser.Math.Between(8, 13));
       g.x = x;
       g.y = y;
-      const dist = Phaser.Math.Between(30, 60);
+      const dist = Phaser.Math.Between(70, 130);
       this.scene.tweens.add({
         targets: g,
         x: x + Math.cos(a) * dist,
         y: y + Math.sin(a) * dist,
         alpha: 0,
         scale: 0.2,
-        duration: Phaser.Math.Between(280, 420),
+        duration: Phaser.Math.Between(320, 460),
         ease: 'Cubic.easeOut',
         onComplete: () => g.destroy(),
       });
