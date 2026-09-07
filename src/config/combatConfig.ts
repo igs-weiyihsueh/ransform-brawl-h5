@@ -61,8 +61,8 @@ export const DASH_CONFIG = {
   radius: 0.5,
   /** 衝刺充能最大格數（十六輪 充能式衝刺，異靈規格=3）。 */
   maxCharges: 3,
-  /** 每格衝刺充能回充所需時間（秒）。跑滿一圈 +1 格。 */
-  cooldownDuration: 1.2,
+  /** 每格衝刺充能回充所需時間（秒）。跑滿一圈 +1 格。用戶定案 2 秒。 */
+  cooldownDuration: 2,
 } as const;
 
 /**
