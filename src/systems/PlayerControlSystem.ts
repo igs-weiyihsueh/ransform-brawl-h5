@@ -172,18 +172,21 @@ export class PlayerControlSystem implements GameSystem {
         );
         if (player.tryStartAttack(intent.attack.hitDelay / as.mult, as.cooldown, as.animTimeScale)) {
           this.pendingIntent.set(pid, intent);
-          // 十一輪#2 auto-aim：找最近存活怪 → aim 朝牠（無怪→null，resolveAttack fallback 水平 facing）。
-          // 防禦：最小 stub player（無 getPosition，如 S2 契約測）→ 跳過 auto-aim/lunge（aim=null）。
+          // 十三輪#1#2：auto-aim「只左右」——找最近怪只決定「面向左/右那側」（追怪感），
+          //   但攻擊 shape/特效/判定回水平 facing（不朝上下）——因玩家攻擊動畫只有左右揮，
+          //   朝任意 aim(含上下) 會「動作左右揮卻打上下特效/判定」（用戶#1#2 同源）。故 pendingAim=null（走水平 facing）。
+          // 防禦：最小 stub player（無 getPosition，如 S2 契約測）→ 跳過。
           const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
-          const aim = ppos ? nearestPoint(ppos, this.enemyHitCenters()) : null;
-          this.pendingAim.set(pid, aim);
+          const nearest = ppos ? nearestPoint(ppos, this.enemyHitCenters()) : null;
+          this.pendingAim.set(pid, null); // ★只左右：攻擊不朝上下（水平 facing）
+          if (ppos && nearest) {
+            // 面向轉向最近怪那側（只取左右，依 dx 符號）。
+            if (typeof player.faceTowards === 'function') player.faceTowards(nearest.x);
+          }
           if (ppos) {
-            // 面向轉向怪（依 aim 水平分量）。
-            if (aim && typeof player.faceTowards === 'function') player.faceTowards(aim.x);
-            // 十一輪#2 lunge：往攻擊方向前戳（有 aim 朝怪、無 aim 用 facing 水平）。
-            const ldx = aim ? aim.x - ppos.x : player.getFacing?.() ?? 1;
-            const ldy = aim ? aim.y - ppos.y : 0;
-            player.startLunge?.(ldx, ldy);
+            // 十三輪#1#2：lunge 前戳「只左右」——往最近怪的水平那側（非垂直），對齊只左右。
+            const dirX = nearest ? Math.sign(nearest.x - ppos.x) || (player.getFacing?.() ?? 1) : player.getFacing?.() ?? 1;
+            player.startLunge?.(dirX, 0);
           }
         }
       }
