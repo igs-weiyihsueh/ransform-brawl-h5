@@ -966,35 +966,62 @@ export class EffectSystem {
   }
 
   /**
-   * 九輪#3：玩家衝刺前方防護罩（fx_player_dash_shield 128×128，朝右凸弧形力場罩）。
-   * 取代原拖尾（用戶要「改成防護罩」）：罩貼角色前方（沿衝刺方向偏移半身位）、
-   * 依衝刺方向 rotate（素材弧朝右=0 度基準，對齊 angleRad）、染玩家色、scale 微張 1.0→1.12 + 淡入淡出，衝刺短時顯示。
+   * 十一輪#3：玩家衝刺前方防護罩（fx_player_dash_shield 128×128，朝右凸弧形力場罩）。
+   * 改為 handle 式：起手 spawn 一個持續 sprite（不自動銷毀），衝刺期間每幀 updatePlayerDashShield 跟本體+朝向，
+   * 衝刺結束 endPlayerDashShield 淡出銷毀。修好舊 bug（一次性、停起始點、220ms 早淡）：現在跟角色本體移動、
+   * 持續整個衝刺、更明顯（alpha 1.0 飽和、基礎 scale 1.25、輕微脈動）。
    * @param x,y 玩家位置（世界座標）。
    * @param angleRad 衝刺方向（罩朝此方向凸出）。
    * @param color 玩家識別色（setTint 染色）；省略=不染。
+   * @returns 特效 handle（傳回給 update/end）；素材未載入回 null。
    */
-  playerDash(x: number, y: number, angleRad: number, color?: number): void {
+  playerDash(x: number, y: number, angleRad: number, color?: number): Phaser.GameObjects.Image | null {
     const shieldKey = ENEMY_ATTACK_VFX.playerDashShield.key;
-    if (!this.scene.textures.exists(shieldKey)) return;
-    // 罩貼角色前方：沿衝刺方向偏移半身位（~34px），罩凸弧朝衝刺方向。
-    const FORWARD_OFFSET_PX = 34;
-    const sx = x + Math.cos(angleRad) * FORWARD_OFFSET_PX;
-    const sy = y + Math.sin(angleRad) * FORWARD_OFFSET_PX;
+    if (!this.scene.textures.exists(shieldKey)) return null;
+    const { sx, sy } = this.dashShieldPos(x, y, angleRad);
     const spr = this.scene.add.image(sx, sy, shieldKey);
-    // origin(0.5,0.5) 罩中心對齊偏移點；素材弧朝右(0 度)→ rotate angleRad 對齊衝刺方向。
+    // origin(0.5,0.5) 罩中心；素材弧朝右(0 度)→ rotate angleRad 對齊衝刺方向。
     spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH).setRotation(angleRad);
-    if (color !== undefined) spr.setTint(color); // 染玩家識別色
-    spr.setScale(1.0).setAlpha(0);
-    // 淡入(快)→ 罩微張 1.0→1.12 + 淡出（衝刺短時力場感）。
-    this.scene.tweens.add({ targets: spr, alpha: 0.95, duration: 60, ease: 'Quad.easeOut' });
+    if (color !== undefined) spr.setTint(color); // 染玩家識別色（飽和）
+    // 加明顯：基礎 scale 1.25、alpha 快淡入到 1.0（實）；輕微脈動 1.25↔1.35 循環（衝刺期間持續，非 220ms 就淡）。
+    spr.setScale(1.25).setAlpha(0);
+    this.scene.tweens.add({ targets: spr, alpha: 1.0, duration: 50, ease: 'Quad.easeOut' });
     this.scene.tweens.add({
       targets: spr,
-      scale: 1.12,
+      scale: 1.35,
+      duration: 160,
+      yoyo: true,
+      repeat: -1, // 衝刺期間持續脈動；endPlayerDashShield 會停 tween + 淡出銷毀。
+      ease: 'Sine.easeInOut',
+    });
+    return spr;
+  }
+
+  /** 罩貼角色前方偏移點（沿衝刺方向偏移半身位）。 */
+  private dashShieldPos(x: number, y: number, angleRad: number): { sx: number; sy: number } {
+    const FORWARD_OFFSET_PX = 34;
+    return { sx: x + Math.cos(angleRad) * FORWARD_OFFSET_PX, sy: y + Math.sin(angleRad) * FORWARD_OFFSET_PX };
+  }
+
+  /** 十一輪#3：衝刺期間每幀更新防護罩跟本體+朝向（PlayerControlSystem updateDash 呼叫）。handle=null 忽略。 */
+  updatePlayerDashShield(handle: Phaser.GameObjects.Image | null, x: number, y: number, angleRad: number): void {
+    if (!handle || !handle.active) return;
+    const { sx, sy } = this.dashShieldPos(x, y, angleRad);
+    handle.setPosition(sx, sy).setRotation(angleRad);
+  }
+
+  /** 十一輪#3：衝刺結束淡出銷毀防護罩（停脈動 tween→短淡出）。handle=null 忽略。 */
+  endPlayerDashShield(handle: Phaser.GameObjects.Image | null): void {
+    if (!handle) return;
+    this.scene.tweens.killTweensOf(handle);
+    if (!handle.active) { handle.destroy(); return; }
+    this.scene.tweens.add({
+      targets: handle,
       alpha: 0,
-      duration: 220,
-      delay: 40,
+      scale: 1.5,
+      duration: 140,
       ease: 'Quad.easeOut',
-      onComplete: () => spr.destroy(),
+      onComplete: () => handle.destroy(),
     });
   }
 

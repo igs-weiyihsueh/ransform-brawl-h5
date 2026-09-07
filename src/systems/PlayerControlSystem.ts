@@ -55,6 +55,9 @@ export class PlayerControlSystem implements GameSystem {
   /** 每玩家本次衝刺是否已扣過 Credit（一次衝刺最多扣 1）。 */
   private dashConsumedCredit = new Map<number, boolean>();
 
+  /** 十一輪#3：每玩家衝刺防護罩特效 handle（起手建、衝刺期間跟本體、結束淡出銷毀）。 */
+  private dashShield = new Map<number, Phaser.GameObjects.Image | null>();
+
   /** debug 繪製用：最近判定形狀（P1）。 */
   private lastOBB: OBB | null = null;
   private lastCircle: AttackCircle | null = null;
@@ -121,18 +124,32 @@ export class PlayerControlSystem implements GameSystem {
     if (src.justPressedDash() && !player.isDashing() && credit.canAttack(pid)) {
       player.startDash(src.getMoveVector());
       this.dashConsumedCredit.set(pid, false);
-      // 七輪：衝刺開始播拖尾特效（玩家位置、衝刺方向、染玩家色）。純視覺。
+      // 十一輪#3：衝刺起手建防護罩特效 handle（持續整個衝刺、跟本體移動）。純視覺。
       const dd = player.getDashDir?.() ?? { x: player.getFacing?.() ?? 1, y: 0 };
       const dpos = player.getPosition?.();
       if (dpos) {
-        this.ctx.effects?.playerDash?.(dpos.x, dpos.y, Math.atan2(dd.y, dd.x), playerColor(pid));
+        const handle = this.ctx.effects?.playerDash?.(dpos.x, dpos.y, Math.atan2(dd.y, dd.x), playerColor(pid)) ?? null;
+        this.dashShield.set(pid, handle);
       }
     }
 
     if (player.isDashing()) {
       player.updateDash(dt);
       this.resolveDashHits(player);
+      // 十一輪#3：防護罩每幀跟當前本體位置 + 朝衝刺方向（修「停起始點、貼殘影」bug）。
+      const handle = this.dashShield.get(pid) ?? null;
+      if (handle) {
+        const dd = player.getDashDir?.() ?? { x: player.getFacing?.() ?? 1, y: 0 };
+        const dpos = player.getPosition?.();
+        if (dpos) this.ctx.effects?.updatePlayerDashShield?.(handle, dpos.x, dpos.y, Math.atan2(dd.y, dd.x));
+      }
     } else {
+      // 十一輪#3：衝刺結束（非 dashing）→ 若有防護罩 handle，淡出銷毀。
+      const handle = this.dashShield.get(pid);
+      if (handle) {
+        this.ctx.effects?.endPlayerDashShield?.(handle);
+        this.dashShield.delete(pid);
+      }
       if (credit.canAct(pid)) {
         const mv = src.getMoveVector();
         // 推怪負重（用戶）：有移動意圖才算——數真空圈內可推敵人(非菁英/非grabber)→降速。
