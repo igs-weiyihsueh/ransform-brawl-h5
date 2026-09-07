@@ -13,8 +13,11 @@ import {
 } from '@/systems/chestRewardDisplay';
 import {
   COMBO_REWARD_FX,
+  COMBO_TICKET_BURST,
   comboRewardFontSize,
   comboRewardLabel,
+  sparkleBurstCount,
+  ticketBurstCount,
 } from '@/systems/comboRewardDisplay';
 import type { ChestRewardKind } from '@/config/chestConfig';
 
@@ -57,6 +60,10 @@ const ENEMY_ATTACK_VFX = {
   guardFocusGlow: { key: 'vfx-guard-focus-glow', path: `${BASE_PATH}/fx_guard_focus_glow.png` },
   /** 十五輪：連打變身腳下金黃召喚陣（1024×1024 RGBA，暖金魔法陣：同心環+六芒+符文+發光核，壓扁貼地自轉脈動）。 */
   mashSummonCircle: { key: 'vfx-mash-summon-circle', path: `${BASE_PATH}/fx_mash_summon_circle.png` },
+  /** COMBO 報獎彩票噴發：金黃彩票券（128×128，往上扇形噴出+重力回落+自轉）。 */
+  comboTicket: { key: 'vfx-combo-ticket', path: `${BASE_PATH}/fx_combo_ticket.png` },
+  /** COMBO 報獎閃光點綴：暖金四芒星（64×64，短命在票群間隨機閃）。 */
+  comboSparkle: { key: 'vfx-combo-sparkle', path: `${BASE_PATH}/fx_combo_sparkle.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -300,6 +307,10 @@ export class EffectSystem {
   ): void {
     const topY = y - COMBO_REWARD_FX.offsetYPx;
 
+    // 彩票噴發演出（用戶要：連段結算給彩票時彩票往上扇形噴出+重力回落+自轉+閃光）。
+    // 保留下方既有報獎文字/彈跳/滿檔光環不動，疊加此演出。
+    this.ticketBurst(x, topY, count, isMax);
+
     // 滿檔：識別色爆發光環（世界座標）。
     if (isMax) {
       const burst = this.scene.add.graphics();
@@ -349,6 +360,86 @@ export class EffectSystem {
       ease: 'Sine.easeOut',
       onComplete: () => txt.destroy(),
     });
+  }
+
+  /**
+   * COMBO 報獎彩票噴發（用戶要，純視覺）：從結算點上方扇形噴出彩票券
+   *  → 隨機初速 + 重力回落（噴上→散開→飄落）+ 隨機自轉 + 隨機 scale，尾段淡出銷毀；
+   *  票群間隨機閃暖金四芒星（短命）。數量依 combo 段數（段數越高越多），滿檔加成。
+   * 無素材（未載到）→ graceful 略過（不炸、不佔位方塊）。
+   */
+  private ticketBurst(x: number, y: number, count: number, isMax: boolean): void {
+    const c = COMBO_TICKET_BURST;
+    const ticketKey = ENEMY_ATTACK_VFX.comboTicket.key;
+    const sparkleKey = ENEMY_ATTACK_VFX.comboSparkle.key;
+    const hasTicket = this.scene.textures.exists(ticketKey);
+    const hasSparkle = this.scene.textures.exists(sparkleKey);
+    if (!hasTicket && !hasSparkle) return; // 無素材：略過（其餘報獎文字仍照演）
+    const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+    const spawnY = y - c.spawnRiseYPx;
+    const deg2rad = Math.PI / 180;
+
+    // 彩票券：扇形噴出 + 重力回落 + 自轉。
+    if (hasTicket) {
+      const n = ticketBurstCount(count, isMax);
+      for (let i = 0; i < n; i++) {
+        const sx = x + rnd(-c.spawnSpreadX, c.spawnSpreadX);
+        const spr = this.scene.add.image(sx, spawnY, ticketKey);
+        spr.setDepth(ENERGY_FLY_DEPTH + 2);
+        spr.setScale(rnd(c.ticketScaleMin, c.ticketScaleMax));
+        const ang = rnd(c.angleMinDeg, c.angleMaxDeg) * deg2rad;
+        const speed = rnd(c.speedMin, c.speedMax);
+        let vx = Math.cos(ang) * speed;
+        let vy = Math.sin(ang) * speed; // 角度偏上 → vy 為負（往上）
+        const spin = rnd(-c.spinDegPerSecMax, c.spinDegPerSecMax);
+        const total = rnd(c.fallSecMin, c.fallSecMax) + c.burstSec;
+        const fadeStart = total * (1 - c.fadeTailRatio);
+        let t = 0;
+        // 手動積分（速度+重力）：用 addCounter 當每幀 tick，delta 秒推進位置/旋轉/尾段淡出。
+        const tw = this.scene.tweens.addCounter({
+          from: 0,
+          to: 1,
+          duration: total * 1000,
+          onUpdate: (tween) => {
+            const dt = ((tween.getValue() ?? 0) * total) - t;
+            t += dt;
+            vy += c.gravity * dt;
+            spr.x += vx * dt;
+            spr.y += vy * dt;
+            spr.angle += spin * dt;
+            if (t > fadeStart) {
+              const k = Math.min(1, (t - fadeStart) / (total - fadeStart));
+              spr.setAlpha(1 - k);
+            }
+          },
+          onComplete: () => spr.destroy(),
+        });
+        void tw;
+      }
+    }
+
+    // 閃光點綴：票群間隨機位置短命閃現（縮放脈衝 + 淡出）。
+    if (hasSparkle) {
+      const sn = sparkleBurstCount(count, isMax);
+      for (let i = 0; i < sn; i++) {
+        const px = x + rnd(-c.spawnSpreadX * 1.4, c.spawnSpreadX * 1.4);
+        const py = spawnY + rnd(-40, 60);
+        const delay = rnd(0, c.fallSecMin) * 1000;
+        const life = rnd(c.sparkleSecMin, c.sparkleSecMax) * 1000;
+        const sp = this.scene.add.image(px, py, sparkleKey);
+        sp.setDepth(ENERGY_FLY_DEPTH + 3);
+        sp.setScale(0.2).setAlpha(0);
+        this.scene.tweens.add({
+          targets: sp,
+          delay,
+          scale: rnd(0.6, 1.0),
+          alpha: { from: 1, to: 0 },
+          duration: life,
+          ease: 'Quad.easeOut',
+          onComplete: () => sp.destroy(),
+        });
+      }
+    }
   }
 
   /**
