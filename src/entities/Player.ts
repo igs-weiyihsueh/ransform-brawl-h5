@@ -129,6 +129,8 @@ export class Player implements Hittable {
   private entranceEnd: Vec2 = { x: 0, y: 0 };
   /** 待機狀態（投幣進場循環）：開場/耗盡回待機時 true，投幣進場後 false。 */
   private waiting = false;
+  /** 十五輪：沒 credit（耗盡）狀態旗標（CreditSystem 進/出耗盡各設一次；敵人 targeting/環繞/抓排除）。 */
+  private outOfCredit = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -458,6 +460,19 @@ export class Player implements Hittable {
   setOutOfCreditTint(on: boolean): void {
     if (on) this.anim.sprite.setTint(0xff4444);
     else this.anim.sprite.clearTint();
+  }
+
+  /**
+   * 十五輪：沒 credit 玩家狀態（權威旗標，由 CreditSystem 進/出耗盡時各設一次；有別於每幀閃爍的 setOutOfCreditTint）。
+   * 供敵人 targeting / 環繞 / 抓 排除此玩家（沒 credit＝無敵待機，不被鎖定/攻擊/抓/環繞，對齊 Unity isOutOfCredit）。
+   */
+  setOutOfCredit(active: boolean): void {
+    this.outOfCredit = active;
+  }
+
+  /** 是否沒 credit（耗盡）狀態 → 敵人不鎖定/攻擊/抓/環繞（對齊 Unity）。 */
+  isOutOfCredit(): boolean {
+    return this.outOfCredit;
   }
 
   getFacing(): number {

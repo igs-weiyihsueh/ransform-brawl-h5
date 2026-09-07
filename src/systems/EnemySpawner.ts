@@ -91,7 +91,9 @@ export class EnemySpawner {
       getVacuumCenter: () => p.getVacuumCenter?.() ?? p.getHitCenter(),
       getVacuumRadius: () => p.getVacuumRadius?.() ?? p.getHitRadius(),
       // 七輪#11：衝刺時 isSurroundActive=false（對齊 Unity IsSurroundActive => ... && !isDashing）。
-      isSurroundActive: () => !(p.isWaiting?.() ?? false) && !(p.isDashing?.() ?? false),
+      // 十五輪：沒 credit（耗盡無敵待機）玩家也不被環繞（對齊 Unity IsSurroundActive => !isOutOfCredit）。
+      isSurroundActive: () =>
+        !(p.isWaiting?.() ?? false) && !(p.isDashing?.() ?? false) && !(p.isOutOfCredit?.() ?? false),
     };
     this.surroundAdapters.set(p as unknown as object, adapter);
     return adapter;

@@ -96,6 +96,28 @@ describe('TransformSystem — 變身/魂力', () => {
     expect(calls.sinkSet.at(-1)).toBe(false); // 清鉤子
   });
 
+  // 十五輪：沒 credit 回待機 → revertToHuman 強制退回凡人（對齊 Unity 回待機 revert transform）。
+  it('revertToHuman：變身中 → 退回凡人（換 Human、清鉤子、非變身）', () => {
+    const { sys, calls, fakePlayer } = makeSystem();
+    priv(sys).onPickup(fakeItem(), fakePlayer); // 變身
+    expect(sys.isTransformed(0)).toBe(true);
+    sys.revertToHuman(0); // 沒 credit 回待機呼叫
+    expect(sys.isTransformed(0)).toBe(false);
+    expect(sys.getSoul(0)).toBe(0);
+    expect(calls.switched.at(-1)).toBe('Human'); // 換回凡人
+    expect(calls.sinkSet.at(-1)).toBe(false); // 清扣魂鉤子
+  });
+
+  it('revertToHuman：未變身 → 冪等不動作（不重複 switchCharacter/flash）', () => {
+    const { sys, calls } = makeSystem();
+    const switchesBefore = calls.switched.length;
+    const flashesBefore = calls.flashes;
+    sys.revertToHuman(0);
+    expect(sys.isTransformed(0)).toBe(false);
+    expect(calls.switched.length).toBe(switchesBefore); // 未變身→不呼 switchCharacter
+    expect(calls.flashes).toBe(flashesBefore);
+  });
+
   it('退變後再撿道具 → 重新變身（而非回魂）', () => {
     const { sys, fakePlayer } = makeSystem();
     priv(sys).onPickup(fakeItem(), fakePlayer);

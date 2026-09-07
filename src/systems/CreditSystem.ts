@@ -79,6 +79,7 @@ export class CreditSystem implements GameSystem {
           s.countdown = 0;
           s.justExpired = true;
           player.setOutOfCreditTint(false);
+          player.setOutOfCredit?.(false); // 十五輪：解除無敵待機旗標（敵人恢復可鎖定——但此後即回待機仍受 isWaiting gate）
         }
       }
     }
@@ -92,6 +93,7 @@ export class CreditSystem implements GameSystem {
     if (s.credit <= 0) {
       s.outOfCredit = true;
       s.countdown = OUT_OF_CREDIT_COUNTDOWN;
+      this.playerOf(playerId)?.setOutOfCredit?.(true); // 十五輪：進耗盡＝無敵待機，敵人不鎖定/攻擊/抓/環繞
     }
   }
 
@@ -120,6 +122,7 @@ export class CreditSystem implements GameSystem {
     s.outOfCredit = false;
     s.countdown = 0;
     this.playerOf(playerId)?.setOutOfCreditTint(false);
+    this.playerOf(playerId)?.setOutOfCredit?.(false); // 十五輪：投幣解除耗盡 → 恢復可被鎖定
   }
 
   private playerOf(playerId: number) {

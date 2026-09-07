@@ -15,6 +15,7 @@ import { pushLoadFactor } from '@/systems/enemySeparation';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
 import { playerColor } from '@/config/playerConfig';
+import { WAITING_PLATFORM_LIFT } from '@/config/playerConfig';
 import { landingX } from '@/systems/entranceMath';
 import { ITEM_PICKUP_RADIUS } from '@/entities/TransformItem';
 import { initialItemPos } from '@/systems/itemGuideMath';
@@ -115,8 +116,11 @@ export class PlayerControlSystem implements GameSystem {
 
     // Credit 耗盡倒數歸零 → 回下方面板待機（投幣循環）。投幣可中途解除耗盡（在 CreditSystem）。
     if (typeof credit.consumeJustExpired === 'function' && credit.consumeJustExpired(pid)) {
+      // 十五輪④：回待機解除變身（變回凡人，對齊 Unity 回待機 revert transform）。
+      this.ctx.transform?.revertToHuman?.(pid);
+      // 十五輪⑤：待機 Y 套 WAITING_PLATFORM_LIFT（站台座頂面），與 GameScene 開場待機一致（原本沒減 lift→位置偏低壓面板）。
       const w = this.ctx.getWaitingAnchor(pid);
-      player.setWaiting(w.x, w.y);
+      player.setWaiting(w.x, w.y - WAITING_PLATFORM_LIFT);
       return;
     }
 

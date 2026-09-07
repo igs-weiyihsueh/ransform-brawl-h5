@@ -302,6 +302,21 @@ export class TransformSystem implements GameSystem {
     return this.stateOf(playerId).transformed;
   }
 
+  /**
+   * 十五輪：強制退回凡人（沒 credit 回待機時呼叫，對齊 Unity 回待機 revert transform）。
+   * 冪等：未變身則不動作。走與魂力歸 0 相同的 detransform（換凡人 visual、EnergySystem 回 HumanSimple、藏魂力環）。
+   */
+  revertToHuman(playerId: number): void {
+    if (!this.stateOf(playerId).transformed) return;
+    const player = this.playerOf(playerId);
+    if (player) this.detransform(player);
+  }
+
+  private playerOf(playerId: number): GameContext['player'] | null {
+    const players = this.ctx?.players ?? (this.ctx?.player ? [this.ctx.player] : []);
+    return players.find((p) => p.playerId === playerId) ?? this.ctx?.player ?? null;
+  }
+
   getSoul(playerId: number): number {
     return this.stateOf(playerId).soul;
   }
