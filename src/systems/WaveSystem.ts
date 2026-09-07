@@ -306,6 +306,13 @@ export class WaveSystem implements GameSystem {
   private announceNode(): void {
     const node = this.currentNode();
     if (!node) return;
+    // 守護波 Event 節點（eventPresetName 非火雨 preset＝守護 preset）：不發節點宣告 waveMessage——
+    //   守護波有自己的開場序列（GuardEvent timedEventText「限時事件」→嚴格接續「協力合作，守護雕像」），
+    //   再發節點宣告會與限時事件同時顯示重疊（用戶回報）。純火雨 Event / Spawn 照發。
+    if (node.nodeType === 'Event') {
+      const en = (node as { eventPresetName?: string }).eventPresetName;
+      if (en && !isResolvedFireRainPreset(en)) return; // 守護波 → 跳過節點宣告
+    }
     if (node.nodeType === 'Spawn') this.spawnWaveNumber += 1; // 累計波序（跨關）
     const text = waveMessageFor(node, this.spawnWaveNumber);
     this.ctx.effects?.waveMessage(text);
