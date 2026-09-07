@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { getPerCharScale } from '@/config/animationConfig';
-import { SPRITE_SCALE, PLAYER_HIT_RADIUS } from '@/config/combatConfig';
+import { PLAYER_HIT_RADIUS } from '@/config/combatConfig';
 import { ENEMY_AI, ENEMY_BODY_RADIUS_PX, ENEMY_BODY_CENTER_OFFSET_Y, type EnemyAIConfig } from '@/config/enemyConfig';
 import { getResolvedEnemy } from '@/config/enemySchema';
 import { PPU } from '@/config/gameConfig';
@@ -334,7 +334,9 @@ export class Enemy implements Hittable {
     // 第十輪#3：體型縮放 override 優先（?? 非 ||，scale=0... 實務不會但保 0-nullish 一致），舊資料無 scale → getPerCharScale fallback。
     this.scaleFactor = this.cfg.scale ?? getPerCharScale(this.cfg.characterKey);
     this.anim = new CharacterAnimator(scene, this.cfg.characterKey, x, y);
-    this.anim.setScale(SPRITE_SCALE);
+    // 十五輪：視覺縮放套 scaleFactor override（與判定 radiusPx 同一 factor，調 enemy-editor scale 圖+判定一起變）。
+    // 無 override 時 scaleFactor=getPerCharScale → setScaleFactor(getPerCharScale)=SPRITE_SCALE×getPerCharScale=原本值。
+    this.anim.setScaleFactor(this.scaleFactor);
     // 第三大輪#1 回歸根治：出生就同步視覺面向 = 資料 facing(預設 1)。
     // 否則 setFacing 的 early-return(dir===facing) 會讓「首次朝右(=預設 1)追玩家」永遠不呼 setFacingEnemy，
     // enemyFacing 停在 null → play('move') 不套 flipX → sprite 用預設 flipX=false → 背對。

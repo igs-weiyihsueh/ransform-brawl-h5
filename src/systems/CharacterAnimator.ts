@@ -8,6 +8,7 @@ import {
   type CharacterDef,
 } from '@/config/animationConfig';
 import { enemyFlipForAnim } from '@/systems/enemySeparation';
+import { SPRITE_SCALE } from '@/config/combatConfig';
 
 const BASE_PATH = 'assets/images/characters';
 
@@ -170,6 +171,18 @@ export class CharacterAnimator {
    */
   setScale(scale: number): void {
     this.sprite.setScale(scale * getPerCharScale(this.charKey));
+  }
+
+  /**
+   * 十五輪：直接以「最終倍率 factor」設定視覺縮放（絕對，不再內乘 getPerCharScale）。
+   * 視覺 = SPRITE_SCALE × factor。Enemy 用 scaleFactor(=cfg.scale override ?? getPerCharScale)呼叫，
+   * 使視覺與判定(radiusPx=ENEMY_BODY_RADIUS_PX×scaleFactor)套同一 factor → 調 enemy-editor scale
+   * 時圖與判定一起等比縮放。無 override 時 factor=getPerCharScale，結果 = SPRITE_SCALE×getPerCharScale，
+   * 與原 setScale(SPRITE_SCALE) 相同（回歸相容）。
+   * ★玩家等仍用 setScale(SPRITE_SCALE)（內乘 getPerCharScale 補償），不受影響。
+   */
+  setScaleFactor(factor: number): void {
+    this.sprite.setScale(SPRITE_SCALE * factor);
   }
 
   setPosition(x: number, y: number): void {
