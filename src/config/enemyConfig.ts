@@ -60,6 +60,11 @@ export interface EnemyAIConfig {
    * 射彈(projectile)不吃此欄（有自己的射彈視覺，不播 slash/aoe）。
    */
   attackVfx?: 'slash' | 'aoe' | 'fan';
+  /**
+   * 十六輪②：攻擊只朝水平（左右）——true 時出手方向/攻擊圓 offset/揮砍 fx 皆 clamp 到水平 facing，
+   * 排除正上/正下垂直攻擊（衝鋒怪，類玩家 ec318b03 水平限制）。省略/false=可朝 aim 全向（原行為）。
+   */
+  horizontalAttackOnly?: boolean;
   /** 射彈速度（unit/s），attackKind='projectile' 時使用。 */
   projectileSpeed?: number;
   /**
@@ -107,6 +112,7 @@ export const ENEMY_AI: Record<string, EnemyAIConfig> = {
     attackKind: 'melee',
     attack: meleeCircle(0.45, 0.8, 10, 3),
     attackVfx: 'fan', // 七輪：衝鋒兵出手播扇形揮砍 fx_enemy_fan(取代通用 slash)；命中仍圓形判定不變
+    horizontalAttackOnly: true, // 十六輪②：衝鋒怪攻擊只朝左右(排除正上/正下垂直攻擊，類玩家 ec318b03)
     hitStun: 0.8,
     knockbackForce: 3,
   },

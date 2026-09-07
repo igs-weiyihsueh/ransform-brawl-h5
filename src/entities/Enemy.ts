@@ -119,6 +119,12 @@ export class Enemy implements Hittable {
   /** 局部頓幀剩餘秒數（hitFeel microFreeze，只凍被打這隻：>0 時 update 早退不動作）。 */
   private freezeRemaining = 0;
 
+  /**
+   * 十六輪①：蓄力站定錨點——進 charge 當下記錄位置，charge 期間每幀鎖回，防外力(de-overlap/slot/追擊殘留)
+   * 讓怪蓄力中移動追人。null=非蓄力中。完成/取消/離開 charge 清 null。
+   */
+  private chargeAnchor: Vec2 | null = null;
+
   /** grabber（抓人者，用戶試玩#4）：設為 grabber 後由 GrabSystem 驅動追玩家、衝來期間無敵、暫停一般 AI。 */
   private grabber = false;
   /** grabber 已抓住玩家（鎖定）：站著維持 idle（用戶新#5），非追擊 move。 */
@@ -442,6 +448,8 @@ export class Enemy implements Hittable {
     const immovable = this.cfg.immovable === true;
     if (immovable) return false;
     if (isChargeInvulnerable(this.state, immovable)) return false;
+    // 十六輪①：蓄力站定——任何怪(含非菁英)蓄力中不被 de-overlap 推移，配合 charge 位置鎖=真正站定不被拖走。
+    if (this.state === 'charge') return false;
     return true;
   }
 
@@ -618,6 +626,8 @@ export class Enemy implements Hittable {
           this.state = 'charge';
           this.timer = this.cfg.chargeTime;
           this.anim.play('idle');
+          // 十六輪①：蓄力站定——記錄蓄力當下位置，charge 期間每幀鎖回（不追遠離的目標）。
+          this.chargeAnchor = { x: this.anim.sprite.x, y: this.anim.sprite.y };
           // 用戶 #7/#4 + 三輪#3 + 四輪#2：蓄力集氣特效 → 腳底貼地圓盤法陣(俯視壓扁+盤旋氣流)，出手 destroy 接 slash/burst。純視覺。
           // 四輪#2 修：footY 往下讓整盤落在角色腳底「之下」(disk 上緣 ≤ 腳底、不與身體/腿重疊)，
           //   否則 depth-4 在身後、身體遮住盤中心只露側邊弧在軀幹高 → 看似「身上打轉」(用戶回歸)。不寫死: 從 radiusPx 算。
@@ -654,12 +664,18 @@ export class Enemy implements Hittable {
         this.timer -= dt;
         // 蓄力期間維持 idle 姿勢（別移動），時間到 → 進 attack 狀態出手。
         this.anim.play('idle');
+        // 十六輪①：蓄力站定——每幀鎖回蓄力起始位置，防目標遠離時被追擊殘留/slot/de-overlap 拖著移動。
+        if (this.chargeAnchor) {
+          this.anim.sprite.x = this.chargeAnchor.x;
+          this.anim.sprite.y = this.chargeAnchor.y;
+        }
         // 六輪#11：蓄力特效每幀跟隨怪當前位置（怪被推開時特效跟著移動、不留原地）。
         this.syncChargeFx();
         if (this.timer <= 0) {
           // 六輪#8：出手前再 gate 一次 canReachTarget（與進 charge 同基準 getBodyCenter，五輪#4 已對齊）。
           // 真因=gate 只擋「進 charge」那刻、沒擋「出手」那刻，蓄力期玩家跑出範圍仍照揮→空揮。
           // 搆不到 → 取消出手、收蓄力特效、回 chase 繼續逼近（不空揮、不發呆；下一幀 chase 重新逼近/gate）。
+          this.chargeAnchor = null; // 離開 charge 解鎖站定
           if (this.canReachTarget(aim)) {
             this.state = 'attack';
             this.attackAnimDone = false;
@@ -724,7 +740,9 @@ export class Enemy implements Hittable {
       this.getBodyCenter(), // 五輪#4：與實際傷害圓同用視覺 body 中心(一致, 否則揮前判定與命中圓錯位)
       this.facing,
       this.scaleFactor,
-      aim,
+      // 十六輪②：衝鋒怪(horizontalAttackOnly) → 觸及判定亦用水平 aim（與實際水平攻擊一致）：
+      //   玩家在正上/正下時水平攻擊圓涵蓋不到 → 不揮、繼續繞到水平側再攻擊（不做垂直攻擊）。
+      this.cfg.horizontalAttackOnly === true ? { x: aim.x, y: this.getBodyCenter().y } : aim,
       PLAYER_HIT_RADIUS * PPU,
       ATTACK_SIZE_SCALE, // 十五輪：同上，停止基準＝攻擊基準（範圍固定）
     );
@@ -758,6 +776,9 @@ export class Enemy implements Hittable {
     //   預警圈=傷害圈=菁英/近戰視覺中心(所見即所得)。全近戰共用此 builder、一致下移對齊 body。
     const pos = this.getBodyCenter();
     const a = this.cfg.attack;
+    // 十六輪②：衝鋒怪(horizontalAttackOnly) → 攻擊方向 clamp 到水平（aim.y 設為攻擊圓心 y），
+    //   使揮砍 fx 角度/攻擊圓 offset/傷害判定皆朝左右，不朝正上/正下（類玩家 ec318b03）。其餘怪照原 aim。
+    const aim: Vec2 = this.cfg.horizontalAttackOnly === true ? { x: playerPos.x, y: pos.y } : playerPos;
 
     // 用戶 #7/#3：出手當下收掉蓄力/預告圈，播出手特效。純視覺。
     this.clearChargeFx();
@@ -765,19 +786,19 @@ export class Enemy implements Hittable {
     if (vfx === 'aoe') {
       // 真大範圍敵人(菁英) → 播 AOE 爆發（同攻擊圓心、依 AOE 半徑）。七輪#3：offset 朝 aim(playerPos)。
       // 十五輪：AOE 爆發視覺半徑=實際攻擊範圍(sizeScale=1，不隨體型)，與預警圈/傷害圓一致(所見即所得)。
-      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, playerPos, ATTACK_SIZE_SCALE);
+      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, aim, ATTACK_SIZE_SCALE);
       this.hitFeelFx?.enemyAoeBurst?.(circle.center.x, circle.center.y, circle.radius);
     } else if (vfx === 'fan') {
-      // 七輪：衝鋒兵扇形揮砍（頂點=出手點偏敵人手前、rotate 朝玩家、scale 依攻擊範圍隨範圍縮放）。
-      const aimAngle = Math.atan2(playerPos.y - pos.y, playerPos.x - pos.x);
+      // 七輪：衝鋒兵扇形揮砍（頂點=出手點偏敵人手前、rotate 朝 aim、scale 依攻擊範圍隨範圍縮放）。十六輪②：aim 已 clamp 水平。
+      const aimAngle = Math.atan2(aim.y - pos.y, aim.x - pos.x);
       const fanX = pos.x + Math.cos(aimAngle) * a.offsetX * PPU;
       const fanY = pos.y + Math.sin(aimAngle) * a.offsetX * PPU;
       // scale 隨攻擊範圍：以 fan 素材涵蓋 ~攻擊半徑(a.radius×PPU)為基準（fan 頂點→弧 ≈128px）×perCharScale。
       const fanScale = (((a.radius ?? 0.45) * PPU * 2) / 128) * this.scaleFactor;
       this.hitFeelFx?.enemyFan?.(fanX, fanY, aimAngle, fanScale);
     } else if (vfx === 'slash') {
-      // 一般近戰 → 揮擊斬光（rotation 對準玩家 aim、生成偏敵人手前）。三輪#12 修回歸。
-      const aimAngle = Math.atan2(playerPos.y - pos.y, playerPos.x - pos.x);
+      // 一般近戰 → 揮擊斬光（rotation 對準 aim、生成偏敵人手前）。三輪#12 修回歸。
+      const aimAngle = Math.atan2(aim.y - pos.y, aim.x - pos.x);
       const slashX = pos.x + Math.cos(aimAngle) * a.offsetX * PPU;
       const slashY = pos.y + Math.sin(aimAngle) * a.offsetX * PPU;
       this.hitFeelFx?.enemySlash?.(slashX, slashY, aimAngle, this.scaleFactor);
@@ -785,9 +806,10 @@ export class Enemy implements Hittable {
     // vfx==='none'（射彈）：不播近戰揮斬/AOE，有自己的射彈視覺。
 
     if (this.cfg.attackKind === 'melee') {
-      // 近戰圓形判定：offset 隨 perCharScale 放大（菁英大範圍）。七輪#3：offset 朝 aim(playerPos)＝與 canReachTarget 同基準。
+      // 近戰圓形判定：offset 隨 perCharScale 放大（菁英大範圍）。七輪#3：offset 朝 aim＝與 canReachTarget 同基準。
       // 十五輪：攻擊範圍尺寸不隨體型(sizeScale=1)，offset 位置仍對變大的身體(scaleFactor)。與 canReachTarget 同 sizeScale=1 一致。
-      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, playerPos, ATTACK_SIZE_SCALE);
+      // 十六輪②：衝鋒怪 aim 已 clamp 水平 → 傷害圓 offset 亦水平（判定與視覺一致，不朝正上/下）。
+      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, aim, ATTACK_SIZE_SCALE);
       // 十五輪回歸修：打雕像(immovable)時傷害圓半徑補回大身體被頂開的距離，與 canReachTarget 對雕像的觸及基準一致
       //   → 大菁英被頂到雕像外緣後「停下就打得到」(不再停了卻空揮)。只對雕像，不影響對玩家的傷害範圍。
       const meleeRadius = circle.radius + (this.guardTarget ? this.guardReachBonusPx() : 0);
