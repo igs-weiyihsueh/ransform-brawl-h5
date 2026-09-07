@@ -60,7 +60,7 @@ export class TransformSystem implements GameSystem {
     { active: boolean; ratio: number; sinceLastMashSec: number; comboStash: number }
   >();
   /** 十五輪：連打變身腳下召喚陣特效 handle（per-player，非狀態；enter 建/tick 更新/complete·清 end）。 */
-  private mashSummonHandles = new Map<number, Phaser.GameObjects.Image | null>();
+  private mashSummonHandles = new Map<number, Phaser.GameObjects.Container | null>();
   private items: TransformItem[] = [];
   private spawnTimer = 0;
   /** 用戶 #7 牽引線（per-player 玩家色半透明線，貼地不擋）。 */
@@ -148,7 +148,10 @@ export class TransformSystem implements GameSystem {
       const player = this.playerOf(pid);
       if (player) {
         const foot = this.mashFootPos(player);
-        this.ctx.effects?.mashSummonCircleUpdate?.(this.mashSummonHandles.get(pid) ?? null, foot.x, foot.y, m.ratio, dt);
+        // 十六輪：滿檔直徑對齊搜索圈實際顯示寬度（footGlow disc 寬=2×radiusPx×PLAYER_DISC.widthScale(2.2)＝2×radius×2.2）。
+        const searchRadius = typeof player.getVacuumRadius === 'function' ? player.getVacuumRadius() : 50;
+        const searchRingWidth = searchRadius * 2 * 2.2; // 對齊 Player.drawFootGlow disc 顯示寬（widthScale=2.2）
+        this.ctx.effects?.mashSummonCircleUpdate?.(this.mashSummonHandles.get(pid) ?? null, foot.x, foot.y, m.ratio, dt, searchRingWidth);
         // 十六輪②：連打期間吸怪——範圍內怪往召喚陣中心（腳下）持續聚集（強度適中，非瞬移）。
         const enemies = this.ctx.getEnemies?.() ?? [];
         for (const e of enemies) e.applyMashAttract?.(foot, dt);

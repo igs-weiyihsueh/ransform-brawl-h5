@@ -1306,61 +1306,76 @@ export class EffectSystem {
    * start 建 image；update 每幀自轉+脈動+依 ratio 越滿越亮越大；end 淡出爆亮清除。
    * 壓扁貼地（scaleY=scaleX/2 俯視橢圓）、depth -3（角色 body(10) 之下、腳下地面層，類腳底光/enemyCharge 盤）。
    */
-  mashSummonCircleStart(x: number, y: number): Phaser.GameObjects.Image | null {
+  /**
+   * 連打召喚陣（地板魔法陣）：★用 Container 分離「壓扁貼地」與「圖案自轉」——
+   * Container 固定 scaleY=0.5（2:1 壓扁貼地、軸固定），child image 繞 Z 平面自轉（圖案平轉、不上下翻）。
+   * （舊版單一 sprite setRotation+setDisplaySize：旋轉與非等比壓扁耦合→壓扁軸隨旋轉轉→視覺上下翻，用戶回報。）
+   */
+  mashSummonCircleStart(x: number, y: number): Phaser.GameObjects.Container | null {
     const key = ENEMY_ATTACK_VFX.mashSummonCircle.key;
     if (!this.scene.textures.exists(key)) return null;
-    const spr = this.scene.add.image(x, y, key);
-    spr.setOrigin(0.5, 0.5).setDepth(-3); // 腳下地面層（body 10 之下、footGlow -10 之上，可見）
-    spr.setTint(0xffe08a); // 暖金染色（素材本就暖金，微強化）
-    spr.setData('rot', 0);
-    spr.setAlpha(0); // 淡入起點
-    spr.setScale(0.0001);
-    // 淡入（連打變身起顯）。
-    this.scene.tweens.add({ targets: spr, alpha: 0.35, duration: 200, ease: 'Quad.easeOut' });
-    return spr;
+    const img = this.scene.add.image(0, 0, key);
+    img.setOrigin(0.5, 0.5);
+    img.setTint(0xffe08a); // 暖金染色
+    const container = this.scene.add.container(x, y, [img]);
+    container.setDepth(-3); // 腳下地面層（body 10 之下、footGlow -10 之上，可見）
+    container.setScale(1, 0.5); // ★2:1 壓扁貼地（軸固定，不隨圖案自轉而翻）
+    container.setData('rot', 0);
+    container.setData('img', img);
+    container.setAlpha(0); // 淡入起點
+    container.setData('baseW', 0.0001);
+    img.setDisplaySize(0.0001, 0.0001);
+    this.scene.tweens.add({ targets: container, alpha: 0.35, duration: 200, ease: 'Quad.easeOut' });
+    return container;
   }
 
   /**
-   * 每幀更新召喚陣：跟腳下位置 + 自轉（~50°/s）+ 依 ratio 越滿越亮越大 + 脈動（scale 0.9↔1.05、alpha 呼吸）。
-   * @param ratio 連打填充比例 0..1（越大越滿）。@param dt 幀秒。
+   * 每幀更新召喚陣：跟腳下位置 + child 圖案平面自轉（~50°/s，不上下翻）+ 依 ratio 越滿越亮越大 + 脈動。
+   * @param ratio 連打填充比例 0..1。@param dt 幀秒。@param fullDiameterPx ratio=1 時的目標直徑（對齊搜索圈；省略用預設）。
    */
   mashSummonCircleUpdate(
-    handle: Phaser.GameObjects.Image | null,
+    handle: Phaser.GameObjects.Container | null,
     x: number,
     y: number,
     ratio: number,
     dt: number,
+    fullDiameterPx?: number,
   ): void {
     if (!handle || !handle.active) return;
     handle.x = x;
     handle.y = y;
-    // 自轉 ~50°/s。
-    const rot = ((handle.getData('rot') as number) ?? 0) + (50 * Math.PI) / 180 * dt;
+    const img = handle.getData('img') as Phaser.GameObjects.Image | undefined;
+    if (!img) return;
+    // ★child 圖案繞 Z 平面自轉（Container 保持壓扁不動 → 圖案平轉、橢圓貼地不翻）。
+    const rot = ((handle.getData('rot') as number) ?? 0) + ((50 * Math.PI) / 180) * dt;
     handle.setData('rot', rot);
-    handle.setRotation(rot);
-    // 越滿越大：基礎顯示直徑 90→190px 隨 ratio。壓扁貼地（scaleY=半）。
-    const baseDiameter = 90 + 100 * Math.min(1, Math.max(0, ratio));
-    // 脈動疊在基礎上（呼吸 0.9↔1.05）。
+    img.setRotation(rot);
+    // 越滿越大：滿檔直徑對齊搜索圈（fullDiameterPx，省略 fallback 150）；由小長到滿。
+    const full = fullDiameterPx && fullDiameterPx > 0 ? fullDiameterPx : 150;
+    const r = Math.min(1, Math.max(0, ratio));
+    const baseDiameter = full * (0.6 + 0.4 * r); // 0.6×→1.0× full 隨 ratio（起手已頗大、滿檔=搜索圈）
     const t = performance.now?.() ?? Date.now();
     const pulse = 1 + 0.075 * Math.sin(t / 180);
     const w = baseDiameter * pulse;
-    handle.setDisplaySize(w, w * 0.5); // 2:1 壓扁俯視
-    // 越滿越亮：alpha 0.35→0.85 隨 ratio + 呼吸微幅。
-    const baseAlpha = 0.35 + 0.5 * Math.min(1, Math.max(0, ratio));
+    img.setDisplaySize(w, w); // child 圓形（壓扁由 Container scaleY=0.5 統一做）
+    // 越滿越亮：alpha 0.35→0.85 + 呼吸。
+    const baseAlpha = 0.35 + 0.5 * r;
     handle.setAlpha(baseAlpha * (0.92 + 0.08 * Math.sin(t / 160)));
   }
 
-  /** 連打變身結束（完成/中斷/沒credit revert）→ 召喚陣爆亮後淡出清除（不殘留）。 */
-  mashSummonCircleEnd(handle: Phaser.GameObjects.Image | null): void {
+  /** 連打變身結束 → 召喚陣爆亮後淡出清除（不殘留）。 */
+  mashSummonCircleEnd(handle: Phaser.GameObjects.Container | null): void {
     if (!handle) return;
     this.scene.tweens.killTweensOf(handle);
+    const img = handle.getData('img') as Phaser.GameObjects.Image | undefined;
     if (!handle.active) { handle.destroy(); return; }
-    // 爆亮（快速放大提亮）→ 淡出銷毀。
-    const w = handle.displayWidth;
+    // 爆亮（child 放大提亮）→ Container 淡出銷毀。
+    if (img) {
+      const w = img.displayWidth;
+      this.scene.tweens.add({ targets: img, displayWidth: w * 1.6, displayHeight: w * 1.6, duration: 260, ease: 'Quad.easeOut' });
+    }
     this.scene.tweens.add({
       targets: handle,
-      displayWidth: w * 1.6,
-      displayHeight: (w * 0.5) * 1.6,
       alpha: 0,
       duration: 260,
       ease: 'Quad.easeOut',
