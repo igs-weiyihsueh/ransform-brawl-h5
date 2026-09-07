@@ -51,6 +51,10 @@ const ENEMY_ATTACK_VFX = {
   playerDash: { key: 'vfx-player-dash', path: `${BASE_PATH}/fx_player_dash.png` },
   /** 九輪#3：玩家衝刺前方防護罩（128×128, 朝右凸弧形力場罩, 可染玩家色）。 */
   playerDashShield: { key: 'vfx-player-dash-shield', path: `${BASE_PATH}/fx_player_dash_shield.png` },
+  /** 十五輪：守護聚焦壓暗遮罩（1920×1080 徑向 vignette，中心透明圓露雕像、邊緣黑 alpha 0.85 柔邊）。 */
+  guardFocusVignette: { key: 'vfx-guard-focus-vignette', path: `${BASE_PATH}/fx_guard_focus_vignette.png` },
+  /** 十五輪：守護聚焦暖白柔光暈（1024×1024，中心 alpha 0.57→邊緣 0，疊雕像後增強聚光）。 */
+  guardFocusGlow: { key: 'vfx-guard-focus-glow', path: `${BASE_PATH}/fx_guard_focus_glow.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -614,33 +618,35 @@ export class EffectSystem {
    */
   guardSpotlight(x: number, y: number, radiusPx = 200): { fadeOut: () => void } {
     const depth = ENERGY_FLY_DEPTH + 10; // 960：壓暗蓋住場上角色/敵人/背景（雕像由呼叫端提到此之上）
-    const key = ENEMY_ATTACK_VFX.spotlight.key;
     const objs: Phaser.GameObjects.GameObject[] = [];
-    if (this.scene.textures.exists(key)) {
-      // 貼圖鋪滿：中心對雕像，縮放到覆蓋整個螢幕（含四角）——貼圖夠大時外圈近黑蓋滿。
-      const spot = this.scene.add.image(x, y, key).setScrollFactor(0).setDepth(depth).setAlpha(0);
-      // 讓透明中心圈≈radiusPx 直徑、外圈延伸蓋滿螢幕：取螢幕對角×2.5 當顯示邊長。
-      const cover = Math.hypot(GAME_WIDTH, GAME_HEIGHT) * 2.5;
-      spot.setDisplaySize(cover, cover);
-      this.scene.tweens.add({ targets: spot, alpha: 1, duration: 350, ease: 'Sine.easeOut' });
-      objs.push(spot);
+    const vigKey = ENEMY_ATTACK_VFX.guardFocusVignette.key;
+    const glowKey = ENEMY_ATTACK_VFX.guardFocusGlow.key;
+    if (this.scene.textures.exists(vigKey)) {
+      // 十五輪：徑向壓暗遮罩（中心透明圓露雕像、邊緣黑 0.85 柔邊）——中心對雕像，撐滿螢幕含四角。
+      const vig = this.scene.add.image(x, y, vigKey).setScrollFactor(0).setDepth(depth).setAlpha(0);
+      // vignette 素材 1920×1080；放大到對角線覆蓋，確保雕像不在正中時四角也全黑不漏。
+      const cover = Math.hypot(GAME_WIDTH, GAME_HEIGHT) / Math.min(GAME_WIDTH, GAME_HEIGHT) * GAME_WIDTH;
+      vig.setDisplaySize(Math.max(GAME_WIDTH, cover) * 1.4, Math.max(GAME_HEIGHT, cover) * 1.4);
+      this.scene.tweens.add({ targets: vig, alpha: 1, duration: 350, ease: 'Sine.easeOut' });
+      objs.push(vig);
     } else {
       // 後備：貼圖沒載到 → 全螢幕 Rectangle 壓暗（不漏聚焦）。
       const dim = this.scene.add
-        .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8)
+        .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.85)
         .setScrollFactor(0)
         .setDepth(depth)
         .setAlpha(0);
       this.scene.tweens.add({ targets: dim, alpha: 1, duration: 350, ease: 'Sine.easeOut' });
       objs.push(dim);
     }
-    // 雕像亮環（金）點綴（雕像在遮罩之上）。
-    const ring = this.scene.add.graphics().setScrollFactor(0).setDepth(depth + 2);
-    ring.lineStyle(4, 0xffe64d, 0.55);
-    ring.strokeCircle(x, y, radiusPx);
-    ring.setAlpha(0);
-    this.scene.tweens.add({ targets: ring, alpha: 1, duration: 350 });
-    objs.push(ring);
+    // 十五輪：暖白柔光暈疊雕像後（scale 到略大於雕像聚焦半徑，增強戲劇聚光感）；在 vignette 之上、雕像之下。
+    if (this.scene.textures.exists(glowKey)) {
+      const glow = this.scene.add.image(x, y, glowKey).setScrollFactor(0).setDepth(depth + 1).setAlpha(0);
+      glow.setDisplaySize(radiusPx * 3.2, radiusPx * 3.2); // 光暈略大於透明中心圈，暖光溢出邊緣
+      glow.setBlendMode(Phaser.BlendModes.ADD); // 加色混合 → 暖光疊亮
+      this.scene.tweens.add({ targets: glow, alpha: 0.9, duration: 400, ease: 'Sine.easeOut' });
+      objs.push(glow);
+    }
     return {
       fadeOut: () => {
         this.scene.tweens.add({
