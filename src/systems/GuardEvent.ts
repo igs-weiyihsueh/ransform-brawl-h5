@@ -201,6 +201,10 @@ export class GuardEvent {
     // 七輪#5：聚焦壓黑同時「協力合作，守護雕像」從左滑進（對齊 Unity 序列 4：聚焦+GuardTextUI）。
     //   第十四輪③：此時限時事件文字已全程滑出（reveal gate 保證不重疊）；文字讀 override guardMessageText。
     this.guardTextHandle = this.ctx.effects?.guardText?.(this.msgs.guardMessageText) ?? null;
+    // 第十四輪：聚焦定格（對齊 Unity Time.timeScale=0）——凍結玩法系統（敵人/物理/移動 dt=0），聚焦 UI(tween) 照播。
+    this.ctx.guardFocusPause = true;
+    // 第十四輪：雕像聚焦呼吸燈脈動（對齊 Unity StartFocusPulse，tween yoyo，不受暫停影響）。
+    this.target.startFocusPulse?.();
     this.phase = 'focus';
     this.focusElapsed = 0;
   }
@@ -213,6 +217,9 @@ export class GuardEvent {
     this.guardTextHandle?.fadeOut();
     this.guardTextHandle = null;
     this.target.setDepth(15); // 還原一般 depth
+    // 第十四輪：解聚焦定格 + 停雕像呼吸燈（務必解除乾淨，別卡死凍結）。
+    this.ctx.guardFocusPause = false;
+    this.target.stopFocusPulse?.();
     this.ctx.scriptedControl = false; // 解鎖玩家操作
     this.spawnCooldown = 0; // combat 立即第一批 drip
     this.phase = 'combat';
@@ -232,6 +239,9 @@ export class GuardEvent {
     this.won = won;
     // 用戶 #4：保險——結束時確保解鎖操作 + 清 spotlight（避免開場中意外結束殘留鎖定/遮罩）。
     this.ctx.scriptedControl = false;
+    // 第十四輪：保險——結束/skip 若在 focus 期間，務必解除聚焦定格 + 停雕像呼吸燈（別卡死凍結）。
+    this.ctx.guardFocusPause = false;
+    this.target.stopFocusPulse?.();
     this.spotlight?.fadeOut();
     this.spotlight = null;
     this.guardTextHandle?.fadeOut(); // 七輪#5：保險——開場中意外結束不殘留守護大字

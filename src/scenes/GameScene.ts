@@ -147,6 +147,7 @@ export class GameScene extends Phaser.Scene {
       helmet,
       getEnemies: () => spawner.getEnemies(),
       scriptedControl: false, // 用戶 #4：守護波開場導引走位時設 true 鎖操作
+      guardFocusPause: false, // 守護波聚焦定格：focus 期間 true 凍結玩法系統（聚焦 UI tween 照播）
     };
 
     // 能量飛光需在擊殺回呼裡取寶盒 UI 錨點：UISystem 提前建立（存 field，registerSystems 再註冊）。
@@ -295,8 +296,11 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, deltaMs: number): void {
     const dt = deltaMs / 1000;
+    // 守護波聚焦定格（對齊 Unity Time.timeScale=0）：focus 期間玩法系統凍結（dt=0），
+    //   但 WaveSystem 照跑真實 dt（驅動 GuardEvent focus 計時器結束聚焦，否則卡死）；聚焦 UI 是 scene.tweens 不受 dt 影響照播。
+    const focusPause = this.ctx.guardFocusPause;
     for (const sys of this.systems) {
-      sys.update(dt);
+      sys.update(focusPause && sys.name !== 'WaveSystem' ? 0 : dt);
     }
     // 用戶 #3：JP 燈 HUD 反映 JpSystem 各組 litCount（純顯示，僅變動時重繪）。
     this.jpLampHud?.update((g) => this.ctx.jp.getLights(g));

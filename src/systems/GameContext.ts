@@ -80,4 +80,11 @@ export interface GameContext {
    * 由 GuardEvent 導引走位驅動。開場結束設回 false 恢復操作。可變（非 readonly）。
    */
   scriptedControl: boolean;
+
+  /**
+   * 守護波聚焦暫停定格（對齊 Unity Time.timeScale=0）：focus phase 期間 true → 遊戲玩法系統凍結
+   * （敵人/物理/移動/計時 dt=0），但聚焦 UI（spotlight/協力大字/雕像呼吸燈，皆 scene.tweens）照播。
+   * GuardEvent beginFocus 設 true、endFocus/forceFinish 設 false（務必解除乾淨不卡死）。可變。
+   */
+  guardFocusPause: boolean;
 }

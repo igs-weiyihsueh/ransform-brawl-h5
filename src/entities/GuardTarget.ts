@@ -17,6 +17,9 @@ export class GuardTarget implements Hittable {
   private readonly container: Phaser.GameObjects.Container;
   private readonly barBg: Phaser.GameObjects.Rectangle;
   private readonly barFill: Phaser.GameObjects.Rectangle;
+  private readonly scene: Phaser.Scene;
+  /** 第十四輪：聚焦呼吸燈脈動 tween（對齊 Unity StartFocusPulse）；stopFocusPulse 停並還原。 */
+  private focusPulseTween: Phaser.Tweens.Tween | null = null;
   private hp: number;
   private readonly maxHp: number;
   /** 碰撞/命中半徑（像素）：換雕像圖後對齊新圖尺寸（非舊方塊 90×120）。constructor 依實際 body 設定。 */
@@ -29,6 +32,7 @@ export class GuardTarget implements Hittable {
    * @param ui 雕像/血條 UI（第十輪#1#4，resolveGuardStatueUi 解析值）；省略＝打包預設（行為不變 + #1 血條放大）。
    */
   constructor(scene: Phaser.Scene, x: number, y: number, maxHp: number, ui?: GuardStatueUi) {
+    this.scene = scene;
     this.maxHp = maxHp;
     this.hp = maxHp;
 
@@ -93,6 +97,32 @@ export class GuardTarget implements Hittable {
     this.container.setVisible(v);
   }
 
+  /**
+   * 第十四輪：聚焦呼吸燈脈動（對齊 Unity StartFocusPulse）——雕像+血條（整個 container）alpha 呼吸 1↔0.55，
+   * yoyo repeat（tween 走 scene 時間線，不受聚焦定格 dt=0 影響，照播）。beginFocus 呼叫。
+   */
+  startFocusPulse(): void {
+    if (this.focusPulseTween) return; // 已在脈動
+    this.container.setAlpha(1);
+    this.focusPulseTween = this.scene.tweens.add({
+      targets: this.container,
+      alpha: 0.55,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  /** 第十四輪：停聚焦呼吸燈 + 還原 alpha=1（endFocus/結束呼叫，務必還原不殘留半透明）。 */
+  stopFocusPulse(): void {
+    if (this.focusPulseTween) {
+      this.focusPulseTween.stop();
+      this.focusPulseTween = null;
+    }
+    this.container.setAlpha(1);
+  }
+
   /** 顯現動畫（用戶 #4：玩家就定位 → 雕像淡入 + 從小放大到定位）。 */
   reveal(scene: Phaser.Scene): void {
     this.container.setVisible(true);
@@ -146,6 +176,8 @@ export class GuardTarget implements Hittable {
   }
 
   destroy(): void {
+    this.focusPulseTween?.stop(); // 第十四輪：清脈動 tween，避免 destroy 後 orphan tween
+    this.focusPulseTween = null;
     this.container.destroy();
   }
 }
