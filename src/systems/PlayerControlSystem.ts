@@ -131,6 +131,9 @@ export class PlayerControlSystem implements GameSystem {
     //   同時清 dash 防護罩（被抓打斷衝刺→防護罩不殘留，見 bug④）。
     if (typeof player.isGrabbed === 'function' && player.isGrabbed()) {
       this.clearDashShield(pid);
+      // 十六輪 bug1：被抓時放行「掙脫攻擊輸入偵測」——按攻擊登記掙脫輸入(不實際普攻/保持 idle)，
+      //   GrabSystem consume 當掙脫 edge。修 bug①(0019b49 return 把掙脫攻擊也擋掉→被抓連按打不出去無法掙脫)。
+      if (src.justPressedAttack()) player.registerStruggleInput?.();
       return;
     }
 

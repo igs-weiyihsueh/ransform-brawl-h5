@@ -121,6 +121,9 @@ export class GrabSystem implements GameSystem {
     const attackingNow = typeof player.isAttacking === 'function' ? player.isAttacking() : false;
     const attackEdge = attackingNow && !s.wasAttacking; // 本幀新起攻擊 = 掙脫
     s.wasAttacking = attackingNow;
+    // 十六輪 bug1：被抓時攻擊輸入被 PlayerControl gate 攔(不普攻/保持 idle)→ isAttacking 不會 true，
+    //   改讀 struggleInput edge（PlayerControl 被抓 gate 每次按攻擊登記）當掙脫觸發。
+    const struggleEdge = typeof player.consumeStruggleInput === 'function' ? player.consumeStruggleInput() : false;
 
     // 用戶第九輪 #1：被抓時衝刺=掙脫（與攻擊同級）。偵測本幀新起衝刺 edge。
     const dashingNow = typeof player.isDashing === 'function' ? player.isDashing() : false;
@@ -151,7 +154,7 @@ export class GrabSystem implements GameSystem {
     s.hint.setText(`按攻擊掙脫！\n${secs}`);
     s.hint.setVisible(true);
 
-    if (shouldEscapeGrab(attackEdge, dashEdge, autoEscape)) {
+    if (shouldEscapeGrab(attackEdge || struggleEdge, dashEdge, autoEscape)) {
       this.escape(player, s);
     }
   }

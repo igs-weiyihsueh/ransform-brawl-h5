@@ -91,6 +91,8 @@ export class Player implements Hittable {
 
   /** 被抓中（isGrabbed，用戶試玩#4）：不能動、藍閃、倒數掙脫；由 GrabSystem 控制。 */
   private grabbed = false;
+  /** 十六輪 bug1：被抓時按攻擊的掙脫輸入旗標（PlayerControl 被抓 gate 設、GrabSystem consume）——不實際普攻(保持 idle)但驅動掙脫。 */
+  private struggleInput = false;
 
   /** 無敵幀剩餘秒數（>0 表示免疫且閃爍）。 */
   private iFrameRemaining = 0;
@@ -691,6 +693,18 @@ export class Player implements Hittable {
   /** 是否正在攻擊（被抓時偵測攻擊掙脫用）。 */
   isAttacking(): boolean {
     return this.attacking;
+  }
+
+  /** 十六輪 bug1：登記被抓掙脫攻擊輸入（PlayerControl 被抓 gate 每次 justPressedAttack 呼叫）。不實際普攻，僅供 GrabSystem 掙脫偵測。 */
+  registerStruggleInput(): void {
+    this.struggleInput = true;
+  }
+
+  /** 十六輪 bug1：consume 掙脫輸入 edge（GrabSystem 每幀讀，讀後清）。回傳本幀是否有新按攻擊掙脫。 */
+  consumeStruggleInput(): boolean {
+    const v = this.struggleInput;
+    this.struggleInput = false;
+    return v;
   }
 
   /** 設定被抓狀態：被抓 → 藍閃提示、不能動；解除 → 清 tint。 */
