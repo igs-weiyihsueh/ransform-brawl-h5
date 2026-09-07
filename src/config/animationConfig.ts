@@ -39,7 +39,9 @@ export const CHARACTERS: Record<string, CharacterDef> = {
   Human: {
     idle: A(12, 24, true),
     move: A(8, 24, true),
-    attack: A(12, 24, false),
+    // 十三輪#1 觀感修(B)：去尾 2 idle-like 幀（frame_10/11 = frame_00 rest pose，md5 同）→ 只播 00-09 收在「收招」姿；
+    //   fps 24→18 拉長揮擊佔比（10幀@18fps≈0.56s）。純視覺，hitDelay 判定時機不變（PlayerControl 計時器獨立）。只玩家 Human/SunWukong 改，敵人不動。
+    attack: A(10, 18, false),
     damaged: A(8, 24, false),
     death: A(16, 24, false),
   },
@@ -53,7 +55,8 @@ export const CHARACTERS: Record<string, CharacterDef> = {
   SunWukong: {
     idle: A(12, 24, true),
     move: A(8, 24, true),
-    attack: A(12, 24, false),
+    // 十三輪#1 觀感修(B)：同 Human，去尾 idle-like 幀+降 fps（只玩家可變身角色）。
+    attack: A(10, 18, false),
     damaged: A(8, 24, false),
     death: A(16, 24, false),
   },

@@ -134,7 +134,12 @@ export class EffectSystem {
    * @param facing 面向：+1 面右、-1 面左（與角色面向一致）。
    * @param scaleOverride 覆蓋 config 的 scale（可選）。
    */
-  play(effectKey: string, x: number, y: number, facing: number, scaleOverride?: number, rotationRad?: number): void {
+  /** 取某特效的預設 scale（十三輪#1(A)：呼叫端要在其上再乘讓位係數用）。未知 key → 1。 */
+  getEffectScale(effectKey: string): number {
+    return VFX_EFFECTS[effectKey]?.scale ?? 1;
+  }
+
+  play(effectKey: string, x: number, y: number, facing: number, scaleOverride?: number, rotationRad?: number, alphaOverride?: number): void {
     const def = VFX_EFFECTS[effectKey];
     if (!def) {
       console.warn(`[EffectSystem] unknown effect: ${effectKey}`);
@@ -144,6 +149,7 @@ export class EffectSystem {
     spr.setOrigin(0.5, 0.5);
     spr.setDepth(def.depth);
     spr.setScale(scaleOverride ?? def.scale);
+    if (alphaOverride !== undefined) spr.setAlpha(alphaOverride); // 十三輪#1(A)：斬光降 alpha 讓位，別蓋過角色揮擊。
     if (rotationRad !== undefined) {
       // 十一輪#2 auto-aim：有 aim → 斬光 rotate 朝 aim 角度（素材預設朝左，+π 對齊：面左=0 基準 → rotationRad 為「玩家→aim」角，加 PI 讓朝左素材轉到 aim 方向）。
       spr.setRotation(rotationRad + Math.PI);

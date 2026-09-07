@@ -419,10 +419,19 @@ export class PlayerControlSystem implements GameSystem {
 
     this.shapeFlash = 0.12;
     // 依當前 AttackData 的 vfxKey 播對應特效（資料驅動；未設則不播）。
-    // 十一輪#2 auto-aim：有 aim → 斬光朝 aim 角度 rotate（與 hit shape 同向）；無 aim → 水平 facing 鏡像（相容）。
+    // 十一輪#2 auto-aim：有 aim → 斬光朝 aim 角度 rotate；無 aim → 水平 facing 鏡像。
+    // 十三輪#1 觀感修(A)：斬光「讓位」——延後 ~0.09s（讓揮擊起手 frame 02-05 先被看見）+ 降 scale/alpha（別亮度面積蓋過角色），
+    //   玩家先看到揮再看到特效。純視覺：hitDelay 判定時機不變（傷害已在上方即時結算），只特效播放解耦延後。
     if (attack.vfxKey) {
+      const vfxKey = attack.vfxKey;
       const aimRot = aim ? Math.atan2(aim.y - pos.y, aim.x - pos.x) : undefined;
-      effects.play(attack.vfxKey, effectCenter.x, effectCenter.y, facing, undefined, aimRot);
+      const ecx = effectCenter.x;
+      const ecy = effectCenter.y;
+      const fac = facing;
+      const baseScale = (effects.getEffectScale?.(vfxKey) ?? 1) * 0.72; // 縮小讓位
+      this.ctx.scene.time.delayedCall(90, () => {
+        effects.play(vfxKey, ecx, ecy, fac, baseScale, aimRot, 0.7); // alpha 0.7 讓位
+      });
     }
 
     // 充能回報：普攻打到人才 +1（招式命中不充）。
