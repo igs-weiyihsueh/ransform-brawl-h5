@@ -135,6 +135,12 @@ export class Player implements Hittable {
   private mashLocked = false;
   /** 十五輪：連打變身浮起（純視覺標記，界騎 UI 增強）。 */
   private floating = false;
+  /** 十五輪：浮起前的基準 sprite y（離開還原）。 */
+  private floatBaseY = 0;
+  /** 十五輪：浮起飄浮 tween / 蓄力閃光 tween（連打變身期間，離開停止）。 */
+  private floatTween?: Phaser.Tweens.Tween;
+  private mashFlashTween?: Phaser.Tweens.Tween;
+  private mashFlashObj: { t: number } = { t: 0 };
 
   constructor(
     scene: Phaser.Scene,
@@ -492,10 +498,54 @@ export class Player implements Hittable {
     return this.mashLocked;
   }
 
-  /** 十五輪：連打變身身體浮起（純視覺，sprite 微上移+可加浮動 tween；此處先做簡單上抬佔位，界騎 UI 可加強）。 */
+  /**
+   * 十五輪：連打變身身體浮起 + 蓄力閃光（純視覺，不改邏輯座標）。
+   * 浮起：sprite y 上移 ~24px + 上下輕微 yoyo（飄浮感）。閃光：tint 亮白↔原色脈動（蓄力變身感）。
+   * 連打變身期間 mashLocked → move/dash 被 gate 不更新 sprite.y，故直接 tween sprite.y 安全；離開還原 baseY + 清 tint + 停 tween。
+   * ★getPosition 邏輯座標＝sprite.x/y，但連打變身期間玩家免疫（不被鎖定/攻擊/抓/環繞、不移動），視覺 y 位移不影響玩法。
+   */
   setFloating(active: boolean): void {
-    // 純視覺：浮起時 sprite y 微上移（不改 getPosition 邏輯座標，避免影響判定）。此為佔位，界騎 UI 增強。
+    if (active === this.floating) return;
     this.floating = active;
+    const spr = this.anim.sprite;
+    if (active) {
+      this.floatBaseY = spr.y; // 記錄基準 y（離開還原）
+      const liftY = this.floatBaseY - 24;
+      spr.y = liftY;
+      // 上下輕微飄浮 yoyo。
+      this.floatTween = this.scene.tweens.add({
+        targets: spr,
+        y: liftY - 8,
+        duration: 600,
+        ease: 'Sine.easeInOut',
+        yoyo: true,
+        repeat: -1,
+      });
+      // 蓄力閃光：tint 在原色（不染）↔ 亮白 之間脈動（yoyo repeat）。用 proxy 值 t 驅動，每幀套 tint。
+      this.mashFlashObj = { t: 0 };
+      this.mashFlashTween = this.scene.tweens.add({
+        targets: this.mashFlashObj,
+        t: 1,
+        duration: 350,
+        ease: 'Sine.easeInOut',
+        yoyo: true,
+        repeat: -1,
+        onUpdate: () => {
+          // t 0→1：淺金→純白亮閃脈動（蓄力變身感，振幅加大更明顯）。
+          const t = this.mashFlashObj.t;
+          const g = Math.round(200 + t * 55); // 200→255
+          const bl = Math.round(90 + t * 165); // 90→255（低端偏金、高端純白，對比更強）
+          spr.setTint(Phaser.Display.Color.GetColor(255, g, bl));
+        },
+      });
+    } else {
+      this.floatTween?.stop();
+      this.floatTween = undefined;
+      this.mashFlashTween?.stop();
+      this.mashFlashTween = undefined;
+      spr.y = this.floatBaseY; // 還原基準 y
+      spr.clearTint(); // 清閃光
+    }
   }
 
   /** 十五輪：是否連打變身浮起中（界騎 UI 讀）。 */
