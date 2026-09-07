@@ -23,8 +23,8 @@ import {
   type Hittable,
   type Vec2,
 } from '@/systems/hitDetection';
-import { HIT_FEEL } from '@/config/hitFeelConfig';
 import { knockbackDistancePx } from '@/config/hitFeelConfig';
+import { getResolvedHitFeel } from '@/config/hitFeelSchema';
 
 /**
  * hitFeel 表演介面（Enemy 只依賴這幾個方法，避免對 EffectSystem 的循環相依）。
@@ -456,9 +456,10 @@ export class Enemy implements Hittable {
     const dx = this.anim.sprite.x - fromPos.x;
     const dy = this.anim.sprite.y - fromPos.y;
     const len = Math.hypot(dx, dy) || 1;
-    this.knockbackRemaining = HIT_FEEL.knockbackDuration;
-    const distPx = knockbackDistancePx(2, PPU); // 掙脫擊退固定力道
-    this.knockbackPerSec = { x: (dx / len) * (distPx / HIT_FEEL.knockbackDuration), y: (dy / len) * (distPx / HIT_FEEL.knockbackDuration) };
+    const hf = getResolvedHitFeel();
+    this.knockbackRemaining = hf.knockbackDuration;
+    const distPx = knockbackDistancePx(2, PPU, hf); // 掙脫擊退固定力道
+    this.knockbackPerSec = { x: (dx / len) * (distPx / hf.knockbackDuration), y: (dy / len) * (distPx / hf.knockbackDuration) };
     this.state = 'chase'; // 解除後回一般 AI
   }
 
@@ -737,13 +738,14 @@ export class Enemy implements Hittable {
   takeHit(damage: number, knockback: number, fromPos: Vec2): void {
     if (this.dead || this.state === 'death') return;
     if (this.grabber) return; // grabber 衝來期間無敵（掙脫由 GrabSystem 處理，不走一般傷害）
+    const hf = getResolvedHitFeel(); // 第十一輪：hitFeel override 優先（頓幀/擊退/白閃等時長可套用）
     // 六輪#3：菁英蓄力不可被打斷——charge 期間受擊照扣血，但不清蓄力特效、不進 damaged 硬直、不擊退，繼續蓄力到出手。
     const chargeLocked = isChargeInvulnerable(this.state, this.cfg.immovable === true);
     if (chargeLocked) {
       this.hp -= damage; // 數值即時
       // 純視覺受擊回饋（白閃/火花）仍給，但不打斷 charge、不改 state、不擊退。
-      if (HIT_FEEL.enabled && this.hitFeelFx) {
-        this.hitFeelFx.hitFlash(this.anim.sprite, HIT_FEEL.hitFlashColor, HIT_FEEL.hitFlashDuration);
+      if (hf.enabled && this.hitFeelFx) {
+        this.hitFeelFx.hitFlash(this.anim.sprite, hf.hitFlashColor, hf.hitFlashDuration);
       }
       if (this.hp <= 0) this.die(); // 血扣光仍會死（不可被打斷≠無敵）
       return;
@@ -760,9 +762,9 @@ export class Enemy implements Hittable {
     // hitFeel 擊退「快進快出」：總距離 = knockbackDistancePx(招式 knockback)，於 knockbackDuration 內線性推進。
     // 擊退定案(用戶)：怪被玩家打的擊退 = 看玩家招式 knockback、**所有怪統一照招式**(移除 ×hitStun 抗性, 不再因怪而異)。
     // 菁英(immovable) 仍走 !immovable 分支豁免(像牆不退)；knockbackForce(怪被擊退力)遊戲端不用(改讀招式)。
-    if (HIT_FEEL.enabled && !immovable) {
-      const distPx = knockbackDistancePx(knockback, PPU); // 統一照招式 knockback(不 ×hitStun)
-      const dur = HIT_FEEL.knockbackDuration;
+    if (hf.enabled && !immovable) {
+      const distPx = knockbackDistancePx(knockback, PPU, hf); // 統一照招式 knockback(不 ×hitStun)
+      const dur = hf.knockbackDuration;
       this.knockbackRemaining = dur;
       this.knockbackPerSec = { x: (dx / len) * (distPx / dur), y: (dy / len) * (distPx / dur) };
     } else if (!immovable) {
@@ -773,15 +775,15 @@ export class Enemy implements Hittable {
     }
 
     // hitFeel 純視覺表演（不動數值）：白閃 + punch 彈跳 + 命中火花 + 局部頓幀。
-    if (HIT_FEEL.enabled && this.hitFeelFx) {
-      this.hitFeelFx.hitFlash(this.anim.sprite, HIT_FEEL.hitFlashColor, HIT_FEEL.hitFlashDuration);
-      this.hitFeelFx.punchScale(this.anim.sprite, HIT_FEEL.punchScale);
-      if (HIT_FEEL.hitSparkEnabled) {
-        this.hitFeelFx.hitSpark(this.anim.sprite.x, this.anim.sprite.y, dx, dy, HIT_FEEL.hitSparkColor);
+    if (hf.enabled && this.hitFeelFx) {
+      this.hitFeelFx.hitFlash(this.anim.sprite, hf.hitFlashColor, hf.hitFlashDuration);
+      this.hitFeelFx.punchScale(this.anim.sprite, hf.punchScale);
+      if (hf.hitSparkEnabled) {
+        this.hitFeelFx.hitSpark(this.anim.sprite.x, this.anim.sprite.y, dx, dy, hf.hitSparkColor);
       }
     }
-    if (HIT_FEEL.enabled && this.hp > 0) {
-      this.freezeRemaining = Math.max(this.freezeRemaining, HIT_FEEL.microFreezeDuration);
+    if (hf.enabled && this.hp > 0) {
+      this.freezeRemaining = Math.max(this.freezeRemaining, hf.microFreezeDuration);
     }
 
     if (this.hp <= 0) {
@@ -800,8 +802,9 @@ export class Enemy implements Hittable {
     this.clearChargeFx(); // 七輪#6：死亡清蓄力特效(charge disk+aoeRing 預告圈)。單點根治——
     //   六輪#3 菁英蓄力免疫「打斷」的 chargeLocked 致死分支沒清特效→殘留在場；免疫打斷≠免疫死亡，死了就清。
     // hitFeel 死亡金黃粒子（純視覺）。
-    if (HIT_FEEL.enabled && this.hitFeelFx) {
-      this.hitFeelFx.deathParticle(this.anim.sprite.x, this.anim.sprite.y, HIT_FEEL.deathParticleColor);
+    const hf = getResolvedHitFeel();
+    if (hf.enabled && this.hitFeelFx) {
+      this.hitFeelFx.deathParticle(this.anim.sprite.x, this.anim.sprite.y, hf.deathParticleColor);
     }
     this.onKilled?.(this.cfg.characterKey, this.damageByPlayer, {
       x: this.anim.sprite.x,

@@ -6,9 +6,15 @@
  *
  * 功能：右側控制項（slider/number/color/checkbox）改 HIT_FEEL 副本 → 左側 canvas 打擊預覽
  * （用當前參數重演 白閃/punch/火花/擊退/頓幀/死亡粒子；預覽用 canvas 2D 自繪，行為對齊遊戲
- * EffectSystem 的視覺）→ 複製參數 / 下載 JSON 貼回 hitFeelConfig。
+ * EffectSystem 的視覺）→ 複製參數 / 下載 JSON 貼回 hitFeelConfig / 第十一輪：套用到遊戲（localStorage override）。
  */
 import { HIT_FEEL, type HitFeelConfig } from '@/config/hitFeelConfig';
+import {
+  HIT_FEEL_SCHEMA_VERSION,
+  validateHitFeel,
+  type HitFeelFile,
+} from '@/config/hitFeelSchema';
+import { applyToGame, clearOverride, loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 
 /** 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲 runtime）。 */
 const PPU = 100;
@@ -337,6 +343,52 @@ function draw(t: number): void {
 
 // ---- 綁定 ----
 
+/** 目前編輯中的 cfg 包成匯出檔（{version, hitFeel}）。 */
+function currentFile(): HitFeelFile {
+  return { version: HIT_FEEL_SCHEMA_VERSION, hitFeel: { ...cfg } };
+}
+
+/**
+ * 套用打擊感到遊戲（第十一輪，對齊其他編輯器）：validate 過才存 localStorage override；
+ * @param andReturn true=套用成功後導覽回遊戲（獨立頁 window.location；overlay 內不導覽）。
+ * @param standalone 是否獨立頁（overlay 內 andReturn 不導覽，避免離開遊戲頁弄壞 overlay）。
+ */
+function applyHitFeel(andReturn: boolean, standalone: boolean): boolean {
+  const file = currentFile();
+  const res = validateHitFeel(file);
+  if (!res.ok) { setStatus(`套用失敗（驗證未過）：\n${res.errors.join('\n')}`, false); return false; }
+  const ok = applyToGame(EDITOR_STORE_KEYS.hitfeel, res.data);
+  if (!ok) { setStatus('套用失敗：瀏覽器 localStorage 不可用。', false); return false; }
+  if (andReturn && standalone) {
+    setStatus('✅ 已套用，返回遊戲中…', true);
+    window.location.href = '../';
+    return true;
+  }
+  setStatus(andReturn
+    ? '✅ 已套用到遊戲（存入瀏覽器）。重開遊戲即生效（overlay 內請關閉面板重開遊戲）。'
+    : '✅ 已套用到遊戲（存入瀏覽器）。重開遊戲即生效。', true);
+  return true;
+}
+
+/** 匯入回顯（第十一輪）：開啟優先讀 localStorage override 回填 cfg；無/壞則用打包預設。 */
+function initLoad(): void {
+  const raw = loadOverride(EDITOR_STORE_KEYS.hitfeel);
+  if (raw !== null) {
+    const r = validateHitFeel(raw);
+    if (r.ok) {
+      cfg = { ...r.data.hitFeel };
+      buildControls();
+      refreshExport();
+      setStatus('已載入你上次套用到遊戲的打擊感設定（可繼續編）。', true);
+      return;
+    }
+    setStatus('已套用的打擊感設定驗證失敗，退回打包預設。', false);
+  }
+  cfg = { ...HIT_FEEL };
+  buildControls();
+  refreshExport();
+}
+
 /** 綁定所有 UI 事件（mount 時呼叫；原為 import 時的頂層綁定，改包成函式延遲到 HTML 注入後）。 */
 function bindUI(standalone: boolean): void {
   $('btn-hit').addEventListener('click', triggerHit);
@@ -367,6 +419,14 @@ function bindUI(standalone: boolean): void {
     setStatus('已下載 hitFeel.json。', true);
   });
 
+  // 第十一輪：套用到遊戲（存 localStorage hitfeel override，對齊其他編輯器）。
+  $('btn-apply').addEventListener('click', () => void applyHitFeel(false, standalone));
+  $('btn-apply-return').addEventListener('click', () => void applyHitFeel(true, standalone));
+  $('btn-clear-apply').addEventListener('click', () => {
+    clearOverride(EDITOR_STORE_KEYS.hitfeel);
+    setStatus('已清除套用，遊戲將回到打包預設打擊感（重開生效）。', true);
+  });
+
   // hitfeel-editor 無 localStorage 套用機制（複製/下載貼回 hitFeelConfig 的工作流），
   // 「回到遊戲」只是純導覽 window.location.href='../'（獨立頁專用）。
   // ⚠️ overlay 內（standalone=false）此鈕會離開遊戲頁弄壞 overlay → 直接移除。
@@ -391,6 +451,9 @@ const EDITOR_BODY_HTML = `
   <button id="btn-reset">重設為預設值</button>
   <button id="btn-copy" class="primary">複製參數</button>
   <button id="btn-export">下載 JSON</button>
+  <button id="btn-apply" class="primary" title="驗證後存入瀏覽器，重開遊戲即生效">套用到遊戲</button>
+  <button id="btn-apply-return" class="primary" title="套用並立即返回遊戲">套用並回到遊戲</button>
+  <button id="btn-clear-apply" title="移除套用，遊戲回打包預設">清除套用</button>
   <button id="btn-return" class="primary" title="回到遊戲頁">回到遊戲</button>
 </header>
 <div class="layout">
@@ -469,8 +532,8 @@ function ensureEditorStyle(): void {
 }
 
 /**
- * 掛載打擊感編輯器到指定容器（EditorMountFn）：注入 HTML+樣式 → 綁 canvas/事件 → 起預覽 rAF。
- * 唯讀（無 applyToGame）。unmount 停 rAF + 清 DOM。overlay 內移除「回到遊戲」導覽鈕。
+ * 掛載打擊感編輯器到指定容器（EditorMountFn）：注入 HTML+樣式 → 綁 canvas/事件 → initLoad 回顯 → 起預覽 rAF。
+ * 第十一輪：加套用機制（applyToGame + initLoad 回顯）。unmount 停 rAF + 清 DOM。overlay 內移除「回到遊戲」導覽鈕。
  */
 export function mount(container: HTMLElement): { unmount(): void } {
   ensureEditorStyle();
@@ -483,9 +546,8 @@ export function mount(container: HTMLElement): { unmount(): void } {
   particles = [];
 
   bindCanvas();
-  buildControls();
-  refreshExport();
   bindUI(container.id === 'tb-editor-standalone'); // 獨立頁才保留「回到遊戲」導覽
+  initLoad(); // 匯入回顯：開啟優先讀 override 回填（含 buildControls + refreshExport）
 
   mounted = true;
   rafId = requestAnimationFrame(loop);

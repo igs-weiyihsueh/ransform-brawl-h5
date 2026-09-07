@@ -9,7 +9,7 @@ import {
   MOUNT_DASH_EXTRA_HITS,
 } from '@/config/buffConfig';
 import { COIN_INSERT_AMOUNT } from '@/config/creditConfig';
-import { HIT_FEEL } from '@/config/hitFeelConfig';
+import { getResolvedHitFeel } from '@/config/hitFeelSchema';
 import { pushLoadFactor } from '@/systems/enemySeparation';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
@@ -418,9 +418,10 @@ export class PlayerControlSystem implements GameSystem {
       this.ctx.jp.notifyCreditSpent(1); // ← 共享池，不加 playerId
       this.ctx.jp.recordDamage(attackerId, dealt); // ← per-player 貢獻（傷害總和）
       // hitFeel 玩家側 hitlag：命中敵人瞬間凍結玩家自身動畫+位移（"砍進肉卡住"）。
-      // 同幀多命中只觸發一次（startHitlag 內建 inHitlag 去重）；純表演不動數值。
-      if (HIT_FEEL.enabled && typeof player.startHitlag === 'function') {
-        player.startHitlag(HIT_FEEL.playerHitlagDuration);
+      // 同幀多命中只觸發一次（startHitlag 內建 inHitlag 去重）；純表演不動數值。第十一輪：讀 resolved override。
+      const hf = getResolvedHitFeel();
+      if (hf.enabled && typeof player.startHitlag === 'function') {
+        player.startHitlag(hf.playerHitlagDuration);
       }
     }
   }
