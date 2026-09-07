@@ -68,7 +68,7 @@ export const DASH_CONFIG = {
 export const PLAYER_BASIC_ATTACK: AttackData = {
   shapeType: 'rectangle',
   length: 2,
-  width: 0.8,
+  width: 1.3,
   offsetX: 1.2,
   offsetY: 0.2,
   damage: 1,

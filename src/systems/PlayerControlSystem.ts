@@ -169,19 +169,27 @@ export class PlayerControlSystem implements GameSystem {
         const as = getResolvedAttackSpeedFor(
           typeof player.getCharacterKey === 'function' ? player.getCharacterKey() : '',
         );
-        // 十三輪#1#2：先決定「面向左/右」（軟鎖：玩家推左右優先，否則 auto-aim 最近怪那側，否則維持 facing）——
-        //   在 tryStartAttack 前決定，讓斬光特效（綁揮擊幀）用正確 facing。攻擊全走水平 facing（不上下）。
+        // 十三輪軟鎖修（用戶釐清：讓角色往怪方向去，含斜角）：
+        //   lunge 位移「往怪的實際方向（斜向 dx,dy）」前撲靠近——玩家有推方向→往玩家推的方向（含斜角，意志優先）；
+        //   無推→往最近怪的實際方向（斜向）。面向仍只取左右（sign dx）驅動 attack 揮動畫（角色只左右揮，動畫限制）。
+        //   位移斜向靠近 + 面向左右揮 兩者分開。
         const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
         const mvNow = src.getMoveVector();
-        let sideDirX = 0;
-        if (Math.abs(mvNow.x) > 1e-6) {
-          sideDirX = Math.sign(mvNow.x); // 軟鎖：玩家意志優先（即使背對怪）
+        let lungeDX = 0;
+        let lungeDY = 0;
+        if (Math.abs(mvNow.x) > 1e-6 || Math.abs(mvNow.y) > 1e-6) {
+          // 軟鎖：玩家有推方向 → lunge 往玩家推的方向（含斜角，玩家意志優先，即使背對怪）。
+          lungeDX = mvNow.x;
+          lungeDY = mvNow.y;
         } else if (ppos) {
+          // 無輸入 → lunge 往最近怪的實際方向（斜向前撲靠近）。
           const nearest = nearestPoint(ppos, this.enemyHitCenters());
-          if (nearest) sideDirX = Math.sign(nearest.x - ppos.x); // 無輸入→auto-aim 最近怪那側
+          if (nearest) { lungeDX = nearest.x - ppos.x; lungeDY = nearest.y - ppos.y; }
         }
-        if (sideDirX !== 0 && ppos && typeof player.faceTowards === 'function') {
-          player.faceTowards(ppos.x + sideDirX); // 依左右側轉向
+        // 面向只取左右（sign dx）→ attack 揮動畫（無左右分量 fallback 現有 facing）。
+        const sideDirX = Math.abs(lungeDX) > 1e-6 ? Math.sign(lungeDX) : (player.getFacing?.() ?? 1);
+        if (ppos && typeof player.faceTowards === 'function') {
+          player.faceTowards(ppos.x + sideDirX); // 依左右側轉向（揮動畫左右）
         }
         // 十三輪#1 徹底解：斬光特效「綁揮擊幀」——動畫播到揮出幀(ATTACK_SWING_FRAME)才觸發（非計時），
         //   嚴格對齊動作：動畫沒揮到→不出特效；連打 restart→重播到揮擊幀才出。傷害判定仍走 hitDelay（解耦、手感準）。
@@ -198,10 +206,13 @@ export class PlayerControlSystem implements GameSystem {
         } : undefined;
         if (player.tryStartAttack(intent.attack.hitDelay / as.mult, as.cooldown, as.animTimeScale, swingVfx)) {
           this.pendingIntent.set(pid, intent);
-          this.pendingAim.set(pid, null); // ★只左右：攻擊判定走水平 facing（不朝上下）
-          // lunge 前戳「只左右」：往決定的那側（無則用 facing），dy=0。
-          const lungeDirX = sideDirX !== 0 ? sideDirX : player.getFacing?.() ?? 1;
-          player.startLunge?.(lungeDirX, 0);
+          this.pendingAim.set(pid, null); // ★攻擊判定走水平 facing（動畫左右）；lunge 位移往怪斜向。
+          // 軟鎖 lunge 前撲：往怪/玩家輸入的實際方向（含斜角）靠近；都無→用 facing 水平 fallback。
+          if (Math.abs(lungeDX) > 1e-6 || Math.abs(lungeDY) > 1e-6) {
+            player.startLunge?.(lungeDX, lungeDY);
+          } else {
+            player.startLunge?.(player.getFacing?.() ?? 1, 0);
+          }
         }
       }
     }

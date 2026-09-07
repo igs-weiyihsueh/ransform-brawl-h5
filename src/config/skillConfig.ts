@@ -35,7 +35,7 @@ export interface CharacterCombatProfile {
 const HUMAN_SKILLS: CharacterSkillSet = {
   normalAttack: {
     shapeType: 'rectangle',
-    width: 0.8,
+    width: 1.3,
     length: 2,
     offsetX: 1.2,
     offsetY: 0.2,
@@ -84,7 +84,7 @@ const HUMAN_SKILLS: CharacterSkillSet = {
 const SUNWUKONG_SKILLS: CharacterSkillSet = {
   normalAttack: {
     shapeType: 'rectangle',
-    width: 0.5,
+    width: 1.0,
     length: 1.5,
     offsetX: 1,
     offsetY: 0.2,
