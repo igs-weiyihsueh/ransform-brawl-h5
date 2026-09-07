@@ -51,3 +51,55 @@ export function autoFillDelta(dt: number, scripted: boolean): number {
 export function isMashComplete(ratio: number): boolean {
   return ratio >= MASH_COMPLETE_RATIO - 1e-9;
 }
+
+// ── 第十六輪 連打演出強化（用戶新設計）：② 連打期間吸怪 + ③ 完成震開 ──
+
+/** ② 吸怪：連打期間被吸引的範圍半徑（px）。範圍內怪往召喚陣中心聚集，範圍外不受影響。 */
+export const MASH_ATTRACT_RADIUS_PX = 340;
+
+/** ② 吸怪：往中心聚集的速度（px/秒）。強度適中——聚過來的手感，非瞬移。 */
+export const MASH_ATTRACT_SPEED_PX_SEC = 95;
+
+/** ② 吸怪：到中心此距離內不再往內拉（避免全擠疊在腳下一點、抖動）。 */
+export const MASH_ATTRACT_MIN_DIST_PX = 44;
+
+/** ③ 完成震開：以角色為中心的擊退範圍半徑（px）。震開周圍非全場——與吸怪範圍一致，把聚攏來的怪全震開。 */
+export const MASH_KNOCKBACK_RADIUS_PX = 360;
+
+/** ③ 完成震開：擊退推進總距離（px）。力道適中。 */
+export const MASH_KNOCKBACK_DIST_PX = 170;
+
+/** ③ 完成震開：擊退推進時長（秒，快進快出）。 */
+export const MASH_KNOCKBACK_DURATION_SEC = 0.28;
+
+/**
+ * ② 吸怪本幀位移步（純函式）：把怪從 pos 往 center 拉近本幀該移動的量。
+ * - 超出 radius → 不動（回原位，代表不受吸引）。
+ * - 已在 minDist 內 → 不動（避免疊在一點）。
+ * - 否則往中心移動 min(speed×dt, dist−minDist)（不越過 minDist、不瞬移）。
+ * @returns 本幀新位置 {x,y}（呼叫端直接指派）。
+ */
+export function mashAttractStep(
+  pos: { x: number; y: number },
+  center: { x: number; y: number },
+  dt: number,
+  radiusPx: number = MASH_ATTRACT_RADIUS_PX,
+  speedPxSec: number = MASH_ATTRACT_SPEED_PX_SEC,
+  minDistPx: number = MASH_ATTRACT_MIN_DIST_PX,
+): { x: number; y: number } {
+  const dx = center.x - pos.x;
+  const dy = center.y - pos.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > radiusPx || dist <= minDistPx) return { x: pos.x, y: pos.y };
+  const move = Math.min(speedPxSec * Math.max(0, dt), dist - minDistPx);
+  const inv = dist > 0 ? 1 / dist : 0;
+  return { x: pos.x + dx * inv * move, y: pos.y + dy * inv * move };
+}
+
+/** ③ 完成震開：某怪是否在擊退範圍內（依與中心距離）。 */
+export function isWithinMashKnockback(
+  distToCenterPx: number,
+  radiusPx: number = MASH_KNOCKBACK_RADIUS_PX,
+): boolean {
+  return distToCenterPx <= radiusPx;
+}

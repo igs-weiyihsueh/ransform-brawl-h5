@@ -26,6 +26,11 @@ import {
 } from '@/systems/hitDetection';
 import { knockbackDistancePx } from '@/config/hitFeelConfig';
 import { getResolvedHitFeel } from '@/config/hitFeelSchema';
+import {
+  mashAttractStep,
+  MASH_KNOCKBACK_DIST_PX,
+  MASH_KNOCKBACK_DURATION_SEC,
+} from '@/systems/mashTransformMath';
 
 /**
  * hitFeel 表演介面（Enemy 只依賴這幾個方法，避免對 EffectSystem 的循環相依）。
@@ -484,6 +489,42 @@ export class Enemy implements Hittable {
     this.state = 'chase'; // 解除後回一般 AI
   }
 
+  /**
+   * 第十六輪② 連打吸怪：連打變身期間，把自己往召喚陣中心（角色腳下）拉近（每幀 lerp，強度適中）。
+   * immovable 菁英（像牆）/死亡/被抓/擊退中/凍結 不受吸引（維持既有豁免手感）。TransformSystem 每幀對範圍內怪呼叫。
+   */
+  applyMashAttract(center: Vec2, dt: number): void {
+    if (this.dead || this.state === 'death') return;
+    if (this.isImmovable()) return; // 菁英像牆不被吸
+    if (this.grabber || this.knockbackRemaining > 0 || this.freezeRemaining > 0 || this.stunRemaining > 0) return;
+    const next = mashAttractStep({ x: this.anim.sprite.x, y: this.anim.sprite.y }, center, dt);
+    this.anim.sprite.x = next.x;
+    this.anim.sprite.y = next.y;
+  }
+
+  /**
+   * 第十六輪③ 完成震開：連打變身填滿完成瞬間，以角色為中心把周圍怪擊退（AOE knockback，複用快進快出殘速）。
+   * immovable 菁英（像牆）/死亡 不被震開。TransformSystem 在 completeMashTransform 對範圍內怪呼叫。
+   * @param fromPos 衝擊波中心（角色腳下/中心）——怪往遠離此點方向被推。
+   */
+  applyMashKnockback(fromPos: Vec2): void {
+    if (this.dead || this.state === 'death') return;
+    if (this.isImmovable()) return; // 菁英像牆不被震開
+    const dx = this.anim.sprite.x - fromPos.x;
+    const dy = this.anim.sprite.y - fromPos.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const dur = MASH_KNOCKBACK_DURATION_SEC;
+    this.knockbackRemaining = dur;
+    this.knockbackPerSec = {
+      x: (dx / len) * (MASH_KNOCKBACK_DIST_PX / dur),
+      y: (dy / len) * (MASH_KNOCKBACK_DIST_PX / dur),
+    };
+    // 震開期間壓制 AI 追擊（僅被往外推、不同幀反向追回）：加同時長 stun，
+    // update() 先套 knockback 位移(外推)再因 stun early-return，不跑 chase → 乾淨往外震開。
+    this.stunRemaining = Math.max(this.stunRemaining, dur);
+    this.state = 'chase'; // 震開後回一般 AI（避免卡在攻擊/預警狀態）
+  }
+
   getCharacterKey(): string {
     return this.cfg.characterKey;
   }
@@ -498,6 +539,11 @@ export class Enemy implements Hittable {
 
   getState(): EnemyState {
     return this.state;
+  }
+
+  /** 測試用：讀取剩餘擊退時長（>0 表示正被擊退推進中）。 */
+  getKnockbackRemaining(): number {
+    return this.knockbackRemaining;
   }
 
   /** 每幀更新：套擊退殘速 → 跑狀態機 → 更新動畫。 */

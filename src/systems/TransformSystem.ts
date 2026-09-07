@@ -30,6 +30,7 @@ import {
   autoFillDelta,
   isMashComplete,
   shouldAutoFill,
+  MASH_KNOCKBACK_RADIUS_PX,
 } from '@/systems/mashTransformMath';
 
 /**
@@ -148,6 +149,9 @@ export class TransformSystem implements GameSystem {
       if (player) {
         const foot = this.mashFootPos(player);
         this.ctx.effects?.mashSummonCircleUpdate?.(this.mashSummonHandles.get(pid) ?? null, foot.x, foot.y, m.ratio, dt);
+        // 十六輪②：連打期間吸怪——範圍內怪往召喚陣中心（腳下）持續聚集（強度適中，非瞬移）。
+        const enemies = this.ctx.getEnemies?.() ?? [];
+        for (const e of enemies) e.applyMashAttract?.(foot, dt);
       }
       if (isMashComplete(m.ratio)) this.completeMashTransform(pid);
     }
@@ -324,6 +328,7 @@ export class TransformSystem implements GameSystem {
     this.ctx.combo?.setMashPaused?.(pid, true); // 暫停 COMBO 倒數（不中斷）
     player.setMashLocked?.(true); // 鎖定+免疫（複用 outOfCredit 類比免疫路徑）
     player.setFloating?.(true); // 身體浮起（純視覺，Player 提供）
+    player.setFootGlowVisible?.(false); // 十六輪①：連打期間隱搜索圈(footGlow)，改由金色召喚陣取代顯示
     // 十五輪：腳下金黃召喚陣（persistent handle，tick 更新自轉/脈動/越滿越亮，完成/中斷 end 清）。
     const foot = this.mashFootPos(player);
     this.mashSummonHandles.set(pid, this.ctx.effects?.mashSummonCircleStart?.(foot.x, foot.y) ?? null);
@@ -364,8 +369,17 @@ export class TransformSystem implements GameSystem {
     this.endMashSummon(playerId); // 十五輪：召喚陣爆亮淡出清除（完成）
     const player = this.playerOf(playerId);
     if (player) {
+      // 十六輪③：完成瞬間以角色腳下為中心把周圍怪震開（AOE knockback，配召喚陣爆亮=變身衝擊波）。
+      const foot = this.mashFootPos(player);
+      const enemies = this.ctx.getEnemies?.() ?? [];
+      for (const e of enemies) {
+        const c = e.getHitCenter?.();
+        if (!c) continue;
+        if (Math.hypot(c.x - foot.x, c.y - foot.y) <= MASH_KNOCKBACK_RADIUS_PX) e.applyMashKnockback?.(foot);
+      }
       player.setMashLocked?.(false); // 解鎖（恢復移動/攻擊/可被攻擊）
       player.setFloating?.(false);
+      player.setFootGlowVisible?.(true); // 十六輪①：完成變身恢復搜索圈(footGlow)顯示
       this.transform(player); // 換悟空 visual + 魂力 100 + 掛扣魂鉤子（EnergySystem 自動 Full）
     }
     this.ctx.combo?.setMashPaused?.(playerId, false); // COMBO 恢復倒數繼續（暫存值接回）
@@ -382,6 +396,7 @@ export class TransformSystem implements GameSystem {
     if (player) {
       player.setMashLocked?.(false);
       player.setFloating?.(false);
+      player.setFootGlowVisible?.(true); // 十六輪①：中斷也恢復搜索圈(後續待機邏輯若需隱再自行處理)
     }
     this.ctx.combo?.setMashPaused?.(playerId, false);
   }
