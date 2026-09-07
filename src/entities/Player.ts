@@ -86,6 +86,8 @@ export class Player implements Hittable {
 
   /** hitlag 剩餘秒數（>0：命中敵人瞬間凍結玩家自身動畫+位移，"砍進肉卡住"）。 */
   private hitlagRemaining = 0;
+  /** 十四輪：hitlag 待觸發秒數（>0：已命中但攻擊動畫還沒播到揮擊幀，等播到才真正 pause 定格，避免卡起手幀）。 */
+  private hitlagPending = 0;
 
   /** 被抓中（isGrabbed，用戶試玩#4）：不能動、藍閃、倒數掙脫；由 GrabSystem 控制。 */
   private grabbed = false;
@@ -524,29 +526,52 @@ export class Player implements Hittable {
   }
 
   /**
-   * 命中敵人瞬間開始 hitlag：凍結玩家「位移」（由 isInHitlag 擋 move/dash/lunge）+ 頓一下手感。
-   * 十三輪#1 真因修(B)：**不再 pause 攻擊動畫**——原本 anims.pause() 會凍住攻擊者自己的揮擊動畫，
-   *   連續打怪時每擊 hitlag 凍在揮擊起手幀+cooldown 重啟→看起來完全沒揮只剩 VFX（用戶#1 真因）。
-   *   位移凍結靠 isInHitlag 擋 move/dash/lunge（不靠 anims.pause），故 hitlag「頓一下」手感保留、揮擊動畫照播。
-   * 同幀多命中只觸發一次（已在 hitlag 中則忽略；Unity inHitlag 去重）。0=不做。
+   * 命中敵人瞬間開始 hitlag（真 hitstop，對齊 Unity CustomCharacterAnimator paused）：
+   * 凍結攻擊動畫（anims.pause 定格頓挫）+ 位移（isInHitlag 擋 move/dash/lunge）。特效不凍（維持綁揮擊幀機制）。
+   * 十四輪：★pause「只在攻擊揮擊命中幀(ATTACK_SWING_FRAME)之後」才觸發——命中判定走 hitDelay(0.1s≈frame2)早於揮擊幀(4)，
+   *   若當下 pause 會卡起手幀（第十三輪 bug）。故先記 pending，tickHitlag 等動畫播到揮擊幀才真正 pause 定格（動畫已揮出去，頓挫在揮出那下）。
+   * 同幀多命中只觸發一次（已在 hitlag 或 pending 中則忽略）。seconds<=0 不做。
    */
   startHitlag(seconds: number): void {
-    if (seconds <= 0 || this.hitlagRemaining > 0) return;
-    this.hitlagRemaining = seconds;
-    // （移除 anims.pause()：不凍攻擊動畫，讓揮擊逐幀播完；位移凍結由 isInHitlag 管。）
+    if (seconds <= 0 || this.hitlagRemaining > 0 || this.hitlagPending > 0) return;
+    this.hitlagPending = seconds;
+    // 若動畫已播過揮擊幀（如攻擊 shape 大/慢速，hitDelay 時已到揮擊幀）→ 立即定格；
+    //   否則等 tryStartAttack 註冊的揮擊幀事件（ANIMATION_UPDATE frame>=ATTACK_SWING_FRAME）觸發 activatePendingHitlag。
+    if (this.isPastAttackSwingFrame()) this.activatePendingHitlag();
+  }
+
+  /** 揮擊幀到達（或已過）→ 把 pending hitlag 轉為真正定格（pause 動畫 + 起算 hitlagRemaining）。無 pending 則忽略。 */
+  private activatePendingHitlag(): void {
+    if (this.hitlagPending <= 0) return;
+    this.hitlagRemaining = this.hitlagPending;
+    this.hitlagPending = 0;
+    this.anim.sprite.anims?.pause(); // 揮擊已播出 → 定格頓挫（hitstop，對齊 Unity）
+  }
+
+  /** attack 動畫是否已播到/過揮擊命中幀（ATTACK_SWING_FRAME）。非 attack 動畫→視為已過（相容）。 */
+  private isPastAttackSwingFrame(): boolean {
+    const anims = this.anim.sprite.anims;
+    if (!anims?.currentAnim) return true;
+    if (!anims.currentAnim.key.endsWith('__attack')) return true;
+    return (anims.currentFrame?.index ?? 0) >= ATTACK_SWING_FRAME;
   }
 
   /**
-   * 每幀推進 hitlag：計時歸零 or 攻擊已結束 → 結束。
-   * 十三輪#1 真因修(B)：不再 anims.resume()（因 startHitlag 已不 pause 動畫）；只清位移凍結計時。
+   * 每幀推進 hitlag（active 定格倒數）：
+   *  - pending 未定格 + 攻擊已結束（極快連打/中斷，沒到揮擊幀）→ 放棄 pending（不定格殘留）。
+   *  - active（hitlagRemaining>0）：倒數；歸零 or 攻擊已結束 → resume 恢復動畫 + 清（★不殘留卡定格幀）。
    * @param dt 幀時間。
    */
   tickHitlag(dt: number): void {
+    if (this.hitlagPending > 0 && !this.attacking) {
+      this.hitlagPending = 0; // 攻擊結束前沒到揮擊幀 → 放棄，不定格
+      return;
+    }
     if (this.hitlagRemaining <= 0) return;
     this.hitlagRemaining -= dt;
     if (this.hitlagRemaining <= 0 || !this.attacking) {
       this.hitlagRemaining = 0;
-      // （移除 anims.resume()：動畫本就沒被 pause，不需恢復。）
+      this.anim.sprite.anims?.resume(); // ★恢復動畫播放（連打/cooldown/中斷都 resume，不殘留卡定格幀）
     }
   }
 
@@ -685,6 +710,12 @@ export class Player implements Hittable {
    */
   tryStartAttack(hitDelay: number, cooldown: number, animTimeScale = 1, onSwingFrame?: () => void): boolean {
     if (this.cooldownRemaining > 0) return false;
+    // 十四輪：新攻擊起手前，保險清 hitlag 定格（若上一擊 hitlag 未結束 resume）——避免 anims 殘留 paused 導致新攻擊動畫不播。
+    if (this.hitlagRemaining > 0 || this.hitlagPending > 0) {
+      this.hitlagRemaining = 0;
+      this.hitlagPending = 0;
+      this.anim.sprite.anims?.resume();
+    }
     this.cooldownRemaining = cooldown;
     this.hitDelayRemaining = hitDelay;
     this.pendingHit = true;
@@ -693,16 +724,18 @@ export class Player implements Hittable {
     //   動畫沒揮到→不出特效；連打 restart 回 frame 0→重新播到揮擊幀才出（特效嚴格跟動畫動作，非固定計時）。
     const sp = this.anim.sprite;
     sp.off(Phaser.Animations.Events.ANIMATION_UPDATE); // 清前次殘留監聽（連打 restart）
-    if (onSwingFrame) {
+    // 揮擊幀事件：動畫播到 ATTACK_SWING_FRAME（揮出）時觸發一次 → (a) 斬光特效 onSwingFrame（十三輪#1）
+    //   (b) 若有 pending hitlag（命中已判定但等揮擊幀）→ 真正 pause 定格 hitstop（十四輪，避免卡起手幀）。
+    {
       let fired = false;
       const onUpdate = (_a: unknown, frame: Phaser.Animations.AnimationFrame): void => {
         if (fired) return;
-        // 只認 attack 動畫的揮擊幀（切其他動畫的 update 不觸發）。
         if (!(this.anim.sprite.anims?.currentAnim?.key ?? '').endsWith('__attack')) return;
         if (frame.index >= ATTACK_SWING_FRAME) {
           fired = true;
           sp.off(Phaser.Animations.Events.ANIMATION_UPDATE, onUpdate);
-          onSwingFrame();
+          if (onSwingFrame) onSwingFrame();
+          this.activatePendingHitlag(); // 揮擊已播出 → 定格 hitstop（若 pending）
         }
       };
       sp.on(Phaser.Animations.Events.ANIMATION_UPDATE, onUpdate);
