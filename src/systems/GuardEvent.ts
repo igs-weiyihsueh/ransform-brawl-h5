@@ -87,6 +87,12 @@ export class GuardEvent {
     return this.finished;
   }
 
+  /** Debug（N 熱鍵快速過波）：強制結束守護波（視為完成/勝，跑完整 cleanup：解鎖操作/清 spotlight/守護字/清怪/destroy 雕像）。 */
+  forceFinish(): void {
+    if (this.finished) return;
+    this.finish(true);
+  }
+
   /** 每幀推進。回傳 true 表示本守護波已結束（WaveSystem 據此前進節點）。 */
   update(dt: number): boolean {
     if (this.finished) return true;

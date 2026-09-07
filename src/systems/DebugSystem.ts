@@ -35,6 +35,8 @@ export class DebugSystem implements GameSystem {
    */
   private debugVisible = false;
   private toggleKey?: Phaser.Input.Keyboard.Key;
+  /** N 鍵：debug 快速完成當前波次/節點（搬自 Unity skipCurrentNode）。 */
+  private skipNodeKey?: Phaser.Input.Keyboard.Key;
 
   /** debug 需要讀這兩個系統的判定圖形。 */
   constructor(
@@ -67,6 +69,10 @@ export class DebugSystem implements GameSystem {
     this.applyDebugVisibility();
     this.toggleKey = ctx.scene.input.keyboard?.addKey(
       Phaser.Input.Keyboard.KeyCodes.F1,
+    );
+    // N：debug 快速完成當前波次/節點（搬自 Unity LevelProgressManager skipCurrentNode）。
+    this.skipNodeKey = ctx.scene.input.keyboard?.addKey(
+      Phaser.Input.Keyboard.KeyCodes.N,
     );
   }
 
@@ -108,6 +114,11 @@ export class DebugSystem implements GameSystem {
     if (this.toggleKey && Phaser.Input.Keyboard.JustDown(this.toggleKey)) {
       this.debugVisible = !this.debugVisible;
       this.applyDebugVisibility();
+    }
+
+    // N：debug 快速完成當前波次/節點（Unity skipCurrentNode 搬移；測試快速過波）。
+    if (this.skipNodeKey && Phaser.Input.Keyboard.JustDown(this.skipNodeKey)) {
+      this.ctx.wave?.requestSkipCurrentNode?.();
     }
 
     // 隱藏時不繪製 debug（畫面乾淨、省開銷）；快捷鍵上面照常運作。

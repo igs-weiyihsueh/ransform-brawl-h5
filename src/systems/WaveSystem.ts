@@ -80,6 +80,9 @@ export class WaveSystem implements GameSystem {
   /** 進行中的守護波（Event 節點）；null 表示非守護波。 */
   private guardEvent: GuardEvent | null = null;
 
+  /** Debug（N 熱鍵，搬自 Unity LevelProgressManager skipCurrentNode）：強制完成當前節點、跳下一個。 */
+  private skipRequested = false;
+
   /** 純火雨 Event 節點狀態（用戶試玩#4）：active + 剩餘時間（跑完前進節點）。 */
   private fireRainActive = false;
   private fireRainRemaining = 0;
@@ -87,6 +90,11 @@ export class WaveSystem implements GameSystem {
   /** debug/UI：目前守護波（若有）。 */
   getGuardEvent(): GuardEvent | null {
     return this.guardEvent;
+  }
+
+  /** Debug（N 熱鍵，搬自 Unity LevelProgressManager:103）：請求強制完成當前節點、跳下一個。下一幀 update() 處理。 */
+  requestSkipCurrentNode(): void {
+    this.skipRequested = true;
   }
 
   /**
@@ -190,6 +198,21 @@ export class WaveSystem implements GameSystem {
     if (!this.levels) return; // JSON 尚未就緒 → 安靜等待（不生怪）
     const node = this.currentNode();
     if (!node) return; // 全部節點跑完
+
+    // Debug（N 熱鍵）：強制完成當前節點、跳下一個（搬自 Unity skipCurrentNode）。
+    //   守護波→forceFinish 乾淨結束(cleanup 雕像/清怪/解鎖/spotlight)；火雨→清 active；Spawn/Reward→直接 advance。
+    if (this.skipRequested) {
+      this.skipRequested = false;
+      if (this.guardEvent && !this.guardEvent.isFinished()) {
+        this.guardEvent.forceFinish(); // 內含 cleanup（setGuardTarget(null)/clearAllEnemies/destroy 雕像/解鎖）
+        this.guardEvent = null;
+      }
+      this.fireRainActive = false;
+      this.fireRainRemaining = 0;
+      this.rewardHold = 0;
+      this.advanceNode(); // enterNode 會重置 kills/cooldown 等（進新節點）
+      return;
+    }
 
     if (node.nodeType === 'Spawn') {
       this.updateSpawnNode(node, dt);
