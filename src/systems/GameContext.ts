@@ -65,6 +65,11 @@ export interface GameContext {
   readonly chest: ChestSystem;
   /** 波次/關卡系統：生怪節奏、一幕通關事件（JP 給燈）。 */
   readonly wave: WaveSystem;
+  /**
+   * 十六輪(追加)：請求某玩家「強制真攻擊」的 hook（GameScene 綁 PlayerControlSystem.requestForcedAttack）。
+   * GrabSystem 掙脫成功那刻呼叫 → 角色下一幀揮一次真攻擊（揮開 grabber，非只解除）。避免直接耦合 PlayerControlSystem 型別。
+   */
+  requestPlayerAttack?: (playerId: number) => void;
   /** JP 累積獎池：三組燈/倍數池、集滿派彩（幕通關給燈、命中扣 credit 累積、灌 ticket）。 */
   readonly jp: JpSystem;
   /** 通用計時 buff 框架（頭盔能力 + 寶盒坐騎/二段變身共用）。 */

@@ -165,6 +165,9 @@ export class GrabSystem implements GameSystem {
     if (s.grabber && !s.grabber.isDead()) {
       s.grabber.releaseGrabberWithKnockback(player.getHitCenter());
     }
+    // 十六輪(追加)：掙脫成功那刻→請求玩家揮一次真攻擊（揮開打退 grabber，非只默默解除；用戶回報）。
+    //   grab 已解除(setGrabbed false)→下一幀 PlayerControl 正常流程消費 forcedAttack 揮擊+命中判定。
+    this.ctx.requestPlayerAttack?.(player.playerId);
     if (s.hint) { s.hint.destroy(); s.hint = null; } // 清掙脫 UI
     s.grabber = null;
     s.grabbed = false;

@@ -59,6 +59,13 @@ export class PlayerControlSystem implements GameSystem {
 
   /** 十一輪#3：每玩家衝刺防護罩特效 handle（起手建、衝刺期間跟本體、結束淡出銷毀）。 */
   private dashShield = new Map<number, Phaser.GameObjects.Image | null>();
+  /** 十六輪(追加)：被抓掙脫成功那刻請求「強制真攻擊」的 pid 集合（GrabSystem escape 觸發，下一幀 updatePlayer 消費揮擊）。 */
+  private forcedAttackPids = new Set<number>();
+
+  /** 十六輪(追加)：GrabSystem 掙脫成功呼叫 → 該玩家下一幀強制揮一次真攻擊（揮開打退 grabber，非只解除被抓）。 */
+  requestForcedAttack(playerId: number): void {
+    this.forcedAttackPids.add(playerId);
+  }
 
   /** 十一輪#2：每玩家本次攻擊的 auto-aim 目標點（按攻擊當下算最近怪；resolveAttack 用它建 shape 朝向）。 */
   private pendingAim = new Map<number, Vec2 | null>();
@@ -179,7 +186,7 @@ export class PlayerControlSystem implements GameSystem {
         player.setPushLoadMultiplier?.(moving ? this.computePushLoad(player) : 1);
         player.move(mv, dt);
       }
-      if (src.justPressedAttack() && credit.canAttack(pid)) {
+      if ((src.justPressedAttack() || this.forcedAttackPids.delete(pid)) && credit.canAttack(pid)) {
         const intent = energy.resolveAttackIntent(pid);
         // 第十一輪#1：攻擊速度 override（per-character）→ 冷卻/前搖/動畫倍率。
         const as = getResolvedAttackSpeedFor(
