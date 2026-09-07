@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { VFX_EFFECTS, VFX_FRAME_PAD, type VFXEffectDef } from '@/config/vfxConfig';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
-import { UI_ICONS, UI_LAYOUT_ASSET } from '@/config/uiConfig';
+import { UI_ICONS, UI_LAYOUT_ASSET, PANEL_DEPTH } from '@/config/uiConfig';
 import { validateUiLayout, isVisible, type ScreenElement } from '@/config/uiLayoutSchema';
 import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
@@ -213,11 +213,13 @@ export class EffectSystem {
     tickets: number,
     color: number,
   ): void {
+    // ★報獎浮到底部面板(PANEL_DEPTH=1000)之上，否則被面板遮住看不到（用戶回報主因）。
+    const depth = PANEL_DEPTH + 10; // 1010
     // 1) 寶盒發光/彈跳：識別色光環從小脈動放大再淡出。
     const ring = this.scene.add.graphics();
     ring.lineStyle(4, color, 0.9);
     ring.strokeCircle(0, 0, 30);
-    ring.setDepth(ENERGY_FLY_DEPTH);
+    ring.setDepth(depth);
     ring.setScrollFactor(0);
     ring.x = x;
     ring.y = y;
@@ -234,27 +236,48 @@ export class EffectSystem {
     // 2) 報獎文字上飄淡出（彩票金色 / 效果類該玩家識別色）。
     const label = chestRewardLabel(kind, tickets);
     if (!label) return;
-    const textColor = chestRewardIsTicket(kind)
-      ? '#ffd54f'
-      : `#${color.toString(16).padStart(6, '0')}`;
+    const isTicket = chestRewardIsTicket(kind);
+    const textColor = isTicket ? '#ffd54f' : `#${color.toString(16).padStart(6, '0')}`;
+
+    // 2a) 彩票類：彩票 icon + 「+N」數字並排（icon 在數字左側），一起往上飄淡出。
+    const rewardObjs: Phaser.GameObjects.GameObject[] = [];
+    const iconPx = CHEST_REWARD_FX.ticketIconPx;
+    let icon: Phaser.GameObjects.Image | null = null;
+    if (isTicket && this.scene.textures.exists(UI_ICONS.ticket.key)) {
+      icon = this.scene.add.image(x, y, UI_ICONS.ticket.key).setScrollFactor(0).setDepth(depth);
+      icon.setDisplaySize(iconPx, iconPx);
+      icon.setOrigin(0.5, 1);
+      rewardObjs.push(icon);
+    }
+
     const txt = this.scene.add.text(x, y, label, {
       fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
-      fontSize: '34px',
+      fontSize: '40px',
       color: textColor,
       fontStyle: 'bold',
       stroke: '#000000',
-      strokeThickness: 5,
+      strokeThickness: 6,
     });
     txt.setOrigin(0.5, 1);
-    txt.setDepth(ENERGY_FLY_DEPTH + 1);
+    txt.setDepth(depth);
     txt.setScrollFactor(0);
+    rewardObjs.push(txt);
+
+    // 彩票 icon + 數字並排置中：icon 在左、數字在右。
+    if (icon) {
+      const gap = 8;
+      const totalW = iconPx + gap + txt.width;
+      icon.x = x - totalW / 2 + iconPx / 2;
+      txt.x = x + totalW / 2 - txt.width / 2;
+    }
+
     this.scene.tweens.add({
-      targets: txt,
+      targets: rewardObjs,
       y: y - CHEST_REWARD_FX.risePx,
       alpha: { from: 1, to: 0 },
       duration: CHEST_REWARD_FX.durationSec * 1000,
       ease: 'Sine.easeOut',
-      onComplete: () => txt.destroy(),
+      onComplete: () => rewardObjs.forEach((o) => o.destroy()),
     });
   }
 

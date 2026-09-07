@@ -6,13 +6,15 @@ import type { ChestRewardKind } from '@/config/chestConfig';
 
 /** 開箱報獎飄字時長/位移（純視覺參數）。 */
 export const CHEST_REWARD_FX = {
-  /** 報獎飄字持續秒數。 */
-  durationSec: 1.0,
+  /** 報獎飄字持續秒數（對齊 Unity ChestRewardAnimation ~1.5s，夠看清）。 */
+  durationSec: 1.5,
   /** 飄字往上位移(px)。 */
-  risePx: 80,
+  risePx: 120,
   /** 寶盒發光/彈跳脈動峰值 scale。 */
-  pulseScale: 1.5,
-  pulseSec: 0.35,
+  pulseScale: 1.8,
+  pulseSec: 0.4,
+  /** 彩票報獎 icon 顯示邊長(px)（浮面板上夠大夠清楚）。 */
+  ticketIconPx: 56,
 } as const;
 
 /**
