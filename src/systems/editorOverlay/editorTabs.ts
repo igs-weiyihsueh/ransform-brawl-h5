@@ -6,8 +6,8 @@ import type { EditorTabDef } from '@/systems/editorOverlay/editorMount';
  * 各 tab 用動態 import() lazy 載對應編輯器模組（維持隔離 bundle：遊戲主 bundle 不含編輯器 code，
  * 點開該 tab 才動態載）。編輯器模組須 export `mount(container): { unmount() }`（EditorMountFn）。
  *
- * 打樣階段先只掛 enemy-editor（翼騎沒在動、穩定）。方向確認後其餘編輯器
- * (ui/level/skill/dash/event/hitfeel) 照樣 mount 化 + 在此加 tab。
+ * 9 個編輯器全 mount 化併入統一入口：enemy/ui/level/skill/dash/event/hitfeel/mapBounds/chest。
+ * 各編輯器獨立頁（/xxx-editor/）並存不拔。
  */
 export const EDITOR_TABS: readonly EditorTabDef[] = [
   {
@@ -49,5 +49,10 @@ export const EDITOR_TABS: readonly EditorTabDef[] = [
     id: 'mapBounds',
     label: '地圖邊界編輯器',
     loader: () => import('../../../mapbounds-editor/main'),
+  },
+  {
+    id: 'chest',
+    label: '寶箱編輯器',
+    loader: () => import('../../../chest-editor/main'),
   },
 ];
