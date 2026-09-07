@@ -25,6 +25,12 @@ import {
 } from '@/systems/itemGuideMath';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
+import {
+  MASH_PER_HIT,
+  autoFillDelta,
+  isMashComplete,
+  shouldAutoFill,
+} from '@/systems/mashTransformMath';
 
 /**
  * TransformSystem — 變身系統（凡人 ↔ 悟空，決策 15fec2a4）。
@@ -44,6 +50,14 @@ export class TransformSystem implements GameSystem {
 
   /** 每玩家變身狀態（Map<playerId>）。S3 只有 P1，一筆退化成舊單一 state。 */
   private states = new Map<number, { transformed: boolean; soul: number }>();
+  /**
+   * 十五輪 連打變身狀態機（per-player）：撿道具（未變身）→ active，靠連打填 ratio，滿→完成變身。
+   * ratio 0..1；sinceLastMashSec 距上次連打秒數（判連打 vs 自動填）；comboStash 進狀態時暫存的 COMBO 值。
+   */
+  private mashStates = new Map<
+    number,
+    { active: boolean; ratio: number; sinceLastMashSec: number; comboStash: number }
+  >();
   private items: TransformItem[] = [];
   private spawnTimer = 0;
   /** 用戶 #7 牽引線（per-player 玩家色半透明線，貼地不擋）。 */
@@ -63,6 +77,7 @@ export class TransformSystem implements GameSystem {
     this.ctx = ctx;
     this.spawnTimer = ITEM_SPAWN_INTERVAL;
     this.states.clear();
+    this.mashStates.clear();
     // 用戶 #7：牽引線(貼地、角色之下)+指引箭頭(角色上層)graphics。
     // 防禦：測試用最小 ctx 無 scene → 不建 graphics（純狀態機測試不需視覺，drawTethers/Arrows 會 no-op）。
     const scene = ctx.scene as Phaser.Scene | undefined;
@@ -101,10 +116,32 @@ export class TransformSystem implements GameSystem {
     }
     this.items = this.items.filter((it) => !it.isPicked());
 
+    // 十五輪：連打變身填充推進（每 player）。
+    this.tickMashTransform(dt);
+
     // 用戶 #7：牽引線 + 指引箭頭（純視覺輔助，不改數值）。
     this.pulsePhase += dt;
     this.drawTethers();
     this.drawGuideArrows();
+  }
+
+  /**
+   * 十五輪：連打變身填充推進。
+   * - scripted（守護波 introMove 玩家被控不能連打，用戶確認 2）→ 自動快速填滿。
+   * - 否則純沒打（idle > MASH_IDLE_TO_AUTO_SEC，用戶確認 1）→ 自動填（10s 填滿）；有連打（sinceLastMashSec 被 registerMashHit 歸零）→ 不自動填。
+   */
+  private tickMashTransform(dt: number): void {
+    for (const [pid, m] of this.mashStates) {
+      if (!m.active) continue;
+      m.sinceLastMashSec += dt;
+      const scripted = this.ctx.scriptedControl === true;
+      if (scripted) {
+        m.ratio = Math.min(1, m.ratio + autoFillDelta(dt, true));
+      } else if (shouldAutoFill(m.sinceLastMashSec)) {
+        m.ratio = Math.min(1, m.ratio + autoFillDelta(dt, false));
+      }
+      if (isMashComplete(m.ratio)) this.completeMashTransform(pid);
+    }
   }
 
   /** 用戶 #7 ①牽引線：每個在場玩家從下方面板欄頂(TetherAnchor)畫玩家色半透明線到真空圈邊緣(靠面板側)。 */
@@ -257,8 +294,74 @@ export class TransformSystem implements GameSystem {
     if (s.transformed) {
       s.soul = Math.min(MAX_SOUL_POWER, s.soul + RECOVER_SOUL);
     } else {
-      this.transform(player);
+      // 十五輪：初次變身不直接變 → 進「連打變身」鎖定狀態機（填滿才 transform）。
+      this.enterMashTransform(player);
     }
+  }
+
+  /**
+   * 十五輪：進入連打變身狀態（撿道具、未變身）。
+   * 身體浮起+鎖定（Player.setMashLocked→敵人 targeting/環繞/抓免疫、move/dash/attack gate）；
+   * 暫存當前 COMBO 值 + 暫停 COMBO 倒數（不中斷，完成後恢復）。
+   */
+  private enterMashTransform(player: GameContext['player']): void {
+    const pid = player.playerId;
+    const m = this.mashStateOf(pid);
+    if (m.active) return; // 已在連打變身中不重入
+    m.active = true;
+    m.ratio = 0;
+    m.sinceLastMashSec = 0;
+    m.comboStash = this.ctx.combo?.getCombo?.(pid) ?? 0; // 暫存 COMBO（值本就存 ComboSystem；暫停倒數即保留）
+    this.ctx.combo?.setMashPaused?.(pid, true); // 暫停 COMBO 倒數（不中斷）
+    player.setMashLocked?.(true); // 鎖定+免疫（複用 outOfCredit 類比免疫路徑）
+    player.setFloating?.(true); // 身體浮起（純視覺，Player 提供）
+  }
+
+  /**
+   * 十五輪：連打攻擊鈕（連打模式攔截、不打傷害）→ 填充 +1/15。由 PlayerControlSystem 在連打變身中攔截攻擊鍵呼叫。
+   * 連打優先：重置 idle 計時（停自動填）。
+   */
+  registerMashHit(playerId: number): void {
+    const m = this.mashStateOf(playerId);
+    if (!m.active) return;
+    m.ratio = Math.min(1, m.ratio + MASH_PER_HIT);
+    m.sinceLastMashSec = 0; // 有連打 → 回連打模式（停自動填）
+    if (isMashComplete(m.ratio)) this.completeMashTransform(playerId);
+  }
+
+  /** 十五輪：連打變身完成 → 換悟空+魂力 100+EnergySystem Full(自動)+解鎖+COMBO 恢復倒數。 */
+  private completeMashTransform(playerId: number): void {
+    const m = this.mashStateOf(playerId);
+    if (!m.active) return;
+    m.active = false;
+    m.ratio = 1;
+    const player = this.playerOf(playerId);
+    if (player) {
+      player.setMashLocked?.(false); // 解鎖（恢復移動/攻擊/可被攻擊）
+      player.setFloating?.(false);
+      this.transform(player); // 換悟空 visual + 魂力 100 + 掛扣魂鉤子（EnergySystem 自動 Full）
+    }
+    this.ctx.combo?.setMashPaused?.(playerId, false); // COMBO 恢復倒數繼續（暫存值接回）
+  }
+
+  private mashStateOf(playerId: number) {
+    let m = this.mashStates.get(playerId);
+    if (!m) {
+      m = { active: false, ratio: 0, sinceLastMashSec: 0, comboStash: 0 };
+      this.mashStates.set(playerId, m);
+    }
+    return m;
+  }
+
+  /** 接口（界騎 UI）：某玩家是否在連打變身中。 */
+  isMashingTransform(playerId: number): boolean {
+    return this.mashStateOf(playerId).active;
+  }
+
+  /** 接口（界騎 UI）：連打變身填充比例 0..1（魂力環填充/玩家牌放大提示）。 */
+  getMashRatio(playerId: number): number {
+    const m = this.mashStateOf(playerId);
+    return m.active ? m.ratio : 0;
   }
 
   /** 變身：凡人 → 悟空。 */

@@ -12,6 +12,8 @@ interface ComboState {
   count: number;
   timer: number;
   maxTriggered: boolean;
+  /** 十五輪：連打變身期間暫停倒數（不中斷，完成後恢復）。 */
+  mashPaused: boolean;
 }
 
 /**
@@ -42,7 +44,7 @@ export class ComboSystem implements GameSystem {
   private stateOf(playerId: number): ComboState {
     let s = this.states.get(playerId);
     if (!s) {
-      s = { count: 0, timer: 0, maxTriggered: false };
+      s = { count: 0, timer: 0, maxTriggered: false, mashPaused: false };
       this.states.set(playerId, s);
     }
     return s;
@@ -52,9 +54,15 @@ export class ComboSystem implements GameSystem {
     if (this.isFrozen()) return; // 過場/無戰鬥凍結：不倒數、不警告（全域）
     for (const [playerId, s] of this.states) {
       if (s.count <= 0) continue;
+      if (s.mashPaused) continue; // 十五輪：連打變身期間暫停倒數（COMBO 暫存不中斷）
       s.timer -= dt;
       if (s.timer <= 0) this.settle(playerId);
     }
+  }
+
+  /** 十五輪：連打變身期間暫停/恢復 COMBO 倒數（暫存不中斷；完成變身後恢復繼續）。 */
+  setMashPaused(playerId: number, paused: boolean): void {
+    this.stateOf(playerId).mashPaused = paused;
   }
 
   /** 命中累積：+1，重設計時窗。耗盡狀態不累積。滿檔強制結算。 */

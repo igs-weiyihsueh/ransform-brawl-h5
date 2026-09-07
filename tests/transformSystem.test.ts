@@ -46,6 +46,15 @@ function priv(sys: TransformSystem): {
 
 const fakeItem = () => ({ pickUp: vi.fn() });
 
+/**
+ * 十五輪：撿道具現在進「連打變身」狀態（非直接變身）。此 helper 撿道具 + 連打填滿 → 完成變身，
+ * 供既有「撿道具→變身」核心測沿用（走新流程完成變身後行為與舊直接變身相同）。
+ */
+function pickAndComplete(sys: TransformSystem, player: { playerId: number }): void {
+  priv(sys).onPickup(fakeItem(), player); // 進連打變身（active、ratio 0）
+  for (let i = 0; i < 15; i += 1) sys.registerMashHit(player.playerId); // 連打 15 下填滿 → 完成變身
+}
+
 describe('TransformSystem — 變身/魂力', () => {
   it('初始為凡人、魂力 0、soulRatio 0', () => {
     const { sys } = makeSystem();
@@ -56,7 +65,7 @@ describe('TransformSystem — 變身/魂力', () => {
 
   it('未變身撿道具 → 變身悟空、魂力滿、掛扣魂鉤子、金閃', () => {
     const { sys, calls, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer);
+    pickAndComplete(sys, fakePlayer);
     expect(sys.isTransformed(0)).toBe(true);
     expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
     expect(sys.getSoulRatio(0)).toBe(1);
@@ -67,7 +76,7 @@ describe('TransformSystem — 變身/魂力', () => {
 
   it('變身中受敵人攻擊 → 扣魂力（用 dmg 值）', () => {
     const { sys, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer); // 變身，soul=100
+    pickAndComplete(sys, fakePlayer); // 變身，soul=100
     priv(sys).takeSoulDamage(fakePlayer, 25);
     expect(sys.getSoul(0)).toBe(75);
     priv(sys).takeSoulDamage(fakePlayer, 15);
@@ -76,9 +85,9 @@ describe('TransformSystem — 變身/魂力', () => {
 
   it('變身中再撿道具 → 回復魂力 +50（clamp 100）', () => {
     const { sys, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer); // soul=100
+    pickAndComplete(sys, fakePlayer); // soul=100
     priv(sys).takeSoulDamage(fakePlayer, 70); // soul=30
-    priv(sys).onPickup(fakeItem(), fakePlayer); // +50 → 80
+    priv(sys).onPickup(fakeItem(), fakePlayer); // 已變身 +50 → 80
     expect(sys.getSoul(0)).toBe(30 + RECOVER_SOUL);
     priv(sys).onPickup(fakeItem(), fakePlayer); // +50 → clamp 100
     expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
@@ -87,7 +96,7 @@ describe('TransformSystem — 變身/魂力', () => {
   // 🔴 壞版必紅對照：魂力歸 0 必須退變（回凡人、清鉤子、soulRatio 0）。
   it('魂力歸 0 → 退變回凡人（清鉤子、換回 Human、soulRatio 0）', () => {
     const { sys, calls, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer); // 變身 soul=100
+    pickAndComplete(sys, fakePlayer); // 變身 soul=100
     priv(sys).takeSoulDamage(fakePlayer, 100); // 歸 0 → 退變
     expect(sys.isTransformed(0)).toBe(false);
     expect(sys.getSoul(0)).toBe(0);
@@ -99,7 +108,7 @@ describe('TransformSystem — 變身/魂力', () => {
   // 十五輪：沒 credit 回待機 → revertToHuman 強制退回凡人（對齊 Unity 回待機 revert transform）。
   it('revertToHuman：變身中 → 退回凡人（換 Human、清鉤子、非變身）', () => {
     const { sys, calls, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer); // 變身
+    pickAndComplete(sys, fakePlayer); // 變身
     expect(sys.isTransformed(0)).toBe(true);
     sys.revertToHuman(0); // 沒 credit 回待機呼叫
     expect(sys.isTransformed(0)).toBe(false);
@@ -120,9 +129,9 @@ describe('TransformSystem — 變身/魂力', () => {
 
   it('退變後再撿道具 → 重新變身（而非回魂）', () => {
     const { sys, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer);
+    pickAndComplete(sys, fakePlayer);
     priv(sys).takeSoulDamage(fakePlayer, 100); // 退變
-    priv(sys).onPickup(fakeItem(), fakePlayer); // 未變身 → 再變身
+    pickAndComplete(sys, fakePlayer); // 未變身 → 再變身
     expect(sys.isTransformed(0)).toBe(true);
     expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
   });
@@ -158,7 +167,7 @@ function makeSystemTracking() {
 describe('TransformSystem — 魂力邊界（恰好 0 vs 1、clamp0、clamp100）', () => {
   it('扣到剩 1（未歸 0）→ 仍變身、soul=1', () => {
     const { sys, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer); // soul=100
+    pickAndComplete(sys, fakePlayer); // soul=100
     priv(sys).takeSoulDamage(fakePlayer, 99); // → 1
     expect(sys.getSoul(0)).toBe(1);
     expect(sys.isTransformed(0)).toBe(true); // 1 > 0 → 不退變（邊界另一側）
@@ -166,7 +175,7 @@ describe('TransformSystem — 魂力邊界（恰好 0 vs 1、clamp0、clamp100�
 
   it('恰好扣到 0 → 退變（邊界這一側）', () => {
     const { sys, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer);
+    pickAndComplete(sys, fakePlayer);
     priv(sys).takeSoulDamage(fakePlayer, 100); // 恰好 0
     expect(sys.getSoul(0)).toBe(0);
     expect(sys.isTransformed(0)).toBe(false);
@@ -174,7 +183,7 @@ describe('TransformSystem — 魂力邊界（恰好 0 vs 1、clamp0、clamp100�
 
   it('扣過頭（damage > soul）→ clamp 到 0 不變負、且退變', () => {
     const { sys, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer);
+    pickAndComplete(sys, fakePlayer);
     priv(sys).takeSoulDamage(fakePlayer, 9999);
     expect(sys.getSoul(0)).toBe(0); // Math.max(0, ...) clamp
     expect(sys.isTransformed(0)).toBe(false);
@@ -182,18 +191,18 @@ describe('TransformSystem — 魂力邊界（恰好 0 vs 1、clamp0、clamp100�
 
   it('RecoverSoul clamp 100：90 + 50 → 100（不是 140）', () => {
     const { sys, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer); // 100
+    pickAndComplete(sys, fakePlayer); // 100
     priv(sys).takeSoulDamage(fakePlayer, 10); // 90
     expect(sys.getSoul(0)).toBe(90);
-    priv(sys).onPickup(fakeItem(), fakePlayer); // +50 → clamp 100
+    priv(sys).onPickup(fakeItem(), fakePlayer); // 已變身 +50 → clamp 100
     expect(sys.getSoul(0)).toBe(100);
   });
 
   it('未達上限時 RecoverSoul 精確 +50（40 → 90，不 clamp）', () => {
     const { sys, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer); // 100
+    pickAndComplete(sys, fakePlayer); // 100
     priv(sys).takeSoulDamage(fakePlayer, 60); // 40
-    priv(sys).onPickup(fakeItem(), fakePlayer); // +50 → 90（未觸頂，驗值精確）
+    priv(sys).onPickup(fakeItem(), fakePlayer); // 已變身 +50 → 90（未觸頂，驗值精確）
     expect(sys.getSoul(0)).toBe(90);
   });
 });
@@ -201,7 +210,7 @@ describe('TransformSystem — 魂力邊界（恰好 0 vs 1、clamp0、clamp100�
 describe('TransformSystem — 撿道具分流（已變身只回魂、不換角色不重置）', () => {
   it('已變身撿道具：只 +50 魂力，【不】再 switchCharacter、【不】重掛/清鉤子造成重變', () => {
     const { sys, calls, player } = makeSystemTracking();
-    priv(sys).onPickup(fakeItem(), player); // 第一次：變身
+    pickAndComplete(sys, player); // 第一次：變身
     expect(calls.switched).toEqual(['SunWukong']); // 只切一次
     const switchesAfterTransform = calls.switched.length;
     const flashesAfterTransform = calls.flashes;
@@ -218,7 +227,7 @@ describe('TransformSystem — 撿道具分流（已變身只回魂、不換角�
 
   it('未變身撿道具：走變身分流（switchCharacter=SunWukong、魂力滿）', () => {
     const { sys, calls, player } = makeSystemTracking();
-    priv(sys).onPickup(fakeItem(), player);
+    pickAndComplete(sys, player);
     expect(calls.switched).toEqual(['SunWukong']);
     expect(sys.getSoul(0)).toBe(100);
   });
@@ -236,7 +245,7 @@ describe('TransformSystem × EnergySystem — 模式/倍率隨變身切換（跨
 
   it('變身 → 角色 SunWukong → EnergySystem 讀到 Full(cap4) + 倍率 1.0', () => {
     const { sys, energy, state, player } = wire();
-    priv(sys).onPickup(fakeItem(), player); // 變身 → switchCharacter('SunWukong')
+    pickAndComplete(sys, player); // 變身 → switchCharacter('SunWukong')
     expect(state.charKey).toBe('SunWukong');
     // 倍率：EnergySystem.resolveAttackIntent 的 multiplier 由 profile 決定。
     expect(energy.resolveAttackIntent(0).multiplier).toBe(1.0);
@@ -245,7 +254,7 @@ describe('TransformSystem × EnergySystem — 模式/倍率隨變身切換（跨
 
   it('退變 → 角色 Human → EnergySystem 讀回 HumanSimple + 倍率 0.5', () => {
     const { sys, energy, state, player } = wire();
-    priv(sys).onPickup(fakeItem(), player); // 變身
+    pickAndComplete(sys, player); // 變身
     priv(sys).takeSoulDamage(player, 100); // 退變 → switchCharacter('Human')
     expect(state.charKey).toBe('Human');
     expect(energy.resolveAttackIntent(0).multiplier).toBe(0.5);
@@ -255,7 +264,7 @@ describe('TransformSystem × EnergySystem — 模式/倍率隨變身切換（跨
   it('倍率確實隨變身在 1.0 / 0.5 間切換（同一 EnergySystem 前後讀到不同值）', () => {
     const { sys, energy, player } = wire();
     const before = energy.resolveAttackIntent(0).multiplier; // 凡人 0.5
-    priv(sys).onPickup(fakeItem(), player); // 變身
+    pickAndComplete(sys, player); // 變身
     const during = energy.resolveAttackIntent(0).multiplier; // 悟空 1.0
     priv(sys).takeSoulDamage(player, 100); // 退變
     const after = energy.resolveAttackIntent(0).multiplier; // 凡人 0.5
@@ -268,14 +277,14 @@ describe('TransformSystem × EnergySystem — 模式/倍率隨變身切換（跨
 describe('TransformSystem — 退變後狀態乾淨、可重新變身', () => {
   it('退變後：清鉤子(sinkSet 最後為 false)、soulRatio 0、可再撿再變且魂力滿', () => {
     const { sys, calls, player } = makeSystemTracking();
-    priv(sys).onPickup(fakeItem(), player); // 變身
+    pickAndComplete(sys, player); // 變身
     priv(sys).takeSoulDamage(player, 100); // 退變
     expect(sys.isTransformed(0)).toBe(false);
     expect(sys.getSoulRatio(0)).toBe(0);
     expect(calls.sinkSet.at(-1)).toBe(false); // 鉤子已清
 
     // 再撿 → 重新變身，狀態乾淨（滿魂、重掛鉤子）。
-    priv(sys).onPickup(fakeItem(), player);
+    pickAndComplete(sys, player);
     expect(sys.isTransformed(0)).toBe(true);
     expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
     expect(sys.getSoulRatio(0)).toBe(1);
@@ -285,7 +294,7 @@ describe('TransformSystem — 退變後狀態乾淨、可重新變身', () => {
 
   it('退變後受攻擊不再扣魂（鉤子已清 → takeSoulDamage 因未變身直接 return）', () => {
     const { sys, fakePlayer } = makeSystem();
-    priv(sys).onPickup(fakeItem(), fakePlayer);
+    pickAndComplete(sys, fakePlayer);
     priv(sys).takeSoulDamage(fakePlayer, 100); // 退變，soul=0
     priv(sys).takeSoulDamage(fakePlayer, 50); // 未變身 → guard return，不變負、不影響
     expect(sys.getSoul(0)).toBe(0);

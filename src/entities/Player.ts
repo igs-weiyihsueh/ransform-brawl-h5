@@ -131,6 +131,10 @@ export class Player implements Hittable {
   private waiting = false;
   /** 十五輪：沒 credit（耗盡）狀態旗標（CreditSystem 進/出耗盡各設一次；敵人 targeting/環繞/抓排除）。 */
   private outOfCredit = false;
+  /** 十五輪：連打變身鎖定旗標（撿道具進連打變身時 true；move/dash/attack 禁 + 敵人 targeting/環繞/抓免疫；填滿完成解鎖）。 */
+  private mashLocked = false;
+  /** 十五輪：連打變身浮起（純視覺標記，界騎 UI 增強）。 */
+  private floating = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -473,6 +477,30 @@ export class Player implements Hittable {
   /** 是否沒 credit（耗盡）狀態 → 敵人不鎖定/攻擊/抓/環繞（對齊 Unity）。 */
   isOutOfCredit(): boolean {
     return this.outOfCredit;
+  }
+
+  /**
+   * 十五輪：連打變身鎖定（TransformSystem 進/出連打變身各設一次）。
+   * 鎖定期間：move/dash/attack 禁（PlayerControlSystem gate）+ 敵人 targeting/環繞/抓免疫（複用 outOfCredit 類比免疫路徑）。
+   */
+  setMashLocked(active: boolean): void {
+    this.mashLocked = active;
+  }
+
+  /** 是否連打變身鎖定中 → 不可動/攻擊、敵人免疫。 */
+  isMashLocked(): boolean {
+    return this.mashLocked;
+  }
+
+  /** 十五輪：連打變身身體浮起（純視覺，sprite 微上移+可加浮動 tween；此處先做簡單上抬佔位，界騎 UI 可加強）。 */
+  setFloating(active: boolean): void {
+    // 純視覺：浮起時 sprite y 微上移（不改 getPosition 邏輯座標，避免影響判定）。此為佔位，界騎 UI 增強。
+    this.floating = active;
+  }
+
+  /** 十五輪：是否連打變身浮起中（界騎 UI 讀）。 */
+  isFloating(): boolean {
+    return this.floating;
   }
 
   getFacing(): number {

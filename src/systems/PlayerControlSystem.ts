@@ -127,6 +127,13 @@ export class PlayerControlSystem implements GameSystem {
     const src = player.inputSource;
     if (!src) return; // 無 InputSource → 不操控
 
+    // 十五輪：連打變身鎖定中 → 攔截攻擊鍵累加填充（不打傷害/不普攻），禁 move/dash/attack。
+    //   自動填（idle/守護波 scripted）由 TransformSystem.tickMashTransform 處理。
+    if (typeof player.isMashLocked === 'function' && player.isMashLocked()) {
+      if (src.justPressedAttack()) this.ctx.transform?.registerMashHit?.(pid);
+      return; // 鎖定：不移動/不衝刺/不普攻
+    }
+
     // hitFeel 玩家 hitlag 推進：計時歸零 or 攻擊結束 → 恢復（在移動/衝刺前 tick，isInHitlag 期間 move/dash 自會凍結）。
     if (typeof player.tickHitlag === 'function') player.tickHitlag(dt);
 
