@@ -35,9 +35,9 @@ export interface CharacterCombatProfile {
 const HUMAN_SKILLS: CharacterSkillSet = {
   normalAttack: {
     shapeType: 'rectangle',
-    width: 1.3,
-    length: 2,
-    offsetX: 1.2,
+    width: 1,
+    length: 2.6,
+    offsetX: 1.65,
     offsetY: 0.2,
     damage: 1,
     hitDelay: 0.1,
@@ -47,8 +47,8 @@ const HUMAN_SKILLS: CharacterSkillSet = {
   // skill1 落點衝擊：圓形
   skill1: {
     shapeType: 'circle',
-    radius: 1,
-    offsetX: 1,
+    radius: 1.15,
+    offsetX: 1.45,
     offsetY: 0.2,
     damage: 3,
     hitDelay: 0.2,
@@ -85,8 +85,8 @@ const SUNWUKONG_SKILLS: CharacterSkillSet = {
   normalAttack: {
     shapeType: 'rectangle',
     width: 1.0,
-    length: 1.5,
-    offsetX: 1,
+    length: 2.6,
+    offsetX: 1.65,
     offsetY: 0.2,
     damage: 1,
     hitDelay: 0.1,

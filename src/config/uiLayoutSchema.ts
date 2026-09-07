@@ -75,6 +75,31 @@ export interface OverheadCredit extends HasVisible {
   height: number;
   /** 金幣圖示尺寸。 */
   coinSize: number;
+  /**
+   * 十六輪設定打包：沒 Credit（耗盡）HUD 演出（閃紅 + 投幣提示 + 倒數）。additive optional，
+   * 缺→uiConfig 打包預設。編輯器可調文字/顏色/位置。
+   */
+  outOfCredit?: OverheadCreditOutOfCredit;
+}
+
+/** 沒 Credit 演出參數（credit 顯示區閃紅 + 投幣提示）。 */
+export interface OverheadCreditOutOfCredit {
+  /** credit 數字閃紅色（#rrggbb）。 */
+  flashColor?: string;
+  /** 閃爍半週期（毫秒）。 */
+  blinkMs?: number;
+  /** 投幣提示文字。 */
+  hintText?: string;
+  /** 提示文字色（#rrggbb）。 */
+  hintColor?: string;
+  /** 提示文字字級（如 '38px'）。 */
+  hintFontSize?: string;
+  /** 提示文字相對 credit 底框的 x 偏移。 */
+  hintOffsetX?: number;
+  /** 提示文字相對 credit 底框的 y 偏移。 */
+  hintOffsetY?: number;
+  /** 倒數是否顯示秒數。 */
+  showCountdown?: boolean;
 }
 
 /** 能量格（4 格）：起點座標 + 格子外觀。 */
@@ -229,6 +254,10 @@ export interface ScreenLayout {
  * per-player 綁角色腳下、跟著角色走，故不放 screen（螢幕座標）而獨立一區。
  * searchRadiusPx 主調大小；offsetX/Y 微調圈相對角色的位置。單位 px。
  * 翼騎讀取端：layout.foot?.searchRadiusPx ?? FOOT_GLOW.radiusPx（fallback 不炸）。
+ * ★十六輪設定打包(異靈決策A)：DEFAULT_UI_LAYOUT.foot 帶用戶匯出值(searchRadiusPx 65/offsetY 61.5)僅供
+ *   編輯器預覽 additive；runtime 讀取端無 override→仍 fallback FOOT_GLOW(50/75.6) 不動核心。因 FOOT_GLOW.offsetYPx
+ *   深度耦合 PLAYER_BOUNDS 下界/地圖邊界/推怪真空半徑，改它牽動碰撞+破多個測試(tradeoff 大)。
+ *   若日後要 foot 視覺半徑真生效→單獨開任務評估「拆 footGlow 顯示半徑 vs vacuum 碰撞半徑」，別直接動核心碰撞。
  */
 export interface FootLayout extends HasVisible {
   /** 搜索圈/真空帶半徑（px）。 */
@@ -250,6 +279,30 @@ export interface UiLayoutFile {
   screen?: ScreenLayout;
   /** 角色腳下圈（搜索圈=真空帶）。additive optional。 */
   foot?: FootLayout;
+  /**
+   * 十六輪設定打包：JP 面板整體變換（縮放/位移）。additive optional，缺→uiConfig JP_TRANSFORM_DEFAULT。
+   * 對應界騎 JpLampHud 讀 layout.jp（resolveJpTransform）。
+   */
+  jp?: JpTransformLayout;
+  /**
+   * 十六輪設定打包：關卡進度條整體變換（縮放/位移）。additive optional，缺→uiConfig PROGRESS_TRANSFORM_DEFAULT。
+   * 對應界騎進度條讀 layout.progress（resolveProgressTransform）。
+   */
+  progress?: ProgressTransformLayout;
+}
+
+/** JP 面板整體變換（layout.jp）。 */
+export interface JpTransformLayout {
+  panelScale?: number;
+  panelOffsetX?: number;
+  panelOffsetY?: number;
+}
+
+/** 進度條整體變換（layout.progress）。 */
+export interface ProgressTransformLayout {
+  progressScale?: number;
+  progressOffsetX?: number;
+  progressOffsetY?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,10 +326,26 @@ export const DEFAULT_UI_LAYOUT: UiLayoutFile = {
       ringThickness: 7,
       text: 'P1',
     },
-    credit: { x: 4, y: -14, width: 120, height: 34, coinSize: 22 },
+    credit: {
+      x: -36,
+      y: -18,
+      width: 120,
+      height: 34,
+      coinSize: 22,
+      outOfCredit: {
+        flashColor: '#ff3b30',
+        blinkMs: 300,
+        hintText: '投幣 (C)',
+        hintColor: '#ffe14d',
+        hintFontSize: '38px',
+        hintOffsetX: -7,
+        hintOffsetY: -70,
+        showCountdown: true,
+      },
+    },
     energy: {
-      x: -20,
-      y: 22,
+      x: -38,
+      y: 20,
       cellCount: 4,
       cellWidth: 16,
       cellHeight: 16,
@@ -284,8 +353,8 @@ export const DEFAULT_UI_LAYOUT: UiLayoutFile = {
       cornerRadius: 3,
     },
     combo: {
-      x: 0,
-      y: -52,
+      x: -4,
+      y: -30,
       suffix: ' HIT',
       hideWhenZero: true,
       warning: true,
@@ -301,16 +370,16 @@ export const DEFAULT_UI_LAYOUT: UiLayoutFile = {
     padding: 14,
     cornerRadius: 14,
     // 每玩家一欄（playerIndex 索引）。第一版單人：P1 active、P2~P4 佔位。
-    // P1 欄內元素座標=相對欄左上，對齊界騎現況公式（padding=14/slotWidth=420/slotHeight=120）。
+    // P1 欄內元素座標=相對欄左上（十六輪設定打包：用戶匯出調整）。
     columns: [
       {
         playerIndex: 0,
         active: true,
         elements: [
-          { id: 'platform', x: 130, y: -54, width: 160, height: 50 }, // 待機平台：欄上方中心（角色站台座）
-          { id: 'chest', x: 14, y: 36, width: 70, height: 70 }, // 左下：y=120-14-70
-          { id: 'ticket', x: 100, y: 58, width: 120, height: 40 }, // chest 右：x=14+70+16
-          { id: 'progress', x: 14, y: 98, width: 392, height: 16 }, // 下方跨欄：width=420-2×14
+          { id: 'platform', x: 29, y: 6, width: 160, height: 50 },
+          { id: 'chest', x: 347, y: 61, width: 70, height: 70 },
+          { id: 'ticket', x: 185, y: 21, width: 150, height: 50 },
+          { id: 'progress', x: 14, y: 98, width: 330, height: 16 },
           // 金幣（coin）已移除：遊戲面板不再顯示金幣（用戶第五輪 #5）。
         ],
       },
@@ -319,20 +388,28 @@ export const DEFAULT_UI_LAYOUT: UiLayoutFile = {
       { playerIndex: 3, active: false, elements: [] },
     ],
   },
-  // 全螢幕 UI（用戶 #5/#8）：波次/事件/火雨宣告皆滿寬置中橫幅（1920×1080 基準，對齊遊戲寫死位置）。
+  // 全螢幕 UI（用戶 #5/#8）：波次/事件/火雨宣告皆滿寬置中橫幅（十六輪設定打包：用戶匯出位置）。
   screen: {
-    // 波次宣告：y=GAME_HEIGHT×0.42−50=403.6。
-    waveMessage: { x: 0, y: 403.6, width: 1920, height: 100, align: 'center' },
-    // 限時事件/守護波宣告（TimedEventTextUI）：y=GAME_HEIGHT×0.3=324。
-    eventMessage: { x: 0, y: 324, width: 1920, height: 92, align: 'center' },
-    // 天降火雨宣告（FireRainTextUI）：y=GAME_HEIGHT/2−60=480。
-    fireRainMessage: { x: 0, y: 480, width: 1920, height: 92, align: 'center' },
+    waveMessage: { x: -7, y: 297, width: 1920, height: 100, align: 'center' },
+    eventMessage: { x: 19, y: 284, width: 1920, height: 92, align: 'center' },
+    fireRainMessage: { x: 0, y: 294, width: 1920, height: 92, align: 'center' },
   },
-  // 角色腳下圈（用戶 #5）：搜索圈=真空帶=FOOT_GLOW（radiusPx=0.5×PPU=50、offsetY≈72×SPRITE_SCALE≈75.6）。
+  // 角色腳下圈（用戶 #5）：搜索圈=真空帶（十六輪設定打包：用戶匯出 radius 65、offsetY 61.5）。
   foot: {
-    searchRadiusPx: 50,
+    searchRadiusPx: 65,
     offsetX: 0,
-    offsetY: 75.6,
+    offsetY: 61.5,
+  },
+  // 十六輪設定打包：JP 面板 / 進度條整體變換（縮放+位移，用戶匯出）。
+  jp: {
+    panelScale: 0.3125,
+    panelOffsetX: -5,
+    panelOffsetY: -478.125,
+  },
+  progress: {
+    progressScale: 1,
+    progressOffsetX: -5,
+    progressOffsetY: 55,
   },
 };
 

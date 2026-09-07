@@ -3,18 +3,17 @@
   "levels": [
     {
       "id": "Level0",
-      "name": "第一關",
+      "name": "第 1 關",
       "nodes": [
         {
           "nodeType": "Spawn",
           "killQuota": 30,
           "maxAlive": 15,
           "spawnThreshold": 10,
-          "spawnInterval": 0.4,
+          "spawnInterval": 0.6,
           "spawns": [
-            { "enemyType": "Enemy_Rush", "weight": 0.7 },
-            { "enemyType": "Enemy_Ranged", "weight": 0.2 },
-            { "enemyType": "Enemy_Elite", "weight": 0.1 }
+            { "enemyType": "Enemy_Rush", "weight": 8 },
+            { "enemyType": "Enemy_Ranged", "weight": 2 }
           ]
         },
         {
@@ -22,19 +21,21 @@
           "killQuota": 40,
           "maxAlive": 20,
           "spawnThreshold": 15,
-          "spawnInterval": 0.35,
+          "spawnInterval": 0.5,
           "spawns": [
-            { "enemyType": "Enemy_Rush", "weight": 0.7 },
-            { "enemyType": "Enemy_Ranged", "weight": 0.2 },
-            { "enemyType": "Enemy_Elite", "weight": 0.1 }
-          ]
+            { "enemyType": "Enemy_Rush", "weight": 7 },
+            { "enemyType": "Enemy_Ranged", "weight": 2 },
+            { "enemyType": "Enemy_Elite", "weight": 1 }
+          ],
+          "attachFireRain": "FireRain"
         },
         {
           "nodeType": "Reward"
         },
         {
           "nodeType": "Event",
-          "eventPresetName": "Guard60"
+          "eventPresetName": "Guard60",
+          "attachFireRain": "FireRain"
         }
       ]
     }

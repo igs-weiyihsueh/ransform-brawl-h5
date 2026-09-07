@@ -104,40 +104,50 @@ export const ENEMY_AI: Record<string, EnemyAIConfig> = {
   Enemy_Rush: {
     characterKey: 'Enemy_Rush',
     hp: 3,
-    moveSpeed: 1.5,
-    detectRange: 30,
+    moveSpeed: 2,
+    detectRange: 11.5,
     attackRange: 2,
-    chargeTime: 0.5,
+    chargeTime: 1,
     attackCooldown: 2,
     attackKind: 'melee',
-    attack: meleeCircle(0.45, 0.8, 10, 3),
-    attackVfx: 'fan', // 七輪：衝鋒兵出手播扇形揮砍 fx_enemy_fan(取代通用 slash)；命中仍圓形判定不變
-    horizontalAttackOnly: true, // 十六輪②：衝鋒怪攻擊只朝左右(排除正上/正下垂直攻擊，類玩家 ec318b03)
-    hitStun: 0.8,
+    // 十六輪設定打包：用戶匯出的衝鋒兵攻擊形狀＝扇形(fan, radius 1.1, angle 115, offsetY 0.05)。
+    attack: {
+      shapeType: 'fan',
+      radius: 1.1,
+      offsetX: 0.35,
+      offsetY: 0.05,
+      damage: 10,
+      hitDelay: 0,
+      knockback: 3,
+      angle: 115,
+    },
+    attackVfx: 'fan', // 七輪：衝鋒兵出手播扇形揮砍 fx_enemy_fan(取代通用 slash)
+    horizontalAttackOnly: true, // 十六輪②：衝鋒怪攻擊只朝左右(排除正上/正下垂直攻擊，類玩家 ec318b03)——程式 bug 修，設定匯出不含故沿用保留
+    hitStun: 1,
     knockbackForce: 3,
   },
   // 遠程兵（射彈）
   Enemy_Ranged: {
     characterKey: 'Enemy_Ranged',
     hp: 2,
-    moveSpeed: 1,
-    detectRange: 5,
-    attackRange: 5,
+    moveSpeed: 1.5,
+    detectRange: 14,
+    attackRange: 2.5,
     chargeTime: 2,
-    attackCooldown: 3,
+    attackCooldown: 4,
     attackKind: 'projectile',
     // 射彈：radius 當射彈碰撞半徑；offset 讓射彈從身體前方生成。
     attack: {
       shapeType: 'circle',
       radius: 0.2,
-      offsetX: 0.5,
-      offsetY: 0,
+      offsetX: 0.75,
+      offsetY: 0.05,
       damage: 15,
       hitDelay: 0,
       knockback: 2,
     },
-    projectileSpeed: 8,
-    hitStun: 0.8,
+    projectileSpeed: 10,
+    hitStun: 1,
     knockbackForce: 2,
   },
   // 菁英兵（大範圍坦）
@@ -145,15 +155,16 @@ export const ENEMY_AI: Record<string, EnemyAIConfig> = {
     characterKey: 'Enemy_Elite',
     hp: 10,
     moveSpeed: 1,
-    detectRange: 5,
+    detectRange: 20,
     attackRange: 2,
-    chargeTime: 0.5,
-    attackCooldown: 2.5,
+    chargeTime: 2.5,
+    attackCooldown: 3.5,
     attackKind: 'melee',
-    attack: meleeCircle(1.5, 0, 25, 2),
+    attack: meleeCircle(2, 0, 25, 2),
     attackVfx: 'aoe', // 菁英=大範圍坦 → 圓形 AOE 預告圈+爆發(三輪#12：只此類走純 AOE，衝鋒兵走 slash)
-    hitStun: 0.05, // 幾乎不退，像牆
+    hitStun: 0.15, // 幾乎不退，像牆
     knockbackForce: 2,
     immovable: true, // 防穿透豁免：玩家頂不動菁英，改成玩家被擋在菁英外（用戶 #4，對應像牆）
+    scale: 1.85, // 十六輪設定打包：用戶匯出菁英放大 1.85
   },
 };

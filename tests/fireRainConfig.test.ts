@@ -32,8 +32,8 @@ describe('isFireRainPreset — 火雨 preset 名判斷', () => {
 });
 
 describe('getFireRainPreset — 依名取 preset（查無 fallback）', () => {
-  it('取對應 preset：FireRain=interval1.5、FireRainHeavy=burstCount2/duration25', () => {
-    expect(getFireRainPreset('FireRain').intervalSec).toBe(1.5);
+  it('取對應 preset：FireRain=interval1、FireRainHeavy=burstCount2/duration25', () => {
+    expect(getFireRainPreset('FireRain').intervalSec).toBe(1);
     expect(getFireRainPreset('FireRainHeavy').burstCount).toBe(2);
     expect(getFireRainPreset('FireRainHeavy').durationSec).toBe(25);
   });

@@ -68,32 +68,32 @@ describe('回歸根治 — 敵人可視 body 半徑(45) + 真空帶對齊視覺�
   });
 });
 
-describe('回歸根治 — 停 95 能攻擊 vs 舊 body134 停 184 搆不到（#2a 正面+對照）', () => {
-  // Enemy_Rush 攻擊：circle offsetX0.8/radius0.45 scale1 → 圓心 = 敵人 + facing×80、半徑45px。
-  // 玩家當圓 radius=40（getHitRadius）。circleIntersectsCircle 閾值 = 45+40 = 85。
-  // 敵人在玩家右側時「面向玩家」= 面左(facing=-1)，攻擊圓心朝玩家延伸。
+describe('回歸根治 — 停 95 能攻擊 vs 停太遠搆不到（#2a 正面+對照）', () => {
+  // 十六輪設定打包：Enemy_Rush 攻擊改扇形 fan（radius 1.1→110px、offsetX 0.35→35px、angle 115）。
+  // 玩家當圓 radius=40（getHitRadius）。fan 觸及範圍 = 攻擊圓心(敵人+facing×35) 沿面向半徑 110 + 玩家半徑 40。
+  // 敵人在玩家右側時「面向玩家」= 面左(facing=-1)，攻擊扇形朝玩家延伸；觸及邊界約 d≈185。
   const rushAtk = ENEMY_AI.Enemy_Rush.attack;
   const FACE_TO_PLAYER = -1; // 敵人在玩家右側、面向玩家 → 面左
   const SCALE = 1;
   const PLAYER_HIT = 40;
   const PLAYER: Vec2 = { x: 0, y: 0 };
 
-  it('★ 新 body45：敵人停 minDist=95 於玩家右、面向玩家 → 攻擊形狀內 isPlayerInEnemyAttackShape=true（會攻擊）', () => {
-    // 敵人停玩家右側 95px。面向玩家(左)→ 攻擊圓心 = 95 + (-1)×80 = 15，距玩家 15 <= 85 → 命中。
+  it('★ 敵人停 minDist=95 於玩家右、面向玩家 → 攻擊形狀內 isPlayerInEnemyAttackShape=true（會攻擊）', () => {
+    // 敵人停玩家右側 95px、面向玩家(左) → 扇形觸及玩家 → 命中。
     const enemyPos: Vec2 = { x: 95, y: 0 };
     expect(isPlayerInEnemyAttackShape(rushAtk, enemyPos, FACE_TO_PLAYER, SCALE, PLAYER, PLAYER_HIT)).toBe(true);
   });
 
-  it('★ 對照舊 body134：敵人停 184、面向玩家 → 攻擊圓心離玩家 104 > 85 → false（不攻擊 = bug 根因）', () => {
-    // 舊 body134 + vacuum50 → 停 184。攻擊圓心 = 184 + (-1)×80 = 104 > 85 → 搆不到、不攻擊。
-    const enemyPosOld: Vec2 = { x: 184, y: 0 };
-    expect(isPlayerInEnemyAttackShape(rushAtk, enemyPosOld, FACE_TO_PLAYER, SCALE, PLAYER, PLAYER_HIT)).toBe(false);
+  it('★ 對照停太遠 200：面向玩家 → 超出扇形觸及範圍(≈185) → false（搆不到、不攻擊）', () => {
+    // 停 200 > 觸及邊界 → 搆不到、不攻擊（對照：太遠不打）。
+    const enemyPosFar: Vec2 = { x: 200, y: 0 };
+    expect(isPlayerInEnemyAttackShape(rushAtk, enemyPosFar, FACE_TO_PLAYER, SCALE, PLAYER, PLAYER_HIT)).toBe(false);
   });
 
   it('攻擊形狀判定與實際命中同基準（isPlayerInEnemyAttackShape 用 Enemy_Rush 真 attack 設定）', () => {
-    // 正貼近（停 90，面向玩家）必中；退遠（停 184）不中 — 同一函式、同 attack 設定。
+    // 正貼近（停 90，面向玩家）必中；退遠（停 200）不中 — 同一函式、同 attack 設定。
     expect(isPlayerInEnemyAttackShape(rushAtk, { x: 90, y: 0 }, FACE_TO_PLAYER, SCALE, PLAYER, PLAYER_HIT)).toBe(true);
-    expect(isPlayerInEnemyAttackShape(rushAtk, { x: 184, y: 0 }, FACE_TO_PLAYER, SCALE, PLAYER, PLAYER_HIT)).toBe(false);
+    expect(isPlayerInEnemyAttackShape(rushAtk, { x: 200, y: 0 }, FACE_TO_PLAYER, SCALE, PLAYER, PLAYER_HIT)).toBe(false);
   });
 });
 

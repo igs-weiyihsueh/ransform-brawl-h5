@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveAttackSpeed,
   validateAttackSpeed,
+  ATTACK_SPEED_DEFAULT_MULT,
 } from '@/config/attackSpeedSchema';
 
 /**
@@ -42,20 +43,20 @@ describe('resolveAttackSpeed — mult 統一連動（cooldown/hitDelay=base/mult
     expect(r.animTimeScale).toBe(0.5);
   });
 
-  it('省略/null/undefined → mult=1.0（原節奏 cooldown=base、hitDelay=base、anim=1）', () => {
+  it('省略/null/undefined → mult=預設（十六輪打包 default=1.5，cooldown=base/mult、hitDelay=base/mult、anim=mult）', () => {
     for (const ov of [null, undefined]) {
       const r = resolveAttackSpeed(ov, BASE_CD, BASE_HD);
-      expect(r.mult).toBe(1);
-      expect(r.cooldown).toBeCloseTo(0.333);
-      expect(r.hitDelay).toBeCloseTo(0.1);
-      expect(r.animTimeScale).toBe(1);
+      expect(r.mult).toBe(ATTACK_SPEED_DEFAULT_MULT);
+      expect(r.cooldown).toBeCloseTo(BASE_CD / ATTACK_SPEED_DEFAULT_MULT);
+      expect(r.hitDelay).toBeCloseTo(BASE_HD / ATTACK_SPEED_DEFAULT_MULT);
+      expect(r.animTimeScale).toBe(ATTACK_SPEED_DEFAULT_MULT);
     }
   });
 
-  it('壞/version 錯 override → mult=1.0（行為不變）', () => {
-    expect(resolveAttackSpeed({ garbage: true } as unknown, BASE_CD, BASE_HD).mult).toBe(1);
-    expect(resolveAttackSpeed('nope' as unknown, BASE_CD, BASE_HD).mult).toBe(1);
-    expect(resolveAttackSpeed({ version: 2, mult: 2 } as unknown, BASE_CD, BASE_HD).mult).toBe(1); // version 錯→不採用
+  it('壞/version 錯 override → mult=預設（行為＝fallback 打包 default）', () => {
+    expect(resolveAttackSpeed({ garbage: true } as unknown, BASE_CD, BASE_HD).mult).toBe(ATTACK_SPEED_DEFAULT_MULT);
+    expect(resolveAttackSpeed('nope' as unknown, BASE_CD, BASE_HD).mult).toBe(ATTACK_SPEED_DEFAULT_MULT);
+    expect(resolveAttackSpeed({ version: 2, mult: 2 } as unknown, BASE_CD, BASE_HD).mult).toBe(ATTACK_SPEED_DEFAULT_MULT); // version 錯→不採用
   });
 
   it('★ cooldown 連動方向：倍率大→冷卻小（mult=2 的 cooldown < mult=1 的 cooldown）', () => {

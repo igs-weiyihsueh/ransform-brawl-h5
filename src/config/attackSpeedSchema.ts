@@ -28,8 +28,8 @@ export interface AttackSpeedFile {
 }
 
 export const ATTACK_SPEED_SCHEMA_VERSION = 1 as const;
-/** 預設倍率（1.0 = 不加速，等同原本節奏）。 */
-export const ATTACK_SPEED_DEFAULT_MULT = 1.0;
+/** 預設倍率（十六輪設定打包：用戶匯出 byChar Human/SunWukong 皆 1.5 → 全域預設 1.5）。 */
+export const ATTACK_SPEED_DEFAULT_MULT = 1.5;
 
 /** 可變身角色 keys（攻速 per-char 對象）。對照 transformConfig HUMAN_KEY/SUNWUKONG_KEY（未來擴充在此加）。 */
 export const ATTACK_SPEED_CHAR_KEYS: readonly string[] = [HUMAN_KEY, SUNWUKONG_KEY];

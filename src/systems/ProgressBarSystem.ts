@@ -3,6 +3,7 @@ import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import { PANEL_DEPTH, UI_ICONS, resolveProgressTransform } from '@/config/uiConfig';
 import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
+import { DEFAULT_UI_LAYOUT } from '@/config/uiLayoutSchema';
 import {
   NODE_COLORS,
   PROGRESS_BAR,
@@ -238,13 +239,18 @@ interface ProgressTransformOverride {
  */
 function readProgressOverride(): ProgressTransformOverride | undefined {
   const raw = loadOverride(EDITOR_STORE_KEYS.uiLayout);
-  if (!raw || typeof raw !== 'object') return undefined;
-  const p = (raw as { progress?: unknown }).progress;
+  // 十六輪設定打包：localStorage override 的 layout.progress 優先；缺→打包預設 DEFAULT_UI_LAYOUT.progress（正式化）。
+  const packaged = DEFAULT_UI_LAYOUT.progress;
+  let p: unknown = packaged;
+  if (raw && typeof raw === 'object') {
+    const ovP = (raw as { progress?: unknown }).progress;
+    if (ovP && typeof ovP === 'object') p = ovP;
+  }
   if (!p || typeof p !== 'object') return undefined;
   const o = p as ProgressTransformOverride;
   return {
-    progressScale: typeof o.progressScale === 'number' ? o.progressScale : undefined,
-    progressOffsetX: typeof o.progressOffsetX === 'number' ? o.progressOffsetX : undefined,
-    progressOffsetY: typeof o.progressOffsetY === 'number' ? o.progressOffsetY : undefined,
+    progressScale: typeof o.progressScale === 'number' ? o.progressScale : packaged?.progressScale,
+    progressOffsetX: typeof o.progressOffsetX === 'number' ? o.progressOffsetX : packaged?.progressOffsetX,
+    progressOffsetY: typeof o.progressOffsetY === 'number' ? o.progressOffsetY : packaged?.progressOffsetY,
   };
 }

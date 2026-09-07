@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveAttackSpeedFor,
   validateAttackSpeed,
+  ATTACK_SPEED_DEFAULT_MULT,
 } from '@/config/attackSpeedSchema';
 
 /**
@@ -36,9 +37,9 @@ describe('resolveAttackSpeedFor — per-character 攻速倍率', () => {
     expect(resolveAttackSpeedFor('SunWukong', ov).mult).toBe(2);
   });
 
-  it('缺角色 → 該角色 mult=1.0（byChar 沒該 key fallback）', () => {
+  it('缺角色 → 該角色 mult=預設（byChar 沒該 key fallback＝打包 default）', () => {
     const ov = byCharFile({ Human: 1.5 }); // 無 SunWukong
-    expect(resolveAttackSpeedFor('SunWukong', ov).mult).toBe(1);
+    expect(resolveAttackSpeedFor('SunWukong', ov).mult).toBe(ATTACK_SPEED_DEFAULT_MULT);
   });
 
   it('★ 舊格式相容：舊 {mult:1.8}（無 byChar）→ 任何 charKey 都 1.8（全角色共用舊值）', () => {
@@ -54,11 +55,11 @@ describe('resolveAttackSpeedFor — per-character 攻速倍率', () => {
     expect(resolveAttackSpeedFor('SunWukong', ov).mult).toBe(1.8); // byChar 缺 → 退舊 mult
   });
 
-  it('null/undefined/壞/version 錯 override → mult=1.0（行為不變）', () => {
-    expect(resolveAttackSpeedFor('Human', null).mult).toBe(1);
-    expect(resolveAttackSpeedFor('Human', undefined).mult).toBe(1);
-    expect(resolveAttackSpeedFor('Human', { garbage: true } as unknown).mult).toBe(1);
-    expect(resolveAttackSpeedFor('Human', { version: 2, byChar: { Human: 2 } } as unknown).mult).toBe(1);
+  it('null/undefined/壞/version 錯 override → mult=預設（fallback 打包 default）', () => {
+    expect(resolveAttackSpeedFor('Human', null).mult).toBe(ATTACK_SPEED_DEFAULT_MULT);
+    expect(resolveAttackSpeedFor('Human', undefined).mult).toBe(ATTACK_SPEED_DEFAULT_MULT);
+    expect(resolveAttackSpeedFor('Human', { garbage: true } as unknown).mult).toBe(ATTACK_SPEED_DEFAULT_MULT);
+    expect(resolveAttackSpeedFor('Human', { version: 2, byChar: { Human: 2 } } as unknown).mult).toBe(ATTACK_SPEED_DEFAULT_MULT);
   });
 
   it('連動：byChar Human=2 → cooldown=base/2、hitDelay=base/2、anim=2', () => {

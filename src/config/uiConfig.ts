@@ -132,10 +132,10 @@ export const OVERHEAD_LAYOUT = {
     text: 'P1',
   },
 
-  /** Credit 數字 + 金幣 icon（右側 130×40）。stub：回 0/99999。 */
+  /** Credit 數字 + 金幣 icon（右側 130×40）。stub：回 0/99999。十六輪設定打包：用戶匯出 x -36/y -18。 */
   credit: {
-    x: 4,
-    y: -14,
+    x: -36,
+    y: -18,
     width: 120,
     height: 34,
     fontSize: '22px',
@@ -155,28 +155,28 @@ export const OVERHEAD_LAYOUT = {
       hintText: '投幣 (C)',
       /** 提示文字色（可 override）。 */
       hintColor: '#ffe14d',
-      /** 提示文字字級（可 override）。 */
-      hintFontSize: '18px',
-      /** 提示文字相對 credit 底框左上的 x 偏移（可 override）。 */
-      hintOffsetX: 0,
-      /** 提示文字相對 credit 底框的 y 偏移（正=下方，可 override）。 */
-      hintOffsetY: 26,
+      /** 提示文字字級（十六輪設定打包：用戶匯出 38px）。 */
+      hintFontSize: '38px',
+      /** 提示文字相對 credit 底框左上的 x 偏移（十六輪設定打包：-7）。 */
+      hintOffsetX: -7,
+      /** 提示文字相對 credit 底框的 y 偏移（十六輪設定打包：-70，改到上方）。 */
+      hintOffsetY: -70,
       /** 倒數是否顯示秒數（附在提示後，如「投幣 (C) 9」，可 override）。 */
       showCountdown: true,
     },
   },
 
-  /** 能量 4 格（SkillGauge Slot0~3，水平排；搬自原能量條）。 */
+  /** 能量 4 格（SkillGauge Slot0~3，水平排；搬自原能量條）。十六輪設定打包：用戶匯出 x -38/y 20。 */
   energy: {
     /** 相對容器的起點（左格左緣）。 */
-    x: -20,
-    y: 22,
+    x: -38,
+    y: 20,
   },
 
-  /** COMBO「n HIT」（上方）。 */
+  /** COMBO「n HIT」（上方）。十六輪設定打包：用戶匯出 x -4/y -30。 */
   combo: {
-    x: 0,
-    y: -52,
+    x: -4,
+    y: -30,
     fontSize: '24px',
     /** 後綴文字。 */
     suffix: ' HIT',
@@ -498,9 +498,9 @@ export function jpLightOffsetsX(count: number, gap: number): number[] {
  * 縮放以「Unity 設計面板中心」為原點（縮小仍留在原位不飄），再套位移。
  */
 export const JP_TRANSFORM_DEFAULT = {
-  panelScale: 1,
-  panelOffsetX: 0,
-  panelOffsetY: 0,
+  panelScale: 0.3125,
+  panelOffsetX: -5,
+  panelOffsetY: -478.125,
 } as const;
 
 /** JP 面板設計中心（縮放原點）＝橫幅中心。 */
@@ -538,8 +538,8 @@ export function resolveJpTransform(ov?: {
  */
 export const PROGRESS_TRANSFORM_DEFAULT = {
   progressScale: 1,
-  progressOffsetX: 0,
-  progressOffsetY: 0,
+  progressOffsetX: -5,
+  progressOffsetY: 55,
 } as const;
 
 /** 進度條設計中心（縮放原點）＝ progressBars.PROGRESS_BAR 的 centerX/shownY。 */

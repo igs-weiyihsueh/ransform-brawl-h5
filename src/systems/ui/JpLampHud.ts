@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { JP_PANEL_LAYOUT, PANEL_DEPTH, jpLightOffsetsX, resolveJpTransform } from '@/config/uiConfig';
 import { JP_GROUPS, JP_LIGHTS_TO_TRIGGER, type JpGroup } from '@/config/jpConfig';
 import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
+import { DEFAULT_UI_LAYOUT } from '@/config/uiLayoutSchema';
 
 /**
  * JpLampHud — JP 介面（對齊 Unity JPPanel：畫面中央橫幅 + 三組金/橘/紫 + 每組數字框 + 5 燈）。
@@ -169,13 +170,18 @@ function colorHex(c: number): string {
  */
 function readJpOverride(): JpTransformOverride | undefined {
   const raw = loadOverride(EDITOR_STORE_KEYS.uiLayout);
-  if (!raw || typeof raw !== 'object') return undefined;
-  const jp = (raw as { jp?: unknown }).jp;
+  // 十六輪設定打包：localStorage override 的 layout.jp 優先；缺→打包預設 DEFAULT_UI_LAYOUT.jp（正式化，讓打包值生效）。
+  const packaged = DEFAULT_UI_LAYOUT.jp;
+  let jp: unknown = packaged;
+  if (raw && typeof raw === 'object') {
+    const ovJp = (raw as { jp?: unknown }).jp;
+    if (ovJp && typeof ovJp === 'object') jp = ovJp;
+  }
   if (!jp || typeof jp !== 'object') return undefined;
   const o = jp as JpTransformOverride;
   return {
-    panelScale: typeof o.panelScale === 'number' ? o.panelScale : undefined,
-    panelOffsetX: typeof o.panelOffsetX === 'number' ? o.panelOffsetX : undefined,
-    panelOffsetY: typeof o.panelOffsetY === 'number' ? o.panelOffsetY : undefined,
+    panelScale: typeof o.panelScale === 'number' ? o.panelScale : packaged?.panelScale,
+    panelOffsetX: typeof o.panelOffsetX === 'number' ? o.panelOffsetX : packaged?.panelOffsetX,
+    panelOffsetY: typeof o.panelOffsetY === 'number' ? o.panelOffsetY : packaged?.panelOffsetY,
   };
 }

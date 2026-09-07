@@ -15,8 +15,8 @@ import type { GameContext } from '@/systems/GameContext';
 describe('getGuardPreset — 名稱查詢 + fallback', () => {
   it('Guard60 查得到正確數值', () => {
     const p = getGuardPreset('Guard60');
-    expect(p.timeLimit).toBe(60);
-    expect(p.targetHP).toBe(100);
+    expect(p.timeLimit).toBe(30);
+    expect(p.targetHP).toBe(500);
     expect(p.rewardTickets).toBe(10);
     expect(p).toBe(GUARD_PRESETS.Guard60);
   });
@@ -250,36 +250,37 @@ describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCha
   function fastForwardIntro(ev: GuardEvent): void {
     ev.update(3.5); // introMove 逾時(GUARD_MOVE_TIMEOUT_SEC) → reveal（回 false）
     ev.update(0.45); // reveal 顯現等待 → focus（回 false）
-    ev.update(1.6); // focus 聚焦(GUARD_FOCUS_SEC) → combat（回 false）
+    ev.update(3); // focus 聚焦(Guard60.introFocusSec=3) → combat（回 false）
   }
 
-  it('撐過時間(timer≤0)且 HP>0 → 勝，寶盒進度 += round(165 × hpRatio)（滿血 165）', () => {
+  it('撐過時間(timer≤0)且 HP>0 → 勝，寶盒進度 += round(門檻 × hpRatio)（滿血=門檻）', () => {
     const { ctx, state } = makeGuardCtx();
-    const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']); // timeLimit60 HP100
+    const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']); // Guard60: timeLimit30 HP500
     fastForwardIntro(ev); // 快轉開場相位 → combat
-    // 不打雕像（HP 滿）→ 跑滿 60s → 勝、寶盒進度 +round(165×1.0)=165（=一箱門檻）。
-    const done = ev.update(60);
+    // 不打雕像（HP 滿）→ 跑滿 timeLimit → 勝、寶盒進度 +round(門檻×1.0)=門檻（=一箱）。
+    const done = ev.update(getGuardPreset('Guard60').timeLimit);
     expect(done).toBe(true);
     expect(ev.isFinished()).toBe(true);
     expect(ev.didWin()).toBe(true);
-    expect(state.chestChargeAdded).toBe(CHEST_OPEN_THRESHOLD); // 滿 HP → 165（可觀察加值量）
+    expect(state.chestChargeAdded).toBe(CHEST_OPEN_THRESHOLD); // 滿 HP → 門檻（可觀察加值量）
     expect(state.ticketsAdded).toBe(0); // 已不再發彩票
   });
 
-  it('勝但半血：寶盒進度 += round(165 × 0.5) = 83', () => {
+  it('勝但半血：寶盒進度 += round(門檻 × 0.5)', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
-    state.guardTarget!.takeDamage(50); // HP 100→50（hpRatio 0.5，仍 >0）
+    const maxHp = getGuardPreset('Guard60').targetHP;
+    state.guardTarget!.takeDamage(maxHp * 0.5); // HP→半血（hpRatio 0.5，仍 >0）
     fastForwardIntro(ev); // 快轉開場 → combat
-    ev.update(60); // 撐過時間 → 勝
+    ev.update(getGuardPreset('Guard60').timeLimit); // 撐過時間 → 勝
     expect(ev.didWin()).toBe(true);
-    expect(state.chestChargeAdded).toBe(83); // round(165×0.5)=round(82.5)=83
+    expect(state.chestChargeAdded).toBe(Math.round(CHEST_OPEN_THRESHOLD * 0.5));
   });
 
   it('倒數中 HP≤0 提早結束 → 敗，寶盒進度不加（不給獎勵、addCharge 不被呼叫）', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
-    state.guardTarget!.takeDamage(100); // 雕像被打爆
+    state.guardTarget!.takeDamage(getGuardPreset('Guard60').targetHP); // 雕像被打爆
     fastForwardIntro(ev); // 快轉開場 → combat（開場相位不檢查敗）
     const done = ev.update(1); // 倒數中就偵測到 defeated → 敗、提早結束
     expect(done).toBe(true);
@@ -288,22 +289,23 @@ describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCha
     expect(state.chestAddCalls).toBe(0); // 敗完全不呼叫 addCharge
   });
 
-  it('邊界：timer 恰 0 且 HP=1 → 勝（撐過且 HP>0），寶盒進度 += round(165×0.01)=2', () => {
+  it('邊界：timer 恰 0 且 HP=1 → 勝（撐過且 HP>0），寶盒進度 += round(門檻 × hpRatio_低)', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
-    state.guardTarget!.takeDamage(99); // HP=1
+    const maxHp = getGuardPreset('Guard60').targetHP;
+    state.guardTarget!.takeDamage(maxHp - 1); // HP=1
     fastForwardIntro(ev); // 快轉開場 → combat
-    ev.update(60); // 恰好耗盡時間、HP=1>0 → 勝
+    ev.update(getGuardPreset('Guard60').timeLimit); // 恰好耗盡時間、HP=1>0 → 勝
     expect(ev.didWin()).toBe(true);
-    // hpRatio=0.01 → round(165×0.01)=round(1.65)=2（撐過、血極低仍給 2 點進度）
-    expect(state.chestChargeAdded).toBe(2);
+    // hpRatio=1/maxHp → round(門檻×hpRatio)（撐過、血極低仍給對應進度）
+    expect(state.chestChargeAdded).toBe(Math.round(CHEST_OPEN_THRESHOLD * (1 / maxHp)));
   });
 
   it('🔴 敗不 GameOver：敗後 cleanup（清回玩家目標/清敵/destroy 雕像）且回報結束讓關卡前進', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
     expect(state.guardTarget !== null).toBe(true); // 開場設了雕像為目標（用 boolean 避免 diff Phaser 物件）
-    state.guardTarget!.takeDamage(100); // 敗
+    state.guardTarget!.takeDamage(getGuardPreset('Guard60').targetHP); // 敗
     fastForwardIntro(ev); // 快轉開場 → combat
     const done = ev.update(1);
     // 語意：敗也結束（done=true 讓 WaveSystem advanceNode 前進），不是 gameover/不卡住。

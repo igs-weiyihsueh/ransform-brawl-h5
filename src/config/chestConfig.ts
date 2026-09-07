@@ -2,11 +2,11 @@
  * chestConfig.ts — 寶盒系統設定（零式定案，決策 924a1d83）。
  *
  * ⚠️ 寶盒能量(chestCharge) ≠ 技能能量(EnergySystem)：
- *   技能能量每「命中」充、4 格放招；寶盒能量每「擊殺」給、滿 165 自動開箱。兩者不同資源。
+ *   技能能量每「命中」充、4 格放招；寶盒能量每「擊殺」給、滿 10 自動開箱。兩者不同資源。
  */
 
-/** 開箱門檻：chestCharge ≥ 此值自動開箱、扣此值（超過排隊連開）。 */
-export const CHEST_OPEN_THRESHOLD = 165;
+/** 開箱門檻：chestCharge ≥ 此值自動開箱、扣此值（超過排隊連開）。十六輪設定打包：用戶匯出值 10（開箱較快）。 */
+export const CHEST_OPEN_THRESHOLD = 10;
 
 /**
  * 各敵人擊殺給的 chestCharge（key = 敵人角色 key）。

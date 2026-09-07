@@ -163,19 +163,25 @@ const DEFAULT_GUARD_SPAWNS: GuardSpawnEntry[] = [
 /** 守護波預設表（名稱 key）。preset 帶齊守護所需一切（含 drip），schema 不動。 */
 export const GUARD_PRESETS: Record<string, GuardPreset> = {
   Guard60: {
-    timeLimit: 60,
-    targetHP: 100,
+    timeLimit: 30,
+    targetHP: 500,
     rewardTickets: 10,
     maxAlive: 6,
     spawnThreshold: 4,
     spawnInterval: 1.0,
     spawns: DEFAULT_GUARD_SPAWNS,
-    spawnRadiusPx: 350,
+    spawnRadiusPx: 240,
     cornerOffsetXPx: 150,
     cornerOffsetYPx: 150,
-    introFocusSec: 1.6,
+    introFocusSec: 3,
     maxWalkSec: 3.5,
     spotlightRadiusPx: 200,
+    // 十六輪設定打包：用戶匯出的守護波 UI/訊息覆蓋（additive；缺→GUARD_MESSAGE_DEFAULTS/UI 打包預設）。
+    guardMessageText: '合作守護雕像',
+    barWidthPx: 175,
+    barHeightPx: 25,
+    statueHeightPx: 205,
+    barOffsetYPx: 130,
     attachFireRain: 'FireRain', // 六輪#1真解(異靈定):preset 預設=標準 FireRain(沒設 node 的守護波也有感火雨,比 Light 密)。editor 可 per-node 覆蓋(EventNodeData.attachFireRain 三態:省略沿用此/'none'無/指定 preset 名如 FireRainHeavy)。只設 preset 預設名、不動 preset 內部數值。
   },
 };

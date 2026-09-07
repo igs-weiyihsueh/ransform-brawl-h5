@@ -30,14 +30,14 @@ export interface FireRainPreset {
 /** 火雨 preset 表（名稱 key；用戶可在編輯器選）。FireRain=標準（對齊舊 FIRE_RAIN 值）。 */
 export const FIRE_RAIN_PRESETS: Record<string, FireRainPreset> = {
   FireRain: {
-    intervalSec: 1.5,
+    intervalSec: 1,
     radiusPx: 1.0 * PPU,
     warningSec: 1.0,
     damage: 1,
-    maxConcurrent: 3,
-    burstCount: 1,
-    edgeMarginPx: 0,
-    durationSec: 20,
+    maxConcurrent: 6,
+    burstCount: 3,
+    edgeMarginPx: 50,
+    durationSec: 0,
   },
   FireRainLight: {
     intervalSec: 2.2,
