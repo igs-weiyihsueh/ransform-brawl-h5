@@ -91,9 +91,12 @@ export class ComboSystem implements GameSystem {
     this.onComboSettled?.(playerId, count, tickets, isMax);
   }
 
-  /** 凍結判斷：過場/無戰鬥。近似＝場上無敵人（全域共享）。 */
+  /** 凍結判斷：過場/無戰鬥/獎勵階段。近似＝場上無敵人（全域共享）或 Reward 節點進行中（對齊 Unity comboFrozen）。 */
   private isFrozen(): boolean {
-    return this.ctx.getEnemies().length === 0;
+    if (this.ctx.getEnemies().length === 0) return true;
+    // 十六輪：Reward 獎勵階段（波騎 f38d9a4 isRewardActive）非戰鬥空檔 → 凍結 COMBO 倒數（不流失）。
+    if (typeof this.ctx.wave?.isRewardActive === 'function' && this.ctx.wave.isRewardActive()) return true;
+    return false;
   }
 
   // --- UI / 狀態查詢 ---

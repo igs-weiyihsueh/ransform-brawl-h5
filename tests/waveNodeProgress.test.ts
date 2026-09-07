@@ -72,3 +72,62 @@ describe('WaveSystem.getNodeProgress — Spawn 節點真實進度（修開場累
     expect(p3).toBeGreaterThan(p1);
   });
 });
+
+/**
+ * Reward 節點：進度段自動填滿補間（對齊 Unity RunRewardNode rewardFillDuration=0.6s）。
+ * 報獎流程期間 getNodeProgress=0；末段 0.6s 內 0→1 lerp 自動填滿（進度條動畫，非瞬跳）→ 前進。
+ * isRewardActive() 供 ComboSystem 凍結 COMBO 倒數。
+ */
+const REWARD_LEVEL: LevelData[] = [
+  {
+    id: 'test-reward',
+    nodes: [
+      { nodeType: 'Reward', rewardTickets: 10 } as unknown as LevelData['nodes'][number],
+      { nodeType: 'Reward', rewardTickets: 5 } as LevelData['nodes'][number],
+    ],
+  },
+];
+function makeRewardWave(): { sys: WaveSystem; onReward: () => number } {
+  const sys = new WaveSystem(REWARD_LEVEL);
+  let rewardCalls = 0;
+  sys.onReward = () => { rewardCalls += 1; };
+  sys.init({ players: [{ playerId: 0 }], player: { getPosition: () => ({ x: 0, y: 0 }) }, getEnemies: () => [], spawner: { spawn: () => ({ isDead: () => false }), clearAllEnemies: () => {} }, effects: { waveMessage: () => {} } } as unknown as GameContext);
+  return { sys, onReward: () => rewardCalls };
+}
+
+describe('WaveSystem — Reward 進度自動填滿補間 + isRewardActive（對齊 Unity）', () => {
+  it('★ 報獎流程期間 getNodeProgress=0；末段 0.6s 內 0→1 遞增（自動填滿動畫非瞬跳）', () => {
+    const { sys } = makeRewardWave();
+    // 進 Reward 節點第一幀：觸發 onReward、rewardHold=4.4，進度 0（報獎流程階段）。
+    sys.update(1 / 60);
+    expect(sys.getNodeProgress()).toBe(0);
+    // 推進到報獎流程中段（hold 還 > 0.6）→ 仍 0（尚未進填滿段）。
+    for (let i = 0; i < 60 * 2; i += 1) sys.update(1 / 60); // ~2s
+    expect(sys.getNodeProgress()).toBe(0);
+    // 推進到接近末段（hold 進入 <=0.6 填滿窗）→ 進度 > 0 且 < 1 且遞增。
+    const samples: number[] = [];
+    for (let i = 0; i < 60 * 2; i += 1) { // 再 ~2s（跨過填滿窗）
+      sys.update(1 / 60);
+      const idx = (sys as unknown as { getNodeIndex: () => number }).getNodeIndex();
+      if (idx === 0) samples.push(sys.getNodeProgress()); // 仍在 Reward 節點時取樣
+      if (idx >= 1) break; // 已前進到下一節點
+    }
+    // 填滿窗內應出現 0<p<1 的中間值（證明是 lerp 補間、非 0 直接跳 advance）。
+    const mid = samples.filter((p) => p > 0 && p < 1);
+    expect(mid.length).toBeGreaterThan(0);
+    // 填滿是遞增的（單調不減）。
+    for (let i = 1; i < samples.length; i += 1) expect(samples[i]).toBeGreaterThanOrEqual(samples[i - 1] - 1e-6);
+  });
+
+  it('填滿完 → 前進（離開第一 Reward 節點，nodeIndex >= 1）', () => {
+    const { sys } = makeRewardWave();
+    for (let i = 0; i < 60 * 6; i += 1) sys.update(1 / 60); // 6s > REWARD_HOLD_SEC 4.4
+    expect((sys as unknown as { getNodeIndex: () => number }).getNodeIndex()).toBeGreaterThanOrEqual(1);
+  });
+
+  it('★ isRewardActive：Reward 表演中 true（供 ComboSystem 凍結 COMBO）', () => {
+    const { sys } = makeRewardWave();
+    sys.update(1 / 60);
+    expect(sys.isRewardActive()).toBe(true); // Reward 表演中
+  });
+});

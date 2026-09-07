@@ -28,6 +28,13 @@ import { waveMessageFor, WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 const REWARD_HOLD_SEC = 4.4;
 
 /**
+ * 獎勵節點「進度段自動填滿」補間時長（秒，對齊 Unity RunRewardNode rewardFillDuration，預設 0.6）。
+ * Reward 表演末段：進度條該獎勵段 currentSegmentProgress 0→1 lerp 自動填滿（非瞬跳）再前進下一節點。
+ * 排在報獎流程（banner+飛光點燈）之後 → 用 hold 的最後 REWARD_FILL_DURATION 秒做填滿動畫。
+ */
+const REWARD_FILL_DURATION = 0.6;
+
+/**
  * WaveSystem — 波次/關卡系統（Spawn 節點核心，資料由 JSON 驅動）。
  *
  * 關卡資料來自 public/assets/data/levels.json（schema 見 config/levelSchema.ts，對照 Unity）。
@@ -169,7 +176,8 @@ export class WaveSystem implements GameSystem {
    * 目前節點內的完成進度（0..1，進度條珠子串繩「當前段填充」用）。
    * - Spawn：kills / killQuota（隨擊殺往前；開場 kills=0 → 0）。
    * - Event（守護波）：已過時間 / timeLimit（守護進行中往前；未開始 → 0）。
-   * - Reward / 其他 / 無節點：0（不預填）。
+   * - Reward：報獎流程期間 0；末段 REWARD_FILL_DURATION 秒 0→1 lerp 自動填滿（對齊 Unity rewardFillDuration）。
+   * - 其他 / 無節點：0（不預填）。
    * 開場 kills=0、守護未開始 → 回 0，修正「開場就有進度」。
    */
   getNodeProgress(): number {
@@ -187,7 +195,21 @@ export class WaveSystem implements GameSystem {
       if (limit <= 0) return 0;
       return Math.min(1, Math.max(0, 1 - g.getRemaining() / limit));
     }
+    if (node.nodeType === 'Reward') {
+      // 報獎流程（banner+飛光點燈）期間進度 0；末段 REWARD_FILL_DURATION 內 0→1 自動填滿（Unity rewardFillDuration）。
+      if (this.rewardHold <= 0) return 0; // 尚未進入或已結束
+      if (this.rewardHold > REWARD_FILL_DURATION) return 0; // 報獎流程階段，尚未開始填滿
+      return Math.min(1, Math.max(0, 1 - this.rewardHold / REWARD_FILL_DURATION)); // 末段 lerp 0→1
+    }
     return 0;
+  }
+
+  /**
+   * 是否正在獎勵節點表演中（供 ComboSystem 凍結 COMBO 倒數，對齊 Unity comboFrozen；非戰鬥空檔不倒扣）。
+   * ComboSystem update 讀 ctx.wave.isRewardActive?.() → true 時暫停 COMBO 倒數計時。（read-side query，不碰 COMBO 內部。）
+   */
+  isRewardActive(): boolean {
+    return this.currentNode()?.nodeType === 'Reward' && this.rewardHold > 0;
   }
 
   /**
