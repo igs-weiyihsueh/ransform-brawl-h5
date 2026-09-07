@@ -32,6 +32,7 @@ import {
 } from '@/config/editorStore';
 import {
   ATTACK_SPEED_DEFAULT_MULT,
+  ATTACK_SPEED_CHAR_KEYS,
   defaultAttackSpeedFile,
   validateAttackSpeed,
   type AttackSpeedFile,
@@ -331,16 +332,20 @@ function renderCharInspector(): void {
   insp.appendChild(numberRow('充能上限 energyCap', p.energyCap, (v) => { p.energyCap = v; }, { min: 1, step: 1 }));
   insp.appendChild(numberRow('傷害倍率 damageMultiplier', p.damageMultiplier, (v) => { p.damageMultiplier = v; }, { min: 0, max: 3, step: 0.1, slider: true }));
 
-  // 攻擊速度倍率（用戶第十一輪 #1，全域）：一個滑桿統一調攻擊節奏（動畫加速+冷卻÷+前搖÷）。存獨立 attackSpeed key。
+  // 攻擊速度倍率（用戶第十一輪，per-character）：每個可變身角色一個 slider，統一調該角色攻擊節奏。存 byChar override key。
   const spTitle = document.createElement('div');
   spTitle.className = 'section-title';
   spTitle.style.marginTop = '12px';
-  spTitle.textContent = '攻擊速度（全域，非單角色）';
+  spTitle.textContent = '攻擊速度（各可變身角色，全域非單招）';
   insp.appendChild(spTitle);
-  insp.appendChild(numberRow('攻擊速度倍率 attackSpeedMult', attackSpeedFile.mult ?? ATTACK_SPEED_DEFAULT_MULT, (v) => { attackSpeedFile.mult = v; }, { min: 0.5, max: 3, step: 0.05, slider: true }));
+  if (!attackSpeedFile.byChar) attackSpeedFile.byChar = {};
+  const byChar = attackSpeedFile.byChar;
+  for (const ck of ATTACK_SPEED_CHAR_KEYS) {
+    insp.appendChild(numberRow(`${ck} 攻速倍率`, byChar[ck] ?? ATTACK_SPEED_DEFAULT_MULT, (v) => { byChar[ck] = v; }, { min: 0.5, max: 3, step: 0.05, slider: true }));
+  }
   const spHint = document.createElement('div');
   spHint.className = 'hint';
-  spHint.textContent = '1.0=原本節奏；>1 攻擊更快（動畫加速＋冷卻÷倍率＋前搖÷倍率三者連動，不脫節）。套用時與招式一起存。';
+  spHint.textContent = '各可變身角色獨立：1.0=原本節奏；>1 攻擊更快（動畫加速＋冷卻÷＋前搖÷連動）。玩家變身切角色時攻速跟著換。套用時與招式一起存。';
   insp.appendChild(spHint);
 }
 

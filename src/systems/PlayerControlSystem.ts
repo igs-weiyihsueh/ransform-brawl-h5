@@ -10,7 +10,7 @@ import {
 } from '@/config/buffConfig';
 import { COIN_INSERT_AMOUNT } from '@/config/creditConfig';
 import { getResolvedHitFeel } from '@/config/hitFeelSchema';
-import { getResolvedAttackSpeed } from '@/config/attackSpeedSchema';
+import { getResolvedAttackSpeedFor } from '@/config/attackSpeedSchema';
 import { pushLoadFactor } from '@/systems/enemySeparation';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
@@ -165,8 +165,11 @@ export class PlayerControlSystem implements GameSystem {
       }
       if (src.justPressedAttack() && credit.canAttack(pid)) {
         const intent = energy.resolveAttackIntent(pid);
-        // 第十一輪#1：攻擊速度 override → 冷卻/前搖/動畫倍率（無 override→mult 1.0 原節奏）。
-        const as = getResolvedAttackSpeed();
+        // 第十一輪#1：攻擊速度 override（per-character，讀當前變身角色 charKey）→ 冷卻/前搖/動畫倍率。
+        //   變身 Human↔SunWukong → 下次攻擊自動讀新角色 mult。無 override/缺角色→mult 1.0 原節奏。
+        const as = getResolvedAttackSpeedFor(
+          typeof player.getCharacterKey === 'function' ? player.getCharacterKey() : '',
+        );
         if (player.tryStartAttack(intent.attack.hitDelay / as.mult, as.cooldown, as.animTimeScale)) {
           this.pendingIntent.set(pid, intent);
           // 十一輪#2 auto-aim：找最近存活怪 → aim 朝牠（無怪→null，resolveAttack fallback 水平 facing）。
