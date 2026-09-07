@@ -37,6 +37,7 @@ export class ProgressBarSystem implements GameSystem {
   private root!: Phaser.GameObjects.Container; // 整條，滑動用
   private gfx!: Phaser.GameObjects.Graphics; // bar 底槽 + 段填充繩 + 節點圓底
   private guardGfx!: Phaser.GameObjects.Graphics; // 守護波倒數金條
+  private guardText!: Phaser.GameObjects.Text; // 守護金條剩餘秒數文字
   private nodeIcons: Phaser.GameObjects.Image[] = [];
   private builtCount = -1; // 已建 icon 對應的節點數（重建判斷）
   private pulseT = 0;
@@ -46,9 +47,24 @@ export class ProgressBarSystem implements GameSystem {
     const scene = ctx.scene;
     this.root = scene.add.container(0, PROGRESS_BAR.shownY).setScrollFactor(0).setDepth(PANEL_DEPTH);
     this.gfx = scene.add.graphics();
-    this.guardGfx = scene.add.graphics();
     this.root.add(this.gfx);
-    this.root.add(this.guardGfx);
+    // 守護金條：★獨立於 root（不 root.add）——守護波時 root 往上滑走隱藏主進度條，金條需固定螢幕座標留下顯示。
+    //   固定螢幕座標（setScrollFactor(0)）畫在 shownY+guard.offsetY，不隨 root.y 滑走。
+    this.guardGfx = scene.add.graphics().setScrollFactor(0).setDepth(PANEL_DEPTH);
+    // 守護金條剩餘秒數文字（用戶問的順手加；不要可隱藏）。
+    this.guardText = scene.add
+      .text(PROGRESS_BAR.centerX, PROGRESS_BAR.shownY + PROGRESS_BAR.guard.offsetY + PROGRESS_BAR.guard.height / 2, '', {
+        fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+        fontSize: '18px',
+        color: '#ffffff',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setDepth(PANEL_DEPTH + 1)
+      .setVisible(false);
   }
 
   update(dt: number): void {
@@ -74,13 +90,13 @@ export class ProgressBarSystem implements GameSystem {
     this.gfx.clear();
     if (total > 0) this.drawBeadBar(total, nodeIndex, types);
 
-    // 守護波倒數金條（守護波才顯示；畫在條下方）。
+    // 守護波倒數金條（守護波才顯示；★獨立固定螢幕座標畫，不隨主進度條 root 滑走隱藏）。
     this.guardGfx.clear();
     if (guardActive && guard) {
       const g = guardTimeRatio(guard.getRemaining(), guard.getTimeLimit());
       const gw = PROGRESS_BAR.guard.width;
       const gx = PROGRESS_BAR.centerX - gw / 2;
-      const gy = PROGRESS_BAR.guard.offsetY;
+      const gy = PROGRESS_BAR.shownY + PROGRESS_BAR.guard.offsetY; // 絕對螢幕 Y（root 滑走但金條固定）
       this.guardGfx.fillStyle(0x000000, 0.55);
       this.guardGfx.fillRoundedRect(gx, gy, gw, PROGRESS_BAR.guard.height, 6);
       if (g > 0) {
@@ -89,6 +105,11 @@ export class ProgressBarSystem implements GameSystem {
       }
       this.guardGfx.lineStyle(2, 0xffffff, 0.8);
       this.guardGfx.strokeRoundedRect(gx, gy, gw, PROGRESS_BAR.guard.height, 6);
+      // 剩餘秒數文字（Math.ceil）。
+      this.guardText.setText(String(Math.max(0, Math.ceil(guard.getRemaining()))));
+      this.guardText.setVisible(true);
+    } else {
+      this.guardText.setVisible(false);
     }
   }
 
@@ -182,6 +203,7 @@ export class ProgressBarSystem implements GameSystem {
     this.nodeIcons = [];
     this.gfx?.destroy();
     this.guardGfx?.destroy();
+    this.guardText?.destroy();
     this.root?.destroy();
   }
 }
