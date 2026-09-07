@@ -101,7 +101,7 @@ export class CharacterAnimator {
    */
   play(
     state: AnimState,
-    opts?: { onComplete?: () => void; force?: boolean },
+    opts?: { onComplete?: () => void; force?: boolean; timeScale?: number },
   ): void {
     const force = opts?.force ?? false;
     if (this.currentState === state && !force) {
@@ -111,6 +111,12 @@ export class CharacterAnimator {
     }
     this.currentState = state;
     this.sprite.play(animKey(this.charKey, state), true);
+    // 第十一輪#1：可選動畫播放倍率（如玩家攻擊加速 attackSpeed.animTimeScale）；省略→1.0 原速。
+    if (opts?.timeScale !== undefined && this.sprite.anims) {
+      this.sprite.anims.timeScale = opts.timeScale;
+    } else if (this.sprite.anims) {
+      this.sprite.anims.timeScale = 1; // 換其他動畫回正常速（避免殘留攻擊加速）。
+    }
     // 敵人：換動畫時依當前動畫重算 flipX（attack 美術基準與 move/idle 相反 → 補償；切回 move/idle 自動回正）。
     if (this.enemyFacing !== null) {
       this.sprite.setFlipX(enemyFlipForAnim(this.enemyFacing, state));

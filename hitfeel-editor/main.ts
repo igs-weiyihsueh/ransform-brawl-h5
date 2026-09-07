@@ -484,7 +484,7 @@ const EDITOR_BODY_HTML = `
     <textarea id="export-box" readonly></textarea>
   </div>
 </div>
-<div id="status">就緒。右側調參數，左側按「觸發受擊」即時預覽。唯讀：調好用「複製參數」/「下載 JSON」貼回 hitFeelConfig。</div>
+<div id="status">就緒。右側調參數，左側按「觸發受擊」即時預覽。調好按「套用到遊戲」即生效（重開讀新值）；亦可「下載 JSON」保存或貼回 hitFeelConfig。</div>
 `;
 
 /** 編輯器樣式（命名空間 .tb-editor-root）；原 100vh 併頁改吃容器高。 */

@@ -10,6 +10,7 @@ import {
 } from '@/config/buffConfig';
 import { COIN_INSERT_AMOUNT } from '@/config/creditConfig';
 import { getResolvedHitFeel } from '@/config/hitFeelSchema';
+import { getResolvedAttackSpeed } from '@/config/attackSpeedSchema';
 import { pushLoadFactor } from '@/systems/enemySeparation';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
@@ -164,7 +165,9 @@ export class PlayerControlSystem implements GameSystem {
       }
       if (src.justPressedAttack() && credit.canAttack(pid)) {
         const intent = energy.resolveAttackIntent(pid);
-        if (player.tryStartAttack(intent.attack.hitDelay, PLAYER_CONFIG.attackCooldown)) {
+        // 第十一輪#1：攻擊速度 override → 冷卻/前搖/動畫倍率（無 override→mult 1.0 原節奏）。
+        const as = getResolvedAttackSpeed();
+        if (player.tryStartAttack(intent.attack.hitDelay / as.mult, as.cooldown, as.animTimeScale)) {
           this.pendingIntent.set(pid, intent);
           // 十一輪#2 auto-aim：找最近存活怪 → aim 朝牠（無怪→null，resolveAttack fallback 水平 facing）。
           // 防禦：最小 stub player（無 getPosition，如 S2 契約測）→ 跳過 auto-aim/lunge（aim=null）。

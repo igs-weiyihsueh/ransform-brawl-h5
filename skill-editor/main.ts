@@ -30,6 +30,12 @@ import {
   clearOverride,
   loadOverride,
 } from '@/config/editorStore';
+import {
+  ATTACK_SPEED_DEFAULT_MULT,
+  defaultAttackSpeedFile,
+  validateAttackSpeed,
+  type AttackSpeedFile,
+} from '@/config/attackSpeedSchema';
 
 const PPU = 100; // 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲檔）
 
@@ -80,6 +86,8 @@ function cloneFile(f: SkillFile): SkillFile {
 }
 
 let file: SkillFile = defaultSkillFile();
+// 攻擊速度倍率（用戶第十一輪 #1）：獨立 attackSpeed key，與 skills 併於本編輯器編（玩家攻擊節奏屬招式範疇）。
+let attackSpeedFile: AttackSpeedFile = defaultAttackSpeedFile();
 let selectedChar: string | null = Object.keys(file.characters)[0] ?? null;
 let selectedSkill: keyof CharacterSkillSet = 'normalAttack';
 
@@ -322,6 +330,18 @@ function renderCharInspector(): void {
   insp.appendChild(selectRow('能量模式 mode', p.mode, ENERGY_MODES as readonly string[], (v) => { p.mode = v as EnergyMode; }));
   insp.appendChild(numberRow('充能上限 energyCap', p.energyCap, (v) => { p.energyCap = v; }, { min: 1, step: 1 }));
   insp.appendChild(numberRow('傷害倍率 damageMultiplier', p.damageMultiplier, (v) => { p.damageMultiplier = v; }, { min: 0, max: 3, step: 0.1, slider: true }));
+
+  // 攻擊速度倍率（用戶第十一輪 #1，全域）：一個滑桿統一調攻擊節奏（動畫加速+冷卻÷+前搖÷）。存獨立 attackSpeed key。
+  const spTitle = document.createElement('div');
+  spTitle.className = 'section-title';
+  spTitle.style.marginTop = '12px';
+  spTitle.textContent = '攻擊速度（全域，非單角色）';
+  insp.appendChild(spTitle);
+  insp.appendChild(numberRow('攻擊速度倍率 attackSpeedMult', attackSpeedFile.mult ?? ATTACK_SPEED_DEFAULT_MULT, (v) => { attackSpeedFile.mult = v; }, { min: 0.5, max: 3, step: 0.05, slider: true }));
+  const spHint = document.createElement('div');
+  spHint.className = 'hint';
+  spHint.textContent = '1.0=原本節奏；>1 攻擊更快（動畫加速＋冷卻÷倍率＋前搖÷倍率三者連動，不脫節）。套用時與招式一起存。';
+  insp.appendChild(spHint);
 }
 
 // ---- 招式層 Inspector -----------------------------------------------------
@@ -527,6 +547,12 @@ function loadDefault(): void {
 
 /** 開啟載入（匯入回顯）：優先讀 localStorage override 回填，無/壞→打包預設（不炸）。不進 undo。 */
 function initLoad(): void {
+  // 攻擊速度 override 回顯（獨立 key）。
+  const aRaw = loadOverride(EDITOR_STORE_KEYS.attackSpeed);
+  if (aRaw !== null) {
+    const ar = validateAttackSpeed(aRaw);
+    if (ar.ok) attackSpeedFile = ar.data;
+  }
   const raw = loadOverride(EDITOR_STORE_KEYS.skills);
   if (raw !== null) {
     const r = validateSkills(raw);
@@ -594,19 +620,26 @@ function resetDefault(): void {
   setStatus('已重設為預設值。', 'info');
 }
 
-/** 套用到遊戲（匯入機制）：validate 過才存 localStorage，遊戲啟動優先讀。回傳是否成功。 */
+/** 套用到遊戲（匯入機制）：validate 過才存 localStorage，遊戲啟動優先讀。回傳是否成功。含攻擊速度（獨立 key）。 */
 function applyToGameFromEditor(): boolean {
   const result = validateSkills(file);
   if (!result.ok) {
     setStatus(`套用被擋下：資料不合法（${result.errors.length} 項）：\n${result.errors.map((m) => `  - ${m}`).join('\n')}`, 'err');
     return false;
   }
+  // 攻擊速度也驗證（mult>0）——不合法擋整個套用（避免只套一半）。
+  const aRes = validateAttackSpeed(attackSpeedFile);
+  if (!aRes.ok) {
+    setStatus(`套用被擋下：攻擊速度不合法：\n${aRes.errors.map((m) => `  - ${m}`).join('\n')}`, 'err');
+    return false;
+  }
   const ok = applyToGame(EDITOR_STORE_KEYS.skills, assertValidSkills(file));
+  const okA = applyToGame(EDITOR_STORE_KEYS.attackSpeed, aRes.data); // 攻擊速度存獨立 key
   setStatus(
-    ok ? '✅ 已套用到遊戲（存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。',
-    ok ? 'ok' : 'err',
+    ok && okA ? '✅ 已套用到遊戲（招式＋攻擊速度，存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。',
+    ok && okA ? 'ok' : 'err',
   );
-  return ok;
+  return ok && okA;
 }
 
 /** 套用並回到遊戲：套用成功才跳轉回遊戲頁（../）。 */
@@ -616,10 +649,12 @@ function applyAndReturnToGame(): void {
   window.location.href = '../';
 }
 
-/** 清除套用（回打包預設）：移除 localStorage override。 */
+/** 清除套用（回打包預設）：移除 localStorage override（招式 + 攻擊速度）。 */
 function clearAppliedFromEditor(): void {
   clearOverride(EDITOR_STORE_KEYS.skills);
-  setStatus('已清除套用，遊戲將回到打包預設招式設定。', 'info');
+  clearOverride(EDITOR_STORE_KEYS.attackSpeed);
+  attackSpeedFile = defaultAttackSpeedFile();
+  setStatus('已清除套用，遊戲將回到打包預設招式設定＋攻擊速度。', 'info');
 }
 
 // ---- 統一重繪 -------------------------------------------------------------
@@ -792,6 +827,7 @@ export function mount(container: HTMLElement): { unmount(): void } {
 
   // 重置狀態（反覆開關 overlay：回乾淨初值，initLoad 再讀 override 回顯）。
   file = defaultSkillFile();
+  attackSpeedFile = defaultAttackSpeedFile();
   selectedChar = Object.keys(file.characters)[0] ?? null;
   selectedSkill = 'normalAttack';
   undoStack = [];

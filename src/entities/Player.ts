@@ -673,7 +673,7 @@ export class Player implements Hittable {
   /**
    * 嘗試發動攻擊：非冷卻中則開始 hitDelay 前搖、進入冷卻、播 attack 一次。
    */
-  tryStartAttack(hitDelay: number, cooldown: number): boolean {
+  tryStartAttack(hitDelay: number, cooldown: number, animTimeScale = 1): boolean {
     if (this.cooldownRemaining > 0) return false;
     this.cooldownRemaining = cooldown;
     this.hitDelayRemaining = hitDelay;
@@ -681,6 +681,7 @@ export class Player implements Hittable {
     this.attacking = true;
     this.anim.play('attack', {
       force: true,
+      timeScale: animTimeScale, // 第十一輪#1：玩家攻擊動畫加速（attackSpeed.animTimeScale）。
       onComplete: () => {
         this.attacking = false;
       },
