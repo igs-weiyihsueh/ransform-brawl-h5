@@ -17,8 +17,6 @@ import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
 import { playerColor } from '@/config/playerConfig';
 import { WAITING_PLATFORM_LIFT } from '@/config/playerConfig';
 import { landingX } from '@/systems/entranceMath';
-import { ITEM_PICKUP_RADIUS } from '@/entities/TransformItem';
-import { initialItemPos } from '@/systems/itemGuideMath';
 import type { AttackData } from '@/systems/AttackData';
 import { lateralKnockbackDir } from '@/systems/dashMath';
 import { EnergySystem, type AttackIntent } from '@/systems/EnergySystem';
@@ -292,13 +290,12 @@ export class PlayerControlSystem implements GameSystem {
    */
   private giveInitialItem(player: GameContext['player']): void {
     if (!this.ctx.transform || typeof this.ctx.transform.spawnItem !== 'function') return;
-    // 七輪#9 乙：初始道具放「真空吸取半徑 + 撿取半徑 + 緩衝」外（別寫死；確保進場不落在吸取/撿取範圍內，
-    //   玩家得看箭頭走過去撿）。derive 自 getVacuumRadius（可編輯器調→自動跟）。
-    const vacR = typeof player.getVacuumRadius === 'function' ? player.getVacuumRadius() : 50;
-    const pickupR = ITEM_PICKUP_RADIUS * PPU; // 80
-    const offsetPx = Math.max(180, Math.round(vacR + pickupR + 60)); // 至少 180，且保證在吸取+撿取外
-    const pos = initialItemPos(player.getPosition(), PLAYER_BOUNDS, offsetPx);
-    this.ctx.transform.spawnItem('initial', player.playerId, pos);
+    // 十六輪②：初始道具改「spawn 彈跳飛向角色左右一側落地」(Unity 手感)。
+    //   從角色位置生成 → launch(dir) 水平 400px/s×方向 + 上拋 300 + 重力 800，拋物線飛約 300px 落到該側。
+    //   落點左右：角色偏左半場→往右飛(dir+1)、偏右→往左飛(dir-1)＝往場中央那側(空間較大、不飛出界)。
+    const pos = player.getPosition();
+    const dir = pos.x <= GAME_WIDTH / 2 ? 1 : -1;
+    this.ctx.transform.spawnItem('initial', player.playerId, pos, dir);
   }
 
   /** 依 BuffSystem 聚合倍率設定玩家 stat 倍率/護盾（同 stat 多來源已相乘+clamp）。 */

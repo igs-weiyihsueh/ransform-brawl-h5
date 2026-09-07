@@ -114,6 +114,7 @@ export class TransformSystem implements GameSystem {
     const playerPos = player.getPosition();
     for (const item of this.items) {
       item.tickImmunity(dt); // 七輪#9 乙：扣減初始道具撿取免疫
+      item.tickBounce(dt); // 十六輪②：推進 spawn 彈跳物理（落地前 isInPickupRange=false）
       if (!item.isPicked() && item.isInPickupRange(playerPos)) {
         this.onPickup(item, player);
       }
@@ -285,7 +286,7 @@ export class TransformSystem implements GameSystem {
    * @param ownerPlayerId 初始/擊落來源的擁有者 playerId（隨機來源忽略）。
    * @param pos 五輪#1：指定生成位置（初始道具放玩家落點旁）；省略=隨機位置（隨機刷）。
    */
-  spawnItem(source: ItemSource = 'random', ownerPlayerId?: number, pos?: { x: number; y: number }): void {
+  spawnItem(source: ItemSource = 'random', ownerPlayerId?: number, pos?: { x: number; y: number }, launchDirX?: number): void {
     if (this.items.length >= MAX_ITEMS_ON_FIELD) return;
     const margin = 120;
     const x = pos ? pos.x : Phaser.Math.Between(margin, GAME_WIDTH - margin);
@@ -293,6 +294,8 @@ export class TransformSystem implements GameSystem {
     const item = new TransformItem(this.ctx.scene, x, y, ++this.itemSeq, source);
     // 七輪#9 乙：初始道具進場後短暫免撿取（給玩家看箭頭走過去的時間，箭頭 3s showDuration 內不被秒撿）。
     if (source === 'initial') item.setPickupImmunity(INITIAL_ITEM_PICKUP_IMMUNITY_SEC);
+    // 十六輪②：初始道具 spawn 彈跳（Unity 手感）——往指定側(launchDirX)拋物線飛落，落地前不可撿。
+    if (source === 'initial' && typeof launchDirX === 'number') item.launch(launchDirX);
     // 三輪#6：owner 依來源分配。隨機刷=無主(不標色框/不畫箭頭/不連牽引)；初始/擊落=有主(標玩家色+入佇列)。
     const owner = resolveItemOwner(source, ownerPlayerId);
     if (owner !== null) {

@@ -33,6 +33,12 @@ export class TransformItem {
   /** 七輪#9 乙：撿取免疫剩餘秒（初始道具進場後短暫不可撿，給玩家看箭頭走過去的時間）；每幀由 TransformSystem 扣。 */
   private pickupImmunitySec = 0;
 
+  /** 十六輪②：spawn 彈跳物理（對齊 Unity TransformItem，PPU=100）。bouncing 期間不可撿、落地歸零停(無二段彈)。 */
+  private bouncing = false;
+  private vx = 0;
+  private vy = 0;
+  private groundY = 0;
+
   constructor(scene: Phaser.Scene, x: number, y: number, id = 0, source: ItemSourceKind = 'random') {
     this.scene = scene;
     this.id = id;
@@ -82,6 +88,7 @@ export class TransformItem {
   /** 玩家是否在撿取半徑內（撿取免疫中一律 false，七輪#9 乙：初始道具進場短暫不可撿）。 */
   isInPickupRange(playerPos: Vec2): boolean {
     if (this.pickupImmunitySec > 0) return false;
+    if (this.bouncing) return false; // 十六輪②：彈跳落地前不可撿（對齊 Unity landed 後才可撿）
     const dx = playerPos.x - this.container.x;
     const dy = playerPos.y - this.container.y;
     return dx * dx + dy * dy <= this.pickupRadiusPx * this.pickupRadiusPx;
@@ -95,6 +102,37 @@ export class TransformItem {
   /** 每幀扣減撿取免疫（由 TransformSystem update 呼叫）。 */
   tickImmunity(dt: number): void {
     if (this.pickupImmunitySec > 0) this.pickupImmunitySec = Math.max(0, this.pickupImmunitySec - dt);
+  }
+
+  /**
+   * 十六輪②：spawn 彈跳（對齊 Unity TransformItem，PPU=100）。從當前 y 為地面，水平往 dirX 側飛、垂直上拋，
+   * 每幀重力落下，落地(vy>0 且 y>=groundY)歸零停(無二段彈)。彈跳中不可撿。
+   * @param dirX 水平方向 ±1（配合落點左右：往右 +1 / 往左 -1）。
+   */
+  launch(dirX: number): void {
+    this.groundY = this.container.y;
+    this.vx = (dirX >= 0 ? 1 : -1) * 400; // itemLaunchSpeedX 4 units ×PPU
+    this.vy = -300; // itemLaunchSpeedY 3 units ×PPU（往上，H5 上為負）
+    this.bouncing = true;
+  }
+
+  /** 十六輪②：每幀推進彈跳物理（TransformSystem update 呼叫）；落地一次即停(無二段彈)。 */
+  tickBounce(dt: number): void {
+    if (!this.bouncing) return;
+    this.vy += 800 * dt; // gravity 8 units/s² ×PPU
+    this.container.x += this.vx * dt;
+    this.container.y += this.vy * dt;
+    if (this.vy > 0 && this.container.y >= this.groundY) {
+      this.container.y = this.groundY; // 落地歸零停
+      this.vx = 0;
+      this.vy = 0;
+      this.bouncing = false;
+    }
+  }
+
+  /** 十六輪②：是否彈跳中（TransformSystem 判定期間不可撿）。 */
+  isBouncing(): boolean {
+    return this.bouncing;
   }
 
   /** 標記已撿並銷毀視覺。 */
