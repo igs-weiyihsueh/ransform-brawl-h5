@@ -53,7 +53,7 @@ describe('CreditSystem — Credit 資源 / 耗盡 / 投幣', () => {
     expect(sys.getCredit(0)).toBe(0);
   });
 
-  it('投幣 addCredit(100) → credit 增加；耗盡時投幣可解除', () => {
+  it('投幣 addCredit(COIN_INSERT_AMOUNT) → credit 增加；耗盡時投幣可解除', () => {
     const sys = makeSystem();
     for (let i = 0; i < STARTING_CREDIT; i += 1) sys.consumeOnHit(0); // 進耗盡
     expect(sys.isOutOfCredit(0)).toBe(true);
@@ -180,7 +180,7 @@ describe('CreditSystem — CanAttack / canAct 閘門', () => {
 });
 
 describe('CreditSystem — 投幣 AddCredit 與耗盡解除', () => {
-  it('一般狀態投幣：credit += 100（非耗盡不誤觸解除流程）', () => {
+  it('一般狀態投幣：credit += COIN_INSERT_AMOUNT（非耗盡不誤觸解除流程）', () => {
     const { sys } = makeControllable();
     consumeTo(sys, 10);
     sys.addCredit(0, COIN_INSERT_AMOUNT);

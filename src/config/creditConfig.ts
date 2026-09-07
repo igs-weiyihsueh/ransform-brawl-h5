@@ -8,8 +8,8 @@
  */
 export const STARTING_CREDIT = 100;
 
-/** 投幣一次增加的 Credit（C 鍵）。 */
-export const COIN_INSERT_AMOUNT = 100;
+/** 投幣一次增加的 Credit（C 鍵）。用戶要：每按 C +10。 */
+export const COIN_INSERT_AMOUNT = 10;
 
 /** 每次攻擊命中扣的 Credit。 */
 export const CREDIT_PER_HIT = 1;
