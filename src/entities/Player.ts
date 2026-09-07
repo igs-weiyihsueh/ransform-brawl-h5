@@ -509,6 +509,7 @@ export class Player implements Hittable {
     this.floating = active;
     const spr = this.anim.sprite;
     if (active) {
+      this.anim.play('idle'); // 十五輪：浮起轉待機動畫（浮空待機蓄力；mashLocked 禁 move/attack→idle 不被覆蓋）
       this.floatBaseY = spr.y; // 記錄基準 y（離開還原）
       const liftY = this.floatBaseY - 24;
       spr.y = liftY;
