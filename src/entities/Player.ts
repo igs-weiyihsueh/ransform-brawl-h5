@@ -389,6 +389,16 @@ export class Player implements Hittable {
     return footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.foot.offsetY);
   }
 
+  /**
+   * 十六輪：地面錨點的搜索圈中心——連打變身浮起中(floating)用「浮起前的地面 y」(floatBaseY)，
+   * 使召喚陣/吸怪/震開中心固定貼地，不隨角色浮起(y 上移 24 + yoyo ±8)而上飄。
+   * 非浮起時 = getFootGlowCenter（當前 sprite y）。
+   */
+  getGroundFootCenter(): Vec2 {
+    const groundY = this.floating ? this.floatBaseY : this.anim.sprite.y;
+    return footGlowCenter(this.anim.sprite.x, groundY, this.foot.offsetX, this.foot.offsetY);
+  }
+
   /** 目前是否處於無敵幀（iFrame 內免疫再次受擊）。 */
   isInvincible(): boolean {
     return this.iFrameRemaining > 0;

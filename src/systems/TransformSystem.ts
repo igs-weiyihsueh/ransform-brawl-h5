@@ -334,8 +334,10 @@ export class TransformSystem implements GameSystem {
     this.mashSummonHandles.set(pid, this.ctx.effects?.mashSummonCircleStart?.(foot.x, foot.y) ?? null);
   }
 
-  /** 連打變身召喚陣的腳下位置（角色中心下方；有 getFootGlowCenter 用之，否則 getHitCenter 下移）。 */
+  /** 連打變身召喚陣的腳下位置（地面錨點：浮起中固定浮起前地面 y，不隨浮起上飄）。吸怪/震開中心亦用此。 */
   private mashFootPos(player: GameContext['player']): { x: number; y: number } {
+    const gf = player.getGroundFootCenter?.();
+    if (gf) return gf;
     const fg = player.getFootGlowCenter?.();
     if (fg) return fg;
     const c = player.getHitCenter?.() ?? player.getPosition?.() ?? { x: 0, y: 0 };
