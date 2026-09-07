@@ -75,6 +75,15 @@ function checkNumOptional(
   if (opts.int && !Number.isInteger(v)) errors.push(`${label}「${key}」=${v} 必須是整數。`);
 }
 
+/** 選填字串檢查（第十四輪 訊息文字）：省略＝合法（用預設）；有給須是字串（★空字串 '' 合法＝用戶清空文字）。 */
+function checkStrOptional(
+  obj: Record<string, unknown>, key: string, label: string, errors: string[],
+): void {
+  const v = obj[key];
+  if (v === undefined) return; // 省略＝沿用預設
+  if (typeof v !== 'string') errors.push(`${label}「${key}」必須是字串或省略。`);
+}
+
 function checkSpawns(p: Record<string, unknown>, label: string, errors: string[]): void {
   const spawns = p.spawns;
   if (!Array.isArray(spawns)) {
@@ -140,6 +149,10 @@ export function validateGuard(json: unknown): ValidateGuardResult {
     checkNumOptional(p, 'barHeightPx', label, errors, { min: 1 });
     checkNumOptional(p, 'barOffsetYPx', label, errors, {});
     checkNumOptional(p, 'labelOffsetYPx', label, errors, {});
+    // 第十四輪 守護波訊息（皆選填，省略＝預設）：文字任意字串（含空字串=清空）；秒數 >=0（0=不顯示/立即）。
+    checkStrOptional(p, 'introEventText', label, errors);
+    checkStrOptional(p, 'guardMessageText', label, errors);
+    checkNumOptional(p, 'eventTextDurationSec', label, errors, { min: 0 });
     // attachFireRain 選填：省略或字串皆可（火雨 preset 名，遊戲端 getFireRainPreset fallback 不炸）。
     if (p.attachFireRain !== undefined && typeof p.attachFireRain !== 'string') {
       errors.push(`${label}「attachFireRain」必須是字串（火雨 preset 名）或省略。`);

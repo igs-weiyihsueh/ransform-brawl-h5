@@ -68,6 +68,17 @@ export interface GuardPreset {
   barOffsetYPx?: number;
   /** 「守護目標」標籤相對雕像中心的 Y 偏移（像素，負=上方）。預設 -80。 */
   labelOffsetYPx?: number;
+  /**
+   * 第十四輪：守護波訊息可編輯（optional，additive；省略＝用 GUARD_MESSAGE_DEFAULTS）。
+   * 由 resolveGuardMessages(preset) 逐欄 ?? 解析。EffectSystem timedEventText/guardText 讀解析值。
+   * ★空字串 '' 語意：用 ?? 保留（'' 視為「顯示空字串/不顯示文字」，讓用戶可清空；不退回預設）。
+   */
+  /** 限時事件開場文字（走位階段，EffectSystem timedEventText）。預設「限時事件」。 */
+  introEventText?: string;
+  /** 協力守護訊息文字（聚焦階段，EffectSystem guardText）。預設「協力合作，守護雕像」。 */
+  guardMessageText?: string;
+  /** 限時事件文字顯示秒數（>=0，0=不顯示/立即）。預設 3。 */
+  eventTextDurationSec?: number;
 }
 
 /**
@@ -109,6 +120,37 @@ export function resolveGuardStatueUi(preset: {
     barHeightPx: preset.barHeightPx ?? GUARD_STATUE_UI_DEFAULTS.barHeightPx,
     barOffsetYPx: preset.barOffsetYPx ?? GUARD_STATUE_UI_DEFAULTS.barOffsetYPx,
     labelOffsetYPx: preset.labelOffsetYPx ?? GUARD_STATUE_UI_DEFAULTS.labelOffsetYPx,
+  };
+}
+
+/** 守護波訊息打包預設（第十四輪：文字+時長可編）。原 EffectSystem hardcode 值。 */
+export const GUARD_MESSAGE_DEFAULTS = {
+  introEventText: '限時事件',
+  guardMessageText: '協力合作，守護雕像',
+  eventTextDurationSec: 3,
+} as const;
+
+/** 解析後的守護波訊息（全必填）。 */
+export interface GuardMessages {
+  introEventText: string;
+  guardMessageText: string;
+  eventTextDurationSec: number;
+}
+
+/**
+ * 解析守護波訊息（純函式，抽給測騎；同 resolveGuardStatueUi 模式）：preset optional 欄位 ?? 預設。
+ * ★文字用 ?? 保留（空字串 '' 保留＝讓用戶可清空文字，不退回預設；只有 undefined 才退預設）。
+ * ★eventTextDurationSec 用 ?? 保留（0 合法＝不顯示/立即，非 || 吃 0）。
+ */
+export function resolveGuardMessages(preset: {
+  introEventText?: string;
+  guardMessageText?: string;
+  eventTextDurationSec?: number;
+}): GuardMessages {
+  return {
+    introEventText: preset.introEventText ?? GUARD_MESSAGE_DEFAULTS.introEventText,
+    guardMessageText: preset.guardMessageText ?? GUARD_MESSAGE_DEFAULTS.guardMessageText,
+    eventTextDurationSec: preset.eventTextDurationSec ?? GUARD_MESSAGE_DEFAULTS.eventTextDurationSec,
   };
 }
 

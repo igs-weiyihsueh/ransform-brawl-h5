@@ -32,7 +32,6 @@ import {
 } from '@/config/editorStore';
 import {
   ATTACK_SPEED_DEFAULT_MULT,
-  ATTACK_SPEED_CHAR_KEYS,
   defaultAttackSpeedFile,
   validateAttackSpeed,
   type AttackSpeedFile,
@@ -332,21 +331,23 @@ function renderCharInspector(): void {
   insp.appendChild(numberRow('充能上限 energyCap', p.energyCap, (v) => { p.energyCap = v; }, { min: 1, step: 1 }));
   insp.appendChild(numberRow('傷害倍率 damageMultiplier', p.damageMultiplier, (v) => { p.damageMultiplier = v; }, { min: 0, max: 3, step: 0.1, slider: true }));
 
-  // 攻擊速度倍率（用戶第十一輪，per-character）：每個可變身角色一個 slider，統一調該角色攻擊節奏。存 byChar override key。
-  const spTitle = document.createElement('div');
-  spTitle.className = 'section-title';
-  spTitle.style.marginTop = '12px';
-  spTitle.textContent = '攻擊速度（各可變身角色，全域非單招）';
-  insp.appendChild(spTitle);
-  if (!attackSpeedFile.byChar) attackSpeedFile.byChar = {};
-  const byChar = attackSpeedFile.byChar;
-  for (const ck of ATTACK_SPEED_CHAR_KEYS) {
+  // 攻擊速度倍率（用戶第十一輪 per-character；第十四輪修：只顯「當前選的角色」那一個，不列全部）。
+  //   跟角色選擇連動：選凡人只顯凡人攻速、切悟空只顯悟空攻速。仍存 byChar[當前角色] override（per-char 不變）。
+  if (selectedChar) {
+    const spTitle = document.createElement('div');
+    spTitle.className = 'section-title';
+    spTitle.style.marginTop = '12px';
+    spTitle.textContent = `攻擊速度（${selectedChar}）`;
+    insp.appendChild(spTitle);
+    if (!attackSpeedFile.byChar) attackSpeedFile.byChar = {};
+    const byChar = attackSpeedFile.byChar;
+    const ck = selectedChar; // 當前選的角色 key
     insp.appendChild(numberRow(`${ck} 攻速倍率`, byChar[ck] ?? ATTACK_SPEED_DEFAULT_MULT, (v) => { byChar[ck] = v; }, { min: 0.5, max: 3, step: 0.05, slider: true }));
+    const spHint = document.createElement('div');
+    spHint.className = 'hint';
+    spHint.textContent = '此角色攻速：1.0=原本節奏；>1 攻擊更快（動畫加速＋冷卻÷＋前搖÷連動）。切角色→只顯該角色攻速；玩家變身時攻速跟著換。套用時與招式一起存。';
+    insp.appendChild(spHint);
   }
-  const spHint = document.createElement('div');
-  spHint.className = 'hint';
-  spHint.textContent = '各可變身角色獨立：1.0=原本節奏；>1 攻擊更快（動畫加速＋冷卻÷＋前搖÷連動）。玩家變身切角色時攻速跟著換。套用時與招式一起存。';
-  insp.appendChild(spHint);
 }
 
 // ---- 招式層 Inspector -----------------------------------------------------

@@ -549,7 +549,8 @@ export class EffectSystem {
    * 玩家照走不等（非阻塞）。純視覺。
    * @param durationSec 顯示時長（Unity ≈3s）。
    */
-  timedEventText(durationSec = 3): void {
+  timedEventText(durationSec = 3, text = '限時事件'): void {
+    if (text === '') return; // 第十四輪：空字串=用戶清空文字 → 不顯
     // 用戶 #8：讀 layout.screen.eventMessage 定位；無則 fallback 內建(GAME_HEIGHT*0.3 滿寬置中、高 92)。
     const el = this.screenElement('eventMessage', {
       x: 0,
@@ -569,7 +570,7 @@ export class EffectSystem {
     bar.lineStyle(3, 0xffd24d, 0.9);
     bar.strokeRect(0, cy - el.height / 2, GAME_WIDTH, el.height);
     const txt = this.scene.add
-      .text(cx, cy, '限時事件', {
+      .text(cx, cy, text, {
         fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
         fontSize: '52px',
         color: '#ffe64d',
@@ -658,7 +659,8 @@ export class EffectSystem {
    * 停留（由呼叫端 fadeOut 收掉，對齊解聚焦時機）。非阻塞、純視覺。回傳 handle，呼叫端 .fadeOut() 滑出。
    * depth 提到 spotlight(ENERGY_FLY_DEPTH+10) 之上 → 壓黑聚焦時字清楚可見。
    */
-  guardText(): { fadeOut: () => void } {
+  guardText(text = '協力合作，守護雕像'): { fadeOut: () => void } {
+    if (text === '') return { fadeOut: () => {} }; // 第十四輪：空字串=清空文字→不顯（回無操作 handle）
     const el = this.screenElement('eventMessage', {
       x: 0,
       y: GAME_HEIGHT * 0.42 - 46,
@@ -671,7 +673,7 @@ export class EffectSystem {
     const cy = el.y + el.height / 2;
     const cx = GAME_WIDTH / 2;
     const txt = this.scene.add
-      .text(cx, cy, '協力合作，守護雕像', {
+      .text(cx, cy, text, {
         fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
         fontSize: '56px',
         color: '#ffe64d',

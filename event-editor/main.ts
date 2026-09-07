@@ -24,7 +24,7 @@ import {
   assertValidGuard,
   type GuardFile,
 } from '@/config/guardSchema';
-import { GUARD_STATUE_UI_DEFAULTS, type GuardPreset } from '@/config/guardConfig';
+import { GUARD_STATUE_UI_DEFAULTS, GUARD_MESSAGE_DEFAULTS, type GuardPreset } from '@/config/guardConfig';
 import {
   EDITOR_STORE_KEYS,
   applyToGame,
@@ -84,6 +84,26 @@ function numberRow(
   slider.addEventListener('input', () => commit(slider.value));
   num.addEventListener('change', () => commit(num.value));
   row.appendChild(lab); row.appendChild(slider); row.appendChild(num);
+  return row;
+}
+
+/** 文字列：label + text input（第十四輪 守護波訊息文字，允許空字串＝清空）。 */
+function textRow(
+  label: string,
+  value: string,
+  set: (v: string) => void,
+  onChange: () => void,
+): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const lab = document.createElement('label');
+  lab.textContent = label;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = value;
+  input.style.flex = '1';
+  input.addEventListener('input', () => { set(input.value); onChange(); });
+  row.appendChild(lab); row.appendChild(input);
   return row;
 }
 
@@ -192,6 +212,11 @@ function gdBuildInspector(): void {
   guard.appendChild(numberRow('血條高 barHeightPx', p.barHeightPx ?? d.barHeightPx, (v) => { p.barHeightPx = v; }, { min: 2, max: 60, step: 1 }, on));
   guard.appendChild(numberRow('血條 Y 位移 barOffsetYPx', p.barOffsetYPx ?? d.barOffsetYPx, (v) => { p.barOffsetYPx = v; }, { min: -200, max: 300, step: 5 }, on));
   guard.appendChild(numberRow('標籤 Y 位移 labelOffsetYPx', p.labelOffsetYPx ?? d.labelOffsetYPx, (v) => { p.labelOffsetYPx = v; }, { min: -300, max: 200, step: 5 }, on));
+  // 守護波訊息（用戶第十四輪，3 optional 欄位覆蓋 GUARD_MESSAGE_DEFAULTS）：文字空字串＝清空(?? 保留)、秒數 0＝不顯示/立即。
+  const md = GUARD_MESSAGE_DEFAULTS;
+  guard.appendChild(textRow('限時事件文字 introEventText', p.introEventText ?? md.introEventText, (v) => { p.introEventText = v; }, on));
+  guard.appendChild(textRow('守護訊息文字 guardMessageText', p.guardMessageText ?? md.guardMessageText, (v) => { p.guardMessageText = v; }, on));
+  guard.appendChild(numberRow('限時事件顯示秒數 eventTextDurationSec', p.eventTextDurationSec ?? md.eventTextDurationSec, (v) => { p.eventTextDurationSec = v; }, { min: 0, max: 10, step: 0.5 }, on));
   // ※補怪 drip（maxAlive/spawnThreshold/spawnInterval/spawns）已搬 level editor 守護節點，此處不編。
 
   const intro = $('gd-intro-inspector'); intro.innerHTML = '';

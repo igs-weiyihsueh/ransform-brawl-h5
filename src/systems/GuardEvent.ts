@@ -2,7 +2,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { PPU } from '@/config/gameConfig';
 import { getResolvedChest } from '@/config/chestSchema';
 import { PLAYER_CONFIG } from '@/config/combatConfig';
-import { pickGuardEnemy, guardSideSpawnPoint, resolveGuardDrip, resolveGuardStatueUi, type GuardPreset, type GuardDrip, type GuardSpawnEntry } from '@/config/guardConfig';
+import { pickGuardEnemy, guardSideSpawnPoint, resolveGuardDrip, resolveGuardStatueUi, resolveGuardMessages, type GuardPreset, type GuardDrip, type GuardSpawnEntry, type GuardMessages } from '@/config/guardConfig';
 import { getResolvedGuardPreset } from '@/config/guardSchema';
 import { GuardTarget } from '@/entities/GuardTarget';
 import { guardCornerTargets, scriptedMoveStep, allScriptedArrived } from '@/systems/guardIntro';
@@ -43,6 +43,11 @@ export class GuardEvent {
   private moveArrived: boolean[] = [];
   private moveElapsed = 0;
   private focusElapsed = 0;
+  /** 第十四輪③ 嚴格接續：限時事件文字自 show 起經過秒數；達 introTextTotalSec（滑進+顯+滑出）才允許守護訊息滑進，不重疊。 */
+  private introTextElapsed = 0;
+  private readonly introTextTotalSec: number;
+  /** 第十四輪：守護波訊息（introEventText/guardMessageText/eventTextDurationSec，resolveGuardMessages 解析）。 */
+  private readonly msgs: GuardMessages;
   private spotlight: { fadeOut: () => void } | null = null;
   /** 七輪#5：「協力合作，守護雕像」大字 handle（聚焦時滑進、解聚焦時滑出，對齊 Unity GuardTextUI）。 */
   private guardTextHandle: { fadeOut: () => void } | null = null;
@@ -58,6 +63,11 @@ export class GuardEvent {
     this.preset = getResolvedGuardPreset(presetName);
     this.drip = resolveGuardDrip(dripOverride, this.preset); // 七輪：node.X ?? preset.X（0-nullish 安全）
     this.remaining = this.preset.timeLimit;
+    // 第十四輪：守護波訊息（文字/時長可編，override 優先）。
+    this.msgs = resolveGuardMessages(this.preset);
+    // ③嚴格接續：限時事件文字全程 = 滑進 0.4s + 顯 eventTextDurationSec + 滑出 0.4s（對齊 EffectSystem.timedEventText）。
+    //   守護訊息要等此全程結束才滑進（不重疊）。文字空('' →不顯) → 全程視為 0（不擋守護訊息）。
+    this.introTextTotalSec = this.msgs.introEventText === '' ? 0 : 0.4 + this.msgs.eventTextDurationSec + 0.4;
 
     // 生雕像於場中央（先隱藏，開場玩家就定位後才 reveal 顯現）。敵人攻擊改打雕像（在 combat 階段前不 drip）。
     const sx = GAME_WIDTH / 2;
@@ -70,7 +80,7 @@ export class GuardEvent {
     ctx.scriptedControl = true; // 鎖玩家操作（PlayerControlSystem 跳過輸入）
     this.moveTargets = guardCornerTargets(sx, sy, this.preset.cornerOffsetXPx, this.preset.cornerOffsetYPx);
     this.moveArrived = (ctx.players ?? []).map(() => false);
-    ctx.effects?.timedEventText?.(3); // 走位同時滑進大字顯 3s（非阻塞）
+    ctx.effects?.timedEventText?.(this.msgs.eventTextDurationSec, this.msgs.introEventText); // 走位同時滑進大字（文字/時長 override，非阻塞）
   }
 
   isFinished(): boolean {
@@ -81,6 +91,9 @@ export class GuardEvent {
   update(dt: number): boolean {
     if (this.finished) return true;
 
+    // 第十四輪③：累積限時事件文字經過時間（開場起算），供 beginFocus 嚴格接續 gate。
+    if (this.phase === 'introMove' || this.phase === 'reveal') this.introTextElapsed += dt;
+
     // --- 用戶 #4 開場序列（combat 前）---
     if (this.phase === 'introMove') {
       this.updateIntroMove(dt);
@@ -89,7 +102,8 @@ export class GuardEvent {
     if (this.phase === 'reveal') {
       // 雕像已 reveal（進 reveal 當幀觸發），短暫等顯現動畫後進聚焦。
       this.focusElapsed += dt;
-      if (this.focusElapsed >= 0.45) {
+      // ③嚴格接續：等「限時事件文字全程滑出完成」+ reveal 動畫(0.45s) 才進聚焦滑進守護訊息（不重疊）。
+      if (this.focusElapsed >= 0.45 && this.introTextElapsed >= this.introTextTotalSec) {
         this.focusElapsed = 0;
         this.beginFocus();
       }
@@ -174,7 +188,8 @@ export class GuardEvent {
     this.target.setDepth(972); // 遮罩(960)+亮環(962) 之上 → 雕像在 spotlight 中被聚焦、不壓暗
     this.spotlight = this.ctx.effects?.guardSpotlight?.(c.x, c.y, this.preset.spotlightRadiusPx) ?? null;
     // 七輪#5：聚焦壓黑同時「協力合作，守護雕像」從左滑進（對齊 Unity 序列 4：聚焦+GuardTextUI）。
-    this.guardTextHandle = this.ctx.effects?.guardText?.() ?? null;
+    //   第十四輪③：此時限時事件文字已全程滑出（reveal gate 保證不重疊）；文字讀 override guardMessageText。
+    this.guardTextHandle = this.ctx.effects?.guardText?.(this.msgs.guardMessageText) ?? null;
     this.phase = 'focus';
     this.focusElapsed = 0;
   }
