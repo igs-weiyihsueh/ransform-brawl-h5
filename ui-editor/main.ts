@@ -338,8 +338,41 @@ function buildScreenEditables(): Editable[] {
       if (rc.y !== undefined) foot.offsetY = rc.y + h / 2 - cy;
     },
   });
+
+  // JP 面板整體大小+位置（用戶：JP UI 太大 → 可縮小/挪位）。additive 附掛 layout.jp。
+  // box = 設計 1600×300 × panelScale，中心 = JP 設計中心(960,535)+offset。拖=offset、拉寬=scale。
+  const layoutJp = layout as unknown as { jp?: { panelScale?: number; panelOffsetX?: number; panelOffsetY?: number } };
+  if (!layoutJp.jp) layoutJp.jp = { panelScale: 1, panelOffsetX: 0, panelOffsetY: 0 };
+  const jp = layoutJp.jp;
+  list.push({
+    key: 'jp.panel', label: 'JP 面板（整體大小+位置）', origin: { x: 0, y: 0 }, resizable: true,
+    get: () => {
+      const s = jp.panelScale ?? 1;
+      const w = JP_DESIGN_W * s;
+      const h = JP_DESIGN_H * s;
+      const ccx = JP_DESIGN_CX + (jp.panelOffsetX ?? 0);
+      const ccy = JP_DESIGN_CY + (jp.panelOffsetY ?? 0);
+      return { x: ccx - w / 2, y: ccy - h / 2, width: w, height: h };
+    },
+    set: (rc) => {
+      // 拉寬 → 反推整體 scale（等比，維持 Unity 相對佈局）。
+      if (rc.width !== undefined) jp.panelScale = Math.max(0.2, rc.width / JP_DESIGN_W);
+      const s = jp.panelScale ?? 1;
+      const w = JP_DESIGN_W * s;
+      const h = JP_DESIGN_H * s;
+      // 拖移 → 左上回推中心 - 設計中心 = offset。
+      if (rc.x !== undefined) jp.panelOffsetX = rc.x + w / 2 - JP_DESIGN_CX;
+      if (rc.y !== undefined) jp.panelOffsetY = rc.y + h / 2 - JP_DESIGN_CY;
+    },
+  });
   return list;
 }
+
+/** JP 面板設計尺寸/中心（對齊遊戲端 JP_PANEL_LAYOUT；編輯器不 import 遊戲模組故內聯）。 */
+const JP_DESIGN_W = 1600;
+const JP_DESIGN_H = 300;
+const JP_DESIGN_CX = 960;
+const JP_DESIGN_CY = 535;
 
 /**
  * 沒 credit 投幣提示 override（additive，schema 未定義 → 附掛在 credit.outOfCredit）。
@@ -1027,7 +1060,20 @@ function renderInspector(): void {
     noteHint.textContent = '文字/字級/顏色/位置皆可調；匯出 uiLayout.json 套用到遊戲。';
     insp.appendChild(noteHint);
   }
+
+  // COMBO 文字：額外開放字級可調（override，additive 附掛 combo.fontSize）。
+  if (ed.key === 'overhead.combo') {
+    const c = layout.overhead.combo as unknown as { fontSize?: string };
+    insp.appendChild(strRow('字級 fontSize', c.fontSize ?? COMBO_FONT_SIZE_DEFAULT, (v) => { c.fontSize = v; }));
+    const noteHint = document.createElement('div');
+    noteHint.className = 'hint';
+    noteHint.textContent = 'COMBO 字級可調（如 24px/48px）；階層色/跳動保留，匯出套用到遊戲。';
+    insp.appendChild(noteHint);
+  }
 }
+
+/** COMBO 文字字級預設（對齊遊戲端 uiConfig combo.fontSize；編輯器不 import 遊戲模組故內聯）。 */
+const COMBO_FONT_SIZE_DEFAULT = '24px';
 
 /** 字串欄位 Inspector row（文字內容/字級/顏色）。 */
 function strRow(label: string, value: string, onChange: (v: string) => void): HTMLDivElement {

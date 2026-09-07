@@ -237,6 +237,25 @@ export const OVERHEAD_LAYOUT = {
       fadeMs: 500,
     },
   },
+
+  /**
+   * 連打變身 UI（讀翼騎 TransformSystem.isMashingTransform/getMashRatio）：
+   * 連打變身時頭上 UI 整體放大 + 顯「空魂力環」從 getMashRatio 填滿 + 顯訊息。
+   * 魂力環填充色沿用 badge 的 soulRingFill（HUD_COLORS）；此處是動效/訊息參數。
+   */
+  mashTransform: {
+    /** 連打變身時頭上 UI 放大倍率（container scale）。 */
+    enlargeScale: 1.35,
+    /** 放大/縮回 tween 時間（毫秒）。 */
+    scaleMs: 180,
+    /** 訊息文字（連打變身開始顯）。 */
+    message: '連打變身！',
+    messageColor: '#ffe14d',
+    messageFontSize: '22px',
+    /** 訊息相對容器中心的位移（負=上方，放 badge 上方）。 */
+    messageX: -66,
+    messageY: -44,
+  },
 } as const;
 
 /**
@@ -274,7 +293,7 @@ export function resolveOverheadLayout(ov?: {
     };
   };
   energy?: { x?: number; y?: number };
-  combo?: { x?: number; y?: number; maxOffsetY?: number };
+  combo?: { x?: number; y?: number; maxOffsetY?: number; fontSize?: string };
 }): typeof OVERHEAD_LAYOUT {
   const L = OVERHEAD_LAYOUT;
   const oc = ov?.credit?.outOfCredit;
@@ -318,6 +337,7 @@ export function resolveOverheadLayout(ov?: {
       ...L.combo,
       x: ov?.combo?.x ?? L.combo.x,
       y: ov?.combo?.y ?? L.combo.y,
+      fontSize: ov?.combo?.fontSize ?? L.combo.fontSize,
       max: { ...L.combo.max, offsetY: ov?.combo?.maxOffsetY ?? L.combo.max.offsetY },
     },
   } as typeof OVERHEAD_LAYOUT;
@@ -470,4 +490,43 @@ export function jpLightOffsetsX(count: number, gap: number): number[] {
   const mid = (count - 1) / 2;
   for (let i = 0; i < count; i += 1) xs.push((i - mid) * gap);
   return xs;
+}
+
+/**
+ * JP 面板整體變換預設（用戶要 JP UI 可縮小/挪位）。可 override：
+ * panelScale 整體縮放（含三組/燈/數字，內部相對佈局不變）、panelOffsetX/Y 整體位移。
+ * 縮放以「Unity 設計面板中心」為原點（縮小仍留在原位不飄），再套位移。
+ */
+export const JP_TRANSFORM_DEFAULT = {
+  panelScale: 1,
+  panelOffsetX: 0,
+  panelOffsetY: 0,
+} as const;
+
+/** JP 面板設計中心（縮放原點）＝橫幅中心。 */
+export const JP_PANEL_CENTER = {
+  x: JP_PANEL_LAYOUT.panel.x + JP_PANEL_LAYOUT.panel.width / 2, // 960
+  y: JP_PANEL_LAYOUT.panel.y + JP_PANEL_LAYOUT.panel.height / 2, // 535
+} as const;
+
+/**
+ * 解析 JP 面板整體變換（純函式，可測）：把 override 併入預設，
+ * 回傳給 JpLampHud 套在容器上的 scale + 容器 position。
+ * 容器內元素仍用原始螢幕座標繪製；容器 scale 以 JP_PANEL_CENTER 為原點：
+ *   worldPos = center + (localPos - center) * scale + offset
+ * 換成容器 transform：container.scale = s；container.position = center*(1-s) + offset。
+ */
+export function resolveJpTransform(ov?: {
+  panelScale?: number;
+  panelOffsetX?: number;
+  panelOffsetY?: number;
+}): { scale: number; posX: number; posY: number } {
+  const s = ov?.panelScale ?? JP_TRANSFORM_DEFAULT.panelScale;
+  const ox = ov?.panelOffsetX ?? JP_TRANSFORM_DEFAULT.panelOffsetX;
+  const oy = ov?.panelOffsetY ?? JP_TRANSFORM_DEFAULT.panelOffsetY;
+  return {
+    scale: s,
+    posX: JP_PANEL_CENTER.x * (1 - s) + ox,
+    posY: JP_PANEL_CENTER.y * (1 - s) + oy,
+  };
 }
