@@ -12,6 +12,7 @@ import {
   nodeIconKind,
   nodeMarkerState,
   nodeMarkerX,
+  progressHideLocalY,
   segmentFill,
   shouldPulse,
 } from '@/systems/progressBars';
@@ -44,6 +45,8 @@ export class ProgressBarSystem implements GameSystem {
   private nodeIcons: Phaser.GameObjects.Image[] = [];
   private builtCount = -1; // 已建 icon 對應的節點數（重建判斷）
   private pulseT = 0;
+  /** 整體變換（scale/posX/posY），收起滑走距離依此反推以完整移出畫面。 */
+  private xf = { scale: 1, posX: 0, posY: 0 };
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
@@ -51,6 +54,7 @@ export class ProgressBarSystem implements GameSystem {
     // 整體變換容器（同 JP 範式）：scale/位置讀 uiLayout override(layout.progress，additive)，
     // 以進度條設計中心為縮放原點；內含主進度條 root + 守護金條，一起縮放/移動。
     const t = resolveProgressTransform(readProgressOverride());
+    this.xf = t;
     this.xform = scene.add.container(0, 0).setScrollFactor(0).setDepth(PANEL_DEPTH);
     this.xform.setScale(t.scale).setPosition(t.posX, t.posY);
 
@@ -86,8 +90,10 @@ export class ProgressBarSystem implements GameSystem {
     const guardActive = !!guard && !guard.isFinished();
 
     // 隱藏條件：守護波中 / 無節點 / 關卡跑完（nodeIndex >= total）→ 往上滑走。
+    // bug 修：收起目標依整體變換(scale/posY)反推，確保不論調到哪個位置/縮放都完整移出畫面頂端
+    // （原本固定 slideHideOffsetY 在「移到下方」或「縮小」時收不乾淨、殘留半條）。
     const hidden = guardActive || total <= 0 || nodeIndex >= total;
-    const targetY = hidden ? PROGRESS_BAR.shownY - PROGRESS_BAR.slideHideOffsetY : PROGRESS_BAR.shownY;
+    const targetY = hidden ? progressHideLocalY(this.xf.scale, this.xf.posY) : PROGRESS_BAR.shownY;
     // 指數趨近（slideSpeed）。
     const k = 1 - Math.exp(-PROGRESS_BAR.slideSpeed * dt);
     this.root.y += (targetY - this.root.y) * k;

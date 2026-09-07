@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   NODE_COLORS,
   PROGRESS_BAR,
+  PROGRESS_HIDE_MARGIN,
   barLeftX,
   barWidth,
   guardTimeRatio,
@@ -9,9 +10,11 @@ import {
   nodeIconKind,
   nodeMarkerState,
   nodeMarkerX,
+  progressHideLocalY,
   segmentFill,
   shouldPulse,
 } from '@/systems/progressBars';
+import { resolveProgressTransform } from '@/config/uiConfig';
 
 /**
  * 進度條純比例（#7）測試：關卡進度 done/total、守護波倒數 remaining/timeLimit。含壞版必紅。
@@ -184,5 +187,48 @@ describe('progressBars — shouldPulse（#7 脈動「下一顆」cur+1 預告即
     expect(shouldPulse(1, 2, 0.9)).toBe(false); // 已過
     expect(shouldPulse(4, 2, 0.9)).toBe(false); // cur+2 更遠
     expect(shouldPulse(0, 2, 0.9)).toBe(false);
+  });
+});
+
+/**
+ * bug 修：進度條套整體變換(scale/offset)後，守護波滑走收起要「完整」移出畫面頂端
+ * ——不論調到哪個位置/縮放，收起目標的螢幕最低點都要 ≤ 0（不殘留半條）。
+ * screenY(收起) = posY + (hideLocalY + nodeRadiusCurrent) * scale，須 ≤ -PROGRESS_HIDE_MARGIN。
+ */
+describe('progressHideLocalY — 收起完整移出畫面（xform 反推）', () => {
+  const bottomScreenY = (scale: number, posY: number) =>
+    posY + (progressHideLocalY(scale, posY) + PROGRESS_BAR.nodeRadiusCurrent) * scale;
+
+  it('★預設（scale1/offset0）收起後 bar 最低點螢幕 Y ≤ -margin（完整移出頂端）', () => {
+    const t = resolveProgressTransform(undefined);
+    expect(bottomScreenY(t.scale, t.posY)).toBeLessThanOrEqual(-PROGRESS_HIDE_MARGIN + 1e-6);
+  });
+
+  it('★移到下方（offsetY 大正值）仍完整收起（原固定滑走會殘留，這裡不能殘留）', () => {
+    // 進度條往下挪 +400：舊固定 160 上滑遠不夠；反推版本必須仍收乾淨。
+    const t = resolveProgressTransform({ progressOffsetY: 400 });
+    expect(bottomScreenY(t.scale, t.posY)).toBeLessThanOrEqual(-PROGRESS_HIDE_MARGIN + 1e-6);
+  });
+
+  it('★縮小（scale 0.5）+挪位仍完整收起', () => {
+    const t = resolveProgressTransform({ progressScale: 0.5, progressOffsetX: -300, progressOffsetY: 200 });
+    expect(bottomScreenY(t.scale, t.posY)).toBeLessThanOrEqual(-PROGRESS_HIDE_MARGIN + 1e-6);
+  });
+
+  it('★放大（scale 1.5）也完整收起', () => {
+    const t = resolveProgressTransform({ progressScale: 1.5, progressOffsetY: 100 });
+    expect(bottomScreenY(t.scale, t.posY)).toBeLessThanOrEqual(-PROGRESS_HIDE_MARGIN + 1e-6);
+  });
+
+  it('scale 0（極端）不炸（夾正防除零）', () => {
+    expect(Number.isFinite(progressHideLocalY(0, 96))).toBe(true);
+  });
+
+  it('🔴 壞版對照：舊固定滑走（shownY - slideHideOffsetY）在移到下方時收不乾淨', () => {
+    // 舊邏輯 localY 固定，套 offsetY+400 後 bar 螢幕最低點仍 > 0（殘留）→ 證明需要反推修正。
+    const posY = resolveProgressTransform({ progressOffsetY: 400 }).posY;
+    const oldLocalY = PROGRESS_BAR.shownY - PROGRESS_BAR.slideHideOffsetY;
+    const oldBottom = posY + (oldLocalY + PROGRESS_BAR.nodeRadiusCurrent) * 1;
+    expect(oldBottom).toBeGreaterThan(0); // 舊版殘留（bug）
   });
 });

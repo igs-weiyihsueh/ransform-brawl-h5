@@ -53,6 +53,26 @@ export function guardTimeRatio(remaining: number, timeLimit: number): number {
   return Math.min(1, Math.max(0, remaining / timeLimit));
 }
 
+/** 主進度條可視內容從中心往下最遠的點（節點圓底 + 一點餘裕）。 */
+export const PROGRESS_HIDE_MARGIN = 40;
+
+/**
+ * 主進度條「完整收起」時 root 的本地 Y（純函式，可測）。
+ *
+ * bug 修：進度條套了整體變換（scale/offset）後，原本固定的 slideHideOffsetY 往上滑
+ * 在「移到下方」或「縮小」時滑走距離不足，收不乾淨。改成依變換反推：
+ * 讓進度條可視最低點（root.y 相對 0 + 節點圓半徑 nodeRadiusCurrent）在螢幕上完全移到頂緣之上。
+ *
+ * xform 下某本地點 Yl 的螢幕 Y = posY + Yl * scale。要求 bar 最低點螢幕 Y ≤ -PROGRESS_HIDE_MARGIN：
+ *   posY + (rootY + nodeRadiusCurrent) * scale ≤ -margin
+ *   → rootY ≤ (-margin - posY) / scale - nodeRadiusCurrent
+ * 取等號為收起目標；scale 夾正數防除零。永遠完整移出畫面頂端，不論位置/縮放。
+ */
+export function progressHideLocalY(scale: number, posY: number): number {
+  const s = Math.max(0.01, scale);
+  return (-PROGRESS_HIDE_MARGIN - posY) / s - PROGRESS_BAR.nodeRadiusCurrent;
+}
+
 /** 進度條總寬 = 節點數 × perNodeWidth（Unity）。 */
 export function barWidth(total: number): number {
   return Math.max(0, total) * PROGRESS_BAR.perNodeWidth;
