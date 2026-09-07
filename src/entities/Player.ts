@@ -518,17 +518,21 @@ export class Player implements Hittable {
   }
 
   /**
-   * 命中敵人瞬間開始 hitlag：凍結玩家動畫（sprite anim 暫停）+ 位移（由 isInHitlag 擋 move/dash）。
+   * 命中敵人瞬間開始 hitlag：凍結玩家「位移」（由 isInHitlag 擋 move/dash/lunge）+ 頓一下手感。
+   * 十三輪#1 真因修(B)：**不再 pause 攻擊動畫**——原本 anims.pause() 會凍住攻擊者自己的揮擊動畫，
+   *   連續打怪時每擊 hitlag 凍在揮擊起手幀+cooldown 重啟→看起來完全沒揮只剩 VFX（用戶#1 真因）。
+   *   位移凍結靠 isInHitlag 擋 move/dash/lunge（不靠 anims.pause），故 hitlag「頓一下」手感保留、揮擊動畫照播。
    * 同幀多命中只觸發一次（已在 hitlag 中則忽略；Unity inHitlag 去重）。0=不做。
    */
   startHitlag(seconds: number): void {
     if (seconds <= 0 || this.hitlagRemaining > 0) return;
     this.hitlagRemaining = seconds;
-    this.anim.sprite.anims?.pause(); // animator.speed = 0（動畫凍）
+    // （移除 anims.pause()：不凍攻擊動畫，讓揮擊逐幀播完；位移凍結由 isInHitlag 管。）
   }
 
   /**
-   * 每幀推進 hitlag：計時歸零 or 攻擊已結束 → 結束並恢復動畫（Unity 攻擊結束強制恢復防卡）。
+   * 每幀推進 hitlag：計時歸零 or 攻擊已結束 → 結束。
+   * 十三輪#1 真因修(B)：不再 anims.resume()（因 startHitlag 已不 pause 動畫）；只清位移凍結計時。
    * @param dt 幀時間。
    */
   tickHitlag(dt: number): void {
@@ -536,7 +540,7 @@ export class Player implements Hittable {
     this.hitlagRemaining -= dt;
     if (this.hitlagRemaining <= 0 || !this.attacking) {
       this.hitlagRemaining = 0;
-      this.anim.sprite.anims?.resume(); // animator.speed = 1（恢復）
+      // （移除 anims.resume()：動畫本就沒被 pause，不需恢復。）
     }
   }
 
