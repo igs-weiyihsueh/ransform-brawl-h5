@@ -764,6 +764,11 @@ export class Player implements Hittable {
     this.dashDir = { x, y };
     this.dashHitSet.clear();
     this.afterImageTimer = 0;
+    // 十六輪 bug1(4bug③回歸)真因：dash 中途接管攻擊動畫 → attack 的 onComplete 永不觸發（anim 被 'move' 取代）
+    //   → attacking 旗標卡 true→之後 move() 恆 early-return 不覆蓋動畫→走路殘留。dash 起手清攻擊態+移除揮擊監聽。
+    this.attacking = false;
+    this.hitlagPending = 0;
+    this.anim.sprite.off(Phaser.Animations.Events.ANIMATION_UPDATE);
     // 面向依水平衝刺方向。
     if (x > 0) this.setFacing(1);
     else if (x < 0) this.setFacing(-1);
