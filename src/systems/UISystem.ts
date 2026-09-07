@@ -189,6 +189,15 @@ export class UISystem implements GameSystem {
       this.bottomPanel.setTicket(i, this.ctx.ticket.getTickets(pid));
       // 寶盒進度 per-player（chest 已 per-player 化，決策 c61872a6）：各欄顯各自進度。
       this.bottomPanel.setProgress(i, this.ctx.chest.getProgress(pid));
+      // 衝刺充能「衝」圖示（用戶新系統，讀翼騎接口，只讀不回寫）：右上數字=可用格數、
+      // 未滿→依 cooldownProgress 逆時針壓黑消去、滿→全亮。接口未提供（舊 ctx）則 graceful 略過。
+      const getCharges = this.ctx.getDashCharges;
+      if (getCharges) {
+        const charges = getCharges(pid);
+        const max = this.ctx.getDashMaxCharges?.(pid) ?? 3;
+        const cd = this.ctx.getDashCooldownProgress?.(pid) ?? 1;
+        this.bottomPanel.setDash(i, charges, max, cd);
+      }
     }
   }
 

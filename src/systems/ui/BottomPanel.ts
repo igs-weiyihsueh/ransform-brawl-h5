@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
-import { HUD_COLORS, HUD_FONT_FAMILY, PANEL_DEPTH, UI_ICONS } from '@/config/uiConfig';
+import { BOTTOM_PANEL_LAYOUT, HUD_COLORS, HUD_FONT_FAMILY, PANEL_DEPTH, UI_ICONS } from '@/config/uiConfig';
 import { playerColor } from '@/config/playerConfig';
+import { darkWedgeArc, isDashRecharging } from '@/systems/dashChargeDisplay';
 import { isVisible, type PanelElement, type PanelLayout } from '@/config/uiLayoutSchema';
 
 /** 單一玩家欄：可刷新元素 + 淡化控制。 */
@@ -29,6 +30,16 @@ interface Slot {
   /** 待機台座顯示尺寸（來自 layout 'platform' element；GameScene 畫台座時 setDisplaySize 用）。 */
   waitingW: number;
   waitingH: number;
+  /** 衝刺「衝」圖示：圓底+字（識別）、右上數字、冷卻壓黑遮罩 gfx、圓心/半徑。 */
+  dashBase: Phaser.GameObjects.Graphics;
+  dashLabel: Phaser.GameObjects.Text;
+  dashCount: Phaser.GameObjects.Text;
+  dashDim: Phaser.GameObjects.Graphics;
+  dashCx: number;
+  dashCy: number;
+  dashR: number;
+  shownDashCharges: number;
+  shownDashProgress: number;
 }
 
 /** 未加入欄的淡化透明度。 */
@@ -208,6 +219,51 @@ export class BottomPanel {
     const waitingW = platEl?.width ?? 0; // 0 = 用 platform.png 原生尺寸（fallback，schema 未加時）
     const waitingH = platEl?.height ?? 0;
 
+    // 衝刺充能「衝」圖示（用戶新系統）：圓底+「衝」字 + 右上數字 + 冷卻壓黑遮罩。
+    // 位置讀 config BOTTOM_PANEL_LAYOUT.dash（相對欄左上；additive 不動凍結 schema）。
+    const dcfg = BOTTOM_PANEL_LAYOUT.dash;
+    const dashCx = slotX + dcfg.cx;
+    const dashCy = slotY + dcfg.cy;
+    const dashR = dcfg.radius;
+    const dashBase = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH + 1);
+    dashBase.fillStyle(dcfg.fill, 1);
+    dashBase.fillCircle(dashCx, dashCy, dashR);
+    dashBase.lineStyle(3, playerColor(playerIndex), 1);
+    dashBase.strokeCircle(dashCx, dashCy, dashR);
+    dashBase.setAlpha(alpha);
+    const dashLabel = track(
+      scene.add
+        .text(dashCx, dashCy, '衝', {
+          fontFamily: HUD_FONT_FAMILY,
+          fontSize: dcfg.labelFontSize,
+          color: dcfg.labelColor,
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5, 0.5),
+    )
+      .setScrollFactor(0)
+      .setDepth(PANEL_DEPTH + 2)
+      .setAlpha(alpha);
+    // 冷卻壓黑遮罩：畫在圖示上層（依 getDashCooldownProgress 逆時針消去）。
+    const dashDim = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH + 3);
+    dashDim.setAlpha(alpha);
+    // 右上角數字（可用格數）。
+    const dashCount = track(
+      scene.add
+        .text(dashCx + dcfg.countOffsetX, dashCy + dcfg.countOffsetY, '3', {
+          fontFamily: HUD_FONT_FAMILY,
+          fontSize: dcfg.countFontSize,
+          color: '#ffffff',
+          fontStyle: 'bold',
+          stroke: '#000000',
+          strokeThickness: 4,
+        })
+        .setOrigin(0.5, 0.5),
+    )
+      .setScrollFactor(0)
+      .setDepth(PANEL_DEPTH + 4)
+      .setAlpha(alpha);
+
     const slot: Slot = {
       playerIndex,
       objects,
@@ -227,6 +283,15 @@ export class BottomPanel {
       waitingY,
       waitingW,
       waitingH,
+      dashBase,
+      dashLabel,
+      dashCount,
+      dashDim,
+      dashCx,
+      dashCy,
+      dashR,
+      shownDashCharges: -1,
+      shownDashProgress: -1,
     };
     this.drawProgress(slot, 0);
     return slot;
@@ -303,6 +368,39 @@ export class BottomPanel {
     const slot = this.slots[index];
     if (!slot) return;
     this.drawProgress(slot, ratio);
+  }
+
+  /**
+   * 設定某玩家欄的衝刺充能顯示（用戶新系統，純顯示）：
+   *  - 右上數字 = 目前可用格數 charges。
+   *  - 未滿（charges<max，有格在回充）→「衝」圖示壓暗 + 依 cooldownProgress **逆時針**徑向消去壓黑
+   *    （progress 0=全壓黑、1=消完該格恢復）；滿格（charges==max）→ 無壓黑、全亮。
+   * 只變動才重畫（省開銷）。cooldownProgress 只在未滿時有效。
+   */
+  setDash(index: number, charges: number, max: number, cooldownProgress: number): void {
+    const slot = this.slots[index];
+    if (!slot) return;
+    const c = Math.max(0, Math.floor(charges));
+    const recharging = isDashRecharging(c, max);
+    // 滿格時壓黑進度視為 1（無壓黑）；未滿才吃 cooldownProgress。
+    const prog = recharging ? Math.min(1, Math.max(0, cooldownProgress)) : 1;
+    if (c === slot.shownDashCharges && prog === slot.shownDashProgress) return;
+    slot.shownDashCharges = c;
+    slot.shownDashProgress = prog;
+
+    slot.dashCount.setText(`${c}`);
+
+    // 冷卻壓黑遮罩：未滿且 prog<1 才畫壓黑楔形（逆時針消去）；否則清空（全亮）。
+    slot.dashDim.clear();
+    if (recharging && prog < 1) {
+      const { startAngle, endAngle, anticlockwise } = darkWedgeArc(prog);
+      slot.dashDim.fillStyle(0x000000, BOTTOM_PANEL_LAYOUT.dash.dimAlpha);
+      slot.dashDim.beginPath();
+      slot.dashDim.moveTo(slot.dashCx, slot.dashCy);
+      slot.dashDim.arc(slot.dashCx, slot.dashCy, slot.dashR, startAngle, endAngle, anticlockwise);
+      slot.dashDim.closePath();
+      slot.dashDim.fillPath();
+    }
   }
 
   destroy(): void {

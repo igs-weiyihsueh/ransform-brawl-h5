@@ -432,6 +432,28 @@ export const BOTTOM_PANEL_LAYOUT = {
   coin: {
     size: 26,
   },
+  /**
+   * 衝刺充能「衝」圓形圖示（用戶新系統，界騎 8a57e87）：圓形+「衝」字 + 右上角數字（可用格數）。
+   * 冷卻時逆時針壓黑遮罩依 getDashCooldownProgress 徑向消去。位置相對欄左上（可 editor 調）。
+   */
+  dash: {
+    /** 圓心相對欄左上（放在彩票數字右側、進度條上方一帶）。 */
+    cx: 300,
+    cy: 54,
+    /** 圓半徑。 */
+    radius: 30,
+    /** 「衝」字級。 */
+    labelFontSize: '30px',
+    /** 右上角數字字級。 */
+    countFontSize: '22px',
+    /** 右上角數字相對圓心偏移。 */
+    countOffsetX: 24,
+    countOffsetY: -24,
+    /** 圓底色 / 「衝」字色 / 壓黑遮罩色。 */
+    fill: 0x3949ab,
+    labelColor: '#ffffff',
+    dimAlpha: 0.62,
+  },
   /** 欄標籤字級（P1~P4）。 */
   labelFontSize: '22px',
 } as const;
