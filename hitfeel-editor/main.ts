@@ -419,6 +419,36 @@ function bindUI(standalone: boolean): void {
     setStatus('已下載 hitFeel.json。', true);
   });
 
+  // 第十四輪：載入 JSON 檔（對齊 dash/enemy/skill 等編輯器「上傳即套用」）。
+  $('btn-load-file').addEventListener('click', () => $('file-input').click());
+  $('file-input').addEventListener('change', (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let json: unknown;
+      try { json = JSON.parse(String(reader.result)); }
+      catch (err) { setStatus(`不是合法 JSON：${(err as Error).message}`, false); return; }
+      // 接受兩種格式：{version, hitFeel}（下載/套用的完整檔）或裸 HitFeelConfig（舊複製貼上）。
+      const wrapped = (json && typeof json === 'object' && 'hitFeel' in (json as object))
+        ? json
+        : { version: HIT_FEEL_SCHEMA_VERSION, hitFeel: json };
+      const r = validateHitFeel(wrapped);
+      if (!r.ok) { setStatus(`載入失敗（驗證未過）：\n${r.errors.join('\n')}`, false); return; }
+      // 回填編輯器 cfg（套進參數面板，對齊 initLoad 回填邏輯）。
+      cfg = { ...r.data.hitFeel };
+      buildControls();
+      refreshExport();
+      // 上傳即套用（對齊其他編輯器上傳即套用慣例：存 localStorage override，重開仍在）。
+      const applied = applyToGame(EDITOR_STORE_KEYS.hitfeel, r.data);
+      setStatus(applied
+        ? '已載入 JSON 並套用到遊戲（重開仍在）。'
+        : '已載入 JSON（套用失敗：localStorage 不可用）。', applied);
+    };
+    reader.readAsText(f);
+    (e.target as HTMLInputElement).value = ''; // 允許重選同檔再觸發 change
+  });
+
   // 第十一輪：套用到遊戲（存 localStorage hitfeel override，對齊其他編輯器）。
   $('btn-apply').addEventListener('click', () => void applyHitFeel(false, standalone));
   $('btn-apply-return').addEventListener('click', () => void applyHitFeel(true, standalone));
@@ -450,6 +480,8 @@ const EDITOR_BODY_HTML = `
   <div class="spacer"></div>
   <button id="btn-reset">重設為預設值</button>
   <button id="btn-copy" class="primary">複製參數</button>
+  <button id="btn-load-file">載入 JSON 檔…</button>
+  <input id="file-input" type="file" accept="application/json,.json" hidden />
   <button id="btn-export">下載 JSON</button>
   <button id="btn-apply" class="primary" title="驗證後存入瀏覽器，重開遊戲即生效">套用到遊戲</button>
   <button id="btn-apply-return" class="primary" title="套用並立即返回遊戲">套用並回到遊戲</button>
