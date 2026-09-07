@@ -127,6 +127,13 @@ export class PlayerControlSystem implements GameSystem {
     const src = player.inputSource;
     if (!src) return; // 無 InputSource → 不操控
 
+    // 十五輪 bug①：被抓中 → 不吃輸入（GrabSystem.setGrabbed 已強制 idle 待機動畫；此 gate 防 PlayerControl 每幀用輸入 move/attack 覆蓋掉 grab idle）。
+    //   同時清 dash 防護罩（被抓打斷衝刺→防護罩不殘留，見 bug④）。
+    if (typeof player.isGrabbed === 'function' && player.isGrabbed()) {
+      this.clearDashShield(pid);
+      return;
+    }
+
     // 十五輪：連打變身鎖定中 → 攔截攻擊鍵累加填充（不打傷害/不普攻），禁 move/dash/attack。
     //   自動填（idle/守護波 scripted）由 TransformSystem.tickMashTransform 處理。
     if (typeof player.isMashLocked === 'function' && player.isMashLocked()) {
@@ -139,6 +146,7 @@ export class PlayerControlSystem implements GameSystem {
 
     // 衝刺觸發（edge；需可攻擊、非衝刺中）。
     if (src.justPressedDash() && !player.isDashing() && credit.canAttack(pid)) {
+      this.clearDashShield(pid); // 十五輪 bug④：重新衝刺前先清前一個防護罩 handle（防反覆 dash 舊 fx 殘留/洩漏）
       player.startDash(src.getMoveVector());
       this.dashConsumedCredit.set(pid, false);
       // 十一輪#3：衝刺起手建防護罩特效 handle（持續整個衝刺、跟本體移動）。純視覺。
@@ -161,12 +169,8 @@ export class PlayerControlSystem implements GameSystem {
         if (dpos) this.ctx.effects?.updatePlayerDashShield?.(handle, dpos.x, dpos.y, Math.atan2(dd.y, dd.x));
       }
     } else {
-      // 十一輪#3：衝刺結束（非 dashing）→ 若有防護罩 handle，淡出銷毀。
-      const handle = this.dashShield.get(pid);
-      if (handle) {
-        this.ctx.effects?.endPlayerDashShield?.(handle);
-        this.dashShield.delete(pid);
-      }
+      // 十一輪#3：衝刺結束（非 dashing）→ 若有防護罩 handle，淡出銷毀（bug④：統一走 clearDashShield）。
+      this.clearDashShield(pid);
       if (credit.canAct(pid)) {
         const mv = src.getMoveVector();
         // 推怪負重（用戶）：有移動意圖才算——數真空圈內可推敵人(非菁英/非grabber)→降速。
@@ -254,6 +258,18 @@ export class PlayerControlSystem implements GameSystem {
 
     // 腳下真空環（搜索圈）跟隨玩家位置（夾限後才同步，環中心=玩家 y-offset）。
     if (typeof player.syncFootGlow === 'function') player.syncFootGlow();
+  }
+
+  /**
+   * 十五輪 bug④：清除某玩家的衝刺防護罩特效 handle（淡出銷毀 + 從 map 移除）。冪等。
+   * 統一入口：dash 結束 / 重新 dash 前 / 被抓打斷衝刺，都走此清（防反覆 dash 舊 fx 殘留/洩漏）。
+   */
+  private clearDashShield(pid: number): void {
+    const handle = this.dashShield.get(pid);
+    if (handle) {
+      this.ctx.effects?.endPlayerDashShield?.(handle);
+    }
+    this.dashShield.delete(pid);
   }
 
   /**

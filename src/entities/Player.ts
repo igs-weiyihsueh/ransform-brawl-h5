@@ -478,6 +478,8 @@ export class Player implements Hittable {
    */
   setOutOfCredit(active: boolean): void {
     this.outOfCredit = active;
+    // 十五輪 bug②：進耗盡（凍結，不能動）→ 強制切待機動畫（否則殘留之前的 move/attack 動畫）。
+    if (active) this.anim.play('idle');
   }
 
   /** 是否沒 credit（耗盡）狀態 → 敵人不鎖定/攻擊/抓/環繞（對齊 Unity）。 */
