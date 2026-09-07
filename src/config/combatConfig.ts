@@ -36,6 +36,15 @@ export const PLAYER_CONFIG = {
    */
   pushResistance: 0.35,
   pushMinSpeedFactor: 0.3,
+  /**
+   * 攻擊前戳 lunge（Unity PlayerController ApplyLungeVelocity / PlayerConfig，十一輪#2）：
+   * 攻擊時本體往攻擊(aim)方向給一個 lunge 初速 impulse，每幀指數衰減施加位移（看得見前進、不回彈）。
+   */
+  lungeEnabled: true,
+  /** lunge 初速（unit/s；Unity lungeForce=6，×PPU=600px/s 起手、衰減後為短前戳一步）。 */
+  lungeForce: 6,
+  /** lunge 每幀(1/60s)速度衰減係數（0.82→約 0.15s 內衰減至可忽略，配合連打累積）。 */
+  lungeDecayFactor: 0.82,
 } as const;
 
 /** 衝刺（Dash）設定（對齊 Unity PlayerConfig）。單位 unit，判定時 ×PPU。 */

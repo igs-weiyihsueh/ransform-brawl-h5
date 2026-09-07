@@ -6,6 +6,7 @@ import {
   SPRITE_SCALE,
 } from '@/config/combatConfig';
 import { PPU } from '@/config/gameConfig';
+import { lungeDecay } from '@/systems/targetingMath';
 import { getResolvedDash } from '@/config/dashSchema';
 import { FOOT_GLOW, PLAYER_DISC, footGlowCenter, playerColor, resolveFoot } from '@/config/playerConfig';
 import { PANEL_DEPTH } from '@/config/uiConfig';
@@ -94,6 +95,9 @@ export class Player implements Hittable {
   private dashDir: Vec2 = { x: 0, y: 0 };
   /** 本次衝刺已命中過的敵人（去重，一隻一次）。 */
   private readonly dashHitSet = new Set<object>();
+
+  /** 攻擊前戳 lunge 速度（px/s，十一輪#2）：startLunge 給初速、updateLunge 每幀衰減施加位移。 */
+  private lungeVel: Vec2 = { x: 0, y: 0 };
   /** 衝刺殘影生成計時器（每 AFTER_IMAGE_INTERVAL 秒生一個）。 */
   private afterImageTimer = 0;
 
@@ -473,7 +477,40 @@ export class Player implements Hittable {
     this.anim.play(moving ? 'move' : 'idle');
   }
 
-  // --- hitlag（命中敵人瞬間凍結玩家自身動畫+位移，Unity StartHitlag/TickHitlag） ---
+  // --- 攻擊前戳 lunge（Unity ApplyLungeVelocity，十一輪#2） ---
+
+  /**
+   * 攻擊觸發前戳：往 aim 方向（dirX,dirY 會正規化）給 lunge 初速 impulse（lungeForce×PPU）。
+   * 連打累積（加到現有 lungeVel）；lungeEnabled=false 或零向量 → 不做。
+   * @param dirX,dirY 前戳方向（通常玩家→最近怪 aim 向量；零向量 fallback 由呼叫端給 facing）。
+   */
+  startLunge(dirX: number, dirY: number): void {
+    if (!PLAYER_CONFIG.lungeEnabled) return;
+    const len = Math.hypot(dirX, dirY);
+    if (len < 1e-6) return;
+    const speed = PLAYER_CONFIG.lungeForce * PPU; // unit/s → px/s
+    this.lungeVel.x += (dirX / len) * speed;
+    this.lungeVel.y += (dirY / len) * speed;
+  }
+
+  /**
+   * 每幀推進 lunge：施加位移（pos += lungeVel×dt）後指數衰減 lungeVel（lungeDecay 純函式）。
+   * 不回彈（衰減到 0 停）；hitlag/被抓期間凍結（與 move 一致）。界內夾限由 PlayerControlSystem clampToMapBounds 收尾。
+   * @param dt 幀時間。
+   */
+  updateLunge(dt: number): void {
+    if (this.lungeVel.x === 0 && this.lungeVel.y === 0) return;
+    if (this.hitlagRemaining > 0 || this.grabbed) return; // hitlag/被抓：凍結（不衰減，恢復後續戳）
+    this.anim.sprite.x += this.lungeVel.x * dt;
+    this.anim.sprite.y += this.lungeVel.y * dt;
+    this.lungeVel.x = lungeDecay(this.lungeVel.x, dt, PLAYER_CONFIG.lungeDecayFactor);
+    this.lungeVel.y = lungeDecay(this.lungeVel.y, dt, PLAYER_CONFIG.lungeDecayFactor);
+  }
+
+  /** 目前是否有 lunge 位移中（debug/測）。 */
+  isLunging(): boolean {
+    return this.lungeVel.x !== 0 || this.lungeVel.y !== 0;
+  }
 
   /** 是否處於 hitlag（PlayerControlSystem 用來凍結移動/衝刺推進）。 */
   isInHitlag(): boolean {

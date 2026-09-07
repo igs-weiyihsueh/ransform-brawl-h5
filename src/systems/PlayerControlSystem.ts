@@ -33,7 +33,9 @@ import {
   type AttackCircle,
   type AttackFan,
   type OBB,
+  type Vec2,
 } from '@/systems/hitDetection';
+import { nearestPoint } from '@/systems/targetingMath';
 
 /**
  * PlayerControlSystem — 玩家操控主迴圈。
@@ -57,6 +59,9 @@ export class PlayerControlSystem implements GameSystem {
 
   /** 十一輪#3：每玩家衝刺防護罩特效 handle（起手建、衝刺期間跟本體、結束淡出銷毀）。 */
   private dashShield = new Map<number, Phaser.GameObjects.Image | null>();
+
+  /** 十一輪#2：每玩家本次攻擊的 auto-aim 目標點（按攻擊當下算最近怪；resolveAttack 用它建 shape 朝向）。 */
+  private pendingAim = new Map<number, Vec2 | null>();
 
   /** debug 繪製用：最近判定形狀（P1）。 */
   private lastOBB: OBB | null = null;
@@ -161,15 +166,32 @@ export class PlayerControlSystem implements GameSystem {
         const intent = energy.resolveAttackIntent(pid);
         if (player.tryStartAttack(intent.attack.hitDelay, PLAYER_CONFIG.attackCooldown)) {
           this.pendingIntent.set(pid, intent);
+          // 十一輪#2 auto-aim：找最近存活怪 → aim 朝牠（無怪→null，resolveAttack fallback 水平 facing）。
+          // 防禦：最小 stub player（無 getPosition，如 S2 契約測）→ 跳過 auto-aim/lunge（aim=null）。
+          const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
+          const aim = ppos ? nearestPoint(ppos, this.enemyHitCenters()) : null;
+          this.pendingAim.set(pid, aim);
+          if (ppos) {
+            // 面向轉向怪（依 aim 水平分量）。
+            if (aim && typeof player.faceTowards === 'function') player.faceTowards(aim.x);
+            // 十一輪#2 lunge：往攻擊方向前戳（有 aim 朝怪、無 aim 用 facing 水平）。
+            const ldx = aim ? aim.x - ppos.x : player.getFacing?.() ?? 1;
+            const ldy = aim ? aim.y - ppos.y : 0;
+            player.startLunge?.(ldx, ldy);
+          }
         }
       }
     }
 
+    // 十一輪#2：每幀推進 lunge 位移（攻擊前戳，衰減不回彈）。衝刺中也讓 lunge 收尾（updateLunge 內部凍結由 hitlag/grabbed 管）。
+    player.updateLunge?.(dt);
+
     // 計時器；hitDelay 到期做命中判定（衝刺中仍讓在途攻擊結算）。
     const pending = this.pendingIntent.get(pid) ?? null;
     if (player.updateTimers(dt) && pending) {
-      this.resolveAttack(player, pending);
+      this.resolveAttack(player, pending, this.pendingAim.get(pid) ?? null);
       this.pendingIntent.set(pid, null);
+      this.pendingAim.set(pid, null);
     }
 
     // 地圖邊界夾限（LateUpdate 性質：移動/衝刺後才修正）。
@@ -319,13 +341,25 @@ export class PlayerControlSystem implements GameSystem {
     }
   }
 
-  /** 依 intent 的 AttackData 形狀建立判定、查命中、套傷害；回報 EnergySystem 充能。 */
-  private resolveAttack(player: GameContext['player'], intent: AttackIntent): void {
+  /** 十一輪#2：存活敵人 hitCenter 清單（auto-aim 找最近怪用）。dead 排除。 */
+  private enemyHitCenters(): Vec2[] {
+    const out: Vec2[] = [];
+    for (const e of this.ctx.getEnemies()) {
+      if (typeof e.isDead === 'function' && e.isDead()) continue;
+      out.push(e.getHitCenter());
+    }
+    return out;
+  }
+
+  /** 依 intent 的 AttackData 形狀建立判定、查命中、套傷害；回報 EnergySystem 充能。aim=auto-aim 目標（十一輪#2，null→水平 facing）。 */
+  private resolveAttack(player: GameContext['player'], intent: AttackIntent, aim: Vec2 | null): void {
     const { effects, energy } = this.ctx;
     const attack: AttackData = intent.attack;
     const pos = player.getPosition();
     const facing = player.getFacing();
     const scale = energy.getAttackScale();
+    // 十一輪#2 auto-aim：aim 非空 → 攻擊 shape 朝 aim（buildAttack* aim 參數，同第八輪敵人版）；null → 水平 facing（相容）。
+    const aimArg = aim ?? undefined;
     // 傷害 = 基礎 × 能量倍率 × damage stat 聚合倍率（二段變身等，含 clamp）。
     const buffDmgMult = this.ctx.buff.getStatMultiplier('damage');
     const dmg = EnergySystem.applyMultiplier(attack.damage, intent.multiplier * buffDmgMult);
@@ -334,21 +368,21 @@ export class PlayerControlSystem implements GameSystem {
     let effectCenter = pos;
 
     if (attack.shapeType === 'circle') {
-      const circle = buildAttackCircle(attack, pos, facing, scale);
+      const circle = buildAttackCircle(attack, pos, facing, scale, aimArg);
       hits.push(...queryHitsCircle(circle, this.ctx.getEnemies()));
       this.lastCircle = circle;
       this.lastOBB = null;
       this.lastFan = null;
       effectCenter = circle.center;
     } else if (attack.shapeType === 'fan') {
-      const fan = buildAttackFan(attack, pos, facing, scale);
+      const fan = buildAttackFan(attack, pos, facing, scale, aimArg);
       hits.push(...queryHitsFan(fan, this.ctx.getEnemies()));
       this.lastFan = fan;
       this.lastOBB = null;
       this.lastCircle = null;
       effectCenter = fan.center;
     } else {
-      const obb = buildAttackOBB(attack, pos, facing, scale);
+      const obb = buildAttackOBB(attack, pos, facing, scale, aimArg);
       hits.push(...queryHits(obb, this.ctx.getEnemies()));
       this.lastOBB = obb;
       this.lastCircle = null;
@@ -370,8 +404,10 @@ export class PlayerControlSystem implements GameSystem {
 
     this.shapeFlash = 0.12;
     // 依當前 AttackData 的 vfxKey 播對應特效（資料驅動；未設則不播）。
+    // 十一輪#2 auto-aim：有 aim → 斬光朝 aim 角度 rotate（與 hit shape 同向）；無 aim → 水平 facing 鏡像（相容）。
     if (attack.vfxKey) {
-      effects.play(attack.vfxKey, effectCenter.x, effectCenter.y, facing);
+      const aimRot = aim ? Math.atan2(aim.y - pos.y, aim.x - pos.x) : undefined;
+      effects.play(attack.vfxKey, effectCenter.x, effectCenter.y, facing, undefined, aimRot);
     }
 
     // 充能回報：普攻打到人才 +1（招式命中不充）。

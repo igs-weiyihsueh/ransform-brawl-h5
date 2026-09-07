@@ -18,3 +18,44 @@ export function isValidEnemyTarget(player: EnemyTargetLike | null | undefined): 
   if (typeof player.isWaiting === 'function' && player.isWaiting()) return false;
   return true;
 }
+
+/** 最小座標介面（零 Phaser）。 */
+export interface Vec2Like {
+  x: number;
+  y: number;
+}
+
+/**
+ * 找離 from 最近的候選點（純函式，抽給測騎；十一輪#2 玩家 auto-aim 找最近怪）。
+ * @param from 起點（玩家位置）。
+ * @param points 候選點清單（存活敵人的 hitCenter）。
+ * @returns 最近點（回傳該物件參照）；清單空 → null。距離相同取先出現者（穩定）。
+ */
+export function nearestPoint<T extends Vec2Like>(from: Vec2Like, points: readonly T[]): T | null {
+  let best: T | null = null;
+  let bestD2 = Infinity;
+  for (const p of points) {
+    const dx = p.x - from.x;
+    const dy = p.y - from.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      best = p;
+    }
+  }
+  return best;
+}
+
+/**
+ * lunge（攻擊前戳）速度每幀衰減（純函式，抽給測騎；十一輪#2）。
+ * 指數衰減：new = vel × factor^(dt×60)（以 60fps 為基準，dt 不同 factor 效果一致）。近 0 視為停止。
+ * @param vel 當前 lunge 速度分量。
+ * @param dt 幀時間（秒）。
+ * @param factor 每幀（1/60s）衰減係數（0<factor<1，如 0.85）。
+ * @param stopEps 低於此絕對值視為 0（避免無限小尾巴）。
+ * @returns 衰減後速度（|v|<stopEps → 0）。
+ */
+export function lungeDecay(vel: number, dt: number, factor: number, stopEps = 1): number {
+  const decayed = vel * Math.pow(factor, dt * 60);
+  return Math.abs(decayed) < stopEps ? 0 : decayed;
+}

@@ -134,7 +134,7 @@ export class EffectSystem {
    * @param facing 面向：+1 面右、-1 面左（與角色面向一致）。
    * @param scaleOverride 覆蓋 config 的 scale（可選）。
    */
-  play(effectKey: string, x: number, y: number, facing: number, scaleOverride?: number): void {
+  play(effectKey: string, x: number, y: number, facing: number, scaleOverride?: number, rotationRad?: number): void {
     const def = VFX_EFFECTS[effectKey];
     if (!def) {
       console.warn(`[EffectSystem] unknown effect: ${effectKey}`);
@@ -144,9 +144,13 @@ export class EffectSystem {
     spr.setOrigin(0.5, 0.5);
     spr.setDepth(def.depth);
     spr.setScale(scaleOverride ?? def.scale);
-    // VFX 幀圖預設朝向為「面左」，故面右時才鏡像，讓特效方向跟角色面向一致
-    // （面右→朝右、面左→朝左，與攻擊判定 OBB 的 offsetX 方向對齊）。
-    spr.setFlipX(facing > 0);
+    if (rotationRad !== undefined) {
+      // 十一輪#2 auto-aim：有 aim → 斬光 rotate 朝 aim 角度（素材預設朝左，+π 對齊：面左=0 基準 → rotationRad 為「玩家→aim」角，加 PI 讓朝左素材轉到 aim 方向）。
+      spr.setRotation(rotationRad + Math.PI);
+    } else {
+      // 無 aim（相容）：VFX 幀圖預設朝左，面右時鏡像，讓特效方向跟角色面向一致。
+      spr.setFlipX(facing > 0);
+    }
     spr.play(animKey(effectKey));
     // 播完自動銷毀。
     spr.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => spr.destroy());
