@@ -22,7 +22,7 @@ import type { Enemy } from '@/entities/Enemy';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import { GuardEvent } from '@/systems/GuardEvent';
-import { waveMessageFor } from '@/systems/waveMessage';
+import { waveMessageFor, WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 
 /** 獎勵節點報獎演出保持時間（秒，用戶 #3：banner 浮現 0.35 + 停 3s + 退出/飛光 ≈ 0.35+3+0.3+0.7）。 */
 const REWARD_HOLD_SEC = 4.4;
@@ -91,6 +91,13 @@ export class WaveSystem implements GameSystem {
   private fireRainActive = false;
   private fireRainRemaining = 0;
 
+  /**
+   * 用戶：火雨訊息要晚於「第 N 波」波次宣告。進節點時若帶 attachFireRain，設此延遲秒數，
+   * 期間 getActiveFireRainPreset() 對 Spawn 節點回 null（FireRainSystem 因此延後 start()→「天降火雨！」宣告），
+   * 讓波次宣告先顯示、火雨訊息接在其後。倒數在 update() 遞減；<=0 才開放火雨。
+   */
+  private fireRainGateSec = 0;
+
   /** debug/UI：目前守護波（若有）。 */
   getGuardEvent(): GuardEvent | null {
     return this.guardEvent;
@@ -111,7 +118,10 @@ export class WaveSystem implements GameSystem {
   getActiveFireRainPreset(): FireRainPreset | null {
     const node = this.currentNode();
     // 用戶#2：Spawn 節點附加火雨（該波進行中即降）。
+    // 用戶：火雨訊息晚於波次宣告 → 進節點後有 fireRainGateSec 延遲窗，期間對 Spawn 回 null，
+    //   讓「第 N 波」先顯示；延遲跑完（gate<=0）才開放火雨（FireRainSystem 隨即 start→「天降火雨！」）。
     if (node?.nodeType === 'Spawn') {
+      if (this.fireRainGateSec > 0) return null; // 波次宣告尚在顯示中 → 火雨先按住
       const attach = (node as { attachFireRain?: string }).attachFireRain;
       if (attach) return getResolvedFireRainPreset(attach);
     }
@@ -204,6 +214,9 @@ export class WaveSystem implements GameSystem {
     if (!this.levels) return; // JSON 尚未就緒 → 安靜等待（不生怪）
     const node = this.currentNode();
     if (!node) return; // 全部節點跑完
+
+    // 用戶：火雨訊息晚於波次宣告 → 進節點後 gate 倒數，期間 getActiveFireRainPreset 對 Spawn 回 null。
+    if (this.fireRainGateSec > 0) this.fireRainGateSec = Math.max(0, this.fireRainGateSec - dt);
 
     // Debug（N 熱鍵）：強制完成當前節點、跳下一個（搬自 Unity skipCurrentNode）。
     //   守護波→forceFinish 乾淨結束(cleanup 雕像/清怪/解鎖/spotlight)；火雨→清 active；Spawn/Reward→直接 advance。
@@ -311,6 +324,11 @@ export class WaveSystem implements GameSystem {
     this.fireRainRemaining = 0;
     this.rewardHold = 0; // 換節點清獎勵演出計時（用戶 #3）
     this.announceNode();
+    // 用戶：火雨訊息晚於波次宣告。進 Spawn 節點且帶 attachFireRain → 按住火雨一個波次宣告顯示時長，
+    //   讓「第 N 波」先出，火雨（含「天降火雨！」宣告）接在其後。非火雨節點 gate=0（不影響）。
+    const entered = this.currentNode();
+    const hasFireRain = entered?.nodeType === 'Spawn' && !!(entered as { attachFireRain?: string }).attachFireRain;
+    this.fireRainGateSec = hasFireRain ? WAVE_MESSAGE_FX.durationSec : 0;
   }
 
   /** 過場提示（#9，純視覺）：進節點時依類型顯示螢幕中央提示文字。 */

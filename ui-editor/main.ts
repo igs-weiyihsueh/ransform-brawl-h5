@@ -365,8 +365,40 @@ function buildScreenEditables(): Editable[] {
       if (rc.y !== undefined) jp.panelOffsetY = rc.y + h / 2 - JP_DESIGN_CY;
     },
   });
+
+  // 關卡進度條整體大小+位置（用戶：可縮小/挪位，同 JP 範式）。additive 附掛 layout.progress。
+  // box = 設計 progress 寬高 × scale，中心 = 進度條設計中心(960,96)+offset。拖=offset、拉寬=scale。
+  const layoutPg = layout as unknown as { progress?: { progressScale?: number; progressOffsetX?: number; progressOffsetY?: number } };
+  if (!layoutPg.progress) layoutPg.progress = { progressScale: 1, progressOffsetX: 0, progressOffsetY: 0 };
+  const pg = layoutPg.progress;
+  list.push({
+    key: 'progress.bar', label: '關卡進度條（整體大小+位置）', origin: { x: 0, y: 0 }, resizable: true,
+    get: () => {
+      const s = pg.progressScale ?? 1;
+      const w = PROGRESS_DESIGN_W * s;
+      const h = PROGRESS_DESIGN_H * s;
+      const ccx = PROGRESS_DESIGN_CX + (pg.progressOffsetX ?? 0);
+      const ccy = PROGRESS_DESIGN_CY + (pg.progressOffsetY ?? 0);
+      return { x: ccx - w / 2, y: ccy - h / 2, width: w, height: h };
+    },
+    set: (rc) => {
+      if (rc.width !== undefined) pg.progressScale = Math.max(0.2, rc.width / PROGRESS_DESIGN_W);
+      const s = pg.progressScale ?? 1;
+      const w = PROGRESS_DESIGN_W * s;
+      const h = PROGRESS_DESIGN_H * s;
+      if (rc.x !== undefined) pg.progressOffsetX = rc.x + w / 2 - PROGRESS_DESIGN_CX;
+      if (rc.y !== undefined) pg.progressOffsetY = rc.y + h / 2 - PROGRESS_DESIGN_CY;
+    },
+  });
   return list;
 }
+
+/** 進度條設計尺寸/中心（對齊遊戲端 PROGRESS_BAR；編輯器不 import 遊戲模組故內聯）。
+ *  寬取「約 4 節點 ×160=640」當可視代表框、高含節點圓+守護金條 ~約 80。中心=(960,96)。 */
+const PROGRESS_DESIGN_W = 640;
+const PROGRESS_DESIGN_H = 80;
+const PROGRESS_DESIGN_CX = 960;
+const PROGRESS_DESIGN_CY = 96;
 
 /** JP 面板設計尺寸/中心（對齊遊戲端 JP_PANEL_LAYOUT；編輯器不 import 遊戲模組故內聯）。 */
 const JP_DESIGN_W = 1600;

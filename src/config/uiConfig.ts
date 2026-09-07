@@ -530,3 +530,37 @@ export function resolveJpTransform(ov?: {
     posY: JP_PANEL_CENTER.y * (1 - s) + oy,
   };
 }
+
+/**
+ * 關卡進度條整體變換預設（用戶要進度條可縮小/挪位，同 JP 範式）。可 override：
+ * progressScale 整體縮放（含進度條/節點/守護金條，內部相對佈局不變）、
+ * progressOffsetX/Y 整體位移。縮放以進度條設計中心為原點（縮小留原位不飄）。
+ */
+export const PROGRESS_TRANSFORM_DEFAULT = {
+  progressScale: 1,
+  progressOffsetX: 0,
+  progressOffsetY: 0,
+} as const;
+
+/** 進度條設計中心（縮放原點）＝ progressBars.PROGRESS_BAR 的 centerX/shownY。 */
+export const PROGRESS_CENTER = { x: 960, y: 96 } as const;
+
+/**
+ * 解析進度條整體變換（純函式，可測；同 resolveJpTransform 範式）。
+ * 回傳容器 scale + position：worldPos = center + (local-center)*scale + offset。
+ * 換成容器 transform：scale=s；position = center*(1-s) + offset。
+ */
+export function resolveProgressTransform(ov?: {
+  progressScale?: number;
+  progressOffsetX?: number;
+  progressOffsetY?: number;
+}): { scale: number; posX: number; posY: number } {
+  const s = ov?.progressScale ?? PROGRESS_TRANSFORM_DEFAULT.progressScale;
+  const ox = ov?.progressOffsetX ?? PROGRESS_TRANSFORM_DEFAULT.progressOffsetX;
+  const oy = ov?.progressOffsetY ?? PROGRESS_TRANSFORM_DEFAULT.progressOffsetY;
+  return {
+    scale: s,
+    posX: PROGRESS_CENTER.x * (1 - s) + ox,
+    posY: PROGRESS_CENTER.y * (1 - s) + oy,
+  };
+}

@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
-import { PANEL_DEPTH, UI_ICONS } from '@/config/uiConfig';
+import { PANEL_DEPTH, UI_ICONS, resolveProgressTransform } from '@/config/uiConfig';
+import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 import {
   NODE_COLORS,
   PROGRESS_BAR,
@@ -34,7 +35,9 @@ const NODE_ICON_KEY: Record<'spawn' | 'reward' | 'event', string> = {
 export class ProgressBarSystem implements GameSystem {
   readonly name = 'ProgressBarSystem';
   private ctx!: GameContext;
-  private root!: Phaser.GameObjects.Container; // 整條，滑動用
+  /** 整體變換容器（scale/位置 override，同 JP 範式）；內含 root + 守護金條。 */
+  private xform!: Phaser.GameObjects.Container;
+  private root!: Phaser.GameObjects.Container; // 整條，滑動用（xform 內）
   private gfx!: Phaser.GameObjects.Graphics; // bar 底槽 + 段填充繩 + 節點圓底
   private guardGfx!: Phaser.GameObjects.Graphics; // 守護波倒數金條
   private guardText!: Phaser.GameObjects.Text; // 守護金條剩餘秒數文字
@@ -45,12 +48,20 @@ export class ProgressBarSystem implements GameSystem {
   init(ctx: GameContext): void {
     this.ctx = ctx;
     const scene = ctx.scene;
-    this.root = scene.add.container(0, PROGRESS_BAR.shownY).setScrollFactor(0).setDepth(PANEL_DEPTH);
+    // 整體變換容器（同 JP 範式）：scale/位置讀 uiLayout override(layout.progress，additive)，
+    // 以進度條設計中心為縮放原點；內含主進度條 root + 守護金條，一起縮放/移動。
+    const t = resolveProgressTransform(readProgressOverride());
+    this.xform = scene.add.container(0, 0).setScrollFactor(0).setDepth(PANEL_DEPTH);
+    this.xform.setScale(t.scale).setPosition(t.posX, t.posY);
+
+    this.root = scene.add.container(0, PROGRESS_BAR.shownY);
+    this.xform.add(this.root);
     this.gfx = scene.add.graphics();
     this.root.add(this.gfx);
-    // 守護金條：★獨立於 root（不 root.add）——守護波時 root 往上滑走隱藏主進度條，金條需固定螢幕座標留下顯示。
-    //   固定螢幕座標（setScrollFactor(0)）畫在 shownY+guard.offsetY，不隨 root.y 滑走。
-    this.guardGfx = scene.add.graphics().setScrollFactor(0).setDepth(PANEL_DEPTH);
+    // 守護金條：★不放 root（主條滑走時金條要留下），但放 xform → 跟著整體 scale/位置變換。
+    //   畫在絕對螢幕座標（shownY+guard.offsetY），xform 再套整體變換。
+    this.guardGfx = scene.add.graphics();
+    this.xform.add(this.guardGfx);
     // 守護金條剩餘秒數文字（用戶問的順手加；不要可隱藏）。
     this.guardText = scene.add
       .text(PROGRESS_BAR.centerX, PROGRESS_BAR.shownY + PROGRESS_BAR.guard.offsetY + PROGRESS_BAR.guard.height / 2, '', {
@@ -62,9 +73,8 @@ export class ProgressBarSystem implements GameSystem {
         strokeThickness: 4,
       })
       .setOrigin(0.5, 0.5)
-      .setScrollFactor(0)
-      .setDepth(PANEL_DEPTH + 1)
       .setVisible(false);
+    this.xform.add(this.guardText);
   }
 
   update(dt: number): void {
@@ -205,5 +215,30 @@ export class ProgressBarSystem implements GameSystem {
     this.guardGfx?.destroy();
     this.guardText?.destroy();
     this.root?.destroy();
+    this.xform?.destroy();
   }
+}
+
+/** 進度條整體變換 override（大小/位置，開放編輯器可調）。 */
+interface ProgressTransformOverride {
+  progressScale?: number;
+  progressOffsetX?: number;
+  progressOffsetY?: number;
+}
+
+/**
+ * 讀 uiLayout override（編輯器存的）裡的進度條整體變換（layout.progress，additive 附掛）。
+ * 沒 override / 沒 progress 欄 → 回 undefined（resolveProgressTransform 用打包預設，行為不變）。
+ */
+function readProgressOverride(): ProgressTransformOverride | undefined {
+  const raw = loadOverride(EDITOR_STORE_KEYS.uiLayout);
+  if (!raw || typeof raw !== 'object') return undefined;
+  const p = (raw as { progress?: unknown }).progress;
+  if (!p || typeof p !== 'object') return undefined;
+  const o = p as ProgressTransformOverride;
+  return {
+    progressScale: typeof o.progressScale === 'number' ? o.progressScale : undefined,
+    progressOffsetX: typeof o.progressOffsetX === 'number' ? o.progressOffsetX : undefined,
+    progressOffsetY: typeof o.progressOffsetY === 'number' ? o.progressOffsetY : undefined,
+  };
 }
