@@ -48,6 +48,13 @@ export interface HitFeelFx {
 /** 敵人可用的角色美術 key（debug 預覽用循環選擇）。 */
 export const ENEMY_CHARACTERS = ['Enemy_Rush', 'Enemy_Ranged', 'Enemy_Elite'] as const;
 
+/**
+ * 十五輪（用戶決定）：攻擊範圍尺寸固定＝攻擊 config，不隨體型 scale 縮放。
+ * 傳給 build*Attack* / isPlayerInEnemyAttackShape 的 sizeScale＝此值（1），使「放大隻怪不會打更遠」。
+ * 視覺 sprite(setScaleFactor)+身體 radiusPx+攻擊起點 offset 位置仍維持 scaleFactor（怪的圖/身體變大小、攻擊發起點對變大的身體）。
+ */
+const ATTACK_SIZE_SCALE = 1;
+
 /** 敵人 AI 狀態。 */
 type EnemyState = 'idle' | 'chase' | 'charge' | 'attack' | 'cooldown' | 'damaged' | 'death';
 
@@ -560,7 +567,8 @@ export class Enemy implements Hittable {
           if (isAoe) {
             // 六輪#2：菁英(aoe)不要腳底小蓄力盤 chargeFx，只留 aoeRing 範圍預告圈。
             // 五輪#4：預警圈圓心用視覺 body 中心(非 sprite 幾何中心, frame 上方留白會偏上)→菁英在圈正中央。
-            const circle = buildAttackCircle(this.cfg.attack, this.getBodyCenter(), this.facing, this.scaleFactor, aim);
+            // 十五輪：攻擊範圍尺寸不隨體型（sizeScale=1）；offset 位置仍對變大的身體(scaleFactor)。
+            const circle = buildAttackCircle(this.cfg.attack, this.getBodyCenter(), this.facing, this.scaleFactor, aim, ATTACK_SIZE_SCALE);
             this.aoeRingFx =
               this.hitFeelFx?.enemyAoeRing?.(circle.center.x, circle.center.y, circle.radius) ?? null;
           } else {
@@ -647,6 +655,7 @@ export class Enemy implements Hittable {
         this.scaleFactor,
         gc,
         gr, // 雕像判定半徑（非玩家半徑）
+        ATTACK_SIZE_SCALE, // 十五輪：到達/停止基準的攻擊範圍不隨體型（與傷害圓同 sizeScale=1）
       );
     }
     return isPlayerInEnemyAttackShape(
@@ -656,6 +665,7 @@ export class Enemy implements Hittable {
       this.scaleFactor,
       aim,
       PLAYER_HIT_RADIUS * PPU,
+      ATTACK_SIZE_SCALE, // 十五輪：同上，停止基準＝攻擊基準（範圍固定）
     );
   }
 
@@ -680,7 +690,8 @@ export class Enemy implements Hittable {
     const vfx = enemyAttackVfx(this.cfg.attackKind, this.cfg.attackVfx); // 三輪#12：slash/aoe/none
     if (vfx === 'aoe') {
       // 真大範圍敵人(菁英) → 播 AOE 爆發（同攻擊圓心、依 AOE 半徑）。七輪#3：offset 朝 aim(playerPos)。
-      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, playerPos);
+      // 十五輪：AOE 爆發視覺半徑=實際攻擊範圍(sizeScale=1，不隨體型)，與預警圈/傷害圓一致(所見即所得)。
+      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, playerPos, ATTACK_SIZE_SCALE);
       this.hitFeelFx?.enemyAoeBurst?.(circle.center.x, circle.center.y, circle.radius);
     } else if (vfx === 'fan') {
       // 七輪：衝鋒兵扇形揮砍（頂點=出手點偏敵人手前、rotate 朝玩家、scale 依攻擊範圍隨範圍縮放）。
@@ -701,7 +712,8 @@ export class Enemy implements Hittable {
 
     if (this.cfg.attackKind === 'melee') {
       // 近戰圓形判定：offset 隨 perCharScale 放大（菁英大範圍）。七輪#3：offset 朝 aim(playerPos)＝與 canReachTarget 同基準。
-      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, playerPos);
+      // 十五輪：攻擊範圍尺寸不隨體型(sizeScale=1)，offset 位置仍對變大的身體(scaleFactor)。與 canReachTarget 同 sizeScale=1 一致。
+      const circle = buildAttackCircle(a, pos, this.facing, this.scaleFactor, playerPos, ATTACK_SIZE_SCALE);
       this.onAttack?.({
         kind: 'melee',
         sourceName: this.cfg.characterKey,

@@ -41,10 +41,11 @@ export function buildAttackOBB(
   facing: number,
   scale: number,
   aim?: Vec2,
+  sizeScale: number = scale,
 ): OBB {
   const center = attackOffsetCenter(attackerPos, attack.offsetX, attack.offsetY ?? 0, scale, facing, aim);
-  const length = (attack.length ?? 0) * scale * PPU;
-  const width = (attack.width ?? 0) * scale * PPU;
+  const length = (attack.length ?? 0) * sizeScale * PPU;
+  const width = (attack.width ?? 0) * sizeScale * PPU;
   // 旋轉：有 aim → 朝 aim 角度；無 aim → 沿水平 facing（面左 180°）。
   let rotation: number;
   if (aim) {
@@ -145,6 +146,10 @@ function attackOffsetCenter(
 /**
  * 由 AttackData（shapeType='circle'）+ 攻擊者位置 + 面向 + 角色 scale，
  * 算出世界像素座標的判定圓。有 aim 時 offset 朝 aim 方向（七輪#3 治本），無 aim 沿水平 facing（相容）。
+ *
+ * 十五輪：`sizeScale`（攻擊範圍尺寸縮放）與 `scale`（offset 位置縮放）拆開。
+ * 用戶要「怪物體型放大，攻擊範圍不跟著變」：Enemy 傳 scale=scaleFactor（offset 對變大的身體）、sizeScale=1（範圍固定=攻擊 config）。
+ * 省略 sizeScale → 預設 = scale（回歸相容：玩家/舊測 offset 與尺寸同縮放）。
  */
 export function buildAttackCircle(
   attack: AttackData,
@@ -152,10 +157,11 @@ export function buildAttackCircle(
   facing: number,
   scale: number,
   aim?: Vec2,
+  sizeScale: number = scale,
 ): AttackCircle {
   return {
     center: attackOffsetCenter(attackerPos, attack.offsetX, attack.offsetY ?? 0, scale, facing, aim),
-    radius: (attack.radius ?? 0) * scale * PPU,
+    radius: (attack.radius ?? 0) * sizeScale * PPU,
   };
 }
 
@@ -207,6 +213,7 @@ export function buildAttackFan(
   facing: number,
   scale: number,
   aim?: Vec2,
+  sizeScale: number = scale,
 ): AttackFan {
   const dir = facing >= 0 ? 1 : -1;
   const center = attackOffsetCenter(attackerPos, attack.offsetX, attack.offsetY ?? 0, scale, facing, aim);
@@ -215,7 +222,7 @@ export function buildAttackFan(
     : undefined;
   return {
     center,
-    radius: (attack.radius ?? 0) * scale * PPU,
+    radius: (attack.radius ?? 0) * sizeScale * PPU,
     facing: dir,
     halfAngleRad: (((attack.angle ?? 0) / 2) * Math.PI) / 180,
     forwardAngle,
@@ -293,16 +300,18 @@ export function isPlayerInEnemyAttackShape(
   scale: number,
   playerPos: Vec2,
   playerRadius: number,
+  sizeScale: number = scale,
 ): boolean {
   // 七輪#3 治本：攻擊 shape offset 朝目標（aim=playerPos）→ 目標在上下左右都涵蓋（不再只水平 facing）。
+  // 十五輪：sizeScale 拆開攻擊範圍尺寸（Enemy 傳 1＝範圍不隨體型；停止/到達基準與傷害圓同 sizeScale 一致，避免第八輪停止≠攻擊基準坑）。
   if (attack.shapeType === 'circle') {
-    const circle = buildAttackCircle(attack, enemyPos, facing, scale, playerPos);
+    const circle = buildAttackCircle(attack, enemyPos, facing, scale, playerPos, sizeScale);
     return circleIntersectsCircle(circle, playerPos, playerRadius);
   }
   if (attack.shapeType === 'fan') {
-    const fan = buildAttackFan(attack, enemyPos, facing, scale, playerPos);
+    const fan = buildAttackFan(attack, enemyPos, facing, scale, playerPos, sizeScale);
     return fanIntersectsCircle(fan, playerPos, playerRadius);
   }
-  const obb = buildAttackOBB(attack, enemyPos, facing, scale, playerPos);
+  const obb = buildAttackOBB(attack, enemyPos, facing, scale, playerPos, sizeScale);
   return obbIntersectsCircle(obb, playerPos, playerRadius);
 }
