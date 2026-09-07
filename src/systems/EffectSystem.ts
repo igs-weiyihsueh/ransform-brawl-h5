@@ -1266,11 +1266,29 @@ export class EffectSystem {
    * depth 低（在地上、怪之下）→ 淡入完短暫脈動一下 → onDone（怪原地出現）。
    * 未載到法陣圖時 graceful 退回畫紅圈。
    * @param onDone 淡入完成回呼（WaveSystem 用來在該點生成敵人）。
+   * @returns 可取消 handle：cancel() 立即清召喚陣視覺（停 tween/destroy GameObject），且不觸發 onDone（N skip/換節點清視覺用）。
    */
-  spawnWarning(x: number, y: number, durationSec: number, onDone?: () => void): void {
+  spawnWarning(x: number, y: number, durationSec: number, onDone?: () => void): { cancel: () => void } {
     const diameterPx = 150; // 法陣直徑（略大於怪、不蓋整場）
+    let obj: Phaser.GameObjects.GameObject | null = null; // 召喚陣視覺 GameObject（sprite 或 graphics）
+    let done = false; // 已完成/已取消 → 去重（cancel 不重複、完成後 cancel no-op）
+    const cleanup = (): void => {
+      if (obj) {
+        this.scene.tweens.killTweensOf(obj); // 停召喚陣所有 tween（淡入/脈動）
+        obj.destroy();
+        obj = null;
+      }
+    };
+    const handle = {
+      cancel: (): void => {
+        if (done) return;
+        done = true;
+        cleanup(); // 立即清視覺，不觸發 onDone（不生怪）
+      },
+    };
     if (this.scene.textures.exists(UI_ICONS.summonCircle.key)) {
       const sprite = this.scene.add.image(x, y, UI_ICONS.summonCircle.key);
+      obj = sprite;
       sprite.setDisplaySize(diameterPx, diameterPx);
       sprite.setDepth(-6); // 在地上、角色（PLAY_DEPTH=10）之下
       sprite.setAlpha(0);
@@ -1283,6 +1301,7 @@ export class EffectSystem {
         duration: durationSec * 1000,
         ease: 'Sine.easeIn',
         onComplete: () => {
+          if (done) return; // 已取消 → 不續播不生怪
           // 淡入完短暫放大脈動一下 → 銷毀 → 出怪。
           this.scene.tweens.add({
             targets: sprite,
@@ -1292,16 +1311,19 @@ export class EffectSystem {
             duration: 180,
             ease: 'Quad.easeOut',
             onComplete: () => {
-              sprite.destroy();
+              if (done) return;
+              done = true;
+              cleanup();
               onDone?.();
             },
           });
         },
       });
-      return;
+      return handle;
     }
     // graceful 後備：沒法陣圖 → 畫紅圈淡入。
     const g = this.scene.add.graphics();
+    obj = g;
     g.fillStyle(0xff3322, 0.35);
     g.fillCircle(0, 0, diameterPx / 2);
     g.lineStyle(3, 0xff6644, 0.9);
@@ -1316,9 +1338,12 @@ export class EffectSystem {
       duration: durationSec * 1000,
       ease: 'Linear',
       onComplete: () => {
-        g.destroy();
+        if (done) return;
+        done = true;
+        cleanup();
         onDone?.();
       },
     });
+    return handle;
   }
 }
