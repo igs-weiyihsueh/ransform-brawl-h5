@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "《變身大亂鬥》H5 版 — Phaser 3 + TypeScript + Vite",
+  "description": "《3C大亂鬥》H5 版 — Phaser 3 + TypeScript + Vite",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

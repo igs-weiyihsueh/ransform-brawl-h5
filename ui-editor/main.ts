@@ -28,7 +28,6 @@ import {
   EDITOR_STORE_KEYS,
   applyToGame,
   clearOverride,
-  exportAllSettings,
   loadOverride,
 } from '@/config/editorStore';
 
@@ -1307,33 +1306,6 @@ function exportJson(): void {
   setStatus('驗證通過，已下載 uiLayout.json。', 'ok');
 }
 
-/** yyyymmdd（本地日期）供匯出檔名。 */
-function dateStamp(d: Date = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
-}
-
-/**
- * 匯出「當前全部設定」JSON（用戶要：把調好的設定正式定為打包預設的第一步）。
- * 純讀 localStorage 全部 EDITOR_STORE_KEYS，打包結構化 JSON 下載（檔名帶時間戳）。
- * additive 新功能，不動任何既有套用/讀取邏輯。
- */
-function exportAllJson(): void {
-  const data = exportAllSettings();
-  const text = JSON.stringify(data, null, 2);
-  const blob = new Blob([text], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `transform-brawl-settings-${dateStamp()}.json`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  if (data.configuredCount === 0) {
-    setStatus('已下載設定檔，但目前沒有任何調整過的設定（全用打包預設）。', 'info');
-  } else {
-    setStatus(`已下載 transform-brawl-settings（含 ${data.configuredCount} 項已調整設定）交給整合者寫入打包預設。`, 'ok');
-  }
-}
-
 function resetDefault(): void {
   loadIntoState(cloneLayout(DEFAULT_UI_LAYOUT), true);
   setStatus('已重設為預設值。', 'info');
@@ -1376,7 +1348,6 @@ function bindUI(): void {
   $('tab-screen').addEventListener('click', () => switchSection('screen'));
   $('btn-load-default').addEventListener('click', () => void loadDefault());
   $('btn-export').addEventListener('click', exportJson);
-  $('btn-export-all').addEventListener('click', exportAllJson);
   $('btn-reset').addEventListener('click', resetDefault);
   $('btn-apply').addEventListener('click', applyToGameFromEditor);
   $('btn-apply-return').addEventListener('click', applyAndReturnToGame);
@@ -1448,7 +1419,6 @@ const EDITOR_BODY_HTML = `
   <input id="file-input" type="file" accept="application/json,.json" hidden />
   <button id="btn-reset">重設為預設值</button>
   <button id="btn-export" class="primary">驗證並下載 JSON</button>
-  <button id="btn-export-all" class="primary" title="匯出當前全部設定（UI/關卡/敵人/技能/dash…）為一份 JSON，交整合者寫進打包預設給所有玩家">匯出全部設定</button>
   <button id="btn-apply" class="primary" title="套用到遊戲（存瀏覽器，重開遊戲生效）">套用到遊戲</button>
   <button id="btn-apply-return" class="primary" title="套用並立即返回遊戲">套用並回到遊戲</button>
   <button id="btn-clear-apply" title="清除套用，遊戲回打包預設">清除套用</button>

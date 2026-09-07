@@ -1,4 +1,5 @@
 import type { EditorInstance, EditorTabDef } from '@/systems/editorOverlay/editorMount';
+import { exportAllSettings, exportSettingsFilename } from '@/config/editorStore';
 
 /**
  * EditorOverlay — 遊戲內展開編輯器的 overlay 殼（方案 A' 骨架）。
@@ -118,7 +119,16 @@ export class EditorOverlay {
     closeBtn.textContent = '✕ 關閉';
     closeBtn.addEventListener('click', () => this.closeOverlay());
 
+    // 匯出全部設定（用戶指定）：讀所有 localStorage override → 下載結構化 JSON（給翼騎寫進 repo default）。
+    const exportBtn = document.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.className = 'tb-editor-export';
+    exportBtn.textContent = '⤓ 匯出全部設定';
+    exportBtn.title = '把目前調好、套用到遊戲的全部設定打包成 JSON 下載（交開發寫進打包預設給所有玩家）';
+    exportBtn.addEventListener('click', () => this.downloadAllSettings());
+
     topBar.appendChild(tabBar);
+    topBar.appendChild(exportBtn);
     topBar.appendChild(closeBtn);
 
     // 編輯器掛載區（各編輯器 mount 到這個 host 內的 .tb-editor-root 容器）。
@@ -190,6 +200,32 @@ export class EditorOverlay {
 
   private setStatus(msg: string): void {
     if (this.statusEl) this.statusEl.textContent = msg;
+  }
+
+  /**
+   * 匯出全部設定（用戶指定）：讀 editorStore 所有 override key（純讀，不改套用/讀取邏輯）→
+   * 打包結構化 JSON（每 key 標 label + 翼騎 target + 原始值 + version）→ 下載 .json（檔名帶日期戳）。
+   * 只含有存 localStorage 的 key；沒調的列 unset。localStorage 不可用時仍下載（settings 空 + unset 全列），不炸。
+   */
+  private downloadAllSettings(): void {
+    try {
+      const data = exportAllSettings();
+      const count = Object.keys(data.settings).length;
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = exportSettingsFilename();
+      a.click();
+      URL.revokeObjectURL(url);
+      this.setStatus(
+        count > 0
+          ? `已匯出 ${count} 份已調整設定（${Object.keys(data.settings).join('、')}）→ 下載 ${a.download}。`
+          : '目前沒有任何套用中的設定（都吃打包預設）。已下載空清單。',
+      );
+    } catch (err) {
+      this.setStatus(`匯出失敗：${String(err)}`);
+    }
   }
 
   private injectStyle(): void {
@@ -273,6 +309,16 @@ const OVERLAY_CSS = `
   font-size: 13px;
 }
 .tb-editor-close:hover { border-color: #ff6c7a; }
+.tb-editor-export {
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: #6c8cff;
+  color: #fff;
+  border: 1px solid #6c8cff;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tb-editor-export:hover { background: #5578ff; }
 .tb-editor-host { flex: 1; overflow: hidden; position: relative; }
 .tb-editor-root { width: 100%; height: 100%; overflow: auto; }
 .tb-editor-status {

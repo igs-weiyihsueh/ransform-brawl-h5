@@ -22,7 +22,7 @@ export class BootScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(BACKGROUND_COLOR);
 
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '變身大亂鬥 H5', {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '3C大亂鬥 H5', {
         fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
         fontSize: '64px',
         color: '#ffffff',

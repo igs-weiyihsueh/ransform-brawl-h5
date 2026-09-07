@@ -1,6 +1,6 @@
-# 變身大亂鬥 H5
+# 3C大亂鬥 H5
 
-《變身大亂鬥》的 H5 重寫版本 — 由原 Unity 專案改用 **Phaser 3 + TypeScript + Vite** 開發。
+《3C大亂鬥》的 H5 重寫版本 — 由原 Unity 專案改用 **Phaser 3 + TypeScript + Vite** 開發。
 
 一款兒童街機抽獎／兌換機的 2D 動作遊戲。本 repo 目前為 **階段 0：專案骨架**，只有一個空場景，尚未實作任何玩法。
 

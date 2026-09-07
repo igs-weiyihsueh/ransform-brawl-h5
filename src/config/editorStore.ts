@@ -84,84 +84,73 @@ export function hasOverride(key: EditorStoreKey): boolean {
   }
 }
 
-/** 匯出檔格式版本（結構改動時 bump，翼騎對應寫入時可判版）。 */
-export const SETTINGS_EXPORT_VERSION = 1;
-
-/** 各 store key 對應「設定名稱」+「翼騎寫入的 repo default 提示」（給匯出 JSON 標明用途）。 */
-const KEY_META: Record<
+/**
+ * 各 override key 對應的「設定名稱」與「翼騎要寫進的 repo default config 位置」對照
+ * （匯出 JSON 用，讓翼騎知道每份 override 該對應到哪個打包預設）。additive，純說明用。
+ */
+export const EDITOR_STORE_META: Record<
   keyof typeof EDITOR_STORE_KEYS,
-  { label: string; targetDefault: string }
+  { key: EditorStoreKey; label: string; target: string }
 > = {
-  uiLayout: { label: 'UI/HUD 版面（位置/大小/字級/顏色等）', targetDefault: 'src/config/uiConfig.ts (DEFAULT_UI_LAYOUT 及各 resolveXXX 預設)' },
-  levels: { label: '關卡/波次設定', targetDefault: 'src/config/levelConfig.ts (或關卡資料)' },
-  enemies: { label: '敵人設定', targetDefault: 'src/config/enemyConfig.ts' },
-  skills: { label: '技能設定', targetDefault: 'src/config/skillConfig.ts' },
-  dash: { label: '衝刺(dash)設定', targetDefault: 'src/config/dashConfig.ts' },
-  firerain: { label: '火雨事件設定', targetDefault: 'src/config/firerainConfig.ts' },
-  guard: { label: '守護波設定', targetDefault: 'src/config/guardConfig.ts (或事件設定)' },
-  chest: { label: '寶箱設定', targetDefault: 'src/config/chestConfig.ts' },
-  hitfeel: { label: '打擊感(hitfeel)設定', targetDefault: 'src/config/hitfeelConfig.ts' },
-  attackSpeed: { label: '攻擊速度設定', targetDefault: 'src/config/attackConfig.ts (或戰鬥設定)' },
-  mapBounds: { label: '地圖邊界設定', targetDefault: 'src/config/mapConfig.ts (或場景邊界)' },
-};
+  uiLayout: { key: EDITOR_STORE_KEYS.uiLayout, label: 'UI 版面', target: 'src/config/uiLayoutSchema.ts (預設版面)' },
+  levels: { key: EDITOR_STORE_KEYS.levels, label: '關卡', target: 'src/config/levelSchema.ts / levels 資料' },
+  enemies: { key: EDITOR_STORE_KEYS.enemies, label: '怪物', target: 'src/config/enemyConfig.ts ENEMY_AI' },
+  skills: { key: EDITOR_STORE_KEYS.skills, label: '招式', target: 'src/config/skill 設定' },
+  dash: { key: EDITOR_STORE_KEYS.dash, label: '衝刺', target: 'src/config/combatConfig.ts DASH_CONFIG' },
+  firerain: { key: EDITOR_STORE_KEYS.firerain, label: '火雨', target: 'src/config 火雨 preset' },
+  guard: { key: EDITOR_STORE_KEYS.guard, label: '守護波', target: 'src/config/guardConfig.ts GUARD_PRESETS' },
+  chest: { key: EDITOR_STORE_KEYS.chest, label: '寶箱', target: 'src/config/chestConfig 設定' },
+  hitfeel: { key: EDITOR_STORE_KEYS.hitfeel, label: '打擊感', target: 'src/config/hitFeelConfig.ts HIT_FEEL' },
+  attackSpeed: { key: EDITOR_STORE_KEYS.attackSpeed, label: '攻擊速度', target: 'src/config 攻擊速度設定' },
+  mapBounds: { key: EDITOR_STORE_KEYS.mapBounds, label: '地圖邊界', target: 'src/config/mapConfig.ts MAP_BOUNDS_UNITS' },
+} as const;
 
-/** 單一 key 匯出項。 */
-export interface ExportedSettingEntry {
-  /** localStorage key 全名（契約字串）。 */
-  storageKey: string;
-  /** 人類可讀設定名稱。 */
-  label: string;
-  /** 翼騎對應寫進哪個 repo default config 的提示。 */
-  targetDefault: string;
-  /** 使用者是否實際調過（localStorage 有值）。 */
-  configured: boolean;
-  /** 當前值（configured 才有；已 parse 的物件）。未設定為 null。 */
-  value: unknown | null;
-}
-
-/** 匯出全部設定的檔案結構。 */
-export interface SettingsExport {
-  format: 'transform-brawl-settings';
-  version: number;
-  /** ISO 匯出時間。 */
+/** 匯出全部設定的結構（下載 JSON 的頂層）。 */
+export interface ExportedSettings {
+  /** 匯出格式版本。 */
+  exportVersion: number;
+  /** 匯出時間（ISO）。 */
   exportedAt: string;
-  /** 有幾個 key 被實際調過（configured）。 */
-  configuredCount: number;
-  /** 各設定 key → 值 + 用途/對應 default 提示。 */
-  settings: Record<string, ExportedSettingEntry>;
+  /**
+   * 各設定的 override 值（只含用戶實際調過、localStorage 有存的 key）。
+   * value = 該 override 的原始 JSON 物件（含其自身 version），可直接對照寫進 repo default。
+   */
+  settings: Record<string, { key: string; label: string; target: string; value: unknown }>;
+  /** 未設定（localStorage 無值、吃打包預設）的設定名清單，供翼騎確認哪些不用改。 */
+  unset: string[];
 }
+
+export const SETTINGS_EXPORT_VERSION = 1 as const;
 
 /**
- * 匯出當前全部設定（純讀 localStorage，additive，不改任何既有套用/讀取邏輯）。
- *
- * 收集 EDITOR_STORE_KEYS 全部 key 的當前 localStorage 值，打包成結構化 JSON：
- *  - 有調過的 key → configured:true + 已 parse 的 value；
- *  - 沒調過 → configured:false + value:null（標明「用打包預設」）。
- * 每個 key 附 label（設定名稱）+ targetDefault（翼騎要寫進哪個 repo default）+ version。
- * localStorage 不可用 → 仍回一份 configuredCount:0 的骨架（呼叫端可提示無設定）。
+ * 匯出當前全部設定（純讀 localStorage，additive；不改任何套用/讀取邏輯）。
+ * 只收有存 override 的 key（用戶實際調過的）→ 結構化物件（每 key 標 label + 翼騎對應 target + 原始值）；
+ * 沒調的列進 unset。localStorage 不可用時回空 settings（graceful，不炸）。
  */
-export function exportAllSettings(now: Date = new Date()): SettingsExport {
-  const settings: Record<string, ExportedSettingEntry> = {};
-  let configuredCount = 0;
-  const available = hasLocalStorage();
-  for (const [name, storageKey] of Object.entries(EDITOR_STORE_KEYS)) {
-    const meta = KEY_META[name as keyof typeof EDITOR_STORE_KEYS];
-    const value = available ? loadOverride(storageKey as EditorStoreKey) : null;
-    const configured = value !== null;
-    if (configured) configuredCount++;
-    settings[name] = {
-      storageKey,
-      label: meta.label,
-      targetDefault: meta.targetDefault,
-      configured,
-      value,
-    };
+export function exportAllSettings(now: Date = new Date()): ExportedSettings {
+  const settings: ExportedSettings['settings'] = {};
+  const unset: string[] = [];
+  for (const name of Object.keys(EDITOR_STORE_META) as (keyof typeof EDITOR_STORE_KEYS)[]) {
+    const meta = EDITOR_STORE_META[name];
+    const raw = loadOverride(meta.key); // 已 graceful（localStorage 不可用/壞 JSON→null）
+    if (raw !== null) {
+      settings[name] = { key: meta.key, label: meta.label, target: meta.target, value: raw };
+    } else {
+      unset.push(name);
+    }
   }
   return {
-    format: 'transform-brawl-settings',
-    version: SETTINGS_EXPORT_VERSION,
+    exportVersion: SETTINGS_EXPORT_VERSION,
     exportedAt: now.toISOString(),
-    configuredCount,
     settings,
+    unset,
   };
+}
+
+/** 匯出檔名（帶日期戳）：transform-brawl-settings-YYYYMMDD.json。 */
+export function exportSettingsFilename(now: Date = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `transform-brawl-settings-${y}${m}${d}.json`;
 }
