@@ -33,7 +33,7 @@ import {
   MASH_KNOCKBACK_RADIUS_PX,
 } from '@/systems/mashTransformMath';
 import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
-import { getResolvedSecondTransformEnabled } from '@/config/secondTransformSchema';
+import { getResolvedSecondTransformEnabled, getResolvedSecondTransform } from '@/config/secondTransformSchema';
 import {
   type SecondTransformState,
   makeSecondTransformState,
@@ -559,7 +559,7 @@ export class TransformSystem implements GameSystem {
     for (const p of players) {
       const before = this.secondStateOf(p.playerId);
       if (!before.active) continue;
-      const after = decaySecondEnergy(before, dt, SECOND_TRANSFORM_CONFIG.decayPerSec);
+      const after = decaySecondEnergy(before, dt, getResolvedSecondTransform().decayPerSec);
       this.secondStates.set(p.playerId, after);
       if (before.active && !after.active) {
         this.exitSecondTransform(p.playerId); // 退完解除
@@ -575,7 +575,7 @@ export class TransformSystem implements GameSystem {
   /** 進二段：悟空放大 scaleMult + 金光爆發 burst + 起持續強化光環 aura。 */
   private enterSecondTransform(playerId: number): void {
     const player = this.playerOf(playerId);
-    player?.setSecondTransformScale?.(SECOND_TRANSFORM_CONFIG.scaleMult);
+    player?.setSecondTransformScale?.(getResolvedSecondTransform().scaleMult);
     const c = player?.getHitCenter?.() ?? player?.getPosition?.();
     if (c) {
       this.ctx.effects?.secondTransformBurst?.(c.x, c.y); // 進二段瞬間金光爆發（播一次）
@@ -607,6 +607,6 @@ export class TransformSystem implements GameSystem {
 
   /** 二段攻擊範圍加成倍率（1=常態；二段中回 attackRangeMult）。供攻擊判定端乘。 */
   getSecondTransformAttackRangeMult(playerId: number): number {
-    return this.isSecondTransformActive(playerId) ? SECOND_TRANSFORM_CONFIG.attackRangeMult : 1;
+    return this.isSecondTransformActive(playerId) ? getResolvedSecondTransform().attackRangeMult : 1;
   }
 }

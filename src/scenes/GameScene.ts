@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { CHARACTERS } from '@/config/animationConfig';
 import { chestChargeForResolved, getResolvedChest } from '@/config/chestSchema';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
-import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
+import { getResolvedSecondTransform } from '@/config/secondTransformSchema';
 import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { BuffSystem } from '@/systems/BuffSystem';
@@ -165,7 +165,7 @@ export class GameScene extends Phaser.Scene {
       for (const [pid, amount] of shares) {
         chest.addCharge(pid, amount); // 即時加值（不動時機/邏輯）
         // 用戶新大功能：二段變身能量累積（★flag 關/未一段變身 → no-op）。有傷害貢獻的 player 才累。
-        if (amount > 0) transform.accumulateSecondTransform(pid, SECOND_TRANSFORM_CONFIG.energyPerKill);
+        if (amount > 0) transform.accumulateSecondTransform(pid, getResolvedSecondTransform().energyPerKill);
         if (amount <= 0) continue;
         const anchor = uiSystem.getChestAnchor(pid);
         if (anchor)

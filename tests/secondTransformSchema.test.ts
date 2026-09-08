@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   resolveSecondTransformEnabled,
+  resolveSecondTransform,
   SECOND_TRANSFORM_SCHEMA_VERSION,
   defaultSecondTransformFile,
+  type ResolvedSecondTransform,
 } from '@/config/secondTransformSchema';
+
+/** 測試用打包預設（固定值，不依賴 config，讓斷言穩定）。 */
+const PKG: ResolvedSecondTransform = {
+  enabled: false,
+  energyPerKill: 0.12,
+  decayPerSec: 0.125,
+  scaleMult: 1.4,
+  attackRangeMult: 1.4,
+};
 
 /**
  * secondTransformSchema — 二段變身「啟用開關」override 解析（用戶要編輯器可控開/關）。
@@ -52,5 +63,68 @@ describe('resolveSecondTransformEnabled — override 優先、fallback 打包預
     const f = defaultSecondTransformFile();
     expect(f.version).toBe(1);
     expect(f.enabled).toBe(false); // 打包預設關
+    // 數值欄帶打包預設（匯出範例完整）。
+    expect(typeof f.energyPerKill).toBe('number');
+    expect(typeof f.decayPerSec).toBe('number');
+    expect(typeof f.scaleMult).toBe('number');
+    expect(typeof f.attackRangeMult).toBe('number');
+  });
+});
+
+describe('resolveSecondTransform — 逐欄 override 優先、fallback 打包預設', () => {
+  it('override 沒設（null/undefined/非物件）→ 全回 packaged', () => {
+    expect(resolveSecondTransform(null, PKG)).toEqual(PKG);
+    expect(resolveSecondTransform(undefined, PKG)).toEqual(PKG);
+    expect(resolveSecondTransform('nope' as unknown, PKG)).toEqual(PKG);
+    expect(resolveSecondTransform(123 as unknown, PKG)).toEqual(PKG);
+  });
+
+  it('version 錯 → 全回 packaged', () => {
+    expect(resolveSecondTransform({ version: 2, enabled: true, scaleMult: 2 }, PKG)).toEqual(PKG);
+  });
+
+  it('★全欄 override → 各欄採用', () => {
+    const r = resolveSecondTransform(
+      { version: 1, enabled: true, energyPerKill: 0.3, decayPerSec: 0.2, scaleMult: 1.8, attackRangeMult: 2.0 },
+      PKG,
+    );
+    expect(r).toEqual({ enabled: true, energyPerKill: 0.3, decayPerSec: 0.2, scaleMult: 1.8, attackRangeMult: 2.0 });
+  });
+
+  it('★逐欄 fallback：只給部分欄 → 其餘沿用 packaged', () => {
+    const r = resolveSecondTransform({ version: 1, enabled: true, scaleMult: 1.6 }, PKG);
+    expect(r.enabled).toBe(true);
+    expect(r.scaleMult).toBe(1.6); // 有給→採用
+    expect(r.energyPerKill).toBe(PKG.energyPerKill); // 沒給→packaged
+    expect(r.decayPerSec).toBe(PKG.decayPerSec);
+    expect(r.attackRangeMult).toBe(PKG.attackRangeMult);
+  });
+
+  it('★壞版對照：數值欄非有限正數（0/負/NaN/字串）→ 該欄 fallback packaged', () => {
+    const r = resolveSecondTransform(
+      { version: 1, enabled: true, energyPerKill: 0, decayPerSec: -1, scaleMult: NaN, attackRangeMult: '2' },
+      PKG,
+    );
+    expect(r.energyPerKill).toBe(PKG.energyPerKill); // 0 不合法→fallback
+    expect(r.decayPerSec).toBe(PKG.decayPerSec); // 負→fallback
+    expect(r.scaleMult).toBe(PKG.scaleMult); // NaN→fallback
+    expect(r.attackRangeMult).toBe(PKG.attackRangeMult); // 字串→fallback
+  });
+
+  it('enabled 非 boolean → 用 packaged.enabled（數值欄仍各自解析）', () => {
+    const r = resolveSecondTransform({ version: 1, enabled: 'yes', energyPerKill: 0.4 }, { ...PKG, enabled: true });
+    expect(r.enabled).toBe(true); // packaged.enabled
+    expect(r.energyPerKill).toBe(0.4); // 數值仍採用
+  });
+
+  it('★物件守衛：function-with-props（typeof≠object）→ 全回 packaged', () => {
+    const fn = Object.assign(function () {}, { version: 1, enabled: true, scaleMult: 2 });
+    expect(resolveSecondTransform(fn as unknown, PKG)).toEqual(PKG);
+  });
+
+  it('resolveSecondTransformEnabled 與 resolveSecondTransform.enabled 一致', () => {
+    expect(resolveSecondTransformEnabled({ version: 1, enabled: true })).toBe(
+      resolveSecondTransform({ version: 1, enabled: true }).enabled,
+    );
   });
 });
