@@ -159,11 +159,13 @@ export class UISystem implements GameSystem {
       if (waiting) continue; // 待機不更新內容/跟隨（隱藏即可）
       const pos = p.getPosition();
       overhead.followWorldPosition(pos.x, pos.y);
-      // ★新需求：原「魂力環」圓環元件改綁「二段變身能量」（角色無血量/魂力無實質動態→廢物利用顯二段能量）。
-      //   變身成英雄(transformed)才顯圓環，填充=getSecondTransformEnergyRatio(0~1)；flag 關時 ratio=0（空環）。
-      const transformed = this.ctx.transform.isTransformed(pid);
-      overhead.setSoulVisible(transformed);
-      if (transformed) overhead.setSoul(this.ctx.getSecondTransformEnergyRatio?.(pid) ?? 0);
+      // ★新需求：頭上「魂力環」圓環元件改綁「二段變身能量」（角色無血量、魂力無實質動態→廢物利用顯二段能量）。
+      //   顯示條件對齊二段能量意義：isSecondTransformAvailable（一段悟空後且 flag 開）才顯圓環，
+      //   填充=getSecondTransformEnergyRatio(0~1)。flag 關/凡人 → available=false → 隱環（現況不變）。
+      //   （取代舊 getSoulRatio 魂力顯示 + 舊 SecondEnergyBar 橫條——二段能量統一由此圓環呈現。）
+      const secondAvailable = this.ctx.isSecondTransformAvailable?.(pid) ?? false;
+      overhead.setSoulVisible(secondAvailable);
+      if (secondAvailable) overhead.setSoul(this.ctx.getSecondTransformEnergyRatio?.(pid) ?? 0);
       overhead.setCredit(this.ctx.credit.getCredit(pid));
       // 沒 Credit 演出（閃紅 + 投幣提示 + 倒數）：讀 CreditSystem 耗盡狀態（只讀）。
       overhead.setOutOfCredit(
@@ -173,14 +175,7 @@ export class UISystem implements GameSystem {
       overhead.setCombo(this.ctx.combo.getCombo(pid));
       overhead.setComboWarning(this.ctx.combo.isWarning(pid));
       if (this.ctx.combo.consumeMaxTriggered(pid)) overhead.showMaxCombo();
-      // 二段變身能量條（用戶正式規格：取代原 4 格技能槽；讀翼騎接口，只讀不回寫，?. graceful）：
-      //  打怪累積 getSecondTransformEnergyRatio 填充 → 滿→二段變身（核心放大/特效/攻擊範圍）→ 消退退完解除。
-      //  ★flag 關時核心回 available=false/ratio=0 → 空條（不影響現況）。放招功能已移除（用戶選 A）。
-      overhead.setSecondEnergy(
-        this.ctx.isSecondTransformAvailable?.(pid) ?? false,
-        this.ctx.isSecondTransformActive?.(pid) ?? false,
-        this.ctx.getSecondTransformEnergyRatio?.(pid) ?? 0,
-      );
+      // ★SecondEnergyBar 橫條已移除（二段能量改由上面 soulRing 圓環呈現，用戶：關閉能量條橫條）。
     }
 
     // B. 下方面板：每個 active player 欄刷新自己的彩票 / 進度。

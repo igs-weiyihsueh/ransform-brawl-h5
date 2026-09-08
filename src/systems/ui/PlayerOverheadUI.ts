@@ -8,7 +8,6 @@ import {
   resolveOverheadLayout,
   UI_ICONS,
 } from '@/config/uiConfig';
-import { SecondEnergyBar } from '@/systems/ui/SecondEnergyBar';
 
 /**
  * PlayerOverheadUI — 角色頭上 UI（對照 Unity PlayerUI 200×80）。
@@ -17,7 +16,7 @@ import { SecondEnergyBar } from '@/systems/ui/SecondEnergyBar';
  *  - 玩家編號牌（P1）
  *  - 魂力環（60×60 圓環，stub 先固定滿）
  *  - Credit 數字 + 金幣 icon（stub）
- *  - 二段變身能量條（SecondEnergyBar 嵌入，取代原 4 格技能槽；讀 getSecondTransformEnergyRatio 填充/消退）
+ *  - 二段變身能量：改由頭上 soulRing 圓環呈現（讀 getSecondTransformEnergyRatio；舊 SecondEnergyBar 橫條已移除）
  *  - COMBO「n HIT」（stub）
  *
  * 純顯示層：位置讀 ctx.player.getPosition()，數值由 UISystem 傳入，絕不回寫。
@@ -33,8 +32,6 @@ export class PlayerOverheadUI {
   private readonly coinHintText: Phaser.GameObjects.Text;
   private readonly comboText: Phaser.GameObjects.Text;
   private readonly maxText: Phaser.GameObjects.Text;
-  /** 二段變身能量條（用戶正式規格：取代原 4 格技能槽 EnergyBar，改橫向填充條）。 */
-  private readonly secondEnergyBar: SecondEnergyBar;
   /** 用戶 #6：per-group 顯示物件（供 layout.overhead.{badge,credit,energy,combo}.visible 隱藏）。 */
   private readonly groupBadge: Phaser.GameObjects.GameObject[] = [];
   private readonly groupCredit: Phaser.GameObjects.GameObject[] = [];
@@ -163,8 +160,7 @@ export class PlayerOverheadUI {
     this.container.add(this.coinHintText);
     this.groupCredit.push(this.coinHintText);
 
-    // --- 能量 4 格（嵌入容器）---
-    this.secondEnergyBar = new SecondEnergyBar(scene, this.container, cfg.energy.x, cfg.energy.y);
+    // 二段能量改由頭上 soulRing 圓環呈現（SecondEnergyBar 橫條已移除，用戶：關閉能量條）。
 
     // --- COMBO「n HIT」---
     this.comboText = scene.add
@@ -206,7 +202,6 @@ export class PlayerOverheadUI {
     if (vis.badge === false) for (const o of this.groupBadge) (o as unknown as { setVisible: (v: boolean) => void }).setVisible(false);
     if (vis.credit === false) for (const o of this.groupCredit) (o as unknown as { setVisible: (v: boolean) => void }).setVisible(false);
     if (vis.combo === false) for (const o of this.groupCombo) (o as unknown as { setVisible: (v: boolean) => void }).setVisible(false);
-    if (vis.energy === false && typeof this.secondEnergyBar.setContainerVisible === 'function') this.secondEnergyBar.setContainerVisible(false);
   }
 
   /** 七輪 待機隔離：整個頭上 UI 容器顯示/隱藏（待機玩家不顯，加入後顯）。 */
@@ -405,22 +400,12 @@ export class PlayerOverheadUI {
     });
   }
 
-  /**
-   * 設定二段變身能量條（用戶正式規格：取代原能量格）：讀翼騎接口值填充/消退。
-   * @param available isSecondTransformAvailable（一段悟空後且 flag 開）。
-   * @param active isSecondTransformActive（二段變身中→ active 色）。
-   * @param ratio getSecondTransformEnergyRatio（0..1）。
-   */
-  setSecondEnergy(available: boolean, active: boolean, ratio: number): void {
-    this.secondEnergyBar.setSecond(available, active, ratio);
-  }
 
   destroy(): void {
     this.warnTween?.stop();
     this.maxTween?.stop();
     this.comboPunchTween?.stop();
     this.creditFlashTween?.stop();
-    this.secondEnergyBar.destroy();
     this.container.destroy(); // 連同容器內所有子物件一併銷毀
   }
 }
