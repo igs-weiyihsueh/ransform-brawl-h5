@@ -64,6 +64,12 @@ const ENEMY_ATTACK_VFX = {
   comboTicket: { key: 'vfx-combo-ticket', path: `${BASE_PATH}/fx_combo_ticket.png` },
   /** COMBO 報獎閃光點綴：暖金四芒星（64×64，短命在票群間隨機閃）。 */
   comboSparkle: { key: 'vfx-combo-sparkle', path: `${BASE_PATH}/fx_combo_sparkle.png` },
+  /** 二段變身瞬間金光爆發（512×512，進二段那刻在角色位置播一次，scale 爆開後淡出）。 */
+  secondTransformBurst: { key: 'vfx-second-transform-burst', path: `${BASE_PATH}/fx_second_transform_burst.png` },
+  /** 二段變身持續強化光環（512×512 中空透明中心，二段期間包住放大角色，自轉+呼吸脈動）。 */
+  secondTransformAura: { key: 'vfx-second-transform-aura', path: `${BASE_PATH}/fx_second_transform_aura.png` },
+  /** 二段變身能量條滿格閃（256×64，給界騎能量條 UI）。 */
+  secondTransformBarFull: { key: 'vfx-second-transform-barfull', path: `${BASE_PATH}/fx_second_transform_barfull.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -1379,6 +1385,91 @@ export class EffectSystem {
       alpha: 0,
       duration: 260,
       ease: 'Quad.easeOut',
+      onComplete: () => handle.destroy(),
+    });
+  }
+
+  // === 二段變身特效（用戶新大功能；TransformSystem 讀 isSecondTransformActive 邊緣觸發呼叫） ===
+
+  /**
+   * 二段變身瞬間金光爆發（進二段那刻在角色位置播一次）。
+   * scale 0.5→1.3 爆開，後段定住 + alpha 後 40% 淡出，時長 ~0.35s，中心對齊角色。
+   */
+  secondTransformBurst(x: number, y: number): void {
+    const key = ENEMY_ATTACK_VFX.secondTransformBurst.key;
+    if (!this.scene.textures.exists(key)) return;
+    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
+    img.setDepth(PANEL_DEPTH + 16); // 角色上層（同 mashHitParticle 帶，JP 橫幅之上可見）
+    img.setBlendMode(Phaser.BlendModes.ADD); // 金光加亮
+    const base = 512;
+    img.setDisplaySize(base * 0.5, base * 0.5);
+    img.setAlpha(1);
+    // scale 0.5→1.3 爆開（總時長 ~0.35s）。
+    this.scene.tweens.add({
+      targets: img,
+      displayWidth: base * 1.3,
+      displayHeight: base * 1.3,
+      duration: 350,
+      ease: 'Quad.easeOut',
+    });
+    // 後 40%（~140ms）淡出：延遲 210ms 後 alpha→0。
+    this.scene.tweens.add({
+      targets: img,
+      alpha: 0,
+      delay: 210,
+      duration: 140,
+      ease: 'Quad.easeIn',
+      onComplete: () => img.destroy(),
+    });
+  }
+
+  /**
+   * 二段變身持續強化光環起手（二段期間持續顯示；handle 式，二段結束呼叫 End 淡出）。
+   * 疊角色後方（depth 略低於角色），中空透明中心露角色、包住放大 1.4 角色。
+   * @returns handle（Image）或 null（素材未載）。
+   */
+  secondTransformAuraStart(x: number, y: number): Phaser.GameObjects.Image | null {
+    const key = ENEMY_ATTACK_VFX.secondTransformAura.key;
+    if (!this.scene.textures.exists(key)) return null;
+    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
+    img.setDepth(5); // 角色(10)後方、地面之上，包住角色
+    img.setBlendMode(Phaser.BlendModes.ADD);
+    const base = 512;
+    img.setDisplaySize(base, base);
+    img.setData('rot', 0);
+    img.setAlpha(0);
+    this.scene.tweens.add({ targets: img, alpha: 0.85, duration: 200, ease: 'Quad.easeOut' }); // 淡入
+    return img;
+  }
+
+  /**
+   * 每幀更新二段光環：跟角色位置 + 自轉 ~40°/s + scale 0.95↔1.05 呼吸脈動 + alpha 呼吸。
+   * @param dt 幀秒。
+   */
+  secondTransformAuraUpdate(handle: Phaser.GameObjects.Image | null, x: number, y: number, dt: number): void {
+    if (!handle || !handle.active) return;
+    handle.x = x;
+    handle.y = y;
+    const rot = ((handle.getData('rot') as number) ?? 0) + ((40 * Math.PI) / 180) * dt;
+    handle.setData('rot', rot);
+    handle.setRotation(rot);
+    const t = performance.now?.() ?? Date.now();
+    const pulse = 1 + 0.05 * Math.sin(t / 300); // 0.95↔1.05 呼吸
+    const base = 512;
+    handle.setDisplaySize(base * pulse, base * pulse);
+    handle.setAlpha(0.85 * (0.9 + 0.1 * Math.sin(t / 320))); // alpha 呼吸
+  }
+
+  /** 二段變身結束（退回一段）→ 光環淡出移除。 */
+  secondTransformAuraEnd(handle: Phaser.GameObjects.Image | null): void {
+    if (!handle) return;
+    this.scene.tweens.killTweensOf(handle);
+    if (!handle.active) { handle.destroy(); return; }
+    this.scene.tweens.add({
+      targets: handle,
+      alpha: 0,
+      duration: 250,
+      ease: 'Quad.easeIn',
       onComplete: () => handle.destroy(),
     });
   }

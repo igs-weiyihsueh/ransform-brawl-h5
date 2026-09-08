@@ -71,6 +71,8 @@ export class TransformSystem implements GameSystem {
   private mashSummonHandles = new Map<number, Phaser.GameObjects.Container | null>();
   /** 二段變身能量狀態（per-player，用戶新大功能；★feature flag 關時完全不動用）。 */
   private secondStates = new Map<number, SecondTransformState>();
+  /** 二段變身強化光環特效 handle（per-player；enter 建/tick 更新/exit 淡出清）。 */
+  private secondAuraHandles = new Map<number, Phaser.GameObjects.Image | null>();
   private items: TransformItem[] = [];
   private spawnTimer = 0;
   /** 用戶 #7 牽引線（per-player 玩家色半透明線，貼地不擋）。 */
@@ -549,7 +551,7 @@ export class TransformSystem implements GameSystem {
     if (!before.active && after.active) this.enterSecondTransform(playerId); // 剛觸發
   }
 
-  /** 每幀推進二段能量消退（★flag 關 no-op）；退完解除二段。 */
+  /** 每幀推進二段能量消退（★flag 關 no-op）；退完解除二段；二段中光環跟角色。 */
   private tickSecondTransform(dt: number): void {
     if (!SECOND_TRANSFORM_CONFIG.enabled) return;
     const players = this.ctx?.players ?? (this.ctx?.player ? [this.ctx.player] : []);
@@ -558,21 +560,36 @@ export class TransformSystem implements GameSystem {
       if (!before.active) continue;
       const after = decaySecondEnergy(before, dt, SECOND_TRANSFORM_CONFIG.decayPerSec);
       this.secondStates.set(p.playerId, after);
-      if (before.active && !after.active) this.exitSecondTransform(p.playerId); // 退完解除
+      if (before.active && !after.active) {
+        this.exitSecondTransform(p.playerId); // 退完解除
+      } else {
+        // 二段持續中：光環跟角色位置（自轉+呼吸）。
+        const handle = this.secondAuraHandles.get(p.playerId) ?? null;
+        const c = p.getHitCenter?.() ?? p.getPosition?.();
+        if (handle && c) this.ctx.effects?.secondTransformAuraUpdate?.(handle, c.x, c.y, dt);
+      }
     }
   }
 
-  /** 進二段：悟空放大 scaleMult（攻擊範圍加成由判定端讀 isSecondTransformActive×attackRangeMult）。 */
+  /** 進二段：悟空放大 scaleMult + 金光爆發 burst + 起持續強化光環 aura。 */
   private enterSecondTransform(playerId: number): void {
     const player = this.playerOf(playerId);
     player?.setSecondTransformScale?.(SECOND_TRANSFORM_CONFIG.scaleMult);
-    player?.playTransformFlash?.(TRANSFORM_IFRAME); // 二段瞬間金光閃（特效 hook；界騎/特效可再讀邊緣觸發加強）
+    const c = player?.getHitCenter?.() ?? player?.getPosition?.();
+    if (c) {
+      this.ctx.effects?.secondTransformBurst?.(c.x, c.y); // 進二段瞬間金光爆發（播一次）
+      const aura = this.ctx.effects?.secondTransformAuraStart?.(c.x, c.y) ?? null; // 持續強化光環
+      this.secondAuraHandles.set(playerId, aura);
+    }
   }
 
-  /** 解除二段：還原常態大小。 */
+  /** 解除二段：還原常態大小 + 光環淡出移除。 */
   private exitSecondTransform(playerId: number): void {
     const player = this.playerOf(playerId);
     player?.setSecondTransformScale?.(1);
+    const handle = this.secondAuraHandles.get(playerId) ?? null;
+    if (handle) this.ctx.effects?.secondTransformAuraEnd?.(handle);
+    this.secondAuraHandles.delete(playerId);
   }
 
   /** 接口（界騎 UI / 特效）：二段能量條填充比例 0~1（flag 關回 0）。 */
