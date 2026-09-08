@@ -45,4 +45,18 @@ describe('resolveItemOwner — 道具 owner 依來源（random 無主 / initial�
     expect(resolveItemOwner('random', 1)).toBeNull(); // random 忽略 owner
     expect(resolveItemOwner('initial', 1)).toBe(1);
   });
+
+  // ── 階段2/武器變身：新增無主來源 heroDrop / weapon（比照 random，自由撿） ──
+  it('★ source="heroDrop" → null（怪掉英雄道具無主，自由撿；即使誤帶 owner 仍 null）', () => {
+    expect(resolveItemOwner('heroDrop')).toBeNull();
+    expect(resolveItemOwner('heroDrop', 0)).toBeNull(); // 誤帶 owner 仍無主
+    expect(resolveItemOwner('heroDrop', 2)).toBeNull();
+  });
+
+  it('★ source="weapon" → null（武器指定變身道具無主，比照 heroDrop 自由撿；誤帶 owner 仍 null）', () => {
+    // 壞版對照：若 weapon 誤判成有主（漏進 null 分支）→ 帶 owner 會回該值 → 此測紅。
+    expect(resolveItemOwner('weapon')).toBeNull();
+    expect(resolveItemOwner('weapon', 0)).toBeNull(); // 0 是合法 playerId，若誤有主會回 0 → 鑑別誤判
+    expect(resolveItemOwner('weapon', 3)).toBeNull();
+  });
 });
