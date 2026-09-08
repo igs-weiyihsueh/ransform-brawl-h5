@@ -14,6 +14,13 @@ import {
   SECOND_TRANSFORM_SCHEMA_VERSION,
   type ResolvedSecondTransform,
 } from '@/config/secondTransformSchema';
+import {
+  resolveGrabIdleTriggerSec,
+  GRAB_SCHEMA_VERSION,
+} from '@/config/grabSchema';
+
+/** 閒置被抓觸發秒數滑桿設定（範圍依異靈規格 2~15，現 8）。 */
+const GRAB_IDLE_SLIDER = { min: 2, max: 15, step: 1 } as const;
 
 /** 二段變身數值滑桿定義（label + override 欄 + 建議範圍 + step）。 */
 interface SecondSliderDef {
@@ -68,6 +75,10 @@ export class EditorOverlay {
     SecondSliderDef['key'],
     { range: HTMLInputElement; readout: HTMLSpanElement }
   >();
+  /** 閒置被抓秒數面板（idleTriggerSec 滑桿；popover 展開）+ input/readout 參考。 */
+  private grabPanel: HTMLDivElement | null = null;
+  private grabRange: HTMLInputElement | null = null;
+  private grabReadout: HTMLSpanElement | null = null;
 
   private activeTabId: string | null = null;
   private activeInstance: EditorInstance | null = null;
@@ -181,6 +192,14 @@ export class EditorOverlay {
     secondValuesBtn.title = '調整二段變身數值：累積速度/消退速度/放大倍率/攻擊範圍（重開生效）';
     secondValuesBtn.addEventListener('click', () => this.toggleSecondValuesPanel());
 
+    // 閒置被抓「觸發秒數」鈕：展開/收合 idleTriggerSec 滑桿（閒置多久沒攻擊→被抓）。
+    const grabBtn = document.createElement('button');
+    grabBtn.type = 'button';
+    grabBtn.className = 'tb-editor-grab-btn';
+    grabBtn.textContent = '被抓觸發 ▾';
+    grabBtn.title = '調整閒置多久沒攻擊會被抓（秒；2~15，現 8）。重開生效。';
+    grabBtn.addEventListener('click', () => this.toggleGrabPanel());
+
     // 匯出全部設定（用戶指定）：讀所有 localStorage override → 下載結構化 JSON（給翼騎寫進 repo default）。
     const exportBtn = document.createElement('button');
     exportBtn.type = 'button';
@@ -207,6 +226,7 @@ export class EditorOverlay {
     topBar.appendChild(tabBar);
     topBar.appendChild(secondBtn);
     topBar.appendChild(secondValuesBtn);
+    topBar.appendChild(grabBtn);
     topBar.appendChild(importBtn);
     topBar.appendChild(importInput);
     topBar.appendChild(exportBtn);
@@ -214,6 +234,8 @@ export class EditorOverlay {
 
     // 二段變身數值滑桿面板（預設隱藏；數值▾ 展開）。建於 topbar 之後、host 之前。
     const valuesPanel = this.buildSecondValuesPanel();
+    // 閒置被抓秒數面板（預設隱藏；被抓觸發▾ 展開）。
+    const grabPanel = this.buildGrabPanel();
 
     // 編輯器掛載區（各編輯器 mount 到這個 host 內的 .tb-editor-root 容器）。
     const host = document.createElement('div');
@@ -225,6 +247,7 @@ export class EditorOverlay {
 
     overlay.appendChild(topBar);
     overlay.appendChild(valuesPanel);
+    overlay.appendChild(grabPanel);
     overlay.appendChild(host);
     overlay.appendChild(status);
     this.root.appendChild(overlay);
@@ -235,6 +258,7 @@ export class EditorOverlay {
     this.statusEl = status;
     this.refreshSecondToggle(); // 依目前 override 狀態設 toggle 初始 on/off 顯示
     this.refreshSecondSliders(); // 依目前 override 值回填 4 滑桿現值
+    this.refreshGrabSlider(); // 依目前 override 值回填閒置秒數滑桿
   }
 
   /** 切換到某 tab：unmount 舊、lazy import 新、mount 到新容器。 */
@@ -511,8 +535,90 @@ export class EditorOverlay {
     const ok = this.writeSecondOverride(this.isSecondTransformOn(), next);
     this.setStatus(
       ok
-        ? `二段變身數值已更新（累積 ${next.energyPerKill.toFixed(2)}／消退 ${next.decayPerSec.toFixed(2)}／放大 ${next.scaleMult.toFixed(2)}／範圍 ${next.attackRangeMult.toFixed(2)}）。★重開遊戲生效。`
+        ? `二段變身數值已更新（累積 ${next.energyPerKill.toFixed(2)}／消退 ${next.decayPerSec.toFixed(3)}／放大 ${next.scaleMult.toFixed(2)}／範圍 ${next.attackRangeMult.toFixed(2)}）。★重開遊戲生效。`
         : '數值更新失敗（localStorage 不可用）。',
+    );
+  }
+
+  /** 讀目前閒置被抓觸發秒數（override 優先 fallback 打包預設；純函式，不吃遊戲 cache）。 */
+  private readGrabIdleSec(): number {
+    return resolveGrabIdleTriggerSec(loadOverride(EDITOR_STORE_KEYS.grab));
+  }
+
+  /** 建立閒置被抓秒數滑桿面板（單一 idleTriggerSec 滑桿；預設隱藏，被抓觸發▾ 展開）。 */
+  private buildGrabPanel(): HTMLDivElement {
+    const panel = document.createElement('div');
+    panel.className = 'tb-editor-grab-panel';
+    panel.style.display = 'none';
+
+    const title = document.createElement('div');
+    title.className = 'tb-editor-grab-title';
+    title.textContent = '被抓觸發（閒置多久沒攻擊會被抓，調整後★重開遊戲生效）';
+    panel.appendChild(title);
+
+    const row = document.createElement('div');
+    row.className = 'tb-editor-grab-row';
+
+    const label = document.createElement('label');
+    label.className = 'tb-editor-grab-label';
+    label.textContent = '閒置秒數';
+
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.className = 'tb-editor-grab-range';
+    range.min = String(GRAB_IDLE_SLIDER.min);
+    range.max = String(GRAB_IDLE_SLIDER.max);
+    range.step = String(GRAB_IDLE_SLIDER.step);
+
+    const readout = document.createElement('span');
+    readout.className = 'tb-editor-grab-readout';
+
+    range.addEventListener('input', () => {
+      readout.textContent = `${Math.round(Number(range.value))} 秒`;
+    });
+    range.addEventListener('change', () => this.onGrabSliderChange());
+
+    this.grabRange = range;
+    this.grabReadout = readout;
+
+    row.appendChild(label);
+    row.appendChild(range);
+    row.appendChild(readout);
+    panel.appendChild(row);
+
+    this.grabPanel = panel;
+    return panel;
+  }
+
+  /** 展開/收合閒置秒數面板（展開時先回填現值）。 */
+  private toggleGrabPanel(): void {
+    const panel = this.grabPanel;
+    if (!panel) return;
+    const show = panel.style.display === 'none';
+    panel.style.display = show ? 'block' : 'none';
+    if (show) this.refreshGrabSlider();
+  }
+
+  /** 依目前 override 值回填閒置秒數滑桿（顯現值；不寫 override）。 */
+  private refreshGrabSlider(): void {
+    if (!this.grabRange || !this.grabReadout) return;
+    const v = this.readGrabIdleSec();
+    this.grabRange.value = String(v);
+    this.grabReadout.textContent = `${Math.round(v)} 秒`;
+  }
+
+  /** 閒置秒數滑桿放開 → 寫 override {version,idleTriggerSec}；提示重開生效。 */
+  private onGrabSliderChange(): void {
+    if (!this.grabRange) return;
+    const sec = Math.round(Number(this.grabRange.value));
+    const ok = applyToGame(EDITOR_STORE_KEYS.grab, {
+      version: GRAB_SCHEMA_VERSION,
+      idleTriggerSec: sec,
+    });
+    this.setStatus(
+      ok
+        ? `被抓觸發已更新：閒置 ${sec} 秒沒攻擊會被抓。★重開遊戲生效。`
+        : '更新失敗（localStorage 不可用）。',
     );
   }
 
@@ -673,6 +779,47 @@ const OVERLAY_CSS = `
   color: #ffe082;
   font-size: 13px;
   width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tb-editor-grab-btn {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #2c2c48;
+  color: #ff8a80;
+  border: 1px solid #5a3c3c;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tb-editor-grab-btn:hover { border-color: #ff6c7a; }
+.tb-editor-grab-panel {
+  padding: 10px 16px;
+  background: #2a2038;
+  border-bottom: 1px solid #3a3a5c;
+  display: none;
+}
+.tb-editor-grab-title {
+  font-size: 13px;
+  color: #ff8a80;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+.tb-editor-grab-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tb-editor-grab-label {
+  color: #e6e6f0;
+  font-size: 13px;
+  width: 130px;
+  flex: 0 0 130px;
+}
+.tb-editor-grab-range { flex: 1; max-width: 320px; }
+.tb-editor-grab-readout {
+  color: #ffe082;
+  font-size: 13px;
+  width: 52px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
