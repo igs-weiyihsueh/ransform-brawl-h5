@@ -1,48 +1,5 @@
 import type { EditorInstance, EditorTabDef } from '@/systems/editorOverlay/editorMount';
-import {
-  applyToGame,
-  clearOverride,
-  EDITOR_STORE_KEYS,
-  exportAllSettings,
-  exportSettingsFilename,
-  hasOverride,
-  importAllSettings,
-  loadOverride,
-} from '@/config/editorStore';
-import {
-  resolveSecondTransform,
-  SECOND_TRANSFORM_SCHEMA_VERSION,
-  type ResolvedSecondTransform,
-} from '@/config/secondTransformSchema';
-import {
-  resolveGrabIdleTriggerSec,
-  GRAB_SCHEMA_VERSION,
-} from '@/config/grabSchema';
-
-/** 閒置被抓觸發秒數滑桿設定（範圍依異靈規格 2~15，現 8）。 */
-const GRAB_IDLE_SLIDER = { min: 2, max: 15, step: 1 } as const;
-
-/** 二段變身數值滑桿定義（label + override 欄 + 建議範圍 + step）。 */
-interface SecondSliderDef {
-  key: 'energyPerKill' | 'decayPerSec' | 'scaleMult' | 'attackRangeMult';
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-}
-
-/** 4 個可調數值滑桿（範圍/label 依異靈規格）。 */
-const SECOND_SLIDERS: readonly SecondSliderDef[] = [
-  { key: 'energyPerKill', label: '累積速度（每殺）', min: 0.05, max: 0.5, step: 0.01 },
-  { key: 'decayPerSec', label: '消退速度（每秒）', min: 0.05, max: 0.5, step: 0.005 },
-  { key: 'scaleMult', label: '放大倍率', min: 1.1, max: 2.0, step: 0.05 },
-  { key: 'attackRangeMult', label: '攻擊範圍倍率', min: 1.0, max: 2.5, step: 0.05 },
-];
-
-/** 滑桿數值顯示：step < 0.01 顯 3 位小數（如 decay 0.125），否則 2 位。 */
-function fmtSliderValue(v: number, step: number): string {
-  return v.toFixed(step < 0.01 ? 3 : 2);
-}
+import { exportAllSettings, exportSettingsFilename, importAllSettings } from '@/config/editorStore';
 
 /**
  * EditorOverlay — 遊戲內展開編輯器的 overlay 殼（方案 A' 骨架）。
@@ -66,19 +23,6 @@ export class EditorOverlay {
   private editorHost: HTMLDivElement | null = null;
   private tabBar: HTMLDivElement | null = null;
   private statusEl: HTMLDivElement | null = null;
-  /** 二段變身開關 toggle 鈕（用戶自己開/關二段變身；讀翼騎 secondTransform override）。 */
-  private secondToggleBtn: HTMLButtonElement | null = null;
-  /** 二段變身數值滑桿面板（4 滑桿：累積/消退/放大/攻擊範圍；popover 展開）。 */
-  private secondValuesPanel: HTMLDivElement | null = null;
-  /** 各滑桿 input + 數值顯示（key→{range,readout}），供讀 override 回填現值。 */
-  private readonly secondSliderEls = new Map<
-    SecondSliderDef['key'],
-    { range: HTMLInputElement; readout: HTMLSpanElement }
-  >();
-  /** 閒置被抓秒數面板（idleTriggerSec 滑桿；popover 展開）+ input/readout 參考。 */
-  private grabPanel: HTMLDivElement | null = null;
-  private grabRange: HTMLInputElement | null = null;
-  private grabReadout: HTMLSpanElement | null = null;
 
   private activeTabId: string | null = null;
   private activeInstance: EditorInstance | null = null;
@@ -175,31 +119,6 @@ export class EditorOverlay {
     closeBtn.textContent = '✕ 關閉';
     closeBtn.addEventListener('click', () => this.closeOverlay());
 
-    // 二段變身開關 toggle（用戶自己開/關二段變身；讀翼騎 secondTransform override）：
-    // 放頂列全域控制區（跨所有 tab 恆顯，最好找）。on=已啟用/off=預設關；切 ON→applyToGame enabled:true、
-    // 切 OFF→clearOverride（回打包預設關）。★套用後提示「重開遊戲生效」（getResolvedSecondTransformEnabled 重開讀）。
-    const secondBtn = document.createElement('button');
-    secondBtn.type = 'button';
-    secondBtn.className = 'tb-editor-second';
-    secondBtn.addEventListener('click', () => this.toggleSecondTransform());
-    this.secondToggleBtn = secondBtn;
-
-    // 二段變身「數值▾」鈕：展開/收合 4 數值滑桿面板（累積/消退/放大/攻擊範圍）。
-    const secondValuesBtn = document.createElement('button');
-    secondValuesBtn.type = 'button';
-    secondValuesBtn.className = 'tb-editor-second-values-btn';
-    secondValuesBtn.textContent = '數值 ▾';
-    secondValuesBtn.title = '調整二段變身數值：累積速度/消退速度/放大倍率/攻擊範圍（重開生效）';
-    secondValuesBtn.addEventListener('click', () => this.toggleSecondValuesPanel());
-
-    // 閒置被抓「觸發秒數」鈕：展開/收合 idleTriggerSec 滑桿（閒置多久沒攻擊→被抓）。
-    const grabBtn = document.createElement('button');
-    grabBtn.type = 'button';
-    grabBtn.className = 'tb-editor-grab-btn';
-    grabBtn.textContent = '被抓觸發 ▾';
-    grabBtn.title = '調整閒置多久沒攻擊會被抓（秒；2~15，現 8）。重開生效。';
-    grabBtn.addEventListener('click', () => this.toggleGrabPanel());
-
     // 匯出全部設定（用戶指定）：讀所有 localStorage override → 下載結構化 JSON（給翼騎寫進 repo default）。
     const exportBtn = document.createElement('button');
     exportBtn.type = 'button';
@@ -224,18 +143,10 @@ export class EditorOverlay {
     importInput.addEventListener('change', (e) => this.handleImportFile(e));
 
     topBar.appendChild(tabBar);
-    topBar.appendChild(secondBtn);
-    topBar.appendChild(secondValuesBtn);
-    topBar.appendChild(grabBtn);
     topBar.appendChild(importBtn);
     topBar.appendChild(importInput);
     topBar.appendChild(exportBtn);
     topBar.appendChild(closeBtn);
-
-    // 二段變身數值滑桿面板（預設隱藏；數值▾ 展開）。建於 topbar 之後、host 之前。
-    const valuesPanel = this.buildSecondValuesPanel();
-    // 閒置被抓秒數面板（預設隱藏；被抓觸發▾ 展開）。
-    const grabPanel = this.buildGrabPanel();
 
     // 編輯器掛載區（各編輯器 mount 到這個 host 內的 .tb-editor-root 容器）。
     const host = document.createElement('div');
@@ -246,8 +157,6 @@ export class EditorOverlay {
     status.className = 'tb-editor-status';
 
     overlay.appendChild(topBar);
-    overlay.appendChild(valuesPanel);
-    overlay.appendChild(grabPanel);
     overlay.appendChild(host);
     overlay.appendChild(status);
     this.root.appendChild(overlay);
@@ -256,9 +165,6 @@ export class EditorOverlay {
     this.editorHost = host;
     this.tabBar = tabBar;
     this.statusEl = status;
-    this.refreshSecondToggle(); // 依目前 override 狀態設 toggle 初始 on/off 顯示
-    this.refreshSecondSliders(); // 依目前 override 值回填 4 滑桿現值
-    this.refreshGrabSlider(); // 依目前 override 值回填閒置秒數滑桿
   }
 
   /** 切換到某 tab：unmount 舊、lazy import 新、mount 到新容器。 */
@@ -386,242 +292,6 @@ export class EditorOverlay {
     await this.selectTab(tabId);
   }
 
-  /**
-   * 二段變身目前是否啟用（讀翼騎 secondTransform override）：有 override 且 enabled===true → on；
-   * 無 override（預設）或 enabled!==true → off。純讀，不改遊戲狀態。
-   */
-  private isSecondTransformOn(): boolean {
-    if (!hasOverride(EDITOR_STORE_KEYS.secondTransform)) return false;
-    const raw = loadOverride(EDITOR_STORE_KEYS.secondTransform);
-    return !!(raw && typeof raw === 'object' && (raw as { enabled?: unknown }).enabled === true);
-  }
-
-  /** 依目前 override 狀態刷新 toggle 鈕文字/樣式（on=已啟用/off=預設關）。 */
-  private refreshSecondToggle(): void {
-    const btn = this.secondToggleBtn;
-    if (!btn) return;
-    const on = this.isSecondTransformOn();
-    btn.textContent = on ? '二段變身：開' : '二段變身：關';
-    btn.classList.toggle('on', on);
-    btn.title = on
-      ? '二段變身已啟用（一段悟空後打怪累積能量→滿→二段變身放大強化）。點一下關閉。'
-      : '二段變身目前關閉（預設）。點一下開啟（一段悟空後可累積二段能量）。';
-  }
-
-  /**
-   * 切換二段變身開關（用戶自己開/關）：目前 off→套 override（enabled:true + 目前數值）開啟；
-   * 目前 on→clearOverride 回預設關。★連同數值一起寫（別覆蓋掉滑桿調過的數值）。
-   * ★套用後提示「重開遊戲生效」（getResolvedSecondTransform 於遊戲啟動讀 override，符合套用→重開範式）。
-   */
-  private toggleSecondTransform(): void {
-    const turnOn = !this.isSecondTransformOn();
-    if (turnOn) {
-      const cur = this.readSecondResolved();
-      const ok = this.writeSecondOverride(true, cur);
-      this.setStatus(
-        ok
-          ? '二段變身已「開啟」。★重開遊戲生效（一段悟空後打怪累積能量→滿→二段變身放大強化）。'
-          : '開啟失敗（localStorage 不可用）。',
-      );
-    } else {
-      clearOverride(EDITOR_STORE_KEYS.secondTransform); // 回打包預設（關，數值也回預設）
-      this.setStatus('二段變身已「關閉」（回預設）。★重開遊戲生效（回一段變身現況）。');
-    }
-    this.refreshSecondToggle();
-    this.refreshSecondSliders();
-  }
-
-  /** 讀目前二段變身已解析值（override 優先，逐欄 fallback 打包預設；純函式，不吃遊戲 cache）。 */
-  private readSecondResolved(): ResolvedSecondTransform {
-    return resolveSecondTransform(loadOverride(EDITOR_STORE_KEYS.secondTransform));
-  }
-
-  /**
-   * 寫二段變身 override（★連同 enabled 一起寫，別覆蓋開關狀態）：
-   * 完整物件 {version,enabled,energyPerKill,decayPerSec,scaleMult,attackRangeMult}。
-   */
-  private writeSecondOverride(enabled: boolean, v: ResolvedSecondTransform): boolean {
-    return applyToGame(EDITOR_STORE_KEYS.secondTransform, {
-      version: SECOND_TRANSFORM_SCHEMA_VERSION,
-      enabled,
-      energyPerKill: v.energyPerKill,
-      decayPerSec: v.decayPerSec,
-      scaleMult: v.scaleMult,
-      attackRangeMult: v.attackRangeMult,
-    });
-  }
-
-  /** 建立二段變身數值滑桿面板（4 滑桿；預設隱藏，數值▾ 展開）。 */
-  private buildSecondValuesPanel(): HTMLDivElement {
-    const panel = document.createElement('div');
-    panel.className = 'tb-editor-second-values';
-    panel.style.display = 'none';
-
-    const title = document.createElement('div');
-    title.className = 'tb-editor-second-values-title';
-    title.textContent = '二段變身數值（調整後★重開遊戲生效）';
-    panel.appendChild(title);
-
-    for (const def of SECOND_SLIDERS) {
-      const row = document.createElement('div');
-      row.className = 'tb-editor-second-row';
-
-      const label = document.createElement('label');
-      label.className = 'tb-editor-second-label';
-      label.textContent = def.label;
-
-      const range = document.createElement('input');
-      range.type = 'range';
-      range.className = 'tb-editor-second-range';
-      range.min = String(def.min);
-      range.max = String(def.max);
-      range.step = String(def.step);
-
-      const readout = document.createElement('span');
-      readout.className = 'tb-editor-second-readout';
-
-      range.addEventListener('input', () => {
-        readout.textContent = fmtSliderValue(Number(range.value), def.step);
-      });
-      // 放開/change 才寫 override（避免拖動中狂寫 localStorage）。
-      range.addEventListener('change', () => this.onSecondSliderChange());
-
-      this.secondSliderEls.set(def.key, { range, readout });
-
-      row.appendChild(label);
-      row.appendChild(range);
-      row.appendChild(readout);
-      panel.appendChild(row);
-    }
-
-    this.secondValuesPanel = panel;
-    return panel;
-  }
-
-  /** 展開/收合數值面板（展開時先回填現值）。 */
-  private toggleSecondValuesPanel(): void {
-    const panel = this.secondValuesPanel;
-    if (!panel) return;
-    const show = panel.style.display === 'none';
-    panel.style.display = show ? 'block' : 'none';
-    if (show) this.refreshSecondSliders();
-  }
-
-  /** 依目前 override 值回填 4 滑桿（顯現值；不寫 override）。 */
-  private refreshSecondSliders(): void {
-    if (this.secondSliderEls.size === 0) return;
-    const v = this.readSecondResolved();
-    for (const def of SECOND_SLIDERS) {
-      const el = this.secondSliderEls.get(def.key);
-      if (!el) continue;
-      const val = v[def.key];
-      el.range.value = String(val);
-      el.readout.textContent = fmtSliderValue(Number(val), def.step);
-    }
-  }
-
-  /**
-   * 任一滑桿放開 → 讀 4 滑桿目前值 + 保留現有 enabled → 寫完整 override。
-   * ★連同 enabled 一起寫（別覆蓋開關）；提示重開生效。
-   */
-  private onSecondSliderChange(): void {
-    const cur = this.readSecondResolved();
-    const next: ResolvedSecondTransform = { ...cur };
-    for (const def of SECOND_SLIDERS) {
-      const el = this.secondSliderEls.get(def.key);
-      if (el) next[def.key] = Number(el.range.value);
-    }
-    // 保留現有 enabled（開關狀態不被數值調整覆蓋）。
-    const ok = this.writeSecondOverride(this.isSecondTransformOn(), next);
-    this.setStatus(
-      ok
-        ? `二段變身數值已更新（累積 ${next.energyPerKill.toFixed(2)}／消退 ${next.decayPerSec.toFixed(3)}／放大 ${next.scaleMult.toFixed(2)}／範圍 ${next.attackRangeMult.toFixed(2)}）。★重開遊戲生效。`
-        : '數值更新失敗（localStorage 不可用）。',
-    );
-  }
-
-  /** 讀目前閒置被抓觸發秒數（override 優先 fallback 打包預設；純函式，不吃遊戲 cache）。 */
-  private readGrabIdleSec(): number {
-    return resolveGrabIdleTriggerSec(loadOverride(EDITOR_STORE_KEYS.grab));
-  }
-
-  /** 建立閒置被抓秒數滑桿面板（單一 idleTriggerSec 滑桿；預設隱藏，被抓觸發▾ 展開）。 */
-  private buildGrabPanel(): HTMLDivElement {
-    const panel = document.createElement('div');
-    panel.className = 'tb-editor-grab-panel';
-    panel.style.display = 'none';
-
-    const title = document.createElement('div');
-    title.className = 'tb-editor-grab-title';
-    title.textContent = '被抓觸發（閒置多久沒攻擊會被抓，調整後★重開遊戲生效）';
-    panel.appendChild(title);
-
-    const row = document.createElement('div');
-    row.className = 'tb-editor-grab-row';
-
-    const label = document.createElement('label');
-    label.className = 'tb-editor-grab-label';
-    label.textContent = '閒置秒數';
-
-    const range = document.createElement('input');
-    range.type = 'range';
-    range.className = 'tb-editor-grab-range';
-    range.min = String(GRAB_IDLE_SLIDER.min);
-    range.max = String(GRAB_IDLE_SLIDER.max);
-    range.step = String(GRAB_IDLE_SLIDER.step);
-
-    const readout = document.createElement('span');
-    readout.className = 'tb-editor-grab-readout';
-
-    range.addEventListener('input', () => {
-      readout.textContent = `${Math.round(Number(range.value))} 秒`;
-    });
-    range.addEventListener('change', () => this.onGrabSliderChange());
-
-    this.grabRange = range;
-    this.grabReadout = readout;
-
-    row.appendChild(label);
-    row.appendChild(range);
-    row.appendChild(readout);
-    panel.appendChild(row);
-
-    this.grabPanel = panel;
-    return panel;
-  }
-
-  /** 展開/收合閒置秒數面板（展開時先回填現值）。 */
-  private toggleGrabPanel(): void {
-    const panel = this.grabPanel;
-    if (!panel) return;
-    const show = panel.style.display === 'none';
-    panel.style.display = show ? 'block' : 'none';
-    if (show) this.refreshGrabSlider();
-  }
-
-  /** 依目前 override 值回填閒置秒數滑桿（顯現值；不寫 override）。 */
-  private refreshGrabSlider(): void {
-    if (!this.grabRange || !this.grabReadout) return;
-    const v = this.readGrabIdleSec();
-    this.grabRange.value = String(v);
-    this.grabReadout.textContent = `${Math.round(v)} 秒`;
-  }
-
-  /** 閒置秒數滑桿放開 → 寫 override {version,idleTriggerSec}；提示重開生效。 */
-  private onGrabSliderChange(): void {
-    if (!this.grabRange) return;
-    const sec = Math.round(Number(this.grabRange.value));
-    const ok = applyToGame(EDITOR_STORE_KEYS.grab, {
-      version: GRAB_SCHEMA_VERSION,
-      idleTriggerSec: sec,
-    });
-    this.setStatus(
-      ok
-        ? `被抓觸發已更新：閒置 ${sec} 秒沒攻擊會被抓。★重開遊戲生效。`
-        : '更新失敗（localStorage 不可用）。',
-    );
-  }
-
   private injectStyle(): void {
     if (this.styleInjected || document.getElementById('tb-editor-overlay-style')) {
       this.styleInjected = true;
@@ -723,106 +393,6 @@ const OVERLAY_CSS = `
   font-size: 13px;
 }
 .tb-editor-import:hover { background: #34345a; }
-.tb-editor-second {
-  padding: 6px 12px;
-  border-radius: 6px;
-  background: #2c2c48;
-  color: #9a9ab5;
-  border: 1px solid #5a5a3c;
-  cursor: pointer;
-  font-size: 13px;
-}
-.tb-editor-second:hover { border-color: #ffb300; }
-.tb-editor-second.on {
-  background: #ff9800;
-  color: #1a1a2e;
-  border-color: #ff9800;
-  font-weight: bold;
-}
-.tb-editor-second.on:hover { background: #ffa726; }
-.tb-editor-second-values-btn {
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: #2c2c48;
-  color: #ffb300;
-  border: 1px solid #5a5a3c;
-  cursor: pointer;
-  font-size: 13px;
-}
-.tb-editor-second-values-btn:hover { border-color: #ffb300; }
-.tb-editor-second-values {
-  padding: 10px 16px;
-  background: #20203a;
-  border-bottom: 1px solid #3a3a5c;
-  display: none;
-}
-.tb-editor-second-values-title {
-  font-size: 13px;
-  color: #ffd54f;
-  margin-bottom: 8px;
-  font-weight: bold;
-}
-.tb-editor-second-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 5px 0;
-}
-.tb-editor-second-label {
-  color: #e6e6f0;
-  font-size: 13px;
-  width: 130px;
-  flex: 0 0 130px;
-}
-.tb-editor-second-range { flex: 1; max-width: 320px; }
-.tb-editor-second-readout {
-  color: #ffe082;
-  font-size: 13px;
-  width: 44px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.tb-editor-grab-btn {
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: #2c2c48;
-  color: #ff8a80;
-  border: 1px solid #5a3c3c;
-  cursor: pointer;
-  font-size: 13px;
-}
-.tb-editor-grab-btn:hover { border-color: #ff6c7a; }
-.tb-editor-grab-panel {
-  padding: 10px 16px;
-  background: #2a2038;
-  border-bottom: 1px solid #3a3a5c;
-  display: none;
-}
-.tb-editor-grab-title {
-  font-size: 13px;
-  color: #ff8a80;
-  margin-bottom: 8px;
-  font-weight: bold;
-}
-.tb-editor-grab-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.tb-editor-grab-label {
-  color: #e6e6f0;
-  font-size: 13px;
-  width: 130px;
-  flex: 0 0 130px;
-}
-.tb-editor-grab-range { flex: 1; max-width: 320px; }
-.tb-editor-grab-readout {
-  color: #ffe082;
-  font-size: 13px;
-  width: 52px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
 .tb-editor-host { flex: 1; overflow: hidden; position: relative; }
 .tb-editor-root { width: 100%; height: 100%; overflow: auto; }
 .tb-editor-status {

@@ -1,5 +1,7 @@
 /**
- * 招式編輯器（獨立進入點）— 可視化編輯 CHARACTER_COMBAT 角色招式。
+ * 角色編輯器（原「招式編輯器」，獨立進入點）— 可視化編輯 CHARACTER_COMBAT 角色招式
+ * + 全域玩法設定（二段變身開關/數值、被抓觸發閒置秒數）。editorStore key skills/attackSpeed/
+ * secondTransform/grab（key 不動免破相容，只改顯示名）。
  *
  * 架構：獨立 Vite entry（skill-editor/index.html），與遊戲分開打包，純前端零 Phaser。
  * 只 import skillSchema（其只讀 import skillConfig 型別 + CHARACTER_COMBAT 值當初值，無遊戲 runtime）。
@@ -36,6 +38,15 @@ import {
   validateAttackSpeed,
   type AttackSpeedFile,
 } from '@/config/attackSpeedSchema';
+import {
+  resolveSecondTransform,
+  SECOND_TRANSFORM_SCHEMA_VERSION,
+  type ResolvedSecondTransform,
+} from '@/config/secondTransformSchema';
+import {
+  resolveGrabIdleTriggerSec,
+  GRAB_SCHEMA_VERSION,
+} from '@/config/grabSchema';
 
 const PPU = 100; // 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲檔）
 
@@ -88,6 +99,10 @@ function cloneFile(f: SkillFile): SkillFile {
 let file: SkillFile = defaultSkillFile();
 // 攻擊速度倍率（用戶第十一輪 #1）：獨立 attackSpeed key，與 skills 併於本編輯器編（玩家攻擊節奏屬招式範疇）。
 let attackSpeedFile: AttackSpeedFile = defaultAttackSpeedFile();
+// ★全域玩法設定（不分角色）：二段變身（secondTransform key）+ 被抓觸發閒置秒數（grab key）。
+//   併進本編輯器一起編/套用（用戶要角色編輯器統管）。工作副本，initLoad 從 override 讀回顯。
+let secondFile: ResolvedSecondTransform = resolveSecondTransform(null);
+let grabIdleSec: number = resolveGrabIdleTriggerSec(null);
 let selectedChar: string | null = Object.keys(file.characters)[0] ?? null;
 let selectedSkill: keyof CharacterSkillSet = 'normalAttack';
 
@@ -317,6 +332,58 @@ function selectRow(label: string, value: string, options: readonly string[], onC
   row.appendChild(lab);
   row.appendChild(sel);
   return row;
+}
+
+/** checkbox 列（label + 勾選框）：全域開關（如二段變身 enabled）用。 */
+function checkboxRow(label: string, checked: boolean, onChange: (v: boolean) => void): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const lab = document.createElement('label');
+  lab.textContent = label;
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = checked;
+  box.style.width = 'auto';
+  box.style.flex = '0 0 auto';
+  box.addEventListener('change', () => { onChange(box.checked); });
+  row.appendChild(lab);
+  row.appendChild(box);
+  return row;
+}
+
+// ---- 全域玩法設定 Inspector（不分角色；二段變身 + 被抓觸發） --------------
+
+/**
+ * 全域設定區（用戶：二段變身/被抓觸發移進角色編輯器，全域不分角色）。
+ * 二段變身：checkbox 開關 + 5 滑桿（累積/消退/放大/攻擊範圍/集滿門檻）。被抓觸發：閒置秒數。
+ * 工作副本 secondFile/grabIdleSec 即時改，套用時併現有流程寫 secondTransform/grab override。
+ */
+function renderGlobalInspector(): void {
+  const insp = $('global-inspector');
+  insp.innerHTML = '';
+
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  hint.textContent = '全域設定：不分角色，所有角色/玩家共用一份。調整後套用到遊戲，★重開遊戲生效。';
+  insp.appendChild(hint);
+
+  // 二段變身開關（checkbox）。
+  insp.appendChild(checkboxRow('二段變身 啟用', secondFile.enabled, (v) => { secondFile.enabled = v; }));
+
+  // 二段變身 5 數值滑桿（範圍依規格）。
+  insp.appendChild(numberRow('累積速度（每殺）', secondFile.energyPerKill, (v) => { secondFile.energyPerKill = v; }, { min: 0.05, max: 0.5, step: 0.01, slider: true }));
+  insp.appendChild(numberRow('消退速度（每秒）', secondFile.decayPerSec, (v) => { secondFile.decayPerSec = v; }, { min: 0.05, max: 0.5, step: 0.005, slider: true }));
+  insp.appendChild(numberRow('放大倍率', secondFile.scaleMult, (v) => { secondFile.scaleMult = v; }, { min: 1.1, max: 2.0, step: 0.05, slider: true }));
+  insp.appendChild(numberRow('攻擊範圍倍率', secondFile.attackRangeMult, (v) => { secondFile.attackRangeMult = v; }, { min: 1.0, max: 2.5, step: 0.05, slider: true }));
+  insp.appendChild(numberRow('集滿門檻 fillThreshold', secondFile.fillThreshold, (v) => { secondFile.fillThreshold = v; }, { min: 0.1, max: 1.0, step: 0.05, slider: true }));
+
+  // 被抓觸發：閒置秒數。
+  const grabTitle = document.createElement('div');
+  grabTitle.className = 'section-title';
+  grabTitle.style.marginTop = '12px';
+  grabTitle.textContent = '被抓觸發';
+  insp.appendChild(grabTitle);
+  insp.appendChild(numberRow('閒置秒數（沒攻擊多久被抓）', grabIdleSec, (v) => { grabIdleSec = v; }, { min: 2, max: 15, step: 1, slider: true }));
 }
 
 // ---- 角色層 Inspector -----------------------------------------------------
@@ -559,6 +626,9 @@ function initLoad(): void {
     const ar = validateAttackSpeed(aRaw);
     if (ar.ok) attackSpeedFile = ar.data;
   }
+  // ★全域設定回顯：二段變身 + 被抓觸發（各自 override key，逐欄 fallback 打包預設）。
+  secondFile = resolveSecondTransform(loadOverride(EDITOR_STORE_KEYS.secondTransform));
+  grabIdleSec = resolveGrabIdleTriggerSec(loadOverride(EDITOR_STORE_KEYS.grab));
   const raw = loadOverride(EDITOR_STORE_KEYS.skills);
   if (raw !== null) {
     const r = validateSkills(raw);
@@ -641,11 +711,26 @@ function applyToGameFromEditor(): boolean {
   }
   const ok = applyToGame(EDITOR_STORE_KEYS.skills, assertValidSkills(file));
   const okA = applyToGame(EDITOR_STORE_KEYS.attackSpeed, aRes.data); // 攻擊速度存獨立 key
+  // ★全域設定一併套用：二段變身（完整物件 enabled+5 值）+ 被抓觸發（idleTriggerSec）。
+  const okS = applyToGame(EDITOR_STORE_KEYS.secondTransform, {
+    version: SECOND_TRANSFORM_SCHEMA_VERSION,
+    enabled: secondFile.enabled,
+    energyPerKill: secondFile.energyPerKill,
+    decayPerSec: secondFile.decayPerSec,
+    scaleMult: secondFile.scaleMult,
+    attackRangeMult: secondFile.attackRangeMult,
+    fillThreshold: secondFile.fillThreshold,
+  });
+  const okG = applyToGame(EDITOR_STORE_KEYS.grab, {
+    version: GRAB_SCHEMA_VERSION,
+    idleTriggerSec: grabIdleSec,
+  });
+  const allOk = ok && okA && okS && okG;
   setStatus(
-    ok && okA ? '✅ 已套用到遊戲（招式＋攻擊速度，存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。',
-    ok && okA ? 'ok' : 'err',
+    allOk ? '✅ 已套用到遊戲（角色招式＋攻擊速度＋全域：二段變身/被抓觸發，存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。',
+    allOk ? 'ok' : 'err',
   );
-  return ok && okA;
+  return allOk;
 }
 
 /** 套用並回到遊戲：套用成功才跳轉回遊戲頁（../）。 */
@@ -659,8 +744,13 @@ function applyAndReturnToGame(): void {
 function clearAppliedFromEditor(): void {
   clearOverride(EDITOR_STORE_KEYS.skills);
   clearOverride(EDITOR_STORE_KEYS.attackSpeed);
+  clearOverride(EDITOR_STORE_KEYS.secondTransform);
+  clearOverride(EDITOR_STORE_KEYS.grab);
   attackSpeedFile = defaultAttackSpeedFile();
-  setStatus('已清除套用，遊戲將回到打包預設招式設定＋攻擊速度。', 'info');
+  secondFile = resolveSecondTransform(null); // 回打包預設（enabled 預設關 + config 值）
+  grabIdleSec = resolveGrabIdleTriggerSec(null);
+  renderGlobalInspector(); // 全域區回顯預設
+  setStatus('已清除套用，遊戲回打包預設（招式＋攻擊速度＋全域：二段變身/被抓觸發）。', 'info');
 }
 
 // ---- 統一重繪 -------------------------------------------------------------
@@ -668,6 +758,7 @@ function clearAppliedFromEditor(): void {
 function renderAll(): void {
   renderCharList();
   renderSkillTabs();
+  renderGlobalInspector();
   renderCharInspector();
   renderSkillInspector();
   renderPreview();
@@ -729,7 +820,7 @@ function keydownHandler(e: KeyboardEvent): void {
 /** 編輯器 body HTML（從 skill-editor/index.html <body> 搬來，去 <script>）。 */
 const EDITOR_BODY_HTML = `
 <header>
-  <h1>招式編輯器</h1>
+  <h1>角色編輯器</h1>
   <span class="badge" id="schema-version"></span>
   <button id="btn-undo" title="復原 (Ctrl+Z)" disabled>↶ 復原</button>
   <button id="btn-redo" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
@@ -761,6 +852,8 @@ const EDITOR_BODY_HTML = `
     </div>
   </div>
   <div class="col-inspector">
+    <div class="section-title">全域玩法設定（不分角色）</div>
+    <div id="global-inspector"></div>
     <div class="section-title">角色設定</div>
     <div id="char-inspector"></div>
     <div class="section-title">招式判定（AttackData）</div>
@@ -834,6 +927,8 @@ export function mount(container: HTMLElement): { unmount(): void } {
   // 重置狀態（反覆開關 overlay：回乾淨初值，initLoad 再讀 override 回顯）。
   file = defaultSkillFile();
   attackSpeedFile = defaultAttackSpeedFile();
+  secondFile = resolveSecondTransform(null);
+  grabIdleSec = resolveGrabIdleTriggerSec(null);
   selectedChar = Object.keys(file.characters)[0] ?? null;
   selectedSkill = 'normalAttack';
   undoStack = [];

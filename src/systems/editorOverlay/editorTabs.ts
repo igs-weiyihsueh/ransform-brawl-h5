@@ -27,7 +27,7 @@ export const EDITOR_TABS: readonly EditorTabDef[] = [
   },
   {
     id: 'skill',
-    label: '招式編輯器',
+    label: '角色編輯器',
     loader: () => import('../../../skill-editor/main'),
   },
   {

@@ -22,6 +22,8 @@ export class SecondEnergyBar {
   /** 上次繪製狀態（ratio+是否 active）：變動才重畫，省開銷。 */
   private shownRatio = -1;
   private shownActive = false;
+  /** 目前是否顯示（★凡人/flag 關不顯二段條；預設隱藏，available 才顯）。 */
+  private shown = false;
 
   /**
    * @param scene 場景。
@@ -50,6 +52,9 @@ export class SecondEnergyBar {
 
     this.drawBg();
     this.redraw();
+    // ★預設隱藏（凡人不顯）；UISystem 每幀 setSecond，available 時才顯。
+    this.bg.setVisible(false);
+    this.fill.setVisible(false);
   }
 
   /** 底槽（恆顯，暗色圓角條）。 */
@@ -69,9 +74,17 @@ export class SecondEnergyBar {
    */
   setSecond(available: boolean, active: boolean, ratio: number): void {
     const d = resolveSecondTransformDisplay(available, active, ratio);
-    // available/active 皆否（含 flag 關）→ 空條（ratio 0）；否則依 ratio + active 樣式。
-    const r = d.show ? d.ratio : 0;
-    const act = d.show && d.style === 'active';
+    // ★凡人不顯二段條（用戶）：available/active 皆否（含 flag 關/凡人）→ 整條(底槽+填充)隱藏；
+    //   available（一段悟空後 flag 開）或 active（二段中）才顯。避免凡人頭上出現空條。
+    const show = d.show;
+    if (show !== this.shown) {
+      this.shown = show;
+      this.bg.setVisible(show);
+      this.fill.setVisible(show);
+    }
+    if (!show) return; // 隱藏時不需重畫填充
+    const r = d.ratio;
+    const act = d.style === 'active';
     if (r === this.shownRatio && act === this.shownActive) return;
     this.shownRatio = r;
     this.shownActive = act;
