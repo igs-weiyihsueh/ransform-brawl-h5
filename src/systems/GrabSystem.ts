@@ -4,7 +4,8 @@ import type { GameSystem } from '@/systems/GameSystem';
 import type { Enemy } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import type { Vec2 } from '@/systems/hitDetection';
-import { PANEL_DEPTH } from '@/config/uiConfig';
+import { PANEL_DEPTH, resolveGrabHintDisplay } from '@/config/uiConfig';
+import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 import {
   GRAB,
   GRABBER_SPEED_PX,
@@ -135,11 +136,14 @@ export class GrabSystem implements GameSystem {
     s.countdown = remaining;
 
     // 用戶新#3：被抓 UI 提示 + 倒數秒數（per-player，跟隨玩家頭上）。
+    // ★用戶：提示位置接編輯器可調（界騎 b40e388）。偏移讀 resolveGrabHintDisplay（config 層純函式，基準 -90 + editorStore
+    //   override layout.grabHint）。此處只做「純顯示定位」讀 offset，不碰抓人邏輯/倒數秒數/掙脫判定/閒置觸發。
     const pc = player.getHitCenter();
     const secs = Math.ceil(remaining);
+    const off = resolveGrabHintDisplay(readGrabHintOverride());
     if (!s.hint) {
       s.hint = this.ctx.scene.add
-        .text(pc.x, pc.y - 90, '', {
+        .text(pc.x + off.offsetX, pc.y + off.offsetY, '', {
           fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
           fontSize: '22px',
           color: '#ffe64d',
@@ -151,7 +155,7 @@ export class GrabSystem implements GameSystem {
         .setOrigin(0.5, 1)
         .setDepth(PANEL_DEPTH + 20);
     }
-    s.hint.setPosition(pc.x, pc.y - 90);
+    s.hint.setPosition(pc.x + off.offsetX, pc.y + off.offsetY);
     s.hint.setText(`按攻擊掙脫！\n${secs}`);
     s.hint.setVisible(true);
 
@@ -197,4 +201,27 @@ export class GrabSystem implements GameSystem {
   destroy(): void {
     this.states.clear();
   }
+}
+
+/** 被抓提示位置 override（編輯器可調，additive 附掛 layout.grabHint，同 JP/進度/衝刺做法；界騎 b40e388）。 */
+interface GrabHintOverride {
+  grabHintOffsetX?: number;
+  grabHintOffsetY?: number;
+}
+
+/**
+ * 讀 uiLayout override 裡的被抓提示位置 override（layout.grabHint，additive 附掛）。
+ * 無 override / 無 grabHint 欄 → undefined（resolveGrabHintDisplay 用基準 -90，行為不變）。
+ * 純讀 localStorage 定位設定（不碰抓人邏輯/倒數秒數/閒置觸發）。
+ */
+function readGrabHintOverride(): GrabHintOverride | undefined {
+  const raw = loadOverride(EDITOR_STORE_KEYS.uiLayout);
+  if (!raw || typeof raw !== 'object') return undefined;
+  const g = (raw as { grabHint?: unknown }).grabHint;
+  if (!g || typeof g !== 'object') return undefined;
+  const o = g as GrabHintOverride;
+  return {
+    grabHintOffsetX: typeof o.grabHintOffsetX === 'number' ? o.grabHintOffsetX : undefined,
+    grabHintOffsetY: typeof o.grabHintOffsetY === 'number' ? o.grabHintOffsetY : undefined,
+  };
 }

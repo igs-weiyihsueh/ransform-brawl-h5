@@ -401,6 +401,14 @@ function buildScreenEditables(): Editable[] {
 const DASH_COL_CX = 300;
 const DASH_COL_CY = 54;
 const DASH_DESIGN_DIAM = 60;
+
+/** 被抓「攻擊倒數提示」頭頂基準偏移（對齊遊戲端 GRAB_HINT_LAYOUT baseOffsetX/Y；編輯器不 import 遊戲模組故內聯）。
+ *  相對玩家中心 (0,-90)；overhead 區塊 origin=玩家中心，故用此當中心基準。BOX = 提示示意方框（僅供拖曳）。 */
+const GRAB_HINT_BASE_X = 0;
+const GRAB_HINT_BASE_Y = -90;
+const GRAB_HINT_BOX_W = 120;
+const GRAB_HINT_BOX_H = 50;
+
 const PROGRESS_DESIGN_W = 640;
 const PROGRESS_DESIGN_H = 80;
 const PROGRESS_DESIGN_CX = 960;
@@ -497,6 +505,26 @@ function buildOverheadEditables(): Editable[] {
     set: (r) => {
       if (r.x !== undefined) ov.energy.x = r.x;
       if (r.y !== undefined) ov.energy.y = r.y;
+    },
+  });
+
+  // 被抓「攻擊倒數提示」位置（用戶：GrabSystem 黃字「按攻擊掙脫！+倒數」頭頂位置可調，歸屬 overhead）。
+  // 世界座標跟隨玩家頭上，基準偏移 (0,-90)（GRAB_HINT_LAYOUT）。additive 附掛 layout.grabHint（同 dash override）。
+  // box = 提示示意方框（GRAB_HINT_BOX_W×H），中心 = 玩家中心 + 基準 + override offset。拖=改 offset。
+  const layoutGrab = layout as unknown as { grabHint?: { grabHintOffsetX?: number; grabHintOffsetY?: number } };
+  if (!layoutGrab.grabHint) layoutGrab.grabHint = { grabHintOffsetX: 0, grabHintOffsetY: 0 };
+  const grab = layoutGrab.grabHint;
+  list.push({
+    key: 'grabHint.pos', label: '被抓「攻擊倒數提示」（位置）', origin: oOrigin, resizable: false,
+    get: () => {
+      const cx = GRAB_HINT_BASE_X + (grab.grabHintOffsetX ?? 0);
+      const cy = GRAB_HINT_BASE_Y + (grab.grabHintOffsetY ?? 0);
+      return { x: cx - GRAB_HINT_BOX_W / 2, y: cy - GRAB_HINT_BOX_H / 2, width: GRAB_HINT_BOX_W, height: GRAB_HINT_BOX_H };
+    },
+    set: (r) => {
+      // 左上回推中心 - 基準 = override offset（純位置，不碰抓人邏輯/秒數）。
+      if (r.x !== undefined) grab.grabHintOffsetX = r.x + GRAB_HINT_BOX_W / 2 - GRAB_HINT_BASE_X;
+      if (r.y !== undefined) grab.grabHintOffsetY = r.y + GRAB_HINT_BOX_H / 2 - GRAB_HINT_BASE_Y;
     },
   });
   return list;

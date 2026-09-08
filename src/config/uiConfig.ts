@@ -595,6 +595,42 @@ export const DASH_DISPLAY_DEFAULT = {
   dashScale: 1,
 } as const;
 
+/**
+ * 被抓「攻擊倒數提示」（GrabSystem 黃字「按攻擊掙脫！+倒數」）頭頂基準偏移（相對玩家命中中心）。
+ * 世界座標、跟隨玩家頭上。基準 = 頭頂上方 90px（原寫死 -90）。用戶要編輯器可調位置 → 接 offset override。
+ */
+export const GRAB_HINT_LAYOUT = {
+  /** 相對玩家命中中心的基準偏移（px）。y 負=往上（頭頂上方）。 */
+  baseOffsetX: 0,
+  baseOffsetY: -90,
+} as const;
+
+/**
+ * 被抓提示位置 override 預設（用戶要編輯器可調，同 JP/進度/衝刺 additive override 範式）。
+ * grabHintOffsetX/Y 相對 GRAB_HINT_LAYOUT 基準再位移（editorStore layout.grabHint）。
+ */
+export const GRAB_HINT_DISPLAY_DEFAULT = {
+  grabHintOffsetX: 0,
+  grabHintOffsetY: 0,
+} as const;
+
+/**
+ * 解析被抓提示顯示偏移（純函式，可測；同 resolveDashDisplay override 範式）。
+ * 讀 override 優先、無則預設 0 位移；回傳相對玩家命中中心的最終偏移（基準 + override）。
+ * GrabSystem 定位讀此（純顯示定位，不碰抓人邏輯/倒數秒數）。
+ */
+export function resolveGrabHintDisplay(ov?: {
+  grabHintOffsetX?: number;
+  grabHintOffsetY?: number;
+}): { offsetX: number; offsetY: number } {
+  const ox = ov?.grabHintOffsetX ?? GRAB_HINT_DISPLAY_DEFAULT.grabHintOffsetX;
+  const oy = ov?.grabHintOffsetY ?? GRAB_HINT_DISPLAY_DEFAULT.grabHintOffsetY;
+  return {
+    offsetX: GRAB_HINT_LAYOUT.baseOffsetX + ox,
+    offsetY: GRAB_HINT_LAYOUT.baseOffsetY + oy,
+  };
+}
+
 /** 從 px 字串（如 '30px'）取數值；解析失敗回 fallback。 */
 function pxNum(v: string, fallback: number): number {
   const n = parseFloat(v);
