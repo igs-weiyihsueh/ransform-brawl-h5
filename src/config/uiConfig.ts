@@ -244,24 +244,6 @@ export const OVERHEAD_LAYOUT = {
     },
   },
 
-  /**
-   * 連打變身 UI（讀翼騎 TransformSystem.isMashingTransform/getMashRatio）：
-   * 連打變身時頭上 UI 整體放大 + 顯「空魂力環」從 getMashRatio 填滿 + 顯訊息。
-   * 魂力環填充色沿用 badge 的 soulRingFill（HUD_COLORS）；此處是動效/訊息參數。
-   */
-  mashTransform: {
-    /** 連打變身時頭上 UI 放大倍率（container scale）。 */
-    enlargeScale: 1.35,
-    /** 放大/縮回 tween 時間（毫秒）。 */
-    scaleMs: 180,
-    /** 訊息文字（連打變身開始顯）。 */
-    message: '連打變身！',
-    messageColor: '#ffe14d',
-    messageFontSize: '22px',
-    /** 訊息相對容器中心的位移（負=上方，放 badge 上方）。 */
-    messageX: -66,
-    messageY: -44,
-  },
 } as const;
 
 /**

@@ -159,16 +159,10 @@ export class UISystem implements GameSystem {
       if (waiting) continue; // 待機不更新內容/跟隨（隱藏即可）
       const pos = p.getPosition();
       overhead.followWorldPosition(pos.x, pos.y);
-      // 連打變身 UI（讀翼騎接口）：連打中→頭上 UI 放大 + 空魂力環從 getMashRatio 填 + 訊息。
-      const mashing = this.ctx.transform.isMashingTransform(pid);
-      overhead.setMashTransform(mashing, this.ctx.transform.getMashRatio(pid));
-      // 魂力環顯示分流：連打中由 setMashTransform 接管（填充 mashRatio）；
-      // 否則沿用「變身後才顯魂力環（soulRatio）」邏輯（用戶 #1）。魂力環恢復原本用途，不被二段佔用。
-      if (!mashing) {
-        const transformed = this.ctx.transform.isTransformed(pid);
-        overhead.setSoulVisible(transformed);
-        if (transformed) overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
-      }
+      // 魂力環顯示：變身後才顯魂力環（soulRatio）（用戶 #1）。
+      const transformed = this.ctx.transform.isTransformed(pid);
+      overhead.setSoulVisible(transformed);
+      if (transformed) overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
       overhead.setCredit(this.ctx.credit.getCredit(pid));
       // 沒 Credit 演出（閃紅 + 投幣提示 + 倒數）：讀 CreditSystem 耗盡狀態（只讀）。
       overhead.setOutOfCredit(

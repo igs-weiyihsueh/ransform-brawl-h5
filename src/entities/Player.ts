@@ -136,16 +136,6 @@ export class Player implements Hittable {
   private waiting = false;
   /** 十五輪：沒 credit（耗盡）狀態旗標（CreditSystem 進/出耗盡各設一次；敵人 targeting/環繞/抓排除）。 */
   private outOfCredit = false;
-  /** 十五輪：連打變身鎖定旗標（撿道具進連打變身時 true；move/dash/attack 禁 + 敵人 targeting/環繞/抓免疫；填滿完成解鎖）。 */
-  private mashLocked = false;
-  /** 十五輪：連打變身浮起（純視覺標記，界騎 UI 增強）。 */
-  private floating = false;
-  /** 十五輪：浮起前的基準 sprite y（離開還原）。 */
-  private floatBaseY = 0;
-  /** 十五輪：浮起飄浮 tween / 蓄力閃光 tween（連打變身期間，離開停止）。 */
-  private floatTween?: Phaser.Tweens.Tween;
-  private mashFlashTween?: Phaser.Tweens.Tween;
-  private mashFlashObj: { t: number } = { t: 0 };
 
   constructor(
     scene: Phaser.Scene,
@@ -414,15 +404,6 @@ export class Player implements Hittable {
     return footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.scaledFootOffsetY());
   }
 
-  /**
-   * 十六輪：地面錨點的搜索圈中心——連打變身浮起中(floating)用「浮起前的地面 y」(floatBaseY)，
-   * 使召喚陣/吸怪/震開中心固定貼地，不隨角色浮起(y 上移 24 + yoyo ±8)而上飄。
-   * 非浮起時 = getFootGlowCenter（當前 sprite y）。
-   */
-  getGroundFootCenter(): Vec2 {
-    const groundY = this.floating ? this.floatBaseY : this.anim.sprite.y;
-    return footGlowCenter(this.anim.sprite.x, groundY, this.foot.offsetX, this.scaledFootOffsetY());
-  }
 
   /** 目前是否處於無敵幀（iFrame 內免疫再次受擊）。 */
   isInvincible(): boolean {
@@ -520,75 +501,6 @@ export class Player implements Hittable {
   /** 是否沒 credit（耗盡）狀態 → 敵人不鎖定/攻擊/抓/環繞（對齊 Unity）。 */
   isOutOfCredit(): boolean {
     return this.outOfCredit;
-  }
-
-  /**
-   * 十五輪：連打變身鎖定（TransformSystem 進/出連打變身各設一次）。
-   * 鎖定期間：move/dash/attack 禁（PlayerControlSystem gate）+ 敵人 targeting/環繞/抓免疫（複用 outOfCredit 類比免疫路徑）。
-   */
-  setMashLocked(active: boolean): void {
-    this.mashLocked = active;
-  }
-
-  /** 是否連打變身鎖定中 → 不可動/攻擊、敵人免疫。 */
-  isMashLocked(): boolean {
-    return this.mashLocked;
-  }
-
-  /**
-   * 十五輪：連打變身身體浮起 + 蓄力閃光（純視覺，不改邏輯座標）。
-   * 浮起：sprite y 上移 ~24px + 上下輕微 yoyo（飄浮感）。閃光：tint 亮白↔原色脈動（蓄力變身感）。
-   * 連打變身期間 mashLocked → move/dash 被 gate 不更新 sprite.y，故直接 tween sprite.y 安全；離開還原 baseY + 清 tint + 停 tween。
-   * ★getPosition 邏輯座標＝sprite.x/y，但連打變身期間玩家免疫（不被鎖定/攻擊/抓/環繞、不移動），視覺 y 位移不影響玩法。
-   */
-  setFloating(active: boolean): void {
-    if (active === this.floating) return;
-    this.floating = active;
-    const spr = this.anim.sprite;
-    if (active) {
-      this.anim.play('idle'); // 十五輪：浮起轉待機動畫（浮空待機蓄力；mashLocked 禁 move/attack→idle 不被覆蓋）
-      this.floatBaseY = spr.y; // 記錄基準 y（離開還原）
-      const liftY = this.floatBaseY - 24;
-      spr.y = liftY;
-      // 上下輕微飄浮 yoyo。
-      this.floatTween = this.scene.tweens.add({
-        targets: spr,
-        y: liftY - 8,
-        duration: 600,
-        ease: 'Sine.easeInOut',
-        yoyo: true,
-        repeat: -1,
-      });
-      // 蓄力閃光：tint 在原色（不染）↔ 亮白 之間脈動（yoyo repeat）。用 proxy 值 t 驅動，每幀套 tint。
-      this.mashFlashObj = { t: 0 };
-      this.mashFlashTween = this.scene.tweens.add({
-        targets: this.mashFlashObj,
-        t: 1,
-        duration: 350,
-        ease: 'Sine.easeInOut',
-        yoyo: true,
-        repeat: -1,
-        onUpdate: () => {
-          // t 0→1：淺金→純白亮閃脈動（蓄力變身感，振幅加大更明顯）。
-          const t = this.mashFlashObj.t;
-          const g = Math.round(200 + t * 55); // 200→255
-          const bl = Math.round(90 + t * 165); // 90→255（低端偏金、高端純白，對比更強）
-          spr.setTint(Phaser.Display.Color.GetColor(255, g, bl));
-        },
-      });
-    } else {
-      this.floatTween?.stop();
-      this.floatTween = undefined;
-      this.mashFlashTween?.stop();
-      this.mashFlashTween = undefined;
-      spr.y = this.floatBaseY; // 還原基準 y
-      spr.clearTint(); // 清閃光
-    }
-  }
-
-  /** 十五輪：是否連打變身浮起中（界騎 UI 讀）。 */
-  isFloating(): boolean {
-    return this.floating;
   }
 
   getFacing(): number {

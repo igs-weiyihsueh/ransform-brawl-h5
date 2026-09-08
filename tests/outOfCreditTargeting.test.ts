@@ -24,13 +24,8 @@ describe('十五輪 沒credit核心 — isValidEnemyTarget 排除 isOutOfCredit'
     expect(isValidEnemyTarget(ooc)).not.toBe(true);
   });
 
-  // 十五輪：連打變身鎖定玩家（浮起無敵）也排除
-  it('連打變身鎖定玩家 → 非有效目標（浮起無敵不鎖定）', () => {
-    const mash = { isWaiting: () => false, isOutOfCredit: () => false, isMashLocked: () => true };
-    expect(isValidEnemyTarget(mash)).toBe(false);
-  });
-  it('非鎖定/非耗盡/非待機 → 有效目標（三態都放行才追）', () => {
-    const active = { isWaiting: () => false, isOutOfCredit: () => false, isMashLocked: () => false };
+  it('非耗盡/非待機 → 有效目標（兩態都放行才追）', () => {
+    const active = { isWaiting: () => false, isOutOfCredit: () => false };
     expect(isValidEnemyTarget(active)).toBe(true);
   });
 });

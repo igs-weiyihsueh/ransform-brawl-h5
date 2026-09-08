@@ -64,12 +64,11 @@ export class GrabSystem implements GameSystem {
       const s = this.stateOf(pid);
 
       // 待機/進場中不累積、不被抓（進場重置由 justEntered 處理）。
-      // 十五輪：沒 credit（耗盡無敵）+ 連打變身鎖定（浮起無敵）玩家也不被抓。
+      // 十五輪：沒 credit（耗盡無敵）玩家不被抓。
       const waitingOrEntering =
         (typeof player.isEntering === 'function' && player.isEntering()) ||
         (typeof player.isWaiting === 'function' && player.isWaiting()) ||
-        (typeof player.isOutOfCredit === 'function' && player.isOutOfCredit()) ||
-        (typeof player.isMashLocked === 'function' && player.isMashLocked());
+        (typeof player.isOutOfCredit === 'function' && player.isOutOfCredit());
 
       if (s.grabbed) {
         this.updateGrabbed(player, s, dt);

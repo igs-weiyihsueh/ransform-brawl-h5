@@ -59,8 +59,6 @@ const ENEMY_ATTACK_VFX = {
   guardFocusVignette: { key: 'vfx-guard-focus-vignette', path: `${BASE_PATH}/fx_guard_focus_vignette.png` },
   /** 十五輪：守護聚焦暖白柔光暈（1024×1024，中心 alpha 0.57→邊緣 0，疊雕像後增強聚光）。 */
   guardFocusGlow: { key: 'vfx-guard-focus-glow', path: `${BASE_PATH}/fx_guard_focus_glow.png` },
-  /** 十五輪：連打變身腳下金黃召喚陣（1024×1024 RGBA，暖金魔法陣：同心環+六芒+符文+發光核，壓扁貼地自轉脈動）。 */
-  mashSummonCircle: { key: 'vfx-mash-summon-circle', path: `${BASE_PATH}/fx_mash_summon_circle.png` },
   /** COMBO 報獎彩票噴發：金黃彩票券（128×128，往上扇形噴出+重力回落+自轉）。 */
   comboTicket: { key: 'vfx-combo-ticket', path: `${BASE_PATH}/fx_combo_ticket.png` },
   /** COMBO 報獎閃光點綴：暖金四芒星（64×64，短命在票群間隨機閃）。 */
@@ -1305,91 +1303,6 @@ export class EffectSystem {
    * 死亡粒子：死亡點金黃粒子向四周爆散淡出。
    * @param x,y 死亡位置。
    */
-  /**
-   * 十五輪：連打變身「每次連打」從角色噴粒子（連打回饋，蓄力金白上升小爆散）。
-   * 由 TransformSystem.registerMashHit 每按觸發一次。純視覺。
-   */
-  /**
-   * 十五輪：連打變身腳下金黃召喚陣（persistent handle 式，連打變身期間顯示）。
-   * start 建 image；update 每幀自轉+脈動+依 ratio 越滿越亮越大；end 淡出爆亮清除。
-   * 壓扁貼地（scaleY=scaleX/2 俯視橢圓）、depth -3（角色 body(10) 之下、腳下地面層，類腳底光/enemyCharge 盤）。
-   */
-  /**
-   * 連打召喚陣（地板魔法陣）：★用 Container 分離「壓扁貼地」與「圖案自轉」——
-   * Container 固定 scaleY=0.5（2:1 壓扁貼地、軸固定），child image 繞 Z 平面自轉（圖案平轉、不上下翻）。
-   * （舊版單一 sprite setRotation+setDisplaySize：旋轉與非等比壓扁耦合→壓扁軸隨旋轉轉→視覺上下翻，用戶回報。）
-   */
-  mashSummonCircleStart(x: number, y: number): Phaser.GameObjects.Container | null {
-    const key = ENEMY_ATTACK_VFX.mashSummonCircle.key;
-    if (!this.scene.textures.exists(key)) return null;
-    const img = this.scene.add.image(0, 0, key);
-    img.setOrigin(0.5, 0.5);
-    img.setTint(0xffe08a); // 暖金染色
-    const container = this.scene.add.container(x, y, [img]);
-    container.setDepth(-3); // 腳下地面層（body 10 之下、footGlow -10 之上，可見）
-    container.setScale(1, 0.5); // ★2:1 壓扁貼地（軸固定，不隨圖案自轉而翻）
-    container.setData('rot', 0);
-    container.setData('img', img);
-    container.setAlpha(0); // 淡入起點
-    container.setData('baseW', 0.0001);
-    img.setDisplaySize(0.0001, 0.0001);
-    this.scene.tweens.add({ targets: container, alpha: 0.35, duration: 200, ease: 'Quad.easeOut' });
-    return container;
-  }
-
-  /**
-   * 每幀更新召喚陣：跟腳下位置 + child 圖案平面自轉（~50°/s，不上下翻）+ 依 ratio 越滿越亮越大 + 脈動。
-   * @param ratio 連打填充比例 0..1。@param dt 幀秒。@param fullDiameterPx ratio=1 時的目標直徑（對齊搜索圈；省略用預設）。
-   */
-  mashSummonCircleUpdate(
-    handle: Phaser.GameObjects.Container | null,
-    x: number,
-    y: number,
-    ratio: number,
-    dt: number,
-    fullDiameterPx?: number,
-  ): void {
-    if (!handle || !handle.active) return;
-    handle.x = x;
-    handle.y = y;
-    const img = handle.getData('img') as Phaser.GameObjects.Image | undefined;
-    if (!img) return;
-    // ★child 圖案繞 Z 平面自轉（Container 保持壓扁不動 → 圖案平轉、橢圓貼地不翻）。
-    const rot = ((handle.getData('rot') as number) ?? 0) + ((50 * Math.PI) / 180) * dt;
-    handle.setData('rot', rot);
-    img.setRotation(rot);
-    // 越滿越大：滿檔直徑對齊搜索圈（fullDiameterPx，省略 fallback 150）；由小長到滿。
-    const full = fullDiameterPx && fullDiameterPx > 0 ? fullDiameterPx : 150;
-    const r = Math.min(1, Math.max(0, ratio));
-    const baseDiameter = full * (0.6 + 0.4 * r); // 0.6×→1.0× full 隨 ratio（起手已頗大、滿檔=搜索圈）
-    const t = performance.now?.() ?? Date.now();
-    const pulse = 1 + 0.075 * Math.sin(t / 180);
-    const w = baseDiameter * pulse;
-    img.setDisplaySize(w, w); // child 圓形（壓扁由 Container scaleY=0.5 統一做）
-    // 越滿越亮：alpha 0.35→0.85 + 呼吸。
-    const baseAlpha = 0.35 + 0.5 * r;
-    handle.setAlpha(baseAlpha * (0.92 + 0.08 * Math.sin(t / 160)));
-  }
-
-  /** 連打變身結束 → 召喚陣爆亮後淡出清除（不殘留）。 */
-  mashSummonCircleEnd(handle: Phaser.GameObjects.Container | null): void {
-    if (!handle) return;
-    this.scene.tweens.killTweensOf(handle);
-    const img = handle.getData('img') as Phaser.GameObjects.Image | undefined;
-    if (!handle.active) { handle.destroy(); return; }
-    // 爆亮（child 放大提亮）→ Container 淡出銷毀。
-    if (img) {
-      const w = img.displayWidth;
-      this.scene.tweens.add({ targets: img, displayWidth: w * 1.6, displayHeight: w * 1.6, duration: 260, ease: 'Quad.easeOut' });
-    }
-    this.scene.tweens.add({
-      targets: handle,
-      alpha: 0,
-      duration: 260,
-      ease: 'Quad.easeOut',
-      onComplete: () => handle.destroy(),
-    });
-  }
 
   // === 二段變身特效（用戶新大功能；TransformSystem 讀 isSecondTransformActive 邊緣觸發呼叫） ===
 
@@ -1474,47 +1387,6 @@ export class EffectSystem {
       ease: 'Quad.easeIn',
       onComplete: () => handle.destroy(),
     });
-  }
-
-  mashHitParticle(x: number, y: number): void {
-    const depth = PANEL_DEPTH + 15; // 提到面板/JP 橫幅(≤1002)之上，否則角色在 JP 橫幅帶時被遮不可見
-    // 白閃爆點強調（強化連打回饋，類死亡粒子）：白圓快速放大淡出。
-    const flash = this.scene.add.graphics().setDepth(depth);
-    flash.fillStyle(0xffffff, 0.9);
-    flash.fillCircle(0, 0, 14);
-    flash.x = x;
-    flash.y = y;
-    this.scene.tweens.add({
-      targets: flash,
-      scale: 2.6,
-      alpha: 0,
-      duration: 200,
-      ease: 'Cubic.easeOut',
-      onComplete: () => flash.destroy(),
-    });
-    // 爆散粒子（加強：14 顆、8-13px、噴 70-130px、320-460ms 更強烈有感）。
-    const count = 14;
-    for (let i = 0; i < count; i += 1) {
-      // 主要往上噴（-90°±70°）+ 隨機散開，蓄力上升感。
-      const a = -Math.PI / 2 + (Math.random() - 0.5) * (Math.PI * 0.78);
-      const g = this.scene.add.graphics().setDepth(depth);
-      // 金/白交錯（蓄力色）。
-      g.fillStyle(i % 2 === 0 ? 0xffe98a : 0xffffff, 1);
-      g.fillCircle(0, 0, Phaser.Math.Between(8, 13));
-      g.x = x;
-      g.y = y;
-      const dist = Phaser.Math.Between(70, 130);
-      this.scene.tweens.add({
-        targets: g,
-        x: x + Math.cos(a) * dist,
-        y: y + Math.sin(a) * dist,
-        alpha: 0,
-        scale: 0.2,
-        duration: Phaser.Math.Between(320, 460),
-        ease: 'Cubic.easeOut',
-        onComplete: () => g.destroy(),
-      });
-    }
   }
 
   deathParticle(x: number, y: number, color: number): void {

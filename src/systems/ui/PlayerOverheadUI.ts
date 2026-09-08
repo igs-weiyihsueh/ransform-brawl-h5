@@ -54,10 +54,6 @@ export class PlayerOverheadUI {
   /** 沒 Credit 閃紅旗標 + tween（防重入）。 */
   private outOfCredit = false;
   private creditFlashTween?: Phaser.Tweens.Tween;
-  /** 連打變身 UI 狀態 + 放大 tween + 訊息文字（防重入）。 */
-  private mashActive = false;
-  private mashScaleTween?: Phaser.Tweens.Tween;
-  private mashMsgText?: Phaser.GameObjects.Text;
   /** 解析後（含 override）的沒 credit 演出設定，供 setOutOfCredit 用。 */
   private readonly outOfCreditCfg: typeof OVERHEAD_LAYOUT.credit.outOfCredit;
   /** 保存 scene 以供 tween 使用。 */
@@ -195,19 +191,6 @@ export class PlayerOverheadUI {
     this.container.add(this.maxText);
     this.groupCombo.push(this.maxText);
 
-    // 連打變身訊息（預設隱藏，setMashTransform(true) 時顯）。
-    const mt = cfg.mashTransform;
-    this.mashMsgText = scene.add
-      .text(mt.messageX, mt.messageY, mt.message, {
-        fontFamily: HUD_FONT_FAMILY,
-        fontSize: mt.messageFontSize,
-        color: mt.messageColor,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5)
-      .setVisible(false);
-    this.container.add(this.mashMsgText);
-
     // 初始顯示。
     this.setSoul(1);
     this.setCredit(0);
@@ -272,32 +255,6 @@ export class PlayerOverheadUI {
   }
 
   /**
-   * 連打變身 UI（讀翼騎 TransformSystem.isMashingTransform/getMashRatio）。
-   * active=true：頭上 UI 放大 + 顯訊息 + 魂力環從空(ratio 0)慢慢填滿(ratio 0..1)。
-   * active=false：縮回、藏訊息（魂力環顯示交回 UISystem 的變身後 soul 邏輯）。
-   * 純顯示，不改核心。連打填充 ratio 與變身後 soul ratio 由 UISystem 分流呼叫（見下）。
-   */
-  setMashTransform(active: boolean, ratio: number): void {
-    const mt = OVERHEAD_LAYOUT.mashTransform;
-    if (active !== this.mashActive) {
-      this.mashActive = active;
-      this.mashMsgText?.setVisible(active);
-      // 頭上 UI 整體放大/縮回（container scale）。
-      this.mashScaleTween?.stop();
-      this.mashScaleTween = this.scene.tweens.add({
-        targets: this.container,
-        scale: active ? mt.enlargeScale : 1,
-        duration: mt.scaleMs,
-        ease: 'Back.easeOut',
-      });
-    }
-    // 連打中：魂力環顯示 + 從 getMashRatio 填充（空→滿）。
-    if (active) {
-      this.setSoulVisible(true);
-      this.setSoul(ratio);
-    }
-  }
-
   /** 設定 Credit 數字。stub：目前傳 0（Credit 系統未做）。 */
   setCredit(value: number): void {
     if (value === this.shownCredit) return;
@@ -463,7 +420,6 @@ export class PlayerOverheadUI {
     this.maxTween?.stop();
     this.comboPunchTween?.stop();
     this.creditFlashTween?.stop();
-    this.mashScaleTween?.stop();
     this.secondEnergyBar.destroy();
     this.container.destroy(); // 連同容器內所有子物件一併銷毀
   }

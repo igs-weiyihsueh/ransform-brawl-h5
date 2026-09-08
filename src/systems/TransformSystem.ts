@@ -26,13 +26,6 @@ import {
 } from '@/systems/itemGuideMath';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
-import {
-  MASH_PER_HIT,
-  autoFillDelta,
-  isMashComplete,
-  shouldAutoFill,
-  MASH_KNOCKBACK_RADIUS_PX,
-} from '@/systems/mashTransformMath';
 import { getResolvedSecondTransformEnabled, getResolvedSecondTransform } from '@/config/secondTransformSchema';
 import {
   type SecondTransformState,
@@ -63,16 +56,6 @@ export class TransformSystem implements GameSystem {
   /** 每玩家變身狀態（Map<playerId>）。S3 只有 P1，一筆退化成舊單一 state。
    *  階段1：heroKey=當前變身英雄 key（transformed=true 時有效；mortal 時 null）。 */
   private states = new Map<number, { transformed: boolean; soul: number; heroKey: string | null }>();
-  /**
-   * 十五輪 連打變身狀態機（per-player）：撿道具（未變身）→ active，靠連打填 ratio，滿→完成變身。
-   * ratio 0..1；sinceLastMashSec 距上次連打秒數（判連打 vs 自動填）；comboStash 進狀態時暫存的 COMBO 值。
-   */
-  private mashStates = new Map<
-    number,
-    { active: boolean; ratio: number; sinceLastMashSec: number; comboStash: number }
-  >();
-  /** 十五輪：連打變身腳下召喚陣特效 handle（per-player，非狀態；enter 建/tick 更新/complete·清 end）。 */
-  private mashSummonHandles = new Map<number, Phaser.GameObjects.Container | null>();
   /** 二段變身能量狀態（per-player，用戶新大功能；★feature flag 關時完全不動用）。 */
   private secondStates = new Map<number, SecondTransformState>();
   /** 二段變身強化光環特效 handle（per-player；enter 建/tick 更新/exit 淡出清）。 */
@@ -96,8 +79,6 @@ export class TransformSystem implements GameSystem {
     this.ctx = ctx;
     this.spawnTimer = ITEM_SPAWN_INTERVAL;
     this.states.clear();
-    this.mashStates.clear();
-    this.mashSummonHandles.clear();
     // 用戶 #7：牽引線(貼地、角色之下)+指引箭頭(角色上層)graphics。
     // 防禦：測試用最小 ctx 無 scene → 不建 graphics（純狀態機測試不需視覺，drawTethers/Arrows 會 no-op）。
     const scene = ctx.scene as Phaser.Scene | undefined;
@@ -137,9 +118,6 @@ export class TransformSystem implements GameSystem {
     }
     this.items = this.items.filter((it) => !it.isPicked());
 
-    // 十五輪：連打變身填充推進（每 player）。
-    this.tickMashTransform(dt);
-
     // 用戶新大功能：二段變身能量消退（★feature flag 關時 no-op）。
     this.tickSecondTransform(dt);
 
@@ -147,37 +125,6 @@ export class TransformSystem implements GameSystem {
     this.pulsePhase += dt;
     this.drawTethers();
     this.drawGuideArrows();
-  }
-
-  /**
-   * 十五輪：連打變身填充推進。
-   * - scripted（守護波 introMove 玩家被控不能連打，用戶確認 2）→ 自動快速填滿。
-   * - 否則純沒打（idle > MASH_IDLE_TO_AUTO_SEC，用戶確認 1）→ 自動填（10s 填滿）；有連打（sinceLastMashSec 被 registerMashHit 歸零）→ 不自動填。
-   */
-  private tickMashTransform(dt: number): void {
-    for (const [pid, m] of this.mashStates) {
-      if (!m.active) continue;
-      m.sinceLastMashSec += dt;
-      const scripted = this.ctx.scriptedControl === true;
-      if (scripted) {
-        m.ratio = Math.min(1, m.ratio + autoFillDelta(dt, true));
-      } else if (shouldAutoFill(m.sinceLastMashSec)) {
-        m.ratio = Math.min(1, m.ratio + autoFillDelta(dt, false));
-      }
-      // 十五輪：腳下召喚陣每幀更新（跟腳下位置 + 自轉/脈動 + 依 ratio 越滿越亮越大）。
-      const player = this.playerOf(pid);
-      if (player) {
-        const foot = this.mashFootPos(player);
-        // 十六輪：滿檔直徑對齊搜索圈實際顯示寬度（footGlow disc 寬=2×radiusPx×PLAYER_DISC.widthScale(2.2)＝2×radius×2.2）。
-        const searchRadius = typeof player.getVacuumRadius === 'function' ? player.getVacuumRadius() : 50;
-        const searchRingWidth = searchRadius * 2 * 2.2; // 對齊 Player.drawFootGlow disc 顯示寬（widthScale=2.2）
-        this.ctx.effects?.mashSummonCircleUpdate?.(this.mashSummonHandles.get(pid) ?? null, foot.x, foot.y, m.ratio, dt, searchRingWidth);
-        // 十六輪②：連打期間吸怪——範圍內怪往召喚陣中心（腳下）持續聚集（強度適中，非瞬移）。
-        const enemies = this.ctx.getEnemies?.() ?? [];
-        for (const e of enemies) e.applyMashAttract?.(foot, dt);
-      }
-      if (isMashComplete(m.ratio)) this.completeMashTransform(pid);
-    }
   }
 
   /** 用戶 #7 ①牽引線：每個在場玩家從下方面板欄頂(TetherAnchor)畫玩家色半透明線到真空圈邊緣(靠面板側)。 */
@@ -342,107 +289,6 @@ export class TransformSystem implements GameSystem {
     // 階段1：★取消「凡人撿道具首次變身」——未變身撿一般道具不再進連打變身（連打機制去留階段3決定）。
   }
 
-  /**
-   * 連打變身召喚陣的腳下位置（地面錨點：浮起中固定浮起前地面 y，不隨浮起上飄）。吸怪/震開中心亦用此。
-   * 註（階段1）：「凡人撿道具首次變身→進連打變身」入口已取消（enterMashTransform 移除）；
-   *   連打機制其餘（registerMashHit/complete/cancel/召喚陣/吸怪/震開）保留待階段3決定去留，
-   *   目前無入口啟動 mash（registerMashHit 因 m.active=false early-return），機制休眠但完整。
-   */
-  private mashFootPos(player: GameContext['player']): { x: number; y: number } {
-    const gf = player.getGroundFootCenter?.();
-    if (gf) return gf;
-    const fg = player.getFootGlowCenter?.();
-    if (fg) return fg;
-    const c = player.getHitCenter?.() ?? player.getPosition?.() ?? { x: 0, y: 0 };
-    return { x: c.x, y: c.y + 40 };
-  }
-
-  /**
-   * 十五輪：連打攻擊鈕（連打模式攔截、不打傷害）→ 填充 +1/15。由 PlayerControlSystem 在連打變身中攔截攻擊鍵呼叫。
-   * 連打優先：重置 idle 計時（停自動填）。
-   */
-  registerMashHit(playerId: number): void {
-    const m = this.mashStateOf(playerId);
-    if (!m.active) return;
-    m.ratio = Math.min(1, m.ratio + MASH_PER_HIT);
-    m.sinceLastMashSec = 0; // 有連打 → 回連打模式（停自動填）
-    // 十五輪：每次連打從角色位置噴粒子（連打回饋，配合浮起+閃光=蓄力演出）。純視覺。
-    const player = this.playerOf(playerId);
-    if (player) {
-      const pos = player.getHitCenter?.() ?? player.getPosition?.();
-      if (pos) this.ctx.effects?.mashHitParticle?.(pos.x, pos.y);
-    }
-    if (isMashComplete(m.ratio)) this.completeMashTransform(playerId);
-  }
-
-  /** 十五輪：連打變身完成 → 換悟空+魂力 100+EnergySystem Full(自動)+解鎖+COMBO 恢復倒數。 */
-  private completeMashTransform(playerId: number): void {
-    const m = this.mashStateOf(playerId);
-    if (!m.active) return;
-    m.active = false;
-    m.ratio = 1;
-    this.endMashSummon(playerId); // 十五輪：召喚陣爆亮淡出清除（完成）
-    const player = this.playerOf(playerId);
-    if (player) {
-      // 十六輪③：完成瞬間以角色腳下為中心把周圍怪震開（AOE knockback，配召喚陣爆亮=變身衝擊波）。
-      const foot = this.mashFootPos(player);
-      const enemies = this.ctx.getEnemies?.() ?? [];
-      for (const e of enemies) {
-        const c = e.getHitCenter?.();
-        if (!c) continue;
-        if (Math.hypot(c.x - foot.x, c.y - foot.y) <= MASH_KNOCKBACK_RADIUS_PX) e.applyMashKnockback?.(foot);
-      }
-      player.setMashLocked?.(false); // 解鎖（恢復移動/攻擊/可被攻擊）
-      player.setFloating?.(false);
-      player.setFootGlowVisible?.(true); // 十六輪①：完成變身恢復搜索圈(footGlow)顯示
-      this.transform(player); // 換悟空 visual + 魂力 100 + 掛扣魂鉤子（EnergySystem 自動 Full）
-    }
-    this.ctx.combo?.setMashPaused?.(playerId, false); // COMBO 恢復倒數繼續（暫存值接回）
-  }
-
-  /** 十五輪：中斷連打變身（沒 credit revert 等外部觸發，非填滿完成）→ 清狀態+召喚陣+解鎖（不殘留）。 */
-  cancelMashTransform(playerId: number): void {
-    const m = this.mashStateOf(playerId);
-    if (!m.active) return;
-    m.active = false;
-    m.ratio = 0;
-    this.endMashSummon(playerId);
-    const player = this.playerOf(playerId);
-    if (player) {
-      player.setMashLocked?.(false);
-      player.setFloating?.(false);
-      player.setFootGlowVisible?.(true); // 十六輪①：中斷也恢復搜索圈(後續待機邏輯若需隱再自行處理)
-    }
-    this.ctx.combo?.setMashPaused?.(playerId, false);
-  }
-
-  /** 清除某玩家的召喚陣 handle（爆亮淡出銷毀 + map 移除）。冪等。 */
-  private endMashSummon(playerId: number): void {
-    const h = this.mashSummonHandles.get(playerId);
-    if (h) this.ctx.effects?.mashSummonCircleEnd?.(h);
-    this.mashSummonHandles.delete(playerId);
-  }
-
-  private mashStateOf(playerId: number) {
-    let m = this.mashStates.get(playerId);
-    if (!m) {
-      m = { active: false, ratio: 0, sinceLastMashSec: 0, comboStash: 0 };
-      this.mashStates.set(playerId, m);
-    }
-    return m;
-  }
-
-  /** 接口（界騎 UI）：某玩家是否在連打變身中。 */
-  isMashingTransform(playerId: number): boolean {
-    return this.mashStateOf(playerId).active;
-  }
-
-  /** 接口（界騎 UI）：連打變身填充比例 0..1（魂力環填充/玩家牌放大提示）。 */
-  getMashRatio(playerId: number): number {
-    const m = this.mashStateOf(playerId);
-    return m.active ? m.ratio : 0;
-  }
-
   /** 變身：凡人 → 指定英雄（階段1：投幣進場隨機抽到的英雄）。 */
   private transform(player: GameContext['player'], heroKey: string = SUNWUKONG_KEY): void {
     const s = this.stateOf(player.playerId);
@@ -507,8 +353,6 @@ export class TransformSystem implements GameSystem {
    * 冪等：未變身則不動作。走與魂力歸 0 相同的 detransform（換凡人 visual、EnergySystem 回 HumanSimple、藏魂力環）。
    */
   revertToHuman(playerId: number): void {
-    // 十五輪：若玩家正在連打變身中（尚未變身）→ 一併中斷清除（召喚陣/鎖定/浮起不殘留，同 dashShield 教訓）。
-    if (this.mashStateOf(playerId).active) this.cancelMashTransform(playerId);
     if (!this.stateOf(playerId).transformed) return;
     const player = this.playerOf(playerId);
     if (player) this.detransform(player);

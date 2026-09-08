@@ -7,8 +7,6 @@ export interface EnemyTargetLike {
   isWaiting?: () => boolean;
   /** 十五輪：沒 credit（耗盡）玩家＝無敵待機，敵人不鎖定/攻擊/環繞（對齊 Unity isOutOfCredit）。 */
   isOutOfCredit?: () => boolean;
-  /** 十五輪：連打變身鎖定中玩家＝浮起無敵，敵人不鎖定/攻擊/環繞。 */
-  isMashLocked?: () => boolean;
 }
 
 /**
@@ -21,7 +19,6 @@ export function isValidEnemyTarget(player: EnemyTargetLike | null | undefined): 
   if (!player) return false;
   if (typeof player.isWaiting === 'function' && player.isWaiting()) return false;
   if (typeof player.isOutOfCredit === 'function' && player.isOutOfCredit()) return false;
-  if (typeof player.isMashLocked === 'function' && player.isMashLocked()) return false;
   return true;
 }
 

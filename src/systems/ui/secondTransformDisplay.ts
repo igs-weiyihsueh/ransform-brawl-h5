@@ -15,7 +15,7 @@ export type SecondTransformStyle =
 
 /** 二段能量條顯示決策結果。 */
 export interface SecondTransformDisplay {
-  /** 是否顯示二段能量條（取代魂力環）。false → UI 走現有魂力環（soul/mash 不動）。 */
+  /** 是否顯示二段能量條（取代魂力環）。false → UI 走現有魂力環（soul 不動）。 */
   show: boolean;
   /** 顯示時的填充比例（0..1，已夾限）。 */
   ratio: number;
