@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PPU } from '@/config/gameConfig';
+import { weaponTextureKey } from '@/config/weaponItemConfig';
 import type { Vec2 } from '@/systems/hitDetection';
 
 /** 撿取半徑（unit）。距離判定，非物理碰撞。 */
@@ -9,7 +10,7 @@ export const ITEM_PICKUP_RADIUS = 0.8;
 export const INITIAL_ITEM_PICKUP_IMMUNITY_SEC = 1.5;
 
 /** 道具來源（與 itemGuideMath.ItemSource 對齊）。'heroDrop'=階段2 怪掉英雄變身道具（帶 heroKey）。 */
-export type ItemSourceKind = 'initial' | 'kill' | 'random' | 'heroDrop';
+export type ItemSourceKind = 'initial' | 'kill' | 'random' | 'heroDrop' | 'weapon';
 
 /**
  * TransformItem — 變身道具（場上可撿取的實體）。
@@ -46,10 +47,23 @@ export class TransformItem {
     this.id = id;
     this.source = source;
     this.heroKey = heroKey;
-    const ring = scene.add.circle(0, 0, 22, 0xffe64d, 0.25);
-    ring.setStrokeStyle(3, 0xffe64d);
-    const core = scene.add.star(0, 0, 5, 8, 18, 0xffe64d);
-    this.container = scene.add.container(x, y, [ring, core]);
+    // ★用戶：武器指定變身道具（source='weapon'）→ 外觀用對應武器 PNG（撿劍=悟空/大木槌=兔兔…）；
+    //   其餘來源沿用泛用黃星視覺。武器圖載入失敗（未 preload）→ fallback 黃星，不炸。
+    const useWeaponSprite =
+      source === 'weapon' && !!heroKey && scene.textures.exists(weaponTextureKey(heroKey));
+    if (useWeaponSprite) {
+      // 武器素材（64²）內容置中但留白多（~30% 填充）→ 放大顯示讓武器讀得清楚（填滿道具槽）。
+      const ring = scene.add.circle(0, 0, 26, 0xffe64d, 0.16);
+      ring.setStrokeStyle(3, 0xffe64d);
+      const weapon = scene.add.image(0, 0, weaponTextureKey(heroKey!));
+      weapon.setDisplaySize(72, 72); // 放大（>64 素材）補留白，武器主體約佔道具槽 40~50px、清楚可辨
+      this.container = scene.add.container(x, y, [ring, weapon]);
+    } else {
+      const ring = scene.add.circle(0, 0, 22, 0xffe64d, 0.25);
+      ring.setStrokeStyle(3, 0xffe64d);
+      const core = scene.add.star(0, 0, 5, 8, 18, 0xffe64d);
+      this.container = scene.add.container(x, y, [ring, core]);
+    }
     this.container.setDepth(20);
     this.pickupRadiusPx = ITEM_PICKUP_RADIUS * PPU;
 

@@ -279,6 +279,12 @@ export class TransformSystem implements GameSystem {
   private onPickup(item: TransformItem, player: GameContext['player']): void {
     item.pickUp();
     const s = this.stateOf(player.playerId);
+    // ★用戶：武器指定變身道具（source='weapon'，帶指定 heroKey）——撿了就變身成該指定英雄（不論凡人/英雄狀態）。
+    //   與 heroDrop（只 A→B 換英雄、凡人 no-op）不同：weapon 是「撿武器＝變成拿那把武器的英雄」，凡人撿也直接變。
+    if (item.source === 'weapon' && item.heroKey) {
+      this.transform(player, item.heroKey); // switchCharacter+魂力滿+金閃；指定英雄
+      return;
+    }
     // 階段2：英雄變身道具（heroDrop，帶 heroKey）——★只在「已是英雄」時橫向換成道具帶的英雄。
     //   凡人狀態撿到不觸發（凡人只能靠投幣變英雄，階段1 已定）。
     if (item.source === 'heroDrop' && item.heroKey) {

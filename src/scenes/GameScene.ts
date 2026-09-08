@@ -4,6 +4,7 @@ import { chestChargeForResolved, getResolvedChest } from '@/config/chestSchema';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { HERO_ROSTER, pickHero } from '@/config/heroRoster';
 import { shouldDropHeroItem } from '@/config/heroDropMath';
+import { WEAPON_ITEM_TEXTURES } from '@/config/weaponItemConfig';
 import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { BuffSystem } from '@/systems/BuffSystem';
@@ -74,6 +75,11 @@ export class GameScene extends Phaser.Scene {
     EffectSystem.preload(this);
     Player.preload(this); // 七輪：腳下識別圓盤 fx_player_disc
     UISystem.preload(this); // 載入 UI icon（coin/ticket/ring/chest/lamp）
+    // ★用戶：武器指定變身道具圖（撿武器→變對應英雄；道具外觀=武器 PNG，key 對齊 HERO_ROSTER）。
+    //   場上生成先關著（WEAPON_ITEM_SPAWN_ENABLED=false），但圖先載好備著。
+    for (const w of WEAPON_ITEM_TEXTURES) {
+      if (!this.textures.exists(w.key)) this.load.image(w.key, w.path);
+    }
   }
 
   create(): void {

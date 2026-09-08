@@ -111,7 +111,7 @@ export function tetherEndPoint(anchor: Vec2, charCenter: Vec2, radiusPx: number)
 }
 
 /** 道具來源（三輪#6 owner 依來源分配）。 */
-export type ItemSource = 'initial' | 'kill' | 'random' | 'heroDrop';
+export type ItemSource = 'initial' | 'kill' | 'random' | 'heroDrop' | 'weapon';
 
 /**
  * 依來源決定道具 owner（三輪#6）：
@@ -123,7 +123,7 @@ export type ItemSource = 'initial' | 'kill' | 'random' | 'heroDrop';
  * @returns owner playerId 或 null（無主）。
  */
 export function resolveItemOwner(source: ItemSource, ownerPlayerId?: number): number | null {
-  if (source === 'random' || source === 'heroDrop') return null;
+  if (source === 'random' || source === 'heroDrop' || source === 'weapon') return null;
   return ownerPlayerId ?? null; // 初始/擊落但沒給 owner → 視為無主(不亂標)
 }
 
