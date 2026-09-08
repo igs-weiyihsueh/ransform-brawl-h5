@@ -47,6 +47,11 @@ import {
   resolveGrabIdleTriggerSec,
   GRAB_SCHEMA_VERSION,
 } from '@/config/grabSchema';
+import {
+  resolveComboReward,
+  COMBO_REWARD_SCHEMA_VERSION,
+  type ResolvedComboReward,
+} from '@/config/comboRewardSchema';
 
 const PPU = 100; // 對照 gameConfig.PPU=100（本檔自持，不 import 遊戲檔）
 
@@ -103,6 +108,8 @@ let attackSpeedFile: AttackSpeedFile = defaultAttackSpeedFile();
 //   併進本編輯器一起編/套用（用戶要角色編輯器統管）。工作副本，initLoad 從 override 讀回顯。
 let secondFile: ResolvedSecondTransform = resolveSecondTransform(null);
 let grabIdleSec: number = resolveGrabIdleTriggerSec(null);
+// COMBO 獎全參數（comboReward key）：全域不分角色，併本編輯器一起編/套用（翼騎 7328ca6 接口）。
+let comboFile: ResolvedComboReward = resolveComboReward(null);
 let selectedChar: string | null = Object.keys(file.characters)[0] ?? null;
 let selectedSkill: keyof CharacterSkillSet = 'normalAttack';
 
@@ -371,11 +378,11 @@ function renderGlobalInspector(): void {
   insp.appendChild(checkboxRow('二段變身 啟用', secondFile.enabled, (v) => { secondFile.enabled = v; }));
 
   // 二段變身 5 數值滑桿（範圍依規格）。
-  insp.appendChild(numberRow('累積速度（每殺）', secondFile.energyPerKill, (v) => { secondFile.energyPerKill = v; }, { min: 0.05, max: 0.5, step: 0.01, slider: true }));
-  insp.appendChild(numberRow('消退速度（每秒）', secondFile.decayPerSec, (v) => { secondFile.decayPerSec = v; }, { min: 0.05, max: 0.5, step: 0.005, slider: true }));
-  insp.appendChild(numberRow('放大倍率', secondFile.scaleMult, (v) => { secondFile.scaleMult = v; }, { min: 1.1, max: 2.0, step: 0.05, slider: true }));
-  insp.appendChild(numberRow('攻擊範圍倍率', secondFile.attackRangeMult, (v) => { secondFile.attackRangeMult = v; }, { min: 1.0, max: 2.5, step: 0.05, slider: true }));
-  insp.appendChild(numberRow('集滿門檻 fillThreshold', secondFile.fillThreshold, (v) => { secondFile.fillThreshold = v; }, { min: 0.1, max: 1.0, step: 0.05, slider: true }));
+  insp.appendChild(numberRow('累積速度（每殺）', secondFile.energyPerKill, (v) => { secondFile.energyPerKill = v; }, { min: 0.02, max: 1.0, step: 0.01, slider: true }));
+  insp.appendChild(numberRow('消退速度（每秒）', secondFile.decayPerSec, (v) => { secondFile.decayPerSec = v; }, { min: 0.02, max: 1.0, step: 0.005, slider: true }));
+  insp.appendChild(numberRow('放大倍率', secondFile.scaleMult, (v) => { secondFile.scaleMult = v; }, { min: 1.1, max: 3.0, step: 0.05, slider: true }));
+  insp.appendChild(numberRow('攻擊範圍倍率', secondFile.attackRangeMult, (v) => { secondFile.attackRangeMult = v; }, { min: 1.0, max: 4.0, step: 0.05, slider: true }));
+  insp.appendChild(numberRow('集滿門檻 fillThreshold', secondFile.fillThreshold, (v) => { secondFile.fillThreshold = v; }, { min: 0.02, max: 1.0, step: 0.05, slider: true }));
 
   // 被抓觸發：閒置秒數。
   const grabTitle = document.createElement('div');
@@ -384,6 +391,23 @@ function renderGlobalInspector(): void {
   grabTitle.textContent = '被抓觸發';
   insp.appendChild(grabTitle);
   insp.appendChild(numberRow('閒置秒數（沒攻擊多久被抓）', grabIdleSec, (v) => { grabIdleSec = v; }, { min: 2, max: 15, step: 1, slider: true }));
+
+  // COMBO 獎（全域，翼騎 7328ca6）：10 滑桿（A 結算/計時 6 + B 報獎/噴發 4）。
+  const comboTitle = document.createElement('div');
+  comboTitle.className = 'section-title';
+  comboTitle.style.marginTop = '12px';
+  comboTitle.textContent = 'COMBO 獎';
+  insp.appendChild(comboTitle);
+  insp.appendChild(numberRow('獎勵量（彩票倍率）', comboFile.ticketMultiplier, (v) => { comboFile.ticketMultiplier = v; }, { min: 0.1, max: 2.0, step: 0.1, slider: true }));
+  insp.appendChild(numberRow('連段上限', comboFile.maxCount, (v) => { comboFile.maxCount = v; }, { min: 20, max: 200, step: 1, slider: true }));
+  insp.appendChild(numberRow('計時窗基準秒', comboFile.baseTimeout, (v) => { comboFile.baseTimeout = v; }, { min: 1, max: 6, step: 0.1, slider: true }));
+  insp.appendChild(numberRow('計時窗每段縮短', comboFile.timeoutDecay, (v) => { comboFile.timeoutDecay = v; }, { min: 0, max: 0.3, step: 0.05, slider: true }));
+  insp.appendChild(numberRow('計時窗下限秒', comboFile.minTimeout, (v) => { comboFile.minTimeout = v; }, { min: 0.2, max: 2, step: 0.1, slider: true }));
+  insp.appendChild(numberRow('警告閃爍秒', comboFile.warningTime, (v) => { comboFile.warningTime = v; }, { min: 0.5, max: 3, step: 0.1, slider: true }));
+  insp.appendChild(numberRow('報獎表演時長', comboFile.rewardDurationSec, (v) => { comboFile.rewardDurationSec = v; }, { min: 0.5, max: 3, step: 0.1, slider: true }));
+  insp.appendChild(numberRow('彩票噴發下限', comboFile.burstMinTickets, (v) => { comboFile.burstMinTickets = v; }, { min: 1, max: 30, step: 1, slider: true }));
+  insp.appendChild(numberRow('彩票噴發上限', comboFile.burstMaxTickets, (v) => { comboFile.burstMaxTickets = v; }, { min: 5, max: 60, step: 1, slider: true }));
+  insp.appendChild(numberRow('幾段噴滿張', comboFile.burstCountForMax, (v) => { comboFile.burstCountForMax = v; }, { min: 10, max: 60, step: 1, slider: true }));
 }
 
 // ---- 角色層 Inspector -----------------------------------------------------
@@ -626,9 +650,10 @@ function initLoad(): void {
     const ar = validateAttackSpeed(aRaw);
     if (ar.ok) attackSpeedFile = ar.data;
   }
-  // ★全域設定回顯：二段變身 + 被抓觸發（各自 override key，逐欄 fallback 打包預設）。
+  // ★全域設定回顯：二段變身 + 被抓觸發 + COMBO 獎（各自 override key，逐欄 fallback 打包預設）。
   secondFile = resolveSecondTransform(loadOverride(EDITOR_STORE_KEYS.secondTransform));
   grabIdleSec = resolveGrabIdleTriggerSec(loadOverride(EDITOR_STORE_KEYS.grab));
+  comboFile = resolveComboReward(loadOverride(EDITOR_STORE_KEYS.comboReward));
   const raw = loadOverride(EDITOR_STORE_KEYS.skills);
   if (raw !== null) {
     const r = validateSkills(raw);
@@ -725,9 +750,23 @@ function applyToGameFromEditor(): boolean {
     version: GRAB_SCHEMA_VERSION,
     idleTriggerSec: grabIdleSec,
   });
-  const allOk = ok && okA && okS && okG;
+  // COMBO 獎（完整物件 10 欄，翼騎 7328ca6）。
+  const okC = applyToGame(EDITOR_STORE_KEYS.comboReward, {
+    version: COMBO_REWARD_SCHEMA_VERSION,
+    ticketMultiplier: comboFile.ticketMultiplier,
+    maxCount: comboFile.maxCount,
+    baseTimeout: comboFile.baseTimeout,
+    timeoutDecay: comboFile.timeoutDecay,
+    minTimeout: comboFile.minTimeout,
+    warningTime: comboFile.warningTime,
+    rewardDurationSec: comboFile.rewardDurationSec,
+    burstMinTickets: comboFile.burstMinTickets,
+    burstMaxTickets: comboFile.burstMaxTickets,
+    burstCountForMax: comboFile.burstCountForMax,
+  });
+  const allOk = ok && okA && okS && okG && okC;
   setStatus(
-    allOk ? '✅ 已套用到遊戲（角色招式＋攻擊速度＋全域：二段變身/被抓觸發，存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。',
+    allOk ? '✅ 已套用到遊戲（角色招式＋攻擊速度＋全域：二段變身/被抓觸發/COMBO 獎，存入瀏覽器）。重開遊戲即生效。' : '套用失敗：瀏覽器 localStorage 不可用。',
     allOk ? 'ok' : 'err',
   );
   return allOk;
@@ -740,17 +779,19 @@ function applyAndReturnToGame(): void {
   window.location.href = '../';
 }
 
-/** 清除套用（回打包預設）：移除 localStorage override（招式 + 攻擊速度）。 */
+/** 清除套用（回打包預設）：移除 localStorage override（招式 + 攻擊速度 + 全域設定）。 */
 function clearAppliedFromEditor(): void {
   clearOverride(EDITOR_STORE_KEYS.skills);
   clearOverride(EDITOR_STORE_KEYS.attackSpeed);
   clearOverride(EDITOR_STORE_KEYS.secondTransform);
   clearOverride(EDITOR_STORE_KEYS.grab);
+  clearOverride(EDITOR_STORE_KEYS.comboReward);
   attackSpeedFile = defaultAttackSpeedFile();
   secondFile = resolveSecondTransform(null); // 回打包預設（enabled 預設關 + config 值）
   grabIdleSec = resolveGrabIdleTriggerSec(null);
+  comboFile = resolveComboReward(null);
   renderGlobalInspector(); // 全域區回顯預設
-  setStatus('已清除套用，遊戲回打包預設（招式＋攻擊速度＋全域：二段變身/被抓觸發）。', 'info');
+  setStatus('已清除套用，遊戲回打包預設（招式＋攻擊速度＋全域：二段變身/被抓觸發/COMBO 獎）。', 'info');
 }
 
 // ---- 統一重繪 -------------------------------------------------------------
@@ -929,6 +970,7 @@ export function mount(container: HTMLElement): { unmount(): void } {
   attackSpeedFile = defaultAttackSpeedFile();
   secondFile = resolveSecondTransform(null);
   grabIdleSec = resolveGrabIdleTriggerSec(null);
+  comboFile = resolveComboReward(null);
   selectedChar = Object.keys(file.characters)[0] ?? null;
   selectedSkill = 'normalAttack';
   undoStack = [];
