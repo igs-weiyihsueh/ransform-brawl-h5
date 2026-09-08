@@ -37,7 +37,7 @@ describe('pickHero — 英雄池隨機抽（rng 可注入）', () => {
     expect(pickHero([], () => 0.5)).toBeNull();
   });
 
-  it('單一英雄池（現況）→ 任何 rng 都抽中該英雄', () => {
+  it('單一英雄池（len=1 邊界）→ 任何 rng 都抽中該英雄', () => {
     expect(pickHero(['SunWukong'], () => 0)).toBe('SunWukong');
     expect(pickHero(['SunWukong'], () => 0.5)).toBe('SunWukong');
     expect(pickHero(['SunWukong'], () => 0.999)).toBe('SunWukong');
