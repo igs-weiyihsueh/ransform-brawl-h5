@@ -1,5 +1,5 @@
 import type { EditorInstance, EditorTabDef } from '@/systems/editorOverlay/editorMount';
-import { exportAllSettings, exportSettingsFilename } from '@/config/editorStore';
+import { exportAllSettings, exportSettingsFilename, importAllSettings } from '@/config/editorStore';
 
 /**
  * EditorOverlay — 遊戲內展開編輯器的 overlay 殼（方案 A' 骨架）。
@@ -127,7 +127,24 @@ export class EditorOverlay {
     exportBtn.title = '把目前調好、套用到遊戲的全部設定打包成 JSON 下載（交開發寫進打包預設給所有玩家）';
     exportBtn.addEventListener('click', () => this.downloadAllSettings());
 
+    // 匯入設定 JSON（匯出的反向）：選 JSON 檔 → 依 EDITOR_STORE_META 分派各 editorStore（applyToGame）→
+    // 各編輯器分頁顯示跟 JSON 一致。缺項不動、格式錯提示不炸。
+    const importBtn = document.createElement('button');
+    importBtn.type = 'button';
+    importBtn.className = 'tb-editor-import';
+    importBtn.textContent = '⤒ 匯入設定 JSON';
+    importBtn.title = '載入一份設定 JSON（如之前匯出的），把各項套用到遊戲並讓編輯器顯示一致';
+    const importInput = document.createElement('input');
+    importInput.type = 'file';
+    importInput.accept = 'application/json,.json';
+    importInput.className = 'tb-editor-import-input';
+    importInput.style.display = 'none';
+    importBtn.addEventListener('click', () => importInput.click());
+    importInput.addEventListener('change', (e) => this.handleImportFile(e));
+
     topBar.appendChild(tabBar);
+    topBar.appendChild(importBtn);
+    topBar.appendChild(importInput);
     topBar.appendChild(exportBtn);
     topBar.appendChild(closeBtn);
 
@@ -228,6 +245,53 @@ export class EditorOverlay {
     }
   }
 
+  /**
+   * 匯入設定 JSON（匯出的反向）：讀檔 → JSON.parse → importAllSettings（依 EDITOR_STORE_META 分派 applyToGame）→
+   * 重掛當前 tab 讓編輯器顯示跟 JSON 一致（各編輯器 mount 時 initLoad 讀新 override 回填）。
+   * ★容錯：格式錯 → 狀態列提示不炸；缺項保持不變；不認得的 key 略過（狀態列標示）。
+   */
+  private handleImportFile(e: Event): void {
+    const input = e.target as HTMLInputElement;
+    const f = input.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let json: unknown;
+      try {
+        json = JSON.parse(String(reader.result));
+      } catch (err) {
+        this.setStatus(`匯入失敗：不是合法 JSON（${(err as Error).message}）。`);
+        input.value = '';
+        return;
+      }
+      const res = importAllSettings(json);
+      if (!res.ok) {
+        this.setStatus(
+          res.unknown.length > 0
+            ? `匯入未套用任何設定（不認得的項目：${res.unknown.join('、')}；或 localStorage 不可用）。`
+            : '匯入未套用任何設定（JSON 沒有可辨識的設定項目，或 localStorage 不可用）。',
+        );
+        input.value = '';
+        return;
+      }
+      // 重掛當前編輯器 → initLoad 讀新 override 回填，顯示跟 JSON 一致。
+      const unknownNote = res.unknown.length > 0 ? `（略過不認得：${res.unknown.join('、')}）` : '';
+      const doneMsg = `已匯入並套用 ${res.imported.length} 份設定（${res.imported.join('、')}）${unknownNote}。重開遊戲全面生效。`;
+      // remount 是 async（selectTab 內 setStatus 載入中/清空）→ 完成後才設匯入成功訊息，避免被清掉。
+      void this.remountActive().then(() => this.setStatus(doneMsg));
+      input.value = ''; // 允許重選同檔
+    };
+    reader.readAsText(f);
+  }
+
+  /** 重掛當前 tab（匯入後讓編輯器讀新 override 回填）：unmount → 重新 mount 同一個 tab。回傳 mount 完成的 promise。 */
+  private async remountActive(): Promise<void> {
+    const tabId = this.activeTabId;
+    if (!tabId) return;
+    this.activeTabId = null; // 清掉讓 selectTab 不當成同 tab 提早 return
+    await this.selectTab(tabId);
+  }
+
   private injectStyle(): void {
     if (this.styleInjected || document.getElementById('tb-editor-overlay-style')) {
       this.styleInjected = true;
@@ -319,6 +383,16 @@ const OVERLAY_CSS = `
   font-size: 13px;
 }
 .tb-editor-export:hover { background: #5578ff; }
+.tb-editor-import {
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: #2c2c48;
+  color: #6c8cff;
+  border: 1px solid #6c8cff;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tb-editor-import:hover { background: #34345a; }
 .tb-editor-host { flex: 1; overflow: hidden; position: relative; }
 .tb-editor-root { width: 100%; height: 100%; overflow: auto; }
 .tb-editor-status {

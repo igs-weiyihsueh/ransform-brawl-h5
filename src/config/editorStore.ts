@@ -154,3 +154,77 @@ export function exportSettingsFilename(now: Date = new Date()): string {
   const d = String(now.getDate()).padStart(2, '0');
   return `transform-brawl-settings-${y}${m}${d}.json`;
 }
+
+/** 匯入結果（給 UI 顯示狀態）。 */
+export interface ImportSettingsResult {
+  /** 成功寫入 localStorage 的設定名（label）。 */
+  imported: string[];
+  /** JSON 沒帶到、保持不變的設定名（label）。 */
+  skipped: string[];
+  /** JSON 有、但不認得的 key 名（略過）。 */
+  unknown: string[];
+  /** 是否有任何一項成功匯入。 */
+  ok: boolean;
+}
+
+/**
+ * 從匯出結構取出「各設定名 → override 值」的對照（純函式，抽給測騎，容錯）。
+ * 相容兩種格式：
+ *  - 完整匯出檔 `{ settings: { name: { value } } }`（exportAllSettings 產物）。
+ *  - 裸對照 `{ name: value }`（value 直接是各 override 物件，如 {version,hitFeel}）。
+ * 只回 EDITOR_STORE_META 認得的 name；value===undefined 的略過（缺項不動）。
+ * @returns { values: {name→value}, unknown: 不認得的 name[] }
+ */
+export function parseImportedSettings(json: unknown): {
+  values: Partial<Record<keyof typeof EDITOR_STORE_KEYS, unknown>>;
+  unknown: string[];
+} {
+  const values: Partial<Record<keyof typeof EDITOR_STORE_KEYS, unknown>> = {};
+  const unknown: string[] = [];
+  const root = json && typeof json === 'object' ? (json as Record<string, unknown>) : null;
+  if (!root) return { values, unknown };
+  // 完整匯出檔：取 root.settings；否則整個 root 當裸對照。
+  const settingsObj =
+    root.settings && typeof root.settings === 'object'
+      ? (root.settings as Record<string, unknown>)
+      : root;
+  const known = new Set(Object.keys(EDITOR_STORE_META));
+  for (const name of Object.keys(settingsObj)) {
+    if (name === 'exportVersion' || name === 'exportedAt' || name === 'unset') continue; // 完整檔的 meta 欄位
+    if (!known.has(name)) { unknown.push(name); continue; }
+    const entry = settingsObj[name];
+    // 完整檔 entry={key,label,target,value} → 取 value；裸對照 entry 直接是 value。
+    const value =
+      entry && typeof entry === 'object' && 'value' in (entry as object)
+        ? (entry as { value: unknown }).value
+        : entry;
+    if (value === undefined) continue; // 缺項不動
+    values[name as keyof typeof EDITOR_STORE_KEYS] = value;
+  }
+  return { values, unknown };
+}
+
+/**
+ * 匯入全部設定到 localStorage（applyToGame 分派，對齊 exportAllSettings 反向；additive、容錯）。
+ * - 依 EDITOR_STORE_META 分派：JSON 有值的設定 → applyToGame(meta.key, value) 存 localStorage。
+ * - ★缺項保持不變（不清空原有 override）；不認得的 key 略過（列 unknown）。
+ * - 版本/欄位不符不在此擋（各編輯器 resolve/validate 讀取時逐欄相容 merge）——匯入只負責分派存值。
+ * @param json 已 parse 的匯入 JSON（呼叫端負責 JSON.parse + try/catch 格式錯）。
+ * @returns 匯入結果（imported/skipped/unknown/ok）。localStorage 不可用時 imported 空、ok=false。
+ */
+export function importAllSettings(json: unknown): ImportSettingsResult {
+  const { values, unknown } = parseImportedSettings(json);
+  const imported: string[] = [];
+  const skipped: string[] = [];
+  for (const name of Object.keys(EDITOR_STORE_META) as (keyof typeof EDITOR_STORE_KEYS)[]) {
+    const meta = EDITOR_STORE_META[name];
+    if (name in values) {
+      const ok = applyToGame(meta.key, values[name]);
+      if (ok) imported.push(meta.label);
+      else skipped.push(meta.label); // localStorage 不可用
+    } else {
+      skipped.push(meta.label); // JSON 沒帶到 → 保持不變
+    }
+  }
+  return { imported, skipped, unknown, ok: imported.length > 0 };
+}
