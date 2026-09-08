@@ -16,6 +16,7 @@ import type {
   LevelData,
   LevelNodeData,
   SpawnEntry,
+  SpawnGroup,
   SpawnNodeData,
 } from '@/config/levelSchema';
 import type { Enemy } from '@/entities/Enemy';
@@ -54,6 +55,19 @@ const REWARD_FILL_DURATION = 0.6;
  * 「自己生出的敵人」參照，每幀比對是否 isDead() 或已從 ctx.getEnemies() 消失來累計擊殺。
  * 完全自足、零共用契約改動。
  */
+/**
+ * 單一 group 的執行期狀態（用戶：group 分層 per-group 狀態機）。
+ * 每 group 各自 cooldown/refilling latch/追蹤自己生出的怪 → 獨立算佔用、獨立 drip 維持場上數。
+ * kills 仍全 node 共用（killQuota 全場過關），tallyKills 掃所有 group 的 tracked。
+ */
+interface SpawnGroupState {
+  cfg: SpawnGroup;
+  cooldown: number;
+  pending: number; // 該 group 預警中（即將生成）數
+  refilling: boolean; // 補怪遲滯 latch（同扁平路徑語意）
+  tracked: Enemy[]; // 該 group 生出、仍存活追蹤中的怪（算 group 佔用）
+}
+
 export class WaveSystem implements GameSystem {
   readonly name = 'WaveSystem';
 
@@ -77,6 +91,8 @@ export class WaveSystem implements GameSystem {
   private spawnCooldown = 0;
   /** 補怪遲滯 latch（用戶：補怪門檻補到 maxAlive）：存活跌破 spawnThreshold 開、達 maxAlive 關；補怪中持續補到滿。 */
   private spawnRefilling = false;
+  /** group 分層執行期狀態（用戶：多 group 並行）；空=走扁平單流。enterNode 依 node.groups 重建。 */
+  private spawnGroupStates: SpawnGroupState[] = [];
   /** 本系統生出、目前仍追蹤中的敵人（用來偵測擊殺）。 */
   private tracked: Enemy[] = [];
   /** 預警中（登場預警圈淡入中、敵人尚未生成）的數量：計入 alive，避免預警期間超生。 */
@@ -348,6 +364,12 @@ export class WaveSystem implements GameSystem {
     this.fireRainActive = false; // 換節點清火雨狀態
     this.fireRainRemaining = 0;
     this.rewardHold = 0; // 換節點清獎勵演出計時（用戶 #3）
+    // group 分層：進 Spawn 節點時依 node.groups 重建 per-group 狀態；無 groups → 空陣列（走扁平單流）。
+    const enteredNode = this.currentLevel()?.nodes[index];
+    const groups = enteredNode?.nodeType === 'Spawn' ? (enteredNode as SpawnNodeData).groups : undefined;
+    this.spawnGroupStates = (groups && groups.length > 0)
+      ? groups.map((cfg) => ({ cfg, cooldown: 0, pending: 0, refilling: true, tracked: [] }))
+      : [];
     this.announceNode();
     // 用戶：火雨訊息晚於波次宣告。進 Spawn 節點且帶 attachFireRain → 按住火雨一個波次宣告顯示時長，
     //   讓「第 N 波」先出，火雨（含「天降火雨！」宣告）接在其後。非火雨節點 gate=0（不影響）。
@@ -395,43 +417,85 @@ export class WaveSystem implements GameSystem {
   private updateSpawnNode(node: SpawnNodeData, dt: number): void {
     this.tallyKills();
 
-    // 波次×人數（多人遷移 S5）：killQuota/maxAlive 依人數縮放。
+    // 波次×人數（多人遷移 S5）：killQuota 依人數縮放。killQuota 為 node 層全場過關（group 分層仍沿用）。
     const scale = this.playerCountScale();
     const killQuota = Math.round(node.killQuota * scale);
-    const maxAlive = Math.round(node.maxAlive * scale);
-    const spawnThreshold = Math.round(node.spawnThreshold * scale);
-
-    const alive = this.ctx.getEnemies().length; // 六輪#5：場上實際敵人數(含前一波接續帶進的殘怪)，維持場面/清空 gate 都用真實佔用
-    const pending = this.pendingSpawns; // 預警中（即將生成）
     const nextIsSpawn = this.nextNodeIsSpawn(); // Spawn→Spawn：維持滿場（不套 quota 上限）；否則 drain-to-clear
 
-    // 補怪遲滯 latch（用戶：補怪門檻補到 maxAlive，非只補到門檻）：
-    //   佔用跌破 spawnThreshold → 開始補（latch on）；補到 maxAlive → 停（latch off）。之間持續補（不在門檻抖動）。
-    const occupancy = alive + pending;
-    if (occupancy < spawnThreshold) this.spawnRefilling = true;
-    else if (occupancy >= maxAlive) this.spawnRefilling = false;
+    const alive = this.ctx.getEnemies().length; // 全場實際敵人數（含殘怪；過關/清空 gate 用真實佔用）
+    const pending = this.totalPending(); // 全場預警中（扁平 + 所有 group）
 
-    // 用戶 #6 (2) gate 清空 + 六輪#5 維持場面：下一節點也是 Spawn → 殺滿 quota 即前進(殘怪接續帶進下一波、不空一下)；
-    //   下一節點非 Spawn(Reward/Event) → 維持「殺滿且場上清空才進」(不把戰鬥拖進獎勵/守護)。
+    // 用戶 #6 (2) gate 清空 + 六輪#5 維持場面：下一節點也是 Spawn → 殺滿 quota 即前進(殘怪接續)；否則殺滿且清空才進。
+    //   ★group 分層仍是 node 層 killQuota 全場過關（全場 alive/pending 一起判）。
     if (shouldAdvanceSpawn(this.kills, killQuota, alive, pending, nextIsSpawn)) {
       this.advanceNode();
       return;
     }
 
-    if (this.spawnCooldown > 0) {
-      this.spawnCooldown -= dt;
+    // group 分層：多 group 各自並行 drip（各自 cooldown/佔用/維持場上數）；killQuota 全場過關（上方已判）。
+    if (this.spawnGroupStates.length > 0) {
+      this.updateSpawnGroups(dt);
+      return;
     }
 
-    // 用戶 #6 (1) 不超生：生產總數（kills+alive+pending）< quota 且維持場面條件成立才 drip。
-    //   ★Spawn→Spawn（nextIsSpawn）：略過 quota 上限，持續補生維持 maxAlive → 刷怪波間怪數不掉、無空窗。
-    //   ★補怪目標=maxAlive（refilling latch）：跌破門檻後一路補到滿，非只補到門檻（對齊 Unity/用戶）。
+    // 扁平單流（無 groups，向後相容）：----------------------------------------
+    const maxAlive = Math.round(node.maxAlive * scale);
+    const spawnThreshold = Math.round(node.spawnThreshold * scale);
+
+    // 補怪遲滯 latch（用戶：補怪門檻補到 maxAlive，非只補到門檻）：跌破 spawnThreshold 開、達 maxAlive 關。
+    const occupancy = alive + this.pendingSpawns;
+    if (occupancy < spawnThreshold) this.spawnRefilling = true;
+    else if (occupancy >= maxAlive) this.spawnRefilling = false;
+
+    if (this.spawnCooldown > 0) this.spawnCooldown -= dt;
+
+    // 不超生 + 維持場面（Spawn→Spawn 略過 quota 上限維持滿場；補到 maxAlive 非停門檻）。
     if (
       this.spawnCooldown <= 0 &&
-      shouldSpawnMore(this.kills, alive, pending, killQuota, maxAlive, spawnThreshold, nextIsSpawn, this.spawnRefilling)
+      shouldSpawnMore(this.kills, alive, this.pendingSpawns, killQuota, maxAlive, spawnThreshold, nextIsSpawn, this.spawnRefilling)
     ) {
       this.spawnOne(node.spawns);
       this.spawnCooldown = node.spawnInterval;
     }
+  }
+
+  /**
+   * 多 group 並行 drip（用戶：group 分層）。每 group 獨立：算自己佔用（自己 tracked 存活 + pending）、
+   * 各自遲滯 latch、各自 cooldown、補到自己的 maxConcurrent（純 drip 維持場上數，無產出上限）。
+   * killQuota 全場過關已在 updateSpawnNode 上方判（此處只管刷）。
+   * minConcurrent 省略 → 門檻＝maxConcurrent（< max 即補的單純維持）；填了 → 跌破 min 才觸發、補到 max。
+   */
+  private updateSpawnGroups(dt: number): void {
+    const scale = this.playerCountScale();
+    const livingSet = new Set<Enemy>(this.ctx.getEnemies());
+    for (const gs of this.spawnGroupStates) {
+      // 該 group 佔用＝自己 tracked 仍存活數 + 自己 pending（tallyKills 已移除死怪，這裡再用 livingSet 保險）。
+      const groupAlive = gs.tracked.reduce((n, e) => (!e.isDead() && livingSet.has(e) ? n + 1 : n), 0);
+      const occupancy = groupAlive + gs.pending;
+      const maxConcurrent = Math.max(1, Math.round(gs.cfg.maxConcurrent * scale));
+      // 門檻：minConcurrent 省略 → 用 maxConcurrent（< max 即補）；填了 → 用 min（跌破 min 觸發）。
+      const threshold = gs.cfg.minConcurrent !== undefined
+        ? Math.round(gs.cfg.minConcurrent * scale)
+        : maxConcurrent;
+      if (occupancy < threshold) gs.refilling = true;
+      else if (occupancy >= maxConcurrent) gs.refilling = false;
+
+      if (gs.cooldown > 0) gs.cooldown -= dt;
+
+      // 純 drip 維持（無 killQuota 上限、無 count）：達 maxConcurrent 停，否則跌破門檻或補怪中 → 補。
+      const canSpawn = occupancy < maxConcurrent && (occupancy < threshold || gs.refilling);
+      if (gs.cooldown <= 0 && canSpawn) {
+        this.spawnOne(gs.cfg.spawns, gs);
+        gs.cooldown = gs.cfg.spawnInterval;
+      }
+    }
+  }
+
+  /** 全場預警中總數（扁平 pendingSpawns + 所有 group pending）。 */
+  private totalPending(): number {
+    let p = this.pendingSpawns;
+    for (const gs of this.spawnGroupStates) p += gs.pending;
+    return p;
   }
 
   /** 依人數的難度係數：1人×1 / 2人×1.5 / 3人×2 / 4人×2.5（playerCount=players[].length）。 */
@@ -442,38 +506,47 @@ export class WaveSystem implements GameSystem {
 
   /**
    * 統計擊殺：追蹤中的敵人凡已死亡或已從場上快照消失者計為一次擊殺並移出追蹤。
+   * 掃扁平 tracked + 所有 group 的 tracked（kills 全 node 共用＝killQuota 全場過關）。
    */
   private tallyKills(): void {
     const livingSet = new Set<Enemy>(this.ctx.getEnemies());
-    const still: Enemy[] = [];
-    for (const e of this.tracked) {
-      if (e.isDead() || !livingSet.has(e)) {
-        this.kills += 1;
-      } else {
-        still.push(e);
+    const sweep = (list: Enemy[]): Enemy[] => {
+      const still: Enemy[] = [];
+      for (const e of list) {
+        if (e.isDead() || !livingSet.has(e)) this.kills += 1;
+        else still.push(e);
       }
-    }
-    this.tracked = still;
+      return still;
+    };
+    this.tracked = sweep(this.tracked);
+    for (const gs of this.spawnGroupStates) gs.tracked = sweep(gs.tracked);
   }
 
-  /** 依權重挑一種敵人，在合理位置生成並納入追蹤。 */
-  private spawnOne(spawns: SpawnEntry[]): void {
+  /** 依權重挑一種敵人，在合理位置生成並納入追蹤。group 分層時傳 groupState → 記進該 group（算 group 佔用）。 */
+  private spawnOne(spawns: SpawnEntry[], groupState?: SpawnGroupState): void {
     const type = this.pickWeighted(spawns);
     if (!type) return;
     const { x, y } = this.pickSpawnPosition();
     // 一般波 Unity 登場：生成點先冒預警圈淡入 spawnWarningDuration → 怪才原地出現（非場邊走進）。
-    // 預警期間計入 pendingSpawns（維持 maxAlive 帳），淡入完才真正 spawn + 移入 tracked。
-    this.pendingSpawns += 1;
+    // 預警期間計入 pending（維持上限帳），淡入完才真正 spawn + 移入 tracked。group 分層記進該 group。
+    if (groupState) groupState.pending += 1;
+    else this.pendingSpawns += 1;
     const spawnGen = this.spawnGeneration; // 捕捉當下世代；skip/換節點 enterNode 遞增後此排程作廢
     let handleRef: { cancel: () => void } | null = null;
     const doSpawn = (): void => {
       // 完成 → 從 active 召喚陣 handle 陣列移除（避免膨脹）。
       if (handleRef) { this.activeSpawnWarnings = this.activeSpawnWarnings.filter((h) => h !== handleRef); }
-      // N skip/換節點作廢：世代已變 → 放棄生怪（不把「正在出生的怪」帶進下一節點）。pendingSpawns 已在 enterNode 清 0。
+      // N skip/換節點作廢：世代已變 → 放棄生怪（不把「正在出生的怪」帶進下一節點）。pending 已在 enterNode 清 0。
       if (spawnGen !== this.spawnGeneration) return;
-      this.pendingSpawns = Math.max(0, this.pendingSpawns - 1);
-      const enemy = this.ctx.spawner.spawn(type, x, y);
-      this.tracked.push(enemy);
+      if (groupState) {
+        groupState.pending = Math.max(0, groupState.pending - 1);
+        const enemy = this.ctx.spawner.spawn(type, x, y);
+        groupState.tracked.push(enemy);
+      } else {
+        this.pendingSpawns = Math.max(0, this.pendingSpawns - 1);
+        const enemy = this.ctx.spawner.spawn(type, x, y);
+        this.tracked.push(enemy);
+      }
     };
     if (this.ctx.effects && typeof this.ctx.effects.spawnWarning === 'function') {
       // 召喚陣視覺 handle 追蹤：skip/換節點 cancel（清視覺）；doSpawn 完成自移除。

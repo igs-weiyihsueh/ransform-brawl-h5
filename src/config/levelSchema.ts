@@ -75,6 +75,28 @@ export interface SpawnEntry {
   weight: number;
 }
 
+/**
+ * 刷怪 group（用戶：group 分層，對照瓢蟲 Cultivarium CultivationRule）：一條獨立的 drip 供給流。
+ * 一個 Spawn node 可含多個 group 並行（如：雜兵狂刷 + 遠程零星 + 菁英偶爾一隻），各自節奏維持場上數。
+ * ★純 drip 維持（無 count/產出上限）：場上該 group 的怪 < 門檻 → 每 spawnInterval 補一隻、補到 maxConcurrent。
+ * ★過關仍靠 node 層 killQuota（全場擊殺累積），group 不參與過關判定、只管刷。
+ */
+export interface SpawnGroup {
+  /** 標籤（編輯器辨識用，選填，不影響 runtime）。 */
+  label?: string;
+  /** 該 group 的敵種權重表（輪盤挑）。 */
+  spawns: SpawnEntry[];
+  /** 該 group 生怪間隔（秒，滴流節流）。 */
+  spawnInterval: number;
+  /** 該 group 場上同時上限（該 group 自己的怪補到此數為止）。對照瓢蟲 MaxConcurrent。 */
+  maxConcurrent: number;
+  /**
+   * 該 group 補怪觸發門檻（選填，對照瓢蟲 MinConcurrent）：場上該 group 怪 < 此值才「開始」補、補到 maxConcurrent。
+   * 省略 → 沿用「< maxConcurrent 即補」的單純維持行為（等同 threshold=maxConcurrent，不破壞行為）。
+   */
+  minConcurrent?: number;
+}
+
 /** Spawn 節點：滴流生怪，殺到 killQuota 完成。 */
 export interface SpawnNodeData {
   nodeType: 'Spawn';
@@ -88,6 +110,12 @@ export interface SpawnNodeData {
   spawnInterval: number;
   /** 敵種權重表。對應 Unity spawns[]。 */
   spawns: SpawnEntry[];
+  /**
+   * 用戶：group 分層（additive optional，向後相容）。有 groups → 走多 group 並行 drip（各自 spawnInterval/maxConcurrent）；
+   * 省略/空 → 走現有扁平單流（killQuota/maxAlive/spawnThreshold/spawnInterval/spawns）。舊 levels.json 零改動仍正常。
+   * killQuota 仍 node 層全場過關（group 不帶過關數）。
+   */
+  groups?: SpawnGroup[];
   /**
    * 附加火雨（用戶試玩#2，additive optional，§4）：火雨 preset 名（FIRE_RAIN_PRESETS 的 key，
    * 如 'FireRain'/'FireRainLight'/'FireRainHeavy'）。省略=無火雨。
@@ -422,8 +450,58 @@ function validateSpawnNode(
   if (node.spawns.length === 0) {
     errors.push(`${at} 的「敵人配置 spawns」為空，至少要有一種可生怪。`);
   }
-  node.spawns.forEach((entryRaw, si) => {
-    const eAt = `${at} 的第 ${si + 1} 筆敵人配置`;
+  validateSpawnEntries(node.spawns, `${at} 的`, errors);
+
+  // attachFireRain（optional）：若提供必須是非空字串（火雨 preset 名）。省略=無火雨。
+  if (node.attachFireRain !== undefined && !isNonEmptyString(node.attachFireRain)) {
+    errors.push(`${at} 的「附加火雨 attachFireRain」若提供必須是非空字串（火雨 preset 名）。`);
+  }
+
+  // groups（用戶：group 分層，optional additive）：若提供，每 group 各自 spawns/spawnInterval/maxConcurrent(+minConcurrent?)。
+  if (node.groups !== undefined) {
+    if (!Array.isArray(node.groups)) {
+      errors.push(`${at} 的「刷怪分層 groups」若提供必須是陣列。`);
+    } else {
+      if (node.groups.length === 0) errors.push(`${at} 的「刷怪分層 groups」若提供至少要有一個 group。`);
+      node.groups.forEach((gRaw, gi) => {
+        const gAt = `${at} 的第 ${gi + 1} 個 group`;
+        if (typeof gRaw !== 'object' || gRaw === null) {
+          errors.push(`${gAt} 必須是物件。`);
+          return;
+        }
+        const g = gRaw as Record<string, unknown>;
+        if (g.label !== undefined && typeof g.label !== 'string') {
+          errors.push(`${gAt} 的「標籤 label」若提供必須是字串。`);
+        }
+        if (!isFiniteNumber(g.spawnInterval) || (g.spawnInterval as number) <= 0) {
+          errors.push(`${gAt} 的「生怪間隔 spawnInterval」缺少或非正數。`);
+        }
+        if (!isFiniteNumber(g.maxConcurrent) || (g.maxConcurrent as number) <= 0) {
+          errors.push(`${gAt} 的「同時上限 maxConcurrent」缺少或非正數。`);
+        }
+        // minConcurrent optional：若提供須非負、且不大於 maxConcurrent（否則永遠在補）。
+        if (g.minConcurrent !== undefined) {
+          if (!isFiniteNumber(g.minConcurrent) || (g.minConcurrent as number) < 0) {
+            errors.push(`${gAt} 的「補怪門檻 minConcurrent」若提供必須是非負數。`);
+          } else if (isFiniteNumber(g.maxConcurrent) && (g.minConcurrent as number) > (g.maxConcurrent as number)) {
+            errors.push(`${gAt} 的「補怪門檻 minConcurrent」(${g.minConcurrent}) 不應大於「同時上限 maxConcurrent」(${g.maxConcurrent})。`);
+          }
+        }
+        if (!Array.isArray(g.spawns)) {
+          errors.push(`${gAt} 的「敵人配置 spawns」缺少或不是陣列。`);
+        } else {
+          if (g.spawns.length === 0) errors.push(`${gAt} 的「敵人配置 spawns」為空，至少要有一種可生怪。`);
+          validateSpawnEntries(g.spawns, `${gAt} 的`, errors);
+        }
+      });
+    }
+  }
+}
+
+/** 驗證 spawns[] 內每筆 {enemyType, weight}（node.spawns 與 group.spawns 共用）。 */
+function validateSpawnEntries(spawns: unknown[], atPrefix: string, errors: string[]): void {
+  spawns.forEach((entryRaw, si) => {
+    const eAt = `${atPrefix}第 ${si + 1} 筆敵人配置`;
     if (typeof entryRaw !== 'object' || entryRaw === null) {
       errors.push(`${eAt} 必須是物件（含 敵種、權重）。`);
       return;
@@ -434,13 +512,8 @@ function validateSpawnNode(
         `${eAt} 的「敵種 enemyType」="${String(entry.enemyType)}" 不合法（需非空字串；敵種合法性由 enemies 定義把關）。`,
       );
     }
-    if (!isFiniteNumber(entry.weight) || entry.weight <= 0) {
+    if (!isFiniteNumber(entry.weight) || (entry.weight as number) <= 0) {
       errors.push(`${eAt} 的「權重 weight」缺少或非正數。`);
     }
   });
-
-  // attachFireRain（optional）：若提供必須是非空字串（火雨 preset 名）。省略=無火雨。
-  if (node.attachFireRain !== undefined && !isNonEmptyString(node.attachFireRain)) {
-    errors.push(`${at} 的「附加火雨 attachFireRain」若提供必須是非空字串（火雨 preset 名）。`);
-  }
 }
