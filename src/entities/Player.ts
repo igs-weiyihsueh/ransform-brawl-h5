@@ -216,6 +216,7 @@ export class Player implements Hittable {
   setSecondTransformScale(mult: number): void {
     this.secondTransformScale = mult > 0 ? mult : 1;
     this.anim.setScale(SPRITE_SCALE * this.secondTransformScale);
+    this.syncFootGlow(); // 立即對齊：放大改變中心→腳底距離，footGlow 位置隨即更新（免站定不動時偏一幀）。
   }
 
   getCharacterKey(): string {
@@ -254,9 +255,18 @@ export class Player implements Hittable {
    * 不再是 Unity 的 -50 往上，改用 footGlowCenter 往下貼腳部）。
    */
   syncFootGlow(): void {
-    const c = footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.foot.offsetY);
+    const c = footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.scaledFootOffsetY());
     this.footGlow.x = c.x;
     this.footGlow.y = c.y;
+  }
+
+  /**
+   * 腳底 Y 偏移乘二段放大倍率（修：二段變身放大 sprite 後，中心→腳底距離按 scale 拉長；
+   * foot.offsetY 是常態 mult=1 校準的常數，需乘 secondTransformScale 才對齊放大後真腳底，否則 footGlow 偏上）。
+   * mult=1 → 回原 offsetY（現況不變）。X 偏移是水平置中不隨放大改，不乘。
+   */
+  private scaledFootOffsetY(): number {
+    return this.foot.offsetY * this.secondTransformScale;
   }
 
   /**
@@ -401,7 +411,7 @@ export class Player implements Hittable {
    * 與 getVacuumRadius（同 foot.radiusPx）搭配＝所見即所得的搜索圈幾何。
    */
   getFootGlowCenter(): Vec2 {
-    return footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.foot.offsetY);
+    return footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.scaledFootOffsetY());
   }
 
   /**
@@ -411,7 +421,7 @@ export class Player implements Hittable {
    */
   getGroundFootCenter(): Vec2 {
     const groundY = this.floating ? this.floatBaseY : this.anim.sprite.y;
-    return footGlowCenter(this.anim.sprite.x, groundY, this.foot.offsetX, this.foot.offsetY);
+    return footGlowCenter(this.anim.sprite.x, groundY, this.foot.offsetX, this.scaledFootOffsetY());
   }
 
   /** 目前是否處於無敵幀（iFrame 內免疫再次受擊）。 */
