@@ -71,8 +71,8 @@ export const DASH_CONFIG = {
  * 前提：玩家已是一段悟空變身後才累積二段能量；滿自動觸發二段（放大+攻擊範圍加成）；二段隨時間消退，退完回一段常態。
  */
 export const SECOND_TRANSFORM_CONFIG = {
-  /** ★feature flag：預設關（做好先不上線）。開才啟用二段變身。 */
-  enabled: false,
+  /** ★feature flag：上線（用戶回報變身後要顯示二段能量圓環→開）。開才啟用二段變身。 */
+  enabled: true,
   /** 擊殺一隻怪累積的能量（ratio，0~1 空間；預設約 8 隻滿）。 */
   energyPerKill: 0.12,
   /** 普攻命中一次累積的能量（ratio；比擊殺少）。 */

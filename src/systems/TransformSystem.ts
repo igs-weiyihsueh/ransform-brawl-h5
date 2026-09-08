@@ -3,6 +3,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import {
   HUMAN_KEY,
   ITEM_SPAWN_INTERVAL,
+  FIELD_ITEM_SPAWN_ENABLED,
   MAX_ITEMS_ON_FIELD,
   MAX_SOUL_POWER,
   RECOVER_SOUL,
@@ -102,7 +103,9 @@ export class TransformSystem implements GameSystem {
   update(dt: number): void {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
-      this.spawnItem();
+      // ★用戶#3：場上先不生變身道具——週期生成受 FIELD_ITEM_SPAWN_ENABLED gate（false 關）。
+      //   仍推進 timer（開回時不會累積爆量）；debug 手動生(G)/heroDrop 掉落各自路徑不受此影響。
+      if (FIELD_ITEM_SPAWN_ENABLED) this.spawnItem();
       this.spawnTimer = ITEM_SPAWN_INTERVAL;
     }
 
@@ -297,7 +300,10 @@ export class TransformSystem implements GameSystem {
     s.heroKey = heroKey;
     player.switchCharacter(heroKey);
     player.playTransformFlash(TRANSFORM_IFRAME);
-    player.setSoulDamageSink((dmg) => this.takeSoulDamage(player, dmg));
+    // ★大更動回歸修（用戶#2）：角色無血量、被打不該回凡人。移除舊「受擊扣魂力→歸0 detransform」鉤子——
+    //   被打改只扣二段能量（EnemySpawner.onPlayerHit→loseSecondTransformEnergy，clamp 0、歸零仍維持英雄），
+    //   只有 CREDIT 耗盡回待機才 revertToHuman。故變身時不再掛 soulDamageSink（保留 detransform 供 credit 路徑用）。
+    player.setSoulDamageSink(null);
   }
 
   /**
@@ -316,7 +322,7 @@ export class TransformSystem implements GameSystem {
     return hero;
   }
 
-  /** 退變：英雄 → 凡人（魂力歸 0 觸發）。清 heroKey。 */
+  /** 退變：英雄 → 凡人（僅 credit 耗盡回待機的 revertToHuman 觸發；被打不再走此路）。清 heroKey。 */
   private detransform(player: GameContext['player']): void {
     const s = this.stateOf(player.playerId);
     s.transformed = false;
@@ -327,15 +333,11 @@ export class TransformSystem implements GameSystem {
     player.playTransformFlash(TRANSFORM_IFRAME);
   }
 
-  /** 變身中受敵人攻擊：扣魂力；歸 0 → 退變。 */
-  private takeSoulDamage(player: GameContext['player'], damage: number): void {
-    const s = this.stateOf(player.playerId);
-    if (!s.transformed) return;
-    s.soul = Math.max(0, s.soul - damage);
-    if (s.soul <= 0) {
-      this.detransform(player);
-    }
-  }
+  /**
+   * ★已停用並移除鉤子（用戶#2 大更動回歸修）：舊「變身中受敵人攻擊扣魂力、歸 0 退變凡人」機制。
+   * 角色設計上無血量、不該被打回凡人——被打改只扣二段能量（loseSecondTransformEnergy，clamp 0、歸零仍英雄）。
+   * detransform 僅由 credit 耗盡回待機的 revertToHuman 走（見下）。takeSoulDamage 已刪（不再有呼叫端）。
+   */
 
   destroy(): void {
     for (const it of this.items) it.destroy();
