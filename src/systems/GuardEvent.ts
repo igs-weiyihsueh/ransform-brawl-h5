@@ -81,6 +81,9 @@ export class GuardEvent {
     this.moveTargets = guardCornerTargets(sx, sy, this.preset.cornerOffsetXPx, this.preset.cornerOffsetYPx);
     this.moveArrived = (ctx.players ?? []).map(() => false);
     ctx.effects?.timedEventText?.(this.msgs.eventTextDurationSec, this.msgs.introEventText); // 走位同時滑進大字（文字/時長 override，非阻塞）
+    // 用戶②：守護波「自動移動」(introMove scripted 走位到四角) 期間暫關搜索圈(footGlow)，
+    //   就定位進 reveal 時恢復（updateIntroMove 轉場處 setFootGlowVisible(true)）。純顯示切換，不碰走位/戰鬥。
+    (ctx.players ?? []).forEach((p) => p.setFootGlowVisible?.(false));
   }
 
   isFinished(): boolean {
@@ -187,6 +190,8 @@ export class GuardEvent {
     if (allScriptedArrived(this.moveArrived) || timedOut) {
       // ②玩家就定位 → 雕像顯現（進度條收/守護量條由 ProgressBarSystem 依 guard active 自動切）。
       this.moveArrived = this.moveArrived.map(() => true);
+      // 用戶②：自動移動(introMove)結束 → 恢復搜索圈(footGlow)顯示。
+      (this.ctx.players ?? []).forEach((p) => p.setFootGlowVisible?.(true));
       this.target.reveal(this.ctx.scene);
       this.phase = 'reveal';
       this.focusElapsed = 0;
@@ -239,6 +244,8 @@ export class GuardEvent {
     this.won = won;
     // 用戶 #4：保險——結束時確保解鎖操作 + 清 spotlight（避免開場中意外結束殘留鎖定/遮罩）。
     this.ctx.scriptedControl = false;
+    // 用戶②：保險——若在 introMove(自動移動)期間意外結束/skip，恢復搜索圈(footGlow)顯示（別卡在關閉態）。
+    if (this.phase === 'introMove') (this.ctx.players ?? []).forEach((p) => p.setFootGlowVisible?.(true));
     // 第十四輪：保險——結束/skip 若在 focus 期間，務必解除聚焦定格 + 停雕像呼吸燈（別卡死凍結）。
     this.ctx.guardFocusPause = false;
     this.target.stopFocusPulse?.();
