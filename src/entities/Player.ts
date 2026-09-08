@@ -486,6 +486,19 @@ export class Player implements Hittable {
     this.pushLoadMult = m;
   }
 
+  /**
+   * 目前每幀移動速度（px/秒，含 speedMult/pushLoadMult）。
+   * 與 move() 內同一公式，供 ContactSolver 階段② paceMove 反算世界位移量用（純讀取、不改狀態/手感）。
+   */
+  getMoveSpeedPx(): number {
+    return PLAYER_CONFIG.moveSpeed * PPU * this.speedMult * this.pushLoadMult;
+  }
+
+  /** 身體推擠半徑（＝推怪真空半徑；與 getVacuumRadius 一致，供 paceMove 當 ContactBody 半徑）。 */
+  getBodyRadius(): number {
+    return this.getVacuumRadius();
+  }
+
   /** 設定衝刺速度倍率（頭盔 Dash / 寶盒坐騎）。 */
   setDashSpeedMultiplier(m: number): void {
     this.dashSpeedMult = m;

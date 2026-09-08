@@ -20,6 +20,12 @@ import { COIN_INSERT_AMOUNT } from '@/config/creditConfig';
 import { getResolvedHitFeel } from '@/config/hitFeelSchema';
 import { getResolvedAttackSpeedFor } from '@/config/attackSpeedSchema';
 import { pushLoadFactor } from '@/systems/enemySeparation';
+import {
+  paceMove,
+  DEFAULT_CONTACT_SOLVER_PARAMS,
+  type ContactBody,
+} from '@/systems/contactSolver';
+import { getPlayerSolver } from '@/config/surroundConfig';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
 import { playerColor } from '@/config/playerConfig';
@@ -276,7 +282,12 @@ export class PlayerControlSystem implements GameSystem {
         // 推怪負重（用戶）：有移動意圖才算——數真空圈內可推敵人(非菁英/非grabber)→降速。
         const moving = mv.x !== 0 || mv.y !== 0;
         player.setPushLoadMultiplier?.(moving ? this.computePushLoad(player) : 1);
-        player.move(mv, dt);
+        // ContactSolver 階段②：playerSolver==='contactSolver' → 移動前先過 paceMove（速度層預減速，
+        //   玩家 vs 怪/玩家 vs 玩家，撞進去前先削掉超出質量份額的接近分量）。★預設 legacy 不動手感。
+        const adjustedMv = getPlayerSolver() === 'contactSolver'
+          ? this.applyPlayerPaceMove(player, mv, dt)
+          : mv;
+        player.move(adjustedMv, dt);
       }
       if ((src.justPressedAttack() || this.forcedAttackPids.delete(pid)) && credit.canAttack(pid)) {
         const intent = energy.resolveAttackIntent(pid);
@@ -444,6 +455,47 @@ export class PlayerControlSystem implements GameSystem {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
     return dx * dx + dy * dy;
+  }
+
+  /**
+   * ContactSolver 階段②：玩家 paceMove（速度層預減速）。playerSolver==='contactSolver' 才呼叫。
+   *   把玩家「本幀想走的世界位移」丟給 paceMove，對照場上障礙（可推的敵人 + 其他玩家）削掉
+   *   超出質量份額的接近分量 → 回傳調整後的 moveVec（方向 sign 不變、facing/動畫仍正確）。
+   *   ★不改 Player.move 內部（clamp/facing/動畫不動）；玩家 vs 不可推者(菁英牆/grabber)＝無限質量推不動。
+   *   時序：本道在 move 之前（速度層）；邊界 clamp 仍在最後（LateUpdate），不變量不破。
+   */
+  private applyPlayerPaceMove(
+    player: GameContext['player'],
+    mv: { x: number; y: number },
+    dt: number,
+  ): { x: number; y: number } {
+    if (mv.x === 0 && mv.y === 0) return mv;
+    const speedPx = player.getMoveSpeedPx?.() ?? 0;
+    const step = speedPx * dt;
+    if (step <= 0) return mv;
+    const center = player.getVacuumCenter?.() ?? player.getHitCenter();
+    const selfRadius = player.getBodyRadius?.() ?? player.getVacuumRadius?.() ?? player.getHitRadius();
+    const selfId = `player${player.playerId}`;
+    const self: ContactBody = { id: selfId, x: center.x, y: center.y, radius: selfRadius, mass: selfRadius, canBePushed: true };
+    // 障礙：可推的敵人（菁英immovable/grabber/dead → canBePushed=false 或跳過）+ 其他玩家。
+    const bodies: ContactBody[] = [self];
+    for (const e of this.ctx.getEnemies()) {
+      if (e.isDead() || e.isGrabber()) continue;
+      const ec = e.getHitCenter();
+      const r = e.getBodyRadius();
+      bodies.push({ id: `enemy${e.id}`, x: ec.x, y: ec.y, radius: r, mass: r, canBePushed: !e.isImmovable() });
+    }
+    for (const other of this.ctx.players) {
+      if (other === player) continue;
+      const oc = other.getVacuumCenter?.() ?? other.getHitCenter();
+      const or = other.getBodyRadius?.() ?? other.getVacuumRadius?.() ?? other.getHitRadius();
+      bodies.push({ id: `player${other.playerId}`, x: oc.x, y: oc.y, radius: or, mass: or, canBePushed: true });
+    }
+    // 想走的世界位移 = 方向 × 本幀步長。
+    const desired = { x: mv.x * step, y: mv.y * step };
+    const { move } = paceMove(self, desired, bodies, DEFAULT_CONTACT_SOLVER_PARAMS);
+    // 反算回 moveVec（÷step）：方向可能因削掉接近分量而改，但 magnitude<=原、sign 一致 → facing/動畫正確。
+    return { x: move.x / step, y: move.y / step };
   }
 
   /**

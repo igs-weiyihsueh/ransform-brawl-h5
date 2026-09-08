@@ -20,16 +20,24 @@
 
 export type OverlapSolver = 'contactSolver' | 'legacy';
 export type SurroundMode = 'slots' | 'emergent';
+export type PlayerSolver = 'contactSolver' | 'legacy';
 
 export interface SurroundRuntimeConfig {
   overlapSolver: OverlapSolver;
   surroundMode: SurroundMode;
+  /**
+   * 階段②：玩家 paceMove 推擠用哪套（玩家 vs 怪 / 玩家 vs 玩家）。
+   * ★預設 'legacy'——不動現有玩家操作手感（既有 pushOutOfPlayer/resolvePenetration/pushLoad 不變）。
+   * 'contactSolver'＝玩家移動前先過 paceMove 速度層預減速（唯一動手感的高風險點，用戶實機試再定去留）。
+   */
+  playerSolver: PlayerSolver;
 }
 
-/** 預設：新 solver + 槽位法（＝現有行為的升級版；改 legacy 即回退舊推擠）。 */
+/** 預設：新 solver + 槽位法 + ★玩家 legacy（怪-怪升級、玩家手感不動）。 */
 export const DEFAULT_SURROUND_RUNTIME_CONFIG: SurroundRuntimeConfig = {
   overlapSolver: 'contactSolver',
   surroundMode: 'slots',
+  playerSolver: 'legacy',
 };
 
 // module-level 可變單例（執行期切換）。以淺拷貝初始化，避免共享參照被外部改到 DEFAULT。
@@ -47,6 +55,10 @@ export function getSurroundMode(): SurroundMode {
   return state.surroundMode;
 }
 
+export function getPlayerSolver(): PlayerSolver {
+  return state.playerSolver;
+}
+
 export function setOverlapSolver(solver: OverlapSolver): void {
   state.overlapSolver = solver;
 }
@@ -55,14 +67,20 @@ export function setSurroundMode(mode: SurroundMode): void {
   state.surroundMode = mode;
 }
 
+export function setPlayerSolver(solver: PlayerSolver): void {
+  state.playerSolver = solver;
+}
+
 /** 一次覆寫（缺欄不動）。 */
 export function setSurroundRuntimeConfig(patch: Partial<SurroundRuntimeConfig>): void {
   if (patch.overlapSolver !== undefined) state.overlapSolver = patch.overlapSolver;
   if (patch.surroundMode !== undefined) state.surroundMode = patch.surroundMode;
+  if (patch.playerSolver !== undefined) state.playerSolver = patch.playerSolver;
 }
 
 /** 重置回預設（測試/回退用）。 */
 export function resetSurroundRuntimeConfig(): void {
   state.overlapSolver = DEFAULT_SURROUND_RUNTIME_CONFIG.overlapSolver;
   state.surroundMode = DEFAULT_SURROUND_RUNTIME_CONFIG.surroundMode;
+  state.playerSolver = DEFAULT_SURROUND_RUNTIME_CONFIG.playerSolver;
 }

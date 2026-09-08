@@ -34,12 +34,14 @@ const game = new Phaser.Game(config);
 // 環繞/推擠 A/B 開關掛勾（征騎 ContactSolver 階段①）：用戶可在 console 執行期切換比較，無需重編譯。
 //   window.__SURROUND__.setOverlapSolver('legacy'|'contactSolver')  ← 新 solver ↔ 舊推擠一鍵回退
 //   window.__SURROUND__.setSurroundMode('slots'|'emergent')         ← 槽位法 ↔ 純湧現法 A/B
+//   window.__SURROUND__.setPlayerSolver('legacy'|'contactSolver')   ← 階段②玩家推擠 solver（預設 legacy 不動手感）
 //   window.__SURROUND__.get()                                        ← 看目前設定
 void (async () => {
   const cfg = await import('@/config/surroundConfig');
   (window as unknown as { __SURROUND__?: unknown }).__SURROUND__ = {
     setOverlapSolver: cfg.setOverlapSolver,
     setSurroundMode: cfg.setSurroundMode,
+    setPlayerSolver: cfg.setPlayerSolver,
     set: cfg.setSurroundRuntimeConfig,
     reset: cfg.resetSurroundRuntimeConfig,
     get: cfg.getSurroundRuntimeConfig,
