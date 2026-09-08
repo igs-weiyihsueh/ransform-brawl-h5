@@ -4,6 +4,12 @@ import type { Player } from '@/entities/Player';
 import { circleIntersectsCircle, type Vec2 } from '@/systems/hitDetection';
 import { pushOutOfPlayer } from '@/systems/enemySeparation';
 import { resolveEnemyOverlap } from '@/systems/enemySeparation';
+import {
+  solveContacts,
+  overlapAgentsToContactBodies,
+  DEFAULT_CONTACT_SOLVER_PARAMS,
+} from '@/systems/contactSolver';
+import { getOverlapSolver, getSurroundMode } from '@/config/surroundConfig';
 import { Projectile } from '@/systems/Projectile';
 import { SurroundSlotManager, type ISurroundTarget } from '@/systems/SurroundSlotManager';
 import { isValidEnemyTarget } from '@/systems/targetingMath';
@@ -153,6 +159,14 @@ export class EnemySpawner {
         e.setSlotTarget(null, null);
         continue;
       }
+      // 純湧現法 A/B（surroundMode==='emergent'）：旁路整套槽位分配。
+      //   釋放已持槽 + slotPos=null → Enemy.moveChase 走 fallback（朝玩家直線追＋分離力），
+      //   圍圈純由分離力+解重疊(solveContacts)擠出來（瓢蟲原版精神）。ringCenter 也給 null（無槽環）。
+      if (getSurroundMode() === 'emergent') {
+        this.releaseSurroundFor(e);
+        e.setSlotTarget(null, null);
+        continue;
+      }
       const target = this.surroundTargetFor();
       if (!target) {
         this.releaseSurroundFor(e);
@@ -284,9 +298,27 @@ export class EnemySpawner {
     const overlapAgents = this.enemies.map((e) => {
       const c = e.getHitCenter();
       const skip = e.isDead() || (e.isGrabber?.() ?? false); // grabber/dead 不參與(半徑 0→純函式跳過)
-      return { x: c.x, y: c.y, radius: skip ? 0 : e.getHitRadius(), movable: !skip && e.isSeparationMovable() };
+      return {
+        id: String(e.id), // 穩定 id（跨幀不變，防 rebuild/reorder 破 pushPairs key）
+        x: c.x,
+        y: c.y,
+        radius: skip ? 0 : e.getHitRadius(),
+        movable: !skip && e.isSeparationMovable(),
+      };
     });
-    const resolved = resolveEnemyOverlap(overlapAgents);
+    // ContactSolver 接線階段①：怪-怪解重疊改跑 solveContacts（升級版：slop/鬆弛/取平均/質量分攤）。
+    //   開關 getOverlapSolver()==='legacy' → 回退舊 resolveEnemyOverlap（保留不刪，一鍵回退）。
+    //   ★只做怪-怪；玩家不進此 solver（玩家推擠仍走既有 pushOutOfPlayer/resolvePenetration，不動手感）。
+    //   ★時序不變：本道仍排在 clamp(最後防線)之前、與舊 resolveEnemyOverlap 同位置。
+    let resolved: { x: number; y: number }[];
+    if (getOverlapSolver() === 'contactSolver') {
+      const bodies = overlapAgentsToContactBodies(overlapAgents);
+      // 階段①無玩家 paceMove → 無跨幀 pushPairs，傳空 Set（怪-怪對稱解重疊）。
+      const out = solveContacts(bodies, new Set(), DEFAULT_CONTACT_SOLVER_PARAMS);
+      resolved = out.positions;
+    } else {
+      resolved = resolveEnemyOverlap(overlapAgents);
+    }
     for (let i = 0; i < this.enemies.length; i += 1) {
       const e = this.enemies[i];
       if (overlapAgents[i].radius <= 0) continue; // grabber/dead 跳過

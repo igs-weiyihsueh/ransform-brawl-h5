@@ -31,6 +31,21 @@ const game = new Phaser.Game(config);
 // debug 掛勾：暴露 game 實例供無頭瀏覽器/E2E 抓 textures/場景狀態自查（不影響玩法）。
 (window as unknown as { __PHASER_GAME__?: Phaser.Game }).__PHASER_GAME__ = game;
 
+// 環繞/推擠 A/B 開關掛勾（征騎 ContactSolver 階段①）：用戶可在 console 執行期切換比較，無需重編譯。
+//   window.__SURROUND__.setOverlapSolver('legacy'|'contactSolver')  ← 新 solver ↔ 舊推擠一鍵回退
+//   window.__SURROUND__.setSurroundMode('slots'|'emergent')         ← 槽位法 ↔ 純湧現法 A/B
+//   window.__SURROUND__.get()                                        ← 看目前設定
+void (async () => {
+  const cfg = await import('@/config/surroundConfig');
+  (window as unknown as { __SURROUND__?: unknown }).__SURROUND__ = {
+    setOverlapSolver: cfg.setOverlapSolver,
+    setSurroundMode: cfg.setSurroundMode,
+    set: cfg.setSurroundRuntimeConfig,
+    reset: cfg.resetSurroundRuntimeConfig,
+    get: cfg.getSurroundRuntimeConfig,
+  };
+})();
+
 // 試玩模式（?preview=1）：建立編輯器交握橋。一般玩家路徑完全不進這分支。
 if (isPreviewMode()) {
   const bridge = new PreviewBridge((levels) => {
