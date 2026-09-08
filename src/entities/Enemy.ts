@@ -516,6 +516,9 @@ export class Enemy implements Hittable {
   applyMashAttract(center: Vec2, dt: number): void {
     if (this.dead || this.state === 'death') return;
     if (this.isImmovable()) return; // 菁英像牆不被吸
+    // 十六輪①修：蓄力中怪站定不被吸（對齊 resolvePenetration charge-return / isSeparationMovable charge=false，
+    //   符 7f0eb30 精神；否則蓄力怪被吸移動而 applyMashAttract 沒 syncChargeFx→腳底法陣盤留原地分離。用戶回報）。
+    if (this.state === 'charge') return;
     if (this.grabber || this.knockbackRemaining > 0 || this.freezeRemaining > 0 || this.stunRemaining > 0) return;
     const cur = { x: this.anim.sprite.x, y: this.anim.sprite.y };
     const next = mashAttractStep(cur, center, dt);
