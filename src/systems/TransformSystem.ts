@@ -39,8 +39,10 @@ import {
   makeSecondTransformState,
   accumulateSecondEnergy,
   decaySecondEnergy,
+  loseSecondEnergy,
   secondEnergyRatio,
 } from '@/systems/secondTransformMath';
+import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
 
 /**
  * TransformSystem — 變身系統（凡人 ↔ 悟空，決策 15fec2a4）。
@@ -552,9 +554,9 @@ export class TransformSystem implements GameSystem {
   }
 
   /**
-   * 打怪累積二段能量（GameScene onEnemyKilled / PlayerControl reportHit 呼叫）。
+   * 階段3：打怪「命中就累積」二段能量（PlayerControl 普攻命中 hook 呼叫）。
    * ★flag 關 或 未一段變身 → no-op。滿 → 自動觸發二段（放大+攻擊範圍加成）。
-   * @param amount 累積量（擊殺用 energyPerKill、命中用 energyPerHit）。
+   * @param amount 累積量（命中用 energyPerHit）。
    */
   accumulateSecondTransform(playerId: number, amount: number): void {
     if (!this.isSecondTransformAvailable(playerId)) return;
@@ -562,6 +564,18 @@ export class TransformSystem implements GameSystem {
     const after = accumulateSecondEnergy(before, amount, getResolvedSecondTransform().fillThreshold);
     this.secondStates.set(playerId, after);
     if (!before.active && after.active) this.enterSecondTransform(playerId); // 剛觸發
+  }
+
+  /**
+   * 階段3：玩家被怪擊中 → 二段能量倒扣（EnemySpawner 命中玩家時呼叫）。
+   * ★flag 關 或 未一段變身 → no-op。★能量 0 則不扣（loseSecondEnergy clamp 下限 0）。
+   * @param amount 倒扣量（省略用 config energyLossOnHit）。
+   */
+  loseSecondTransformEnergy(playerId: number, amount: number = SECOND_TRANSFORM_CONFIG.energyLossOnHit): void {
+    if (!this.isSecondTransformAvailable(playerId)) return;
+    const before = this.secondStateOf(playerId);
+    const after = loseSecondEnergy(before, amount);
+    this.secondStates.set(playerId, after);
   }
 
   /** 每幀推進二段能量消退（★關 no-op）；退完解除二段；二段中光環跟角色。 */

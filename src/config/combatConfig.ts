@@ -81,6 +81,8 @@ export const SECOND_TRANSFORM_CONFIG = {
   fillThreshold: 1,
   /** 二段期間每秒能量消退（ratio/秒；1/decayPerSec≈二段持續秒數，預設約 8s）。 */
   decayPerSec: 0.125,
+  /** 階段3：玩家被怪擊中一次，二段能量倒扣量（ratio；能量 0 則不扣，clamp 下限 0）。 */
+  energyLossOnHit: 0.1,
   /** 二段視覺放大倍率（悟空放大，乘在 SPRITE_SCALE 上）。 */
   scaleMult: 1.4,
   /** 二段攻擊範圍加成倍率（攻擊形狀 length/radius ×此值）。 */

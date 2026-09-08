@@ -3,6 +3,7 @@ import {
   makeSecondTransformState,
   accumulateSecondEnergy,
   decaySecondEnergy,
+  loseSecondEnergy,
   secondEnergyRatio,
   isSecondActive,
   type SecondTransformState,
@@ -117,5 +118,40 @@ describe('secondTransformMath — 完整週期（累積→滿觸發→消退→�
     }
     expect(s.active).toBe(false);
     expect(s.energy).toBe(0);
+  });
+});
+
+describe('secondTransformMath — 階段3 被打倒扣 loseSecondEnergy（clamp 0）', () => {
+  it('累積態被打 → energy 倒扣該量（不觸發 active）', () => {
+    const s: SecondTransformState = { energy: 0.5, active: false };
+    const r = loseSecondEnergy(s, 0.1);
+    expect(r.energy).toBeCloseTo(0.4, 6);
+    expect(r.active).toBe(false);
+  });
+
+  it('★能量 0 → 不扣（clamp 0，不會負，回原能量 0）', () => {
+    const s: SecondTransformState = { energy: 0, active: false };
+    const r = loseSecondEnergy(s, 0.1);
+    expect(r.energy).toBe(0); // 0 不扣
+  });
+
+  it('★扣超過剩餘 → clamp 到 0（不負）', () => {
+    const s: SecondTransformState = { energy: 0.08, active: false };
+    const r = loseSecondEnergy(s, 0.3);
+    expect(r.energy).toBe(0); // max(0, 0.08-0.3)=0，非 -0.22
+  });
+
+  it('倒扣量 <=0 / NaN → no-op（回原 state）', () => {
+    const s: SecondTransformState = { energy: 0.5, active: false };
+    expect(loseSecondEnergy(s, 0).energy).toBe(0.5);
+    expect(loseSecondEnergy(s, -0.2).energy).toBe(0.5);
+    expect(loseSecondEnergy(s, NaN).energy).toBe(0.5);
+  });
+
+  it('active（二段中）被打 → 只降 energy、不主動翻 active（消退由 decay 管）', () => {
+    const s: SecondTransformState = { energy: 1, active: true };
+    const r = loseSecondEnergy(s, 0.2);
+    expect(r.energy).toBeCloseTo(0.8, 6);
+    expect(r.active).toBe(true); // 不因倒扣主動解除
   });
 });

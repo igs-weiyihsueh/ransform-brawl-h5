@@ -76,6 +76,24 @@ export function secondEnergyRatio(state: SecondTransformState): number {
   return clamp01(state.energy);
 }
 
+/**
+ * 階段3：玩家被怪擊中 → 二段能量倒扣（純函式，clamp 下限 0）。
+ * - ★能量為 0 → 不扣（clamp 0，回原 state，不會負）。
+ * - active（二段中）被打：也扣能量；扣到 0 這裡不解除二段（消退由 decaySecondEnergy 管；本函式只管累積態的能量倒扣）。
+ *   實務：二段中 energy 由 decay 管、通常滿→退；被打倒扣主要影響「累積中（未觸發二段）」的進度。保守只降 energy、不主動翻 active。
+ * @param amount 倒扣量（>0；<=0 為 no-op）。
+ * @returns 新 state（energy 下限 clamp 0）。
+ */
+export function loseSecondEnergy(
+  state: SecondTransformState,
+  amount: number,
+): SecondTransformState {
+  if (!(amount > 0)) return state; // 無效扣量 no-op
+  if (state.energy <= 0) return state; // ★能量 0 不扣（不會負）
+  const energy = Math.max(0, state.energy - amount);
+  return { energy, active: state.active };
+}
+
 /** 是否在二段變身中。 */
 export function isSecondActive(state: SecondTransformState): boolean {
   return state.active;

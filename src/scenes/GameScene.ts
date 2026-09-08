@@ -2,7 +2,6 @@ import Phaser from 'phaser';
 import { CHARACTERS } from '@/config/animationConfig';
 import { chestChargeForResolved, getResolvedChest } from '@/config/chestSchema';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
-import { getResolvedSecondTransform } from '@/config/secondTransformSchema';
 import { HERO_ROSTER, pickHero } from '@/config/heroRoster';
 import { shouldDropHeroItem } from '@/config/heroDropMath';
 import type { LevelData } from '@/config/levelSchema';
@@ -166,8 +165,7 @@ export class GameScene extends Phaser.Scene {
       const shares = splitChestByDamage(total, damageByPlayer, player.playerId);
       for (const [pid, amount] of shares) {
         chest.addCharge(pid, amount); // 即時加值（不動時機/邏輯）
-        // 用戶新大功能：二段變身能量累積（★flag 關/未一段變身 → no-op）。有傷害貢獻的 player 才累。
-        if (amount > 0) transform.accumulateSecondTransform(pid, getResolvedSecondTransform().energyPerKill);
+        // 階段3：二段變身能量改「擊中累積」（PlayerControl 命中 hook），不再擊殺累積——此處移除 accumulateSecondTransform。
         if (amount <= 0) continue;
         const anchor = uiSystem.getChestAnchor(pid);
         if (anchor)
@@ -182,6 +180,8 @@ export class GameScene extends Phaser.Scene {
     };
     // 防穿透對所有 player（多人）：讓 spawner 讀 players[]。
     spawner.getAllPlayers = () => this.ctx.players;
+    // 階段3：玩家被怪擊中 → 二段能量倒扣（★flag 關/能量 0/未一段變身 → no-op 由 TransformSystem gate）。
+    spawner.onPlayerHit = (pid) => transform.loseSecondTransformEnergy(pid);
     // hitFeel 表演注入：新生敵人受擊/死亡時播白閃/punch/火花/死亡粒子（純視覺）。
     spawner.hitFeelFx = effects;
 

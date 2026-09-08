@@ -49,6 +49,9 @@ export class EnemySpawner {
   /** 取得全部玩家（由 GameScene 注入）：供防穿透對所有 player 頂開。預設只有 P1。 */
   getAllPlayers: () => readonly Player[] = () => [this.player];
 
+  /** 階段3：玩家被怪擊中回呼（GameScene 設定→接 transform.loseSecondTransformEnergy 二段能量倒扣）。帶被打玩家 id。 */
+  onPlayerHit: ((playerId: number) => void) | null = null;
+
   /** hitFeel 表演（由 GameScene 注入 EffectSystem）；spawn 時傳給每隻新敵人。 */
   hitFeelFx: import('@/entities/Enemy').HitFeelFx | null = null;
 
@@ -359,6 +362,8 @@ export class EnemySpawner {
     } else if (isValidEnemyTarget(this.player)) {
       // 七輪 待機隔離：待機玩家不受擊（保險——追擊已 gate，此為第二道防線）。
       this.player.takeHit(dmg, sourceName);
+      // 階段3：玩家被怪擊中 → 二段能量倒扣（onPlayerHit hook；flag 關/能量 0/未變身→no-op 由 TransformSystem gate）。
+      this.onPlayerHit?.(this.player.playerId);
     }
   }
 
