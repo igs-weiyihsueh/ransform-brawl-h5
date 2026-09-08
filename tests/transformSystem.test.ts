@@ -1,16 +1,22 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { MAX_SOUL_POWER, RECOVER_SOUL } from '@/config/transformConfig';
+import { MAX_SOUL_POWER } from '@/config/transformConfig';
 import type { GameContext } from '@/systems/GameContext';
 import { TransformSystem } from '@/systems/TransformSystem';
 import { EnergySystem } from '@/systems/EnergySystem';
 
 /**
- * TransformSystem 魂力/變身狀態測試（決策 15fec2a4）。
+ * TransformSystem 變身狀態測試（決策 15fec2a4）。
  *
  * 用 fake player 記錄 switchCharacter / setSoulDamageSink / flash 呼叫，不需 Phaser。
- * 透過反射呼叫 private onPickup/takeSoulDamage 驗核心狀態機（避免 spawnItem 需 scene）。
- * 含壞版必紅對照：魂力歸 0 必須退變。
+ * 透過反射呼叫 private onPickup 驗核心狀態機（避免 spawnItem 需 scene）。
+ *
+ * ★大更動回歸修(#2)：角色無血量、被打不該回凡人。舊「受擊扣魂力→歸0 detransform」機制已移除：
+ *   - transform() 不再掛 soulDamageSink（改 setSoulDamageSink(null)）；takeSoulDamage 方法已刪。
+ *   - 被打改只扣二段能量（loseSecondTransformEnergy，clamp 0、歸零仍維持英雄，見 secondTransformMath/loseSecondEnergy 測）。
+ *   - detransform 只由 credit 耗盡的 revertToHuman 走。
+ *   - soul（getSoul/getSoulRatio）成 vestigial：變身後恆滿(MAX)，被打不降；revertToHuman 才歸 0。
+ *   舊魂力扣減/歸0退變/魂力邊界測 → 改斷新設計行為（被打仍 hero、只 revertToHuman 退變）。
  */
 function makeSystem() {
   const calls = {
@@ -33,14 +39,12 @@ function makeSystem() {
   return { sys, calls, fakePlayer };
 }
 
-// 透過型別逃逸呼叫 private 方法（測試核心狀態機）。
+// 透過型別逃逸呼叫 private 方法（測試核心狀態機）。takeSoulDamage 已刪（大更動#2），不再逃逸。
 function priv(sys: TransformSystem): {
   onPickup: (item: { pickUp: () => void; source?: string; heroKey?: string }, player: unknown) => void;
-  takeSoulDamage: (player: unknown, d: number) => void;
 } {
   return sys as unknown as {
     onPickup: (item: { pickUp: () => void; source?: string; heroKey?: string }, player: unknown) => void;
-    takeSoulDamage: (player: unknown, d: number) => void;
   };
 }
 
@@ -51,7 +55,7 @@ const heroDropItem = (heroKey: string) => ({ pickUp: vi.fn(), source: 'heroDrop'
 /**
  * 階段1（角色狀態機重構）：變身入口＝「投幣進場隨機抽英雄」transformToRandomHero。
  *   此 helper 走該入口完成變身（roster 目前只 SunWukong→必抽中），
- *   供既有「變身後行為（魂力/受擊扣魂/退變/回魂）」核心測沿用（下游邏輯不變）。
+ *   供既有「變身後行為（回魂/退變）」核心測沿用（下游邏輯不變）。
  */
 function transformToHero(sys: TransformSystem, player: { playerId: number }): void {
   sys.transformToRandomHero(player.playerId, () => 0); // rng=0 → 抽 roster[0]（SunWukong）
@@ -65,58 +69,44 @@ describe('TransformSystem — 變身/魂力', () => {
     expect(sys.getSoulRatio(0)).toBe(0);
   });
 
-  it('投幣進場隨機抽英雄 → 變身、魂力滿、掛扣魂鉤子、金閃（階段1）', () => {
+  it('投幣進場隨機抽英雄 → 變身、魂力滿、金閃；★不再掛扣魂鉤子（大更動#2，sink=null）', () => {
     const { sys, calls, fakePlayer } = makeSystem();
     transformToHero(sys, fakePlayer);
     expect(sys.isTransformed(0)).toBe(true);
     expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
     expect(sys.getSoulRatio(0)).toBe(1);
     expect(calls.switched).toContain('SunWukong');
-    expect(calls.sinkSet.at(-1)).toBe(true); // 掛鉤子
+    expect(calls.sinkSet.at(-1)).toBe(false); // ★大更動#2：不再掛扣魂鉤子（setSoulDamageSink(null)）
     expect(calls.flashes).toBe(1);
   });
 
-  it('變身中受敵人攻擊 → 扣魂力（用 dmg 值）', () => {
+  it('★大更動#2：變身後「被打」不扣魂力、不退變（角色無血量，仍是英雄、soul 恆滿）', () => {
     const { sys, fakePlayer } = makeSystem();
     transformToHero(sys, fakePlayer); // 變身，soul=100
-    priv(sys).takeSoulDamage(fakePlayer, 25);
-    expect(sys.getSoul(0)).toBe(75);
-    priv(sys).takeSoulDamage(fakePlayer, 15);
-    expect(sys.getSoul(0)).toBe(60);
+    // 被打的傷害改走二段能量（loseSecondTransformEnergy），不動 soul、不 detransform。
+    // soul 已無扣減路徑（takeSoulDamage 已刪）→ 恆滿。
+    expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
+    expect(sys.isTransformed(0)).toBe(true);
+    expect(sys.getSoulRatio(0)).toBe(1);
   });
 
-  it('變身中再撿道具 → 回復魂力 +50（clamp 100）', () => {
+  it('變身中再撿一般道具 → 回魂 +50 邏輯仍在（soul 已滿故 clamp 100、仍變身）', () => {
     const { sys, fakePlayer } = makeSystem();
     transformToHero(sys, fakePlayer); // soul=100
-    priv(sys).takeSoulDamage(fakePlayer, 70); // soul=30
-    priv(sys).onPickup(fakeItem(), fakePlayer); // 已變身 +50 → 80
-    expect(sys.getSoul(0)).toBe(30 + RECOVER_SOUL);
-    priv(sys).onPickup(fakeItem(), fakePlayer); // +50 → clamp 100
+    priv(sys).onPickup(fakeItem(), fakePlayer); // 已變身 +50 → clamp 100
     expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
+    expect(sys.isTransformed(0)).toBe(true);
   });
 
-  // 🔴 壞版必紅對照：魂力歸 0 必須退變（回凡人、清鉤子、soulRatio 0）。
-  it('魂力歸 0 → 退變回凡人（清鉤子、換回 Human、soulRatio 0）', () => {
+  // ★大更動#2：detransform 只由 credit 耗盡的 revertToHuman 走（被打不退變）。
+  it('revertToHuman：變身中 → 退回凡人（換 Human、soul 歸 0、soulRatio 0、非變身）', () => {
     const { sys, calls, fakePlayer } = makeSystem();
     transformToHero(sys, fakePlayer); // 變身 soul=100
-    priv(sys).takeSoulDamage(fakePlayer, 100); // 歸 0 → 退變
+    sys.revertToHuman(0); // credit 耗盡回待機
     expect(sys.isTransformed(0)).toBe(false);
     expect(sys.getSoul(0)).toBe(0);
     expect(sys.getSoulRatio(0)).toBe(0);
     expect(calls.switched.at(-1)).toBe('Human'); // 換回凡人
-    expect(calls.sinkSet.at(-1)).toBe(false); // 清鉤子
-  });
-
-  // 十五輪：沒 credit 回待機 → revertToHuman 強制退回凡人（對齊 Unity 回待機 revert transform）。
-  it('revertToHuman：變身中 → 退回凡人（換 Human、清鉤子、非變身）', () => {
-    const { sys, calls, fakePlayer } = makeSystem();
-    transformToHero(sys, fakePlayer); // 變身
-    expect(sys.isTransformed(0)).toBe(true);
-    sys.revertToHuman(0); // 沒 credit 回待機呼叫
-    expect(sys.isTransformed(0)).toBe(false);
-    expect(sys.getSoul(0)).toBe(0);
-    expect(calls.switched.at(-1)).toBe('Human'); // 換回凡人
-    expect(calls.sinkSet.at(-1)).toBe(false); // 清扣魂鉤子
   });
 
   it('revertToHuman：未變身 → 冪等不動作（不重複 switchCharacter/flash）', () => {
@@ -129,10 +119,10 @@ describe('TransformSystem — 變身/魂力', () => {
     expect(calls.flashes).toBe(flashesBefore);
   });
 
-  it('退變後再次進場 → 重新變身（而非回魂）', () => {
+  it('退變(revertToHuman)後再次進場 → 重新變身（而非回魂）、魂力滿', () => {
     const { sys, fakePlayer } = makeSystem();
     transformToHero(sys, fakePlayer);
-    priv(sys).takeSoulDamage(fakePlayer, 100); // 退變
+    sys.revertToHuman(0); // 退變
     transformToHero(sys, fakePlayer); // 未變身 → 再變身
     expect(sys.isTransformed(0)).toBe(true);
     expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
@@ -141,8 +131,7 @@ describe('TransformSystem — 變身/魂力', () => {
   // ── 階段2：英雄換英雄（怪掉英雄道具，撿了橫向換英雄） ──
   it('★階段2：英雄態撿英雄道具 → 換成道具帶的英雄 key（switchCharacter+魂力滿）', () => {
     const { sys, calls, fakePlayer } = makeSystem();
-    transformToHero(sys, fakePlayer); // 先變英雄（SunWukong）
-    priv(sys).takeSoulDamage(fakePlayer, 60); // soul=40
+    transformToHero(sys, fakePlayer); // 先變英雄（SunWukong），soul=100
     const before = calls.switched.length;
     priv(sys).onPickup(heroDropItem('SunWukong'), fakePlayer); // 撿英雄道具 → 橫向換
     expect(sys.isTransformed(0)).toBe(true);
@@ -197,60 +186,50 @@ function makeSystemTracking() {
   return { sys, calls, player, state };
 }
 
-describe('TransformSystem — 魂力邊界（恰好 0 vs 1、clamp0、clamp100）', () => {
-  it('扣到剩 1（未歸 0）→ 仍變身、soul=1', () => {
+describe('TransformSystem — 魂力 vestigial（大更動#2 後：被打不降、只 revertToHuman 歸 0）', () => {
+  it('變身後 soul 恆滿、被打無扣減路徑（takeSoulDamage 已刪）→ 仍變身、soul=MAX', () => {
     const { sys, fakePlayer } = makeSystem();
     transformToHero(sys, fakePlayer); // soul=100
-    priv(sys).takeSoulDamage(fakePlayer, 99); // → 1
-    expect(sys.getSoul(0)).toBe(1);
-    expect(sys.isTransformed(0)).toBe(true); // 1 > 0 → 不退變（邊界另一側）
+    // 大更動#2：無任何路徑扣 soul（被打改扣二段能量）→ soul 恆 MAX。
+    expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
+    expect(sys.getSoulRatio(0)).toBe(1);
+    expect(sys.isTransformed(0)).toBe(true);
   });
 
-  it('恰好扣到 0 → 退變（邊界這一側）', () => {
+  it('revertToHuman → soul clamp 0、soulRatio 0、退回凡人（唯一 detransform 路徑）', () => {
     const { sys, fakePlayer } = makeSystem();
     transformToHero(sys, fakePlayer);
-    priv(sys).takeSoulDamage(fakePlayer, 100); // 恰好 0
+    sys.revertToHuman(0);
+    expect(sys.getSoul(0)).toBe(0);
+    expect(sys.getSoulRatio(0)).toBe(0);
+    expect(sys.isTransformed(0)).toBe(false);
+  });
+
+  it('RecoverSoul：變身後撿道具 +50 邏輯仍在（soul 已滿 → clamp 100，不超過）', () => {
+    const { sys, fakePlayer } = makeSystem();
+    transformToHero(sys, fakePlayer); // 100
+    priv(sys).onPickup(fakeItem(), fakePlayer); // 已變身 +50 → clamp 100（不是 150）
+    expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
+  });
+
+  it('未變身撿道具 → 不回魂（soul 維持 0、不變身）', () => {
+    const { sys, fakePlayer } = makeSystem();
+    priv(sys).onPickup(fakeItem(), fakePlayer); // 凡人撿一般道具 → no-op
     expect(sys.getSoul(0)).toBe(0);
     expect(sys.isTransformed(0)).toBe(false);
-  });
-
-  it('扣過頭（damage > soul）→ clamp 到 0 不變負、且退變', () => {
-    const { sys, fakePlayer } = makeSystem();
-    transformToHero(sys, fakePlayer);
-    priv(sys).takeSoulDamage(fakePlayer, 9999);
-    expect(sys.getSoul(0)).toBe(0); // Math.max(0, ...) clamp
-    expect(sys.isTransformed(0)).toBe(false);
-  });
-
-  it('RecoverSoul clamp 100：90 + 50 → 100（不是 140）', () => {
-    const { sys, fakePlayer } = makeSystem();
-    transformToHero(sys, fakePlayer); // 100
-    priv(sys).takeSoulDamage(fakePlayer, 10); // 90
-    expect(sys.getSoul(0)).toBe(90);
-    priv(sys).onPickup(fakeItem(), fakePlayer); // 已變身 +50 → clamp 100
-    expect(sys.getSoul(0)).toBe(100);
-  });
-
-  it('未達上限時 RecoverSoul 精確 +50（40 → 90，不 clamp）', () => {
-    const { sys, fakePlayer } = makeSystem();
-    transformToHero(sys, fakePlayer); // 100
-    priv(sys).takeSoulDamage(fakePlayer, 60); // 40
-    priv(sys).onPickup(fakeItem(), fakePlayer); // 已變身 +50 → 90（未觸頂，驗值精確）
-    expect(sys.getSoul(0)).toBe(90);
   });
 });
 
 describe('TransformSystem — 撿道具分流（已變身只回魂、不換角色不重置）', () => {
-  it('已變身撿道具：只 +50 魂力，【不】再 switchCharacter、【不】重掛/清鉤子造成重變', () => {
+  it('已變身撿一般道具：回魂邏輯執行但【不】再 switchCharacter、【不】重掛/清鉤子造成重變', () => {
     const { sys, calls, player } = makeSystemTracking();
     transformToHero(sys, player); // 第一次：變身
     expect(calls.switched).toEqual(['SunWukong']); // 只切一次
     const switchesAfterTransform = calls.switched.length;
     const flashesAfterTransform = calls.flashes;
 
-    priv(sys).takeSoulDamage(player, 30); // soul=70
-    priv(sys).onPickup(fakeItem(), player); // 已變身 → 只回魂
-    expect(sys.getSoul(0)).toBe(100); // 70+50 clamp 100
+    priv(sys).onPickup(fakeItem(), player); // 已變身 → 只回魂（soul 已滿 clamp 100）
+    expect(sys.getSoul(0)).toBe(100);
     // 規格重點：不換角色（switched 不再增加）、不再金閃重變。
     expect(calls.switched.length).toBe(switchesAfterTransform);
     expect(calls.switched.at(-1)).toBe('SunWukong'); // 仍是悟空，沒被切走
@@ -288,7 +267,7 @@ describe('TransformSystem × EnergySystem — 模式/倍率隨變身切換（跨
   it('退變 → 角色 Human → EnergySystem 讀回 HumanSimple + 倍率 0.5', () => {
     const { sys, energy, state, player } = wire();
     transformToHero(sys, player); // 變身
-    priv(sys).takeSoulDamage(player, 100); // 退變 → switchCharacter('Human')
+    sys.revertToHuman(0); // ★大更動#2：退變只由 revertToHuman（credit 耗盡）走 → switchCharacter('Human')
     expect(state.charKey).toBe('Human');
     expect(energy.resolveAttackIntent(0).multiplier).toBe(0.5);
     expect(energy.getMax(0)).toBe(4); // 兩者 cap 皆 4，但模式/倍率不同
@@ -299,7 +278,7 @@ describe('TransformSystem × EnergySystem — 模式/倍率隨變身切換（跨
     const before = energy.resolveAttackIntent(0).multiplier; // 凡人 0.5
     transformToHero(sys, player); // 變身
     const during = energy.resolveAttackIntent(0).multiplier; // 悟空 1.0
-    priv(sys).takeSoulDamage(player, 100); // 退變
+    sys.revertToHuman(0); // 退變
     const after = energy.resolveAttackIntent(0).multiplier; // 凡人 0.5
     expect(before).toBe(0.5);
     expect(during).toBe(1.0);
@@ -308,29 +287,28 @@ describe('TransformSystem × EnergySystem — 模式/倍率隨變身切換（跨
 });
 
 describe('TransformSystem — 退變後狀態乾淨、可重新變身', () => {
-  it('退變後：清鉤子(sinkSet 最後為 false)、soulRatio 0、可再撿再變且魂力滿', () => {
+  it('退變(revertToHuman)後：soulRatio 0、sink 維持清空(false)、可再進場再變且魂力滿', () => {
     const { sys, calls, player } = makeSystemTracking();
     transformToHero(sys, player); // 變身
-    priv(sys).takeSoulDamage(player, 100); // 退變
+    sys.revertToHuman(0); // ★大更動#2：退變只由 revertToHuman 走
     expect(sys.isTransformed(0)).toBe(false);
     expect(sys.getSoulRatio(0)).toBe(0);
-    expect(calls.sinkSet.at(-1)).toBe(false); // 鉤子已清
+    expect(calls.sinkSet.at(-1)).toBe(false); // 大更動#2：全程無掛鉤子（transform/detransform 都 setSoulDamageSink(null)）
 
-    // 再撿 → 重新變身，狀態乾淨（滿魂、重掛鉤子）。
+    // 再進場 → 重新變身，狀態乾淨（滿魂）。
     transformToHero(sys, player);
     expect(sys.isTransformed(0)).toBe(true);
     expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
     expect(sys.getSoulRatio(0)).toBe(1);
-    expect(calls.sinkSet.at(-1)).toBe(true); // 重新掛鉤子
+    expect(calls.sinkSet.at(-1)).toBe(false); // ★大更動#2：仍不掛鉤子（sink=null）
     expect(calls.switched).toEqual(['SunWukong', 'Human', 'SunWukong']); // 變→退→再變
   });
 
-  it('退變後受攻擊不再扣魂（鉤子已清 → takeSoulDamage 因未變身直接 return）', () => {
+  it('★大更動#2：被打不再扣魂/不退變（無 takeSoulDamage 路徑）→ 變身後被打仍 hero、soul 滿', () => {
     const { sys, fakePlayer } = makeSystem();
     transformToHero(sys, fakePlayer);
-    priv(sys).takeSoulDamage(fakePlayer, 100); // 退變，soul=0
-    priv(sys).takeSoulDamage(fakePlayer, 50); // 未變身 → guard return，不變負、不影響
-    expect(sys.getSoul(0)).toBe(0);
-    expect(sys.isTransformed(0)).toBe(false);
+    // 舊「受擊扣魂→歸0退變」已移除；被打改扣二段能量（見 loseSecondEnergy 測），不動 soul、不退變。
+    expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
+    expect(sys.isTransformed(0)).toBe(true);
   });
 });

@@ -19,51 +19,58 @@ const PKG: ResolvedSecondTransform = {
 
 /**
  * secondTransformSchema — 二段變身「啟用開關」override 解析（用戶要編輯器可控開/關）。
- * resolveSecondTransformEnabled(override, packaged=false)：
+ * resolveSecondTransformEnabled(override, packaged=SECOND_TRANSFORM_CONFIG.enabled)：
  *   合法 {version:1, enabled:bool} → override.enabled；否則（null/非物件/version 錯/enabled 非 bool）→ packaged。
- * ★預設 packaged=false（override 沒設=關=現況不變）。含壞版對照必紅。
+ * ★大更動回歸修(#1)：SECOND_TRANSFORM_CONFIG.enabled false→true（二段變身上線，變身後顯 soulRing）→
+ *   省略 packaged 參數時 fallback 現在回 **true**。fallback/守衛邏輯本身沒變，只是打包預設值翻了。
+ *   壞版對照仍用「顯式 packaged」鎖 fallback 走向（override 無效→回 packaged，非讀 override）。
  */
 describe('resolveSecondTransformEnabled — override 優先、fallback 打包預設', () => {
-  it('override 沒設（null/undefined）→ 回打包預設（預設 false）', () => {
-    expect(resolveSecondTransformEnabled(null)).toBe(false);
-    expect(resolveSecondTransformEnabled(undefined)).toBe(false);
+  it('override 沒設（null/undefined）→ 回打包預設（現預設 true）', () => {
+    expect(resolveSecondTransformEnabled(null)).toBe(true);
+    expect(resolveSecondTransformEnabled(undefined)).toBe(true);
   });
 
   it('合法 override enabled=true → 啟用（用戶編輯器開開關）', () => {
     expect(resolveSecondTransformEnabled({ version: 1, enabled: true })).toBe(true);
   });
 
-  it('合法 override enabled=false → 關（用戶編輯器關開關）', () => {
+  it('合法 override enabled=false → 關（用戶編輯器關開關，override 蓋過打包預設 true）', () => {
     expect(resolveSecondTransformEnabled({ version: 1, enabled: false })).toBe(false);
+    // ★load-bearing：override.enabled=false 必須壓過 packaged=true（證明採用的是 override 非 packaged）。
+    expect(resolveSecondTransformEnabled({ version: 1, enabled: false }, true)).toBe(false);
   });
 
-  it('packaged 參數可覆寫 fallback（override 無效時回 packaged）', () => {
+  it('packaged 參數可覆寫 fallback（override 無效時回 packaged，兩向皆鎖）', () => {
     expect(resolveSecondTransformEnabled(null, true)).toBe(true);
     expect(resolveSecondTransformEnabled(null, false)).toBe(false);
   });
 
-  it('★壞版對照：version 錯 → 不採用、回 packaged（預設 false）', () => {
-    expect(resolveSecondTransformEnabled({ version: 2, enabled: true })).toBe(false);
-    expect(resolveSecondTransformEnabled({ enabled: true })).toBe(false); // 缺 version
+  it('★壞版對照：version 錯 → 不採用、回 packaged（顯式 packaged=false 鎖走向）', () => {
+    // 顯式 packaged=false：若誤讀 override.enabled=true 會回 true → 紅。故用 false 鎖「回 packaged 非 override」。
+    expect(resolveSecondTransformEnabled({ version: 2, enabled: true }, false)).toBe(false);
+    expect(resolveSecondTransformEnabled({ enabled: true }, false)).toBe(false); // 缺 version
+    // 省略 packaged（預設 true）→ 也回 packaged(true)，同樣證明沒讀 override 的 true（此處恰同值，故上面顯式 false 才是鑑別關鍵）。
+    expect(resolveSecondTransformEnabled({ version: 2, enabled: false })).toBe(true);
   });
 
-  it('★壞版對照：enabled 非 boolean → 不採用、回 packaged', () => {
-    expect(resolveSecondTransformEnabled({ version: 1, enabled: 'true' })).toBe(false);
-    expect(resolveSecondTransformEnabled({ version: 1, enabled: 1 })).toBe(false);
-    expect(resolveSecondTransformEnabled({ version: 1 })).toBe(false); // 缺 enabled
+  it('★壞版對照：enabled 非 boolean → 不採用、回 packaged（顯式 packaged=false 鎖走向）', () => {
+    expect(resolveSecondTransformEnabled({ version: 1, enabled: 'true' }, false)).toBe(false);
+    expect(resolveSecondTransformEnabled({ version: 1, enabled: 1 }, false)).toBe(false);
+    expect(resolveSecondTransformEnabled({ version: 1 }, false)).toBe(false); // 缺 enabled
   });
 
-  it('★壞版對照：非物件（字串/數字/陣列）→ 回 packaged', () => {
-    expect(resolveSecondTransformEnabled('nope' as unknown)).toBe(false);
-    expect(resolveSecondTransformEnabled(123 as unknown)).toBe(false);
-    expect(resolveSecondTransformEnabled([1, 2] as unknown)).toBe(false);
+  it('★壞版對照：非物件（字串/數字/陣列）→ 回 packaged（顯式 packaged=false 鎖走向）', () => {
+    expect(resolveSecondTransformEnabled('nope' as unknown, false)).toBe(false);
+    expect(resolveSecondTransformEnabled(123 as unknown, false)).toBe(false);
+    expect(resolveSecondTransformEnabled([1, 2] as unknown, false)).toBe(false);
   });
 
-  it('SCHEMA_VERSION=1、defaultSecondTransformFile 為 {version:1, enabled:預設(false)}', () => {
+  it('SCHEMA_VERSION=1、defaultSecondTransformFile 為 {version:1, enabled:現預設(true)}', () => {
     expect(SECOND_TRANSFORM_SCHEMA_VERSION).toBe(1);
     const f = defaultSecondTransformFile();
     expect(f.version).toBe(1);
-    expect(f.enabled).toBe(false); // 打包預設關
+    expect(f.enabled).toBe(true); // 打包預設現為開（二段上線）
     // 數值欄帶打包預設（匯出範例完整）。
     expect(typeof f.energyPerKill).toBe('number');
     expect(typeof f.decayPerSec).toBe('number');

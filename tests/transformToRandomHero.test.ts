@@ -9,7 +9,7 @@ import { HERO_ROSTER } from '@/config/heroRoster';
  * 翼騎 re-sync 20 測把入口改 transformToRandomHero(rng=0)、下游行為沿用，鑑別足；但入口本身兩點未鎖（翼騎點名）：
  *  1. ★冪等：已變身再呼叫 transformToRandomHero → 不重抽/不重 switchCharacter（回當前 heroKey）。
  *     （拿掉 impl 的 `if(s.transformed) return` → 現有 20 測全綠 slip，此測釘死。）
- *  2. ★heroKey 設定/回傳：變身後 heroKey=抽中英雄、回傳值=該 key；退變(魂力歸0)後 heroKey 清除、可重新抽。
+ *  2. ★heroKey 設定/回傳：變身後 heroKey=抽中英雄、回傳值=該 key；退變(revertToHuman)後 heroKey 清除、可重新抽。
  *  3. roster 空 → fallback SUNWUKONG（不炸）。
  * 維度3 斷 switchCharacter 呼叫次數/回傳 heroKey/transformed 狀態。
  */
@@ -26,9 +26,6 @@ function makeSystem() {
   const sys = new TransformSystem();
   sys.init({ player: fakePlayer } as unknown as GameContext);
   return { sys, calls, fakePlayer };
-}
-function priv(sys: TransformSystem): { takeSoulDamage: (p: unknown, d: number) => void } {
-  return sys as unknown as { takeSoulDamage: (p: unknown, d: number) => void };
 }
 
 describe('transformToRandomHero — 入口冪等 + heroKey（階段1 補鎖）', () => {
@@ -51,15 +48,16 @@ describe('transformToRandomHero — 入口冪等 + heroKey（階段1 補鎖）',
     expect(sys.isTransformed(0)).toBe(true);
   });
 
-  it('★ 退變(魂力歸0)後 heroKey 清除 → 可重新抽變身', () => {
+  it('★ 退變(revertToHuman)後 heroKey 清除 → 可重新抽變身', () => {
     const { sys, calls } = makeSystem();
     sys.transformToRandomHero(0, () => 0); // 變身
-    priv(sys).takeSoulDamage({ playerId: 0, getCharacterKey: () => 'SunWukong', getPosition: () => ({ x: 0, y: 0 }), switchCharacter: (k: string) => calls.switched.push(k), setSoulDamageSink: () => {}, playTransformFlash: () => {} }, 100); // 歸 0 退變
+    sys.revertToHuman(0); // ★大更動#2：退變只由 credit 耗盡的 revertToHuman 走（被打不退變）
     expect(sys.isTransformed(0)).toBe(false);
     // 退變後可再抽（heroKey 已清 → 冪等 guard 不擋）。
     const re = sys.transformToRandomHero(0, () => 0);
     expect(re).toBe(HERO_ROSTER[0]);
     expect(sys.isTransformed(0)).toBe(true);
+    expect(calls.switched).toContain(HERO_ROSTER[0]);
   });
 
   it('roster 空 → fallback SUNWUKONG（不炸、仍變身）', () => {

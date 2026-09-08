@@ -11,13 +11,14 @@ import { resolveSecondTransformEnabled } from '@/config/secondTransformSchema';
  * 維度3 斷 bool。與翼騎測互補。
  */
 describe('resolveSecondTransformEnabled — 物件守衛鎖定（非物件型別即使帶對的屬性也不採用）', () => {
-  it('★ function 帶 version:1/enabled:true → 回 packaged(false)，不採用（typeof function ≠ object）', () => {
+  it('★ function 帶 version:1/enabled:true → 回 packaged，不採用（typeof function ≠ object）', () => {
     const fn = (() => {}) as unknown as { version: number; enabled: boolean };
     fn.version = 1;
     fn.enabled = true;
-    // 物件守衛：function 非 object → 直接 packaged(false)。移除守衛會誤讀 fn.version/enabled → true → 紅。
-    expect(resolveSecondTransformEnabled(fn)).toBe(false);
-    // packaged=true 時仍回 packaged（true），證明走的是 fallback 非 override.enabled。
+    // ★大更動回歸修(#1)：打包預設 enabled 已翻 true，省略 packaged 無法鑑別守衛（fn.enabled=true 與 packaged=true 同值）。
+    //   故顯式 packaged=false：物件守衛擋 function → 回 packaged(false)；若移除守衛 → 誤讀 fn.enabled=true → 紅。
+    expect(resolveSecondTransformEnabled(fn, false)).toBe(false);
+    // packaged=true 時仍回 packaged（true），證明走的是 fallback 非 override.enabled（此側同值僅佐證，鑑別關鍵在上面 false）。
     expect(resolveSecondTransformEnabled(fn, true)).toBe(true);
   });
 

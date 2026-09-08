@@ -131,45 +131,48 @@ describe('S4 — 能量 per-player 獨立', () => {
 });
 
 describe('S4 — 變身/魂力 per-player 獨立', () => {
-  function makeTransform() {
-    const sys = new TransformSystem();
-    sys.init({ player: { playerId: 0 } } as unknown as GameContext);
-    return sys;
-  }
-  // fake player（供 private transform/takeSoulDamage 用；state 依 playerId keying）。
+  // fake player（供 private transform + revertToHuman 查找用；state 依 playerId keying）。
+  // ★大更動#2：takeSoulDamage 已刪、被打不退變；detransform 只由 revertToHuman 走。
   const fakePlayer = (id: number) => ({
     playerId: id,
     getCharacterKey: () => 'Human',
+    getPosition: () => ({ x: 0, y: 0 }),
     switchCharacter: () => {},
     setSoulDamageSink: () => {},
     playTransformFlash: () => {},
   });
+  const p1 = fakePlayer(0);
+  const p2 = fakePlayer(1);
+  function makeTransform() {
+    const sys = new TransformSystem();
+    // 註冊兩個 fake player → revertToHuman(id) 能 playerOf 找到（走 detransform 呼叫其 switchCharacter/sink）。
+    sys.init({ player: p1, players: [p1, p2] } as unknown as GameContext);
+    return sys;
+  }
   function priv(sys: TransformSystem) {
     return sys as unknown as {
       transform: (p: unknown) => void;
-      takeSoulDamage: (p: unknown, d: number) => void;
     };
   }
 
-  it('P1 變身受擊扣魂 → 只 P1 魂力降，P2 未變身/魂 0 不受影響', () => {
+  it('P1 變身 → 只 P1 是英雄/魂力滿，P2 未變身/魂 0（per-player 獨立）', () => {
     const sys = makeTransform();
-    const p1 = fakePlayer(0);
     priv(sys).transform(p1); // P1 變身 soul=100
-    priv(sys).takeSoulDamage(p1, 30); // P1 soul=70
-    expect(sys.getSoul(0)).toBe(70);
+    expect(sys.getSoul(0)).toBe(100);
+    expect(sys.isTransformed(0)).toBe(true);
     expect(sys.isTransformed(1)).toBe(false); // P2 獨立、未變身
     expect(sys.getSoul(1)).toBe(0);
   });
 
-  it('P1、P2 各自變身魂力互不干擾', () => {
+  it('P1、P2 各自變身、P1 退變(revertToHuman) 不影響 P2', () => {
     const sys = makeTransform();
-    const p1 = fakePlayer(0);
-    const p2 = fakePlayer(1);
     priv(sys).transform(p1);
     priv(sys).transform(p2);
-    priv(sys).takeSoulDamage(p1, 40); // P1 60
-    expect(sys.getSoul(0)).toBe(60);
-    expect(sys.getSoul(1)).toBe(100); // P2 未被 P1 扣魂影響
+    sys.revertToHuman(0); // ★大更動#2：P1 credit 耗盡退變（唯一 detransform 路徑）
+    expect(sys.isTransformed(0)).toBe(false); // P1 退回凡人
+    expect(sys.getSoul(0)).toBe(0);
+    expect(sys.isTransformed(1)).toBe(true); // P2 不受 P1 退變影響
+    expect(sys.getSoul(1)).toBe(100); // P2 仍滿魂
   });
 });
 
