@@ -159,10 +159,11 @@ export class UISystem implements GameSystem {
       if (waiting) continue; // 待機不更新內容/跟隨（隱藏即可）
       const pos = p.getPosition();
       overhead.followWorldPosition(pos.x, pos.y);
-      // 魂力環顯示：變身後才顯魂力環（soulRatio）（用戶 #1）。
+      // ★新需求：原「魂力環」圓環元件改綁「二段變身能量」（角色無血量/魂力無實質動態→廢物利用顯二段能量）。
+      //   變身成英雄(transformed)才顯圓環，填充=getSecondTransformEnergyRatio(0~1)；flag 關時 ratio=0（空環）。
       const transformed = this.ctx.transform.isTransformed(pid);
       overhead.setSoulVisible(transformed);
-      if (transformed) overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
+      if (transformed) overhead.setSoul(this.ctx.getSecondTransformEnergyRatio?.(pid) ?? 0);
       overhead.setCredit(this.ctx.credit.getCredit(pid));
       // 沒 Credit 演出（閃紅 + 投幣提示 + 倒數）：讀 CreditSystem 耗盡狀態（只讀）。
       overhead.setOutOfCredit(

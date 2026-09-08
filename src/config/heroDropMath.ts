@@ -12,12 +12,25 @@
 export const HERO_DROP_RATE = 0.15;
 
 /**
+ * ★怪掉英雄道具總開關（用戶：場上先不要生變身道具）。false=關（恆不掉）；之後要開回設 true 即恢復。
+ * 別刪掉落 code——只用此 flag gate，保留 rate/機制供日後開回。
+ */
+export const HERO_DROP_ENABLED = false;
+
+/**
  * 判定本次擊殺是否掉落英雄道具（純函式，rng 可注入）。
+ * ★總開關 HERO_DROP_ENABLED=false → 恆不掉（用戶關掉場上道具，機制保留）。
  * @param rng 亂數來源，回 [0,1)（預設 Math.random；測試傳固定值鎖定掉/不掉）。
  * @param rate 掉落率（預設 HERO_DROP_RATE）；<=0 恆不掉、>=1 恆掉。
- * @returns rng() < rate → true（掉落）。
+ * @param enabled 總開關（預設 HERO_DROP_ENABLED）；false → 恆不掉（不看 rate/rng）。
+ * @returns enabled 且 rng() < rate → true（掉落）。
  */
-export function shouldDropHeroItem(rng: () => number = Math.random, rate: number = HERO_DROP_RATE): boolean {
+export function shouldDropHeroItem(
+  rng: () => number = Math.random,
+  rate: number = HERO_DROP_RATE,
+  enabled: boolean = HERO_DROP_ENABLED,
+): boolean {
+  if (!enabled) return false; // ★總開關關 → 恆不掉
   const r = rng();
   const safe = Number.isFinite(r) ? r : 1; // 壞 rng → 視為不掉（保守）
   return safe < rate;
