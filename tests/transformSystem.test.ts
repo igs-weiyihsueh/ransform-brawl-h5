@@ -49,9 +49,9 @@ const fakeItem = () => ({ pickUp: vi.fn() });
 const heroDropItem = (heroKey: string) => ({ pickUp: vi.fn(), source: 'heroDrop' as const, heroKey });
 
 /**
- * 階段1（角色狀態機重構）：變身入口改為「投幣進場隨機抽英雄」transformToRandomHero
- *   （取代舊「撿道具→連打填滿→變身」）。此 helper 走新入口完成變身（roster 目前只 SunWukong→必抽中），
- *   供既有「變身後行為（魂力/受擊扣魂/退變/回魂）」核心測沿用（下游邏輯與舊相同）。
+ * 階段1（角色狀態機重構）：變身入口＝「投幣進場隨機抽英雄」transformToRandomHero。
+ *   此 helper 走該入口完成變身（roster 目前只 SunWukong→必抽中），
+ *   供既有「變身後行為（魂力/受擊扣魂/退變/回魂）」核心測沿用（下游邏輯不變）。
  */
 function transformToHero(sys: TransformSystem, player: { playerId: number }): void {
   sys.transformToRandomHero(player.playerId, () => 0); // rng=0 → 抽 roster[0]（SunWukong）

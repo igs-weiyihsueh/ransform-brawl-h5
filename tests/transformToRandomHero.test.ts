@@ -12,7 +12,6 @@ import { HERO_ROSTER } from '@/config/heroRoster';
  *  2. ★heroKey 設定/回傳：變身後 heroKey=抽中英雄、回傳值=該 key；退變(魂力歸0)後 heroKey 清除、可重新抽。
  *  3. roster 空 → fallback SUNWUKONG（不炸）。
  * 維度3 斷 switchCharacter 呼叫次數/回傳 heroKey/transformed 狀態。
- * ⚠️ 連打變身休眠路徑(registerMashHit/吸怪/震開)階段3 再定去留,不碰。
  */
 function makeSystem() {
   const calls = { switched: [] as string[], flashes: 0 };
