@@ -26,6 +26,7 @@ import {
 } from '@/systems/hitDetection';
 import { knockbackDistancePx } from '@/config/hitFeelConfig';
 import { getResolvedHitFeel } from '@/config/hitFeelSchema';
+import { ENTRANCE_TRANSFORM } from '@/systems/entranceTransformMath';
 
 /**
  * hitFeel 表演介面（Enemy 只依賴這幾個方法，避免對 EffectSystem 的循環相依）。
@@ -502,6 +503,26 @@ export class Enemy implements Hittable {
     const distPx = knockbackDistancePx(2, PPU, hf); // 掙脫擊退固定力道
     this.knockbackPerSec = { x: (dx / len) * (distPx / hf.knockbackDuration), y: (dy / len) * (distPx / hf.knockbackDuration) };
     this.state = 'chase'; // 解除後回一般 AI
+  }
+
+  /**
+   * 用戶#3：變身進場落地震退——以落點為中心把周圍怪往外推（衝擊波）。immovable 菁英/死亡/蓄力 不被震。
+   * @param fromPos 落點中心。@param distUnits 推進距離 unit（預設 ENTRANCE_TRANSFORM.knockbackDistUnits）。
+   */
+  applyLandingKnockback(fromPos: Vec2, distUnits: number = ENTRANCE_TRANSFORM.knockbackDistUnits): void {
+    if (this.dead || this.state === 'death') return;
+    if (this.cfg.immovable === true) return; // 菁英像牆不被震
+    if (this.state === 'charge') return; // 蓄力站定不被震（對齊 resolvePenetration/isSeparationMovable charge 豁免）
+    const dx = this.anim.sprite.x - fromPos.x;
+    const dy = this.anim.sprite.y - fromPos.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const hf = getResolvedHitFeel();
+    const dur = hf.knockbackDuration;
+    const distPx = distUnits * PPU;
+    this.knockbackRemaining = dur;
+    this.knockbackPerSec = { x: (dx / len) * (distPx / dur), y: (dy / len) * (distPx / dur) };
+    this.stunRemaining = Math.max(this.stunRemaining, dur); // 震開期間壓制追擊（乾淨往外推）
+    this.state = 'chase';
   }
 
   getCharacterKey(): string {

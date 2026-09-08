@@ -134,6 +134,9 @@ export class Player implements Hittable {
   private entranceEnd: Vec2 = { x: 0, y: 0 };
   /** 待機狀態（投幣進場循環）：開場/耗盡回待機時 true，投幣進場後 false。 */
   private waiting = false;
+  /** 用戶#3 變身進場表演：投幣後在待機區浮起變身中（浮起→發光變身→降臨前）。基準 y 供還原。 */
+  private transformFloating = false;
+  private transformFloatBaseY = 0;
   /** 十五輪：沒 credit（耗盡）狀態旗標（CreditSystem 進/出耗盡各設一次；敵人 targeting/環繞/抓排除）。 */
   private outOfCredit = false;
 
@@ -295,6 +298,37 @@ export class Player implements Hittable {
   /** 是否在待機狀態（不可操控/攻擊；投幣才進場）。 */
   isWaiting(): boolean {
     return this.waiting;
+  }
+
+  // --- 用戶#3 變身進場表演（待機區浮起→發光變身→降臨） ---
+
+  /** 投幣後開始「變身浮起」：記待機基準 y，離開待機態、進浮起（仍在待機區位置，不可操控）。純位移，特效另掛。 */
+  startTransformFloat(): void {
+    this.waiting = false; // 離開待機態（進變身浮起表演；表演中由 isTransformFloating gate 不吃操控）
+    this.transformFloating = true;
+    this.transformFloatBaseY = this.anim.sprite.y;
+    this.anim.play('idle'); // 浮空待機蓄力（不被 move 覆蓋）
+    this.setFootGlowVisible(false); // 浮起中不顯搜索圈
+  }
+
+  /** 浮起中每幀更新 Y 位移（offsetY<=0 往上，由 entranceTransformMath.floatOffsetY 算）。相對記錄的基準 y。 */
+  updateTransformFloat(offsetY: number): void {
+    if (!this.transformFloating) return;
+    this.anim.sprite.y = this.transformFloatBaseY + offsetY;
+    this.syncFootGlow();
+  }
+
+  /** 結束變身浮起（降臨前）：還原基準 y、清浮起態（降臨由 startEntrance 接手）。 */
+  endTransformFloat(): void {
+    if (!this.transformFloating) return;
+    this.transformFloating = false;
+    this.anim.sprite.y = this.transformFloatBaseY; // 還原基準（降臨起點）
+    this.syncFootGlow();
+  }
+
+  /** 是否在變身浮起表演中（PlayerControlSystem gate：浮起中不吃操控）。 */
+  isTransformFloating(): boolean {
+    return this.transformFloating;
   }
 
   /**

@@ -25,6 +25,13 @@ import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
 import { playerColor } from '@/config/playerConfig';
 import { WAITING_PLATFORM_LIFT } from '@/config/playerConfig';
 import { landingX } from '@/systems/entranceMath';
+import {
+  ENTRANCE_KNOCKBACK_RADIUS_PX,
+  floatOffsetY,
+  isFloatDone,
+  shouldTransformDuringFloat,
+  isInKnockbackRange,
+} from '@/systems/entranceTransformMath';
 import type { AttackData } from '@/systems/AttackData';
 import { lateralKnockbackDir } from '@/systems/dashMath';
 import { EnergySystem, type AttackIntent } from '@/systems/EnergySystem';
@@ -58,6 +65,9 @@ import { nearestPoint } from '@/systems/targetingMath';
 export class PlayerControlSystem implements GameSystem {
   readonly name = 'PlayerControlSystem';
   private ctx!: GameContext;
+  /** 用戶#3：per-player 變身進場浮起已經過秒（投幣起算）；-1=非浮起中。變身觸發旗（避免重複抽）。 */
+  private floatElapsed = new Map<number, number>();
+  private floatTransformed = new Set<number>();
 
   /** 每玩家本次攻擊意圖（按鍵當下決定，hitDelay 到期據此結算）。 */
   private pendingIntent = new Map<number, AttackIntent | null>();
@@ -153,17 +163,37 @@ export class PlayerControlSystem implements GameSystem {
       const aiAutoCoin = player.kind === 'ai'; // AI 加入即自動投幣進場
       if (coinPressed || aiAutoCoin) {
         if (aiAutoCoin) credit.addCredit(pid, COIN_INSERT_AMOUNT); // AI 自投幣(P1 由 CreditSystem 加)
-        this.enterGame(player); // 從待機點拋物線進場
+        // 用戶#3：投幣→先在待機區「變身浮起表演」（浮起→發光變身→降臨），非直接進場。
+        player.startTransformFloat?.(); // 內含離開待機態；表演中由 isTransformFloating gate 不吃操控
+        this.floatElapsed.set(pid, 0);
+        this.floatTransformed.delete(pid);
       }
       return; // 待機中不可移動/攻擊
     }
 
-    // 進場跳躍中：只推進進場動畫，跳過一般操控/攻擊/夾限（isJumping 已豁免夾限）。
-    // 階段1：落地當幀（updateEntrance 由 true→回 false）→ 從英雄池隨機抽一個英雄變身進場
-    //   （取代舊「進場旁給初始道具→撿道具首次變身」；連打變身機制去留階段3決定）。
+    // 用戶#3：變身浮起表演中（待機區）——浮起位移 + 到時機發光變身 + 浮完→降臨(enterGame)。不吃操控。
+    if (typeof player.isTransformFloating === 'function' && player.isTransformFloating()) {
+      const elapsed = (this.floatElapsed.get(pid) ?? 0) + dt;
+      this.floatElapsed.set(pid, elapsed);
+      player.updateTransformFloat?.(floatOffsetY(elapsed));
+      // 浮到時機 → 發光變身（隨機抽英雄；特效另掛）。旗標避免重複抽。
+      if (!this.floatTransformed.has(pid) && shouldTransformDuringFloat(elapsed)) {
+        this.floatTransformed.add(pid);
+        this.ctx.transform?.transformToRandomHero?.(pid);
+      }
+      // 浮完 → 結束浮起、降臨（沿用既有拋物線進場到場上落點）。
+      if (isFloatDone(elapsed)) {
+        player.endTransformFloat?.();
+        this.floatElapsed.delete(pid);
+        this.enterGame(player); // 降臨（拋物線進場）
+      }
+      return;
+    }
+
+    // 降臨中（拋物線）：推進進場動畫；落地當幀→震退周圍敵人（用戶#3 ④）。變身已在浮起階段完成。
     if (typeof player.isEntering === 'function' && player.isEntering()) {
       const stillEntering = player.updateEntrance(dt);
-      if (!stillEntering) this.ctx.transform?.transformToRandomHero?.(pid); // 剛落地 → 隨機抽英雄變身
+      if (!stillEntering) this.landingKnockback(player); // 剛落地 → 震退周圍敵人
       return;
     }
 
@@ -337,6 +367,21 @@ export class PlayerControlSystem implements GameSystem {
     const endX = landingX(player.playerId, GAME_WIDTH * 0.5);
     const endY = GAME_HEIGHT * 0.5;
     player.startEntrance(start.x, start.y, endX, endY);
+  }
+
+  /**
+   * 用戶#3 ④：變身降臨落地 → 以落點為中心震退範圍內敵人（衝擊波）。
+   * 讀 ctx.getEnemies，範圍內非菁英/非蓄力怪 applyLandingKnockback。特效另掛（本體只做震退位移）。
+   */
+  private landingKnockback(player: GameContext['player']): void {
+    const land = player.getPosition?.();
+    if (!land) return;
+    const enemies = this.ctx.getEnemies?.() ?? [];
+    for (const e of enemies) {
+      const c = e.getHitCenter?.();
+      if (!c) continue;
+      if (isInKnockbackRange(c, land, ENTRANCE_KNOCKBACK_RADIUS_PX)) e.applyLandingKnockback?.(land);
+    }
   }
 
   /** 依 BuffSystem 聚合倍率設定玩家 stat 倍率/護盾（同 stat 多來源已相乘+clamp）。 */
