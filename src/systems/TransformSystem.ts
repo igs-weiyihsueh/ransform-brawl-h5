@@ -32,7 +32,6 @@ import {
   shouldAutoFill,
   MASH_KNOCKBACK_RADIUS_PX,
 } from '@/systems/mashTransformMath';
-import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
 import { getResolvedSecondTransformEnabled, getResolvedSecondTransform } from '@/config/secondTransformSchema';
 import {
   type SecondTransformState,
@@ -547,7 +546,7 @@ export class TransformSystem implements GameSystem {
   accumulateSecondTransform(playerId: number, amount: number): void {
     if (!this.isSecondTransformAvailable(playerId)) return;
     const before = this.secondStateOf(playerId);
-    const after = accumulateSecondEnergy(before, amount, SECOND_TRANSFORM_CONFIG.fillThreshold);
+    const after = accumulateSecondEnergy(before, amount, getResolvedSecondTransform().fillThreshold);
     this.secondStates.set(playerId, after);
     if (!before.active && after.active) this.enterSecondTransform(playerId); // 剛觸發
   }

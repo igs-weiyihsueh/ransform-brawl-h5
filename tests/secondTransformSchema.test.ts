@@ -14,6 +14,7 @@ const PKG: ResolvedSecondTransform = {
   decayPerSec: 0.125,
   scaleMult: 1.4,
   attackRangeMult: 1.4,
+  fillThreshold: 1,
 };
 
 /**
@@ -85,10 +86,10 @@ describe('resolveSecondTransform — 逐欄 override 優先、fallback 打包預
 
   it('★全欄 override → 各欄採用', () => {
     const r = resolveSecondTransform(
-      { version: 1, enabled: true, energyPerKill: 0.3, decayPerSec: 0.2, scaleMult: 1.8, attackRangeMult: 2.0 },
+      { version: 1, enabled: true, energyPerKill: 0.3, decayPerSec: 0.2, scaleMult: 1.8, attackRangeMult: 2.0, fillThreshold: 0.6 },
       PKG,
     );
-    expect(r).toEqual({ enabled: true, energyPerKill: 0.3, decayPerSec: 0.2, scaleMult: 1.8, attackRangeMult: 2.0 });
+    expect(r).toEqual({ enabled: true, energyPerKill: 0.3, decayPerSec: 0.2, scaleMult: 1.8, attackRangeMult: 2.0, fillThreshold: 0.6 });
   });
 
   it('★逐欄 fallback：只給部分欄 → 其餘沿用 packaged', () => {
@@ -98,6 +99,7 @@ describe('resolveSecondTransform — 逐欄 override 優先、fallback 打包預
     expect(r.energyPerKill).toBe(PKG.energyPerKill); // 沒給→packaged
     expect(r.decayPerSec).toBe(PKG.decayPerSec);
     expect(r.attackRangeMult).toBe(PKG.attackRangeMult);
+    expect(r.fillThreshold).toBe(PKG.fillThreshold); // 沒給→packaged
   });
 
   it('★壞版對照：數值欄非有限正數（0/負/NaN/字串）→ 該欄 fallback packaged', () => {
@@ -120,6 +122,47 @@ describe('resolveSecondTransform — 逐欄 override 優先、fallback 打包預
   it('★物件守衛：function-with-props（typeof≠object）→ 全回 packaged', () => {
     const fn = Object.assign(function () {}, { version: 1, enabled: true, scaleMult: 2 });
     expect(resolveSecondTransform(fn as unknown, PKG)).toEqual(PKG);
+  });
+
+  // fillThreshold（集滿門檻，用戶要開放）：ratio (0,1]（energy cap=1，>1 永不觸發故拒）。
+  describe('fillThreshold 集滿門檻（ratio (0,1] 守衛）', () => {
+    // PKG_F 各欄與 fillThreshold 全不同值 → 抓 fillThreshold fallback 誤讀其他欄的串欄 mutant（測騎教訓）。
+    const PKG_F: ResolvedSecondTransform = {
+      enabled: false,
+      energyPerKill: 0.11,
+      decayPerSec: 0.22,
+      scaleMult: 1.33,
+      attackRangeMult: 1.77,
+      fillThreshold: 0.9,
+    };
+
+    it('合法 (0,1] → 採用（調低=更容易集滿觸發）', () => {
+      expect(resolveSecondTransform({ version: 1, enabled: true, fillThreshold: 0.5 }, PKG_F).fillThreshold).toBe(0.5);
+      expect(resolveSecondTransform({ version: 1, enabled: true, fillThreshold: 1 }, PKG_F).fillThreshold).toBe(1); // 邊界 1 採用
+      expect(resolveSecondTransform({ version: 1, enabled: true, fillThreshold: 0.01 }, PKG_F).fillThreshold).toBe(0.01);
+    });
+
+    it('★>1 拒（energy cap=1 永不觸發）→ fallback packaged', () => {
+      expect(resolveSecondTransform({ version: 1, enabled: true, fillThreshold: 1.5 }, PKG_F).fillThreshold).toBe(0.9);
+      expect(resolveSecondTransform({ version: 1, enabled: true, fillThreshold: 2 }, PKG_F).fillThreshold).toBe(0.9);
+    });
+
+    it('★壞值 0/負/NaN/字串/Infinity → fallback packaged', () => {
+      expect(resolveSecondTransform({ version: 1, enabled: true, fillThreshold: 0 }, PKG_F).fillThreshold).toBe(0.9);
+      expect(resolveSecondTransform({ version: 1, enabled: true, fillThreshold: -0.5 }, PKG_F).fillThreshold).toBe(0.9);
+      expect(resolveSecondTransform({ version: 1, enabled: true, fillThreshold: NaN }, PKG_F).fillThreshold).toBe(0.9);
+      expect(resolveSecondTransform({ version: 1, enabled: true, fillThreshold: '0.5' }, PKG_F).fillThreshold).toBe(0.9);
+      expect(resolveSecondTransform({ version: 1, enabled: true, fillThreshold: Infinity }, PKG_F).fillThreshold).toBe(0.9);
+    });
+
+    it('沒給 fillThreshold → fallback packaged（且不誤讀其他欄，PKG_F 各欄不同值）', () => {
+      const r = resolveSecondTransform({ version: 1, enabled: true, scaleMult: 1.6 }, PKG_F);
+      expect(r.fillThreshold).toBe(0.9); // 沒給→自己的 packaged，非 scaleMult/其他
+    });
+
+    it('version 錯 → fillThreshold 也回 packaged', () => {
+      expect(resolveSecondTransform({ version: 2, enabled: true, fillThreshold: 0.5 }, PKG_F).fillThreshold).toBe(0.9);
+    });
   });
 
   it('resolveSecondTransformEnabled 與 resolveSecondTransform.enabled 一致', () => {

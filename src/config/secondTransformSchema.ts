@@ -3,13 +3,13 @@
  *
  * 用戶要在編輯器自己開/關 + 調數值（不用每次找開發改 code 部署）：
  *   編輯器 → applyToGame(EDITOR_STORE_KEYS.secondTransform,
- *     { version:1, enabled, energyPerKill?, decayPerSec?, scaleMult?, attackRangeMult? })
+ *     { version:1, enabled, energyPerKill?, decayPerSec?, scaleMult?, attackRangeMult?, fillThreshold? })
  *   → 遊戲讀 getResolvedSecondTransform() 決定啟用+數值。
  * override 沒設 / 某欄沒設 / 壞 / version 錯 → 逐欄 fallback 打包預設 SECOND_TRANSFORM_CONFIG（現況不變）。
  *
  * 純函式（resolveSecondTransform）抽給測騎；getResolved* 讀 editorStore + cache（遊戲啟動讀一次）。
- * 開放 override 的欄：enabled（開關）+ energyPerKill/decayPerSec/scaleMult/attackRangeMult（數值）。
- * 未開放（維持 config）：energyPerHit、fillThreshold。
+ * 開放 override 的欄：enabled（開關）+ energyPerKill/decayPerSec/scaleMult/attackRangeMult（數值）+ fillThreshold（集滿門檻，用戶要）。
+ * 未開放（維持 config）：energyPerHit。
  */
 import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
 import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
@@ -22,6 +22,8 @@ export interface SecondTransformFile {
   decayPerSec?: number;
   scaleMult?: number;
   attackRangeMult?: number;
+  /** 集滿觸發二段的能量門檻（ratio，(0,1]；energy cap=1，>1 永不觸發故不採用）。 */
+  fillThreshold?: number;
 }
 
 /** 已解析的二段變身可調值（遊戲端讀）。 */
@@ -31,6 +33,7 @@ export interface ResolvedSecondTransform {
   decayPerSec: number;
   scaleMult: number;
   attackRangeMult: number;
+  fillThreshold: number;
 }
 
 export const SECOND_TRANSFORM_SCHEMA_VERSION = 1 as const;
@@ -43,6 +46,7 @@ function packagedResolved(): ResolvedSecondTransform {
     decayPerSec: SECOND_TRANSFORM_CONFIG.decayPerSec,
     scaleMult: SECOND_TRANSFORM_CONFIG.scaleMult,
     attackRangeMult: SECOND_TRANSFORM_CONFIG.attackRangeMult,
+    fillThreshold: SECOND_TRANSFORM_CONFIG.fillThreshold,
   };
 }
 
@@ -55,12 +59,20 @@ export function defaultSecondTransformFile(): SecondTransformFile {
     decayPerSec: SECOND_TRANSFORM_CONFIG.decayPerSec,
     scaleMult: SECOND_TRANSFORM_CONFIG.scaleMult,
     attackRangeMult: SECOND_TRANSFORM_CONFIG.attackRangeMult,
+    fillThreshold: SECOND_TRANSFORM_CONFIG.fillThreshold,
   };
 }
 
 /** 有限正數（>0）守衛：數值欄需 finite 且 >0 才採用，否則 fallback。 */
 function posNum(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
+}
+
+/**
+ * 集滿門檻守衛：ratio 需 finite 且在 (0,1] 才採用（energy cap=1，>1 永不觸發故拒；≤0 無意義）。否則 fallback。
+ */
+function fillNum(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 1 ? v : undefined;
 }
 
 /**
@@ -83,6 +95,7 @@ export function resolveSecondTransform(
     decayPerSec: posNum(o.decayPerSec) ?? packaged.decayPerSec,
     scaleMult: posNum(o.scaleMult) ?? packaged.scaleMult,
     attackRangeMult: posNum(o.attackRangeMult) ?? packaged.attackRangeMult,
+    fillThreshold: fillNum(o.fillThreshold) ?? packaged.fillThreshold,
   };
 }
 
