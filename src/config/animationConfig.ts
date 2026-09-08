@@ -74,6 +74,43 @@ export const CHARACTERS: Record<string, CharacterDef> = {
     damaged: A(8, 24, false),
     death: A(16, 24, false),
   },
+  // 5 隻 SPUM 英雄（戰騎烘，H5Export 搬入；統一 idle12/move8/attack12/damaged8/death16）。
+  // 投幣變身池英雄（HERO_ROSTER）：devil1 刺客/elf1 紫髮法師/elf2 藍髮戰士/human2 鐵盔騎士/legacy1 兔耳鎧甲。
+  devil1: {
+    idle: A(12, 24, true),
+    move: A(8, 24, true),
+    attack: A(12, 24, false),
+    damaged: A(8, 24, false),
+    death: A(16, 24, false),
+  },
+  elf1: {
+    idle: A(12, 24, true),
+    move: A(8, 24, true),
+    attack: A(12, 24, false),
+    damaged: A(8, 24, false),
+    death: A(16, 24, false),
+  },
+  elf2: {
+    idle: A(12, 24, true),
+    move: A(8, 24, true),
+    attack: A(12, 24, false),
+    damaged: A(8, 24, false),
+    death: A(16, 24, false),
+  },
+  human2: {
+    idle: A(12, 24, true),
+    move: A(8, 24, true),
+    attack: A(12, 24, false),
+    damaged: A(8, 24, false),
+    death: A(16, 24, false),
+  },
+  legacy1: {
+    idle: A(12, 24, true),
+    move: A(8, 24, true),
+    attack: A(12, 24, false),
+    damaged: A(8, 24, false),
+    death: A(16, 24, false),
+  },
 };
 
 export const ALL_ANIM_STATES: readonly AnimState[] = [
@@ -100,6 +137,12 @@ export const PER_CHAR_SCALE: Record<string, number> = {
   Enemy_Rush: 1,
   Enemy_Ranged: 1,
   Enemy_Elite: 1.5,
+  // 5 隻 SPUM 英雄（default 1；之後看實機大小再各別補償）。
+  devil1: 1,
+  elf1: 1,
+  elf2: 1,
+  human2: 1,
+  legacy1: 1,
 };
 
 /** 取得某角色的顯示縮放倍率（未設定則 1）。 */

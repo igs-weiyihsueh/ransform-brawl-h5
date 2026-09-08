@@ -12,7 +12,7 @@
  * 英雄池（投幣隨機抽的候選；凡人 Human 不列入）。
  * ★之後加英雄：把新英雄的 charKey（需在 animationConfig.CHARACTERS 有對應美術）加進此陣列即生效。
  */
-export const HERO_ROSTER = ['SunWukong'] as const;
+export const HERO_ROSTER = ['SunWukong', 'devil1', 'elf1', 'elf2', 'human2', 'legacy1'] as const;
 
 export type HeroKey = (typeof HERO_ROSTER)[number];
 
