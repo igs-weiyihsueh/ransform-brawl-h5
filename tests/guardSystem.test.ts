@@ -277,6 +277,33 @@ describe('GuardEvent — 勝敗狀態機 + 獎勵（改為加寶盒進度 addCha
     expect(state.chestChargeAdded).toBe(Math.round(CHEST_OPEN_THRESHOLD * 0.5));
   });
 
+  // ★ 複核補強（測騎醒後 review 0912e9a）：門檻 165→10 後，round(門檻×ratio) 在多數 ratio 產生整數/近整數，
+  //   原半血(5.0)/HP1(0.02) 案例 round≠floor 無法鑑別（floor/ceil 同值）→ 加非整數乘積案例釘死 Math.round。
+  it('★複核補強：勝且 3/4 血 → round(10×0.75)=round(7.5)=8（釘 round≠floor=7）', () => {
+    const { ctx, state } = makeGuardCtx();
+    const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
+    const maxHp = getGuardPreset('Guard60').targetHP;
+    state.guardTarget!.takeDamage(maxHp * 0.25); // HP→3/4（hpRatio 0.75）
+    fastForwardIntro(ev);
+    ev.update(getGuardPreset('Guard60').timeLimit); // 勝
+    expect(ev.didWin()).toBe(true);
+    // round(10×0.75)=round(7.5)=8；floor 會給 7 → 此案例鑑別 round vs floor。
+    expect(state.chestChargeAdded).toBe(Math.round(CHEST_OPEN_THRESHOLD * 0.75));
+    expect(state.chestChargeAdded).toBe(8); // 字面確認（門檻=10 時）
+  });
+
+  it('★複核補強：勝且低血(ratio 0.24) → round(10×0.24)=round(2.4)=2（釘 round≠ceil=3）', () => {
+    const { ctx, state } = makeGuardCtx();
+    const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
+    const maxHp = getGuardPreset('Guard60').targetHP;
+    state.guardTarget!.takeDamage(maxHp * 0.76); // HP→24%（hpRatio 0.24）
+    fastForwardIntro(ev);
+    ev.update(getGuardPreset('Guard60').timeLimit); // 勝
+    expect(ev.didWin()).toBe(true);
+    // round(10×0.24)=round(2.4)=2；ceil 會給 3 → 此案例鑑別 round vs ceil。
+    expect(state.chestChargeAdded).toBe(2);
+  });
+
   it('倒數中 HP≤0 提早結束 → 敗，寶盒進度不加（不給獎勵、addCharge 不被呼叫）', () => {
     const { ctx, state } = makeGuardCtx();
     const ev = new GuardEvent(ctx, 'Guard60', ['Enemy_Rush']);
