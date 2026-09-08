@@ -165,9 +165,19 @@ export class UISystem implements GameSystem {
       // 魂力環顯示分流：連打中由 setMashTransform 接管（填充 mashRatio）；
       // 否則沿用「變身後才顯魂力環（soulRatio）」邏輯（用戶 #1）。
       if (!mashing) {
-        const transformed = this.ctx.transform.isTransformed(pid);
-        overhead.setSoulVisible(transformed);
-        if (transformed) overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
+        // 二段變身能量條（用戶新大功能，讀翼騎接口，只讀不回寫，讀前 ?. graceful）：
+        //  一段悟空後且 flag 開（isSecondTransformAvailable）→ 魂力環位置改顯二段能量條（打怪累積）。
+        //  ★flag 關時核心回 available=false/ratio=0 → setSecondTransform 回 false → 完全走現有魂力環。
+        const secondAvail = this.ctx.isSecondTransformAvailable?.(pid) ?? false;
+        const secondActive = this.ctx.isSecondTransformActive?.(pid) ?? false;
+        const secondRatio = this.ctx.getSecondTransformEnergyRatio?.(pid) ?? 0;
+        const secondShown = overhead.setSecondTransform(secondAvail, secondActive, secondRatio);
+        // 二段條沒接管時才走現有魂力環（變身後顯 soulRatio）。
+        if (!secondShown) {
+          const transformed = this.ctx.transform.isTransformed(pid);
+          overhead.setSoulVisible(transformed);
+          if (transformed) overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
+        }
       }
       overhead.setCredit(this.ctx.credit.getCredit(pid));
       // 沒 Credit 演出（閃紅 + 投幣提示 + 倒數）：讀 CreditSystem 耗盡狀態（只讀）。

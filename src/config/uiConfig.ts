@@ -49,6 +49,10 @@ export const HUD_COLORS = {
   soulRingBg: 0x3a3a5a,
   /** 魂力環充填色。 */
   soulRingFill: 0xba68c8,
+  /** 二段變身能量條：累積中充填色（金橘，與魂力環紫色區隔；用戶新大功能）。 */
+  secondRingFill: 0xff9800,
+  /** 二段變身能量條：二段變身中（放大強化）充填色（亮紅金，滿格/消退更醒目）。 */
+  secondRingActive: 0xffe082,
   /** Credit 底框色。 */
   creditBg: 0x000000,
   /** 金幣 icon 佔位色。 */

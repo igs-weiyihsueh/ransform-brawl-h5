@@ -9,6 +9,10 @@ import {
   UI_ICONS,
 } from '@/config/uiConfig';
 import { EnergyBar } from '@/systems/ui/EnergyBar';
+import {
+  resolveSecondTransformDisplay,
+  type SecondTransformStyle,
+} from '@/systems/ui/secondTransformDisplay';
 
 /**
  * PlayerOverheadUI — 角色頭上 UI（對照 Unity PlayerUI 200×80）。
@@ -26,6 +30,8 @@ import { EnergyBar } from '@/systems/ui/EnergyBar';
 export class PlayerOverheadUI {
   private readonly container: Phaser.GameObjects.Container;
   private readonly soulRing: Phaser.GameObjects.Graphics;
+  /** 二段變身能量條（用戶新大功能）：魂力環同位置疊一條二段填充弧，available 時取代魂力環顯示。 */
+  private readonly secondRing: Phaser.GameObjects.Graphics;
   /** 魂力環底圖（ring.png，用戶 #1：變身前隱藏魂力條）；無 sprite 則 null。 */
   private readonly ringImg: Phaser.GameObjects.Image | null = null;
   private readonly creditText: Phaser.GameObjects.Text;
@@ -40,6 +46,9 @@ export class PlayerOverheadUI {
   private readonly groupCombo: Phaser.GameObjects.GameObject[] = [];
 
   private shownSoul = -1;
+  /** 二段能量條上次繪製狀態（ratio+樣式+可見）：變動才重畫。 */
+  private shownSecondRatio = -1;
+  private shownSecondStyle: 'charging' | 'active' | 'none' = 'none';
   private shownCredit = -1;
   private shownCombo = -1;
   /** COMBO 警告閃爍中旗標，避免重複啟動 tween。 */
@@ -91,6 +100,14 @@ export class PlayerOverheadUI {
     this.soulRing = scene.add.graphics();
     this.container.add(this.soulRing);
     this.groupBadge.push(this.soulRing);
+
+    // 二段變身能量條（用戶新大功能）：魂力環同心同位置疊一條二段填充弧。
+    // 預設隱藏；available 時由 UISystem 呼叫 setSecondTransform 顯示並取代魂力環。
+    // 併入 groupBadge → 沿用 badge visible 隱藏開關（用戶 #6）。
+    this.secondRing = scene.add.graphics();
+    this.secondRing.setVisible(false);
+    this.container.add(this.secondRing);
+    this.groupBadge.push(this.secondRing);
 
     const pnum = scene.add.graphics();
     pnum.fillStyle(badgeColor, 1);
@@ -268,6 +285,61 @@ export class PlayerOverheadUI {
   setSoulVisible(visible: boolean): void {
     this.ringImg?.setVisible(visible);
     this.soulRing.setVisible(visible);
+  }
+
+  /**
+   * 二段變身能量條（用戶新大功能，讀翼騎 TransformSystem 接口，只讀不回寫）：
+   *  - available=true（一段悟空後且 flag 開）→ 魂力環位置改顯二段能量條（打怪累積 ratio 填充）；
+   *    魂力環（底圖+充填弧）隱藏，改由二段填充弧表現。
+   *  - active=true（二段變身中，放大強化）→ 二段條用 active 樣式（更醒目色，ratio 隨時間消退往下）。
+   *  - available=false 且 active=false（未變身/flag 關）→ 二段條隱藏，回傳 false 交回現有魂力環邏輯。
+   *
+   * ★feature flag 關時核心回 available=false/ratio=0 → 此處 show=false → 完全走現有魂力環（現況不受影響）。
+   * 純顯示；ratio/樣式決策走純函式 resolveSecondTransformDisplay（可測）。變動才重畫（省開銷）。
+   *
+   * @returns 是否正在顯示二段能量條（true → 呼叫端不要再跑魂力環顯示邏輯）。
+   */
+  setSecondTransform(available: boolean, active: boolean, ratio: number): boolean {
+    const d = resolveSecondTransformDisplay(available, active, ratio);
+    if (!d.show) {
+      // 不顯二段條：隱藏二段弧、清狀態；魂力環顯示交回 UISystem/setSoulVisible。
+      if (this.shownSecondStyle !== 'none') {
+        this.shownSecondStyle = 'none';
+        this.shownSecondRatio = -1;
+        this.secondRing.setVisible(false).clear();
+      }
+      return false;
+    }
+    // 顯二段條：魂力環（底圖+充填弧）讓位隱藏，改顯二段填充弧於同位置。
+    this.ringImg?.setVisible(false);
+    this.soulRing.setVisible(false);
+    this.secondRing.setVisible(true);
+    // 變動才重畫。
+    if (d.ratio === this.shownSecondRatio && d.style === this.shownSecondStyle) return true;
+    this.shownSecondRatio = d.ratio;
+    this.shownSecondStyle = d.style;
+    this.drawSecondRing(d.ratio, d.style);
+    return true;
+  }
+
+  /** 畫二段能量填充弧（魂力環同心同位置；底槽 + 依 ratio 的彩色填充弧）。 */
+  private drawSecondRing(ratio: number, style: SecondTransformStyle): void {
+    const cfg = OVERHEAD_LAYOUT.badge;
+    const g = this.secondRing;
+    g.clear();
+    // 底槽環（沿用魂力環底槽色，同心同半徑，讓二段條「接管」魂力環視覺位置）。
+    g.lineStyle(cfg.ringThickness, HUD_COLORS.soulRingBg, 1);
+    g.strokeCircle(cfg.cx, cfg.cy, cfg.ringRadius);
+    if (ratio > 0) {
+      // 從 12 點鐘順時針填充，弧度=ratio（與魂力環同方向，位置一致）。
+      const start = -Math.PI / 2;
+      const end = start + Math.PI * 2 * ratio;
+      const color = style === 'active' ? HUD_COLORS.secondRingActive : HUD_COLORS.secondRingFill;
+      g.lineStyle(cfg.ringThickness, color, 1);
+      g.beginPath();
+      g.arc(cfg.cx, cfg.cy, cfg.ringRadius, start, end, false);
+      g.strokePath();
+    }
   }
 
   /**
