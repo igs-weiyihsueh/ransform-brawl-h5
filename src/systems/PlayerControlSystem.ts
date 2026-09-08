@@ -159,10 +159,11 @@ export class PlayerControlSystem implements GameSystem {
     }
 
     // 進場跳躍中：只推進進場動畫，跳過一般操控/攻擊/夾限（isJumping 已豁免夾限）。
-    // 五輪#1：落地當幀（updateEntrance 由 true→回 false）→ 發該玩家的初始變身道具（有主，落點旁）。
+    // 階段1：落地當幀（updateEntrance 由 true→回 false）→ 從英雄池隨機抽一個英雄變身進場
+    //   （取代舊「進場旁給初始道具→撿道具首次變身」；連打變身機制去留階段3決定）。
     if (typeof player.isEntering === 'function' && player.isEntering()) {
       const stillEntering = player.updateEntrance(dt);
-      if (!stillEntering) this.giveInitialItem(player); // 剛落地 → 進場旁給初始道具
+      if (!stillEntering) this.ctx.transform?.transformToRandomHero?.(pid); // 剛落地 → 隨機抽英雄變身
       return;
     }
 
@@ -342,20 +343,6 @@ export class PlayerControlSystem implements GameSystem {
     const endX = landingX(player.playerId, GAME_WIDTH * 0.5);
     const endY = GAME_HEIGHT * 0.5;
     player.startEntrance(start.x, start.y, endX, endY);
-  }
-
-  /**
-   * 五輪#1：玩家進場落地 → 發一個「初始變身道具」在落點旁（有主，標該玩家色 + 箭頭 + 牽引線，呼應 #6#7）。
-   * 每次進場發一個（頻率 a，異靈拍板；MAX_ITEMS_ON_FIELD 上限防反覆進出爆場）。位置從落點算(initialItemPos)、不寫死。
-   */
-  private giveInitialItem(player: GameContext['player']): void {
-    if (!this.ctx.transform || typeof this.ctx.transform.spawnItem !== 'function') return;
-    // 十六輪②：初始道具改「spawn 彈跳飛向角色左右一側落地」(Unity 手感)。
-    //   從角色位置生成 → launch(dir) 水平 400px/s×方向 + 上拋 300 + 重力 800，拋物線飛約 300px 落到該側。
-    //   落點左右：角色偏左半場→往右飛(dir+1)、偏右→往左飛(dir-1)＝往場中央那側(空間較大、不飛出界)。
-    const pos = player.getPosition();
-    const dir = pos.x <= GAME_WIDTH / 2 ? 1 : -1;
-    this.ctx.transform.spawnItem('initial', player.playerId, pos, dir);
   }
 
   /** 依 BuffSystem 聚合倍率設定玩家 stat 倍率/護盾（同 stat 多來源已相乘+clamp）。 */

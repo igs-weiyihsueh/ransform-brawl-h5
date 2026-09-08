@@ -10,6 +10,7 @@ import {
   TRANSFORM_IFRAME,
 } from '@/config/transformConfig';
 import { TransformItem, INITIAL_ITEM_PICKUP_IMMUNITY_SEC } from '@/entities/TransformItem';
+import { HERO_ROSTER, pickHero } from '@/config/heroRoster';
 import { playerColor } from '@/config/playerConfig';
 import { PPU } from '@/config/gameConfig';
 import {
@@ -57,8 +58,9 @@ export class TransformSystem implements GameSystem {
   readonly name = 'TransformSystem';
   private ctx!: GameContext;
 
-  /** 每玩家變身狀態（Map<playerId>）。S3 只有 P1，一筆退化成舊單一 state。 */
-  private states = new Map<number, { transformed: boolean; soul: number }>();
+  /** 每玩家變身狀態（Map<playerId>）。S3 只有 P1，一筆退化成舊單一 state。
+   *  階段1：heroKey=當前變身英雄 key（transformed=true 時有效；mortal 時 null）。 */
+  private states = new Map<number, { transformed: boolean; soul: number; heroKey: string | null }>();
   /**
    * 十五輪 連打變身狀態機（per-player）：撿道具（未變身）→ active，靠連打填 ratio，滿→完成變身。
    * ratio 0..1；sinceLastMashSec 距上次連打秒數（判連打 vs 自動填）；comboStash 進狀態時暫存的 COMBO 值。
@@ -105,10 +107,10 @@ export class TransformSystem implements GameSystem {
     }
   }
 
-  private stateOf(playerId: number): { transformed: boolean; soul: number } {
+  private stateOf(playerId: number): { transformed: boolean; soul: number; heroKey: string | null } {
     let s = this.states.get(playerId);
     if (!s) {
-      s = { transformed: false, soul: 0 };
+      s = { transformed: false, soul: 0, heroKey: null };
       this.states.set(playerId, s);
     }
     return s;
@@ -327,35 +329,17 @@ export class TransformSystem implements GameSystem {
     const s = this.stateOf(player.playerId);
     if (s.transformed) {
       s.soul = Math.min(MAX_SOUL_POWER, s.soul + RECOVER_SOUL);
-    } else {
-      // 十五輪：初次變身不直接變 → 進「連打變身」鎖定狀態機（填滿才 transform）。
-      this.enterMashTransform(player);
     }
+    // 階段1：★取消「凡人撿道具首次變身」——未變身撿道具不再進連打變身（變身改由投幣進場隨機抽英雄）。
+    //   凡人期間道具目前無作用（後續階段若要凡人撿道具效果再定；連打變身機制去留階段3決定）。
   }
 
   /**
-   * 十五輪：進入連打變身狀態（撿道具、未變身）。
-   * 身體浮起+鎖定（Player.setMashLocked→敵人 targeting/環繞/抓免疫、move/dash/attack gate）；
-   * 暫存當前 COMBO 值 + 暫停 COMBO 倒數（不中斷，完成後恢復）。
+   * 連打變身召喚陣的腳下位置（地面錨點：浮起中固定浮起前地面 y，不隨浮起上飄）。吸怪/震開中心亦用此。
+   * 註（階段1）：「凡人撿道具首次變身→進連打變身」入口已取消（enterMashTransform 移除）；
+   *   連打機制其餘（registerMashHit/complete/cancel/召喚陣/吸怪/震開）保留待階段3決定去留，
+   *   目前無入口啟動 mash（registerMashHit 因 m.active=false early-return），機制休眠但完整。
    */
-  private enterMashTransform(player: GameContext['player']): void {
-    const pid = player.playerId;
-    const m = this.mashStateOf(pid);
-    if (m.active) return; // 已在連打變身中不重入
-    m.active = true;
-    m.ratio = 0;
-    m.sinceLastMashSec = 0;
-    m.comboStash = this.ctx.combo?.getCombo?.(pid) ?? 0; // 暫存 COMBO（值本就存 ComboSystem；暫停倒數即保留）
-    this.ctx.combo?.setMashPaused?.(pid, true); // 暫停 COMBO 倒數（不中斷）
-    player.setMashLocked?.(true); // 鎖定+免疫（複用 outOfCredit 類比免疫路徑）
-    player.setFloating?.(true); // 身體浮起（純視覺，Player 提供）
-    player.setFootGlowVisible?.(false); // 十六輪①：連打期間隱搜索圈(footGlow)，改由金色召喚陣取代顯示
-    // 十五輪：腳下金黃召喚陣（persistent handle，tick 更新自轉/脈動/越滿越亮，完成/中斷 end 清）。
-    const foot = this.mashFootPos(player);
-    this.mashSummonHandles.set(pid, this.ctx.effects?.mashSummonCircleStart?.(foot.x, foot.y) ?? null);
-  }
-
-  /** 連打變身召喚陣的腳下位置（地面錨點：浮起中固定浮起前地面 y，不隨浮起上飄）。吸怪/震開中心亦用此。 */
   private mashFootPos(player: GameContext['player']): { x: number; y: number } {
     const gf = player.getGroundFootCenter?.();
     if (gf) return gf;
@@ -451,21 +435,39 @@ export class TransformSystem implements GameSystem {
     return m.active ? m.ratio : 0;
   }
 
-  /** 變身：凡人 → 悟空。 */
-  private transform(player: GameContext['player']): void {
+  /** 變身：凡人 → 指定英雄（階段1：投幣進場隨機抽到的英雄）。 */
+  private transform(player: GameContext['player'], heroKey: string = SUNWUKONG_KEY): void {
     const s = this.stateOf(player.playerId);
     s.transformed = true;
     s.soul = MAX_SOUL_POWER;
-    player.switchCharacter(SUNWUKONG_KEY);
+    s.heroKey = heroKey;
+    player.switchCharacter(heroKey);
     player.playTransformFlash(TRANSFORM_IFRAME);
     player.setSoulDamageSink((dmg) => this.takeSoulDamage(player, dmg));
   }
 
-  /** 退變：悟空 → 凡人（魂力歸 0 觸發）。 */
+  /**
+   * 階段1：投幣進場 → 從英雄池隨機抽一個英雄變身進場（取代舊「撿道具首次變身」）。
+   * PlayerControlSystem 於進場落地當幀呼叫。冪等：已變身則不重抽（避免重入覆蓋）。
+   * rng 可注入（測試鎖定抽哪個）；roster 空 → fallback SunWukong（不炸）。
+   * @returns 抽中並變身的英雄 key（已變身則回當前 heroKey）。
+   */
+  transformToRandomHero(playerId: number, rng: () => number = Math.random): string {
+    const s = this.stateOf(playerId);
+    if (s.transformed) return s.heroKey ?? SUNWUKONG_KEY; // 已是英雄不重抽
+    const player = this.playerOf(playerId);
+    if (!player) return SUNWUKONG_KEY;
+    const hero = pickHero(HERO_ROSTER, rng) ?? SUNWUKONG_KEY; // 池空 fallback
+    this.transform(player, hero);
+    return hero;
+  }
+
+  /** 退變：英雄 → 凡人（魂力歸 0 觸發）。清 heroKey。 */
   private detransform(player: GameContext['player']): void {
     const s = this.stateOf(player.playerId);
     s.transformed = false;
     s.soul = 0;
+    s.heroKey = null;
     player.setSoulDamageSink(null);
     player.switchCharacter(HUMAN_KEY);
     player.playTransformFlash(TRANSFORM_IFRAME);
@@ -507,6 +509,11 @@ export class TransformSystem implements GameSystem {
   private playerOf(playerId: number): GameContext['player'] | null {
     const players = this.ctx?.players ?? (this.ctx?.player ? [this.ctx.player] : []);
     return players.find((p) => p.playerId === playerId) ?? this.ctx?.player ?? null;
+  }
+
+  /** 接口（界騎 UI）：某玩家當前變身英雄 key（凡人/未變身→null）。待機凡人顯示/英雄牌用。 */
+  getHeroKey(playerId: number): string | null {
+    return this.stateOf(playerId).heroKey;
   }
 
   getSoul(playerId: number): number {
