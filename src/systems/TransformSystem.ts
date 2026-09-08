@@ -33,6 +33,7 @@ import {
   MASH_KNOCKBACK_RADIUS_PX,
 } from '@/systems/mashTransformMath';
 import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
+import { getResolvedSecondTransformEnabled } from '@/config/secondTransformSchema';
 import {
   type SecondTransformState,
   makeSecondTransformState,
@@ -531,11 +532,11 @@ export class TransformSystem implements GameSystem {
   }
 
   /**
-   * 二段變身「是否可累積能量」：feature flag 開 且 已是一段悟空變身後。
-   * 關 flag / 未變身（凡人）→ false，累積/查詢全走空（現有行為不變）。
+   * 二段變身「是否可累積能量」：啟用開關開（editorStore override 優先，無則預設 false）且 已是一段悟空變身後。
+   * 關 / 未變身（凡人）→ false，累積/查詢全走空（現有行為不變）。
    */
   isSecondTransformAvailable(playerId: number): boolean {
-    return SECOND_TRANSFORM_CONFIG.enabled && this.stateOf(playerId).transformed;
+    return getResolvedSecondTransformEnabled() && this.stateOf(playerId).transformed;
   }
 
   /**
@@ -551,9 +552,9 @@ export class TransformSystem implements GameSystem {
     if (!before.active && after.active) this.enterSecondTransform(playerId); // 剛觸發
   }
 
-  /** 每幀推進二段能量消退（★flag 關 no-op）；退完解除二段；二段中光環跟角色。 */
+  /** 每幀推進二段能量消退（★關 no-op）；退完解除二段；二段中光環跟角色。 */
   private tickSecondTransform(dt: number): void {
-    if (!SECOND_TRANSFORM_CONFIG.enabled) return;
+    if (!getResolvedSecondTransformEnabled()) return;
     const players = this.ctx?.players ?? (this.ctx?.player ? [this.ctx.player] : []);
     for (const p of players) {
       const before = this.secondStateOf(p.playerId);
@@ -592,15 +593,15 @@ export class TransformSystem implements GameSystem {
     this.secondAuraHandles.delete(playerId);
   }
 
-  /** 接口（界騎 UI / 特效）：二段能量條填充比例 0~1（flag 關回 0）。 */
+  /** 接口（界騎 UI / 特效）：二段能量條填充比例 0~1（關回 0）。 */
   getSecondTransformEnergyRatio(playerId: number): number {
-    if (!SECOND_TRANSFORM_CONFIG.enabled) return 0;
+    if (!getResolvedSecondTransformEnabled()) return 0;
     return secondEnergyRatio(this.secondStateOf(playerId));
   }
 
-  /** 接口（界騎 UI / 特效）：是否在二段變身中（flag 關回 false）。 */
+  /** 接口（界騎 UI / 特效）：是否在二段變身中（關回 false）。 */
   isSecondTransformActive(playerId: number): boolean {
-    if (!SECOND_TRANSFORM_CONFIG.enabled) return false;
+    if (!getResolvedSecondTransformEnabled()) return false;
     return this.secondStateOf(playerId).active;
   }
 

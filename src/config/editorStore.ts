@@ -22,6 +22,7 @@ export const EDITOR_STORE_KEYS = {
   hitfeel: 'transformbrawl:hitfeel',
   attackSpeed: 'transformbrawl:attackSpeed',
   mapBounds: 'transformbrawl:mapBounds',
+  secondTransform: 'transformbrawl:secondTransform',
 } as const;
 
 export type EditorStoreKey = (typeof EDITOR_STORE_KEYS)[keyof typeof EDITOR_STORE_KEYS];
@@ -103,6 +104,7 @@ export const EDITOR_STORE_META: Record<
   hitfeel: { key: EDITOR_STORE_KEYS.hitfeel, label: '打擊感', target: 'src/config/hitFeelConfig.ts HIT_FEEL' },
   attackSpeed: { key: EDITOR_STORE_KEYS.attackSpeed, label: '攻擊速度', target: 'src/config 攻擊速度設定' },
   mapBounds: { key: EDITOR_STORE_KEYS.mapBounds, label: '地圖邊界', target: 'src/config/mapConfig.ts MAP_BOUNDS_UNITS' },
+  secondTransform: { key: EDITOR_STORE_KEYS.secondTransform, label: '二段變身', target: 'src/config/combatConfig.ts SECOND_TRANSFORM_CONFIG' },
 } as const;
 
 /** 匯出全部設定的結構（下載 JSON 的頂層）。 */
