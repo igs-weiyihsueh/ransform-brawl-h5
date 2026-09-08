@@ -390,37 +390,16 @@ function buildScreenEditables(): Editable[] {
       if (rc.y !== undefined) pg.progressOffsetY = rc.y + h / 2 - PROGRESS_DESIGN_CY;
     },
   });
-  // 衝刺「衝」圖示位置+大小（用戶：編輯器調不到→接上，同 JP/進度範式）。additive 附掛 layout.dash。
-  // box = 圖示直徑(radius*2)×scale，中心 = P1 欄衝刺圖示絕對位置(DASH_DESIGN_CX/CY)+offset。拖=offset、拉寬=scale。
-  const layoutDash = layout as unknown as { dash?: { dashScale?: number; dashOffsetX?: number; dashOffsetY?: number } };
-  if (!layoutDash.dash) layoutDash.dash = { dashScale: 1, dashOffsetX: 0, dashOffsetY: 0 };
-  const dsh = layoutDash.dash;
-  list.push({
-    key: 'dash.icon', label: '衝刺「衝」圖示（位置+大小）', origin: { x: 0, y: 0 }, resizable: true,
-    get: () => {
-      const s = dsh.dashScale ?? 1;
-      const d = DASH_DESIGN_DIAM * s;
-      const ccx = DASH_DESIGN_CX + (dsh.dashOffsetX ?? 0);
-      const ccy = DASH_DESIGN_CY + (dsh.dashOffsetY ?? 0);
-      return { x: ccx - d / 2, y: ccy - d / 2, width: d, height: d };
-    },
-    set: (rc) => {
-      if (rc.width !== undefined) dsh.dashScale = Math.max(0.2, rc.width / DASH_DESIGN_DIAM);
-      const s = dsh.dashScale ?? 1;
-      const d = DASH_DESIGN_DIAM * s;
-      if (rc.x !== undefined) dsh.dashOffsetX = rc.x + d / 2 - DASH_DESIGN_CX;
-      if (rc.y !== undefined) dsh.dashOffsetY = rc.y + d / 2 - DASH_DESIGN_CY;
-    },
-  });
+  // 衝刺「衝」圖示歸屬「下方面板編輯器」（用戶指定改歸屬）：已移到 buildPanelEditables，
+  // 因衝刺圖示實際位在 P1 欄（下方面板）內，編輯 handle 放面板區塊才符合直覺（同 chest/ticket/progress）。
   return list;
 }
 
-/** 衝刺圖示 P1 欄絕對螢幕位置/直徑（對齊遊戲端 BOTTOM_PANEL_LAYOUT.dash + 面板置中算法；編輯器不 import 遊戲模組故內聯）。
- *  panel: slotCount4/slotWidth420/slotGap20/bottomOffset16/slotHeight120，畫面 1920×1080。
- *  startX=960-(4*420+3*20)/2=90；slot0Y=1080-16-120=944。dash.cx=300/cy=54/radius=30。
- *  DASH_DESIGN_CX=90+300=390、CY=944+54=998、DIAM=60。 */
-const DASH_DESIGN_CX = 390;
-const DASH_DESIGN_CY = 998;
+/** 衝刺圖示欄內基準（歸屬下方面板編輯器：圓心相對 P1 欄左上，對齊遊戲端 BOTTOM_PANEL_LAYOUT.dash.cx/cy）。
+ *  dash.cx=300/cy=54/radius=30 → 欄內基準圓心 (300,54)、直徑 60。編輯器 origin=P1 欄左上，故用欄內相對座標。
+ *  （編輯器不 import 遊戲模組，故內聯常數。） */
+const DASH_COL_CX = 300;
+const DASH_COL_CY = 54;
 const DASH_DESIGN_DIAM = 60;
 const PROGRESS_DESIGN_W = 640;
 const PROGRESS_DESIGN_H = 80;
@@ -543,6 +522,31 @@ function buildPanelEditables(): Editable[] {
       },
     });
   }
+  // 衝刺「衝」圖示（歸屬下方面板編輯器）：實際位在 P1 欄內（BOTTOM_PANEL_LAYOUT.dash 圓心相對欄左上 300,54），
+  // 故編輯 handle 放面板區塊、用 P1 欄 origin。additive 附掛 layout.dash（offset 相對欄內基準位置，語意與遊戲端
+  // resolveDashDisplay 一致，既有 override 不受影響）。box = 圖示直徑(radius*2)×scale。拖=offset、拉寬=scale。
+  const layoutDash = layout as unknown as { dash?: { dashScale?: number; dashOffsetX?: number; dashOffsetY?: number } };
+  if (!layoutDash.dash) layoutDash.dash = { dashScale: 1, dashOffsetX: 0, dashOffsetY: 0 };
+  const dsh = layoutDash.dash;
+  list.push({
+    key: 'dash.icon', label: '衝刺「衝」圖示（位置+大小）', origin: pOrigin, resizable: true,
+    get: () => {
+      const s = dsh.dashScale ?? 1;
+      const d = DASH_DESIGN_DIAM * s;
+      // 欄內相對座標（origin=pOrigin 會加上 P1 欄左上）：基準圓心 300,54 + offset。
+      const ccx = DASH_COL_CX + (dsh.dashOffsetX ?? 0);
+      const ccy = DASH_COL_CY + (dsh.dashOffsetY ?? 0);
+      return { x: ccx - d / 2, y: ccy - d / 2, width: d, height: d };
+    },
+    set: (rc) => {
+      if (rc.width !== undefined) dsh.dashScale = Math.max(0.2, rc.width / DASH_DESIGN_DIAM);
+      const s = dsh.dashScale ?? 1;
+      const d = DASH_DESIGN_DIAM * s;
+      // rc.x/y 為欄內相對座標（renderer 已扣掉 origin），回推欄內圓心 - 基準 = offset。
+      if (rc.x !== undefined) dsh.dashOffsetX = rc.x + d / 2 - DASH_COL_CX;
+      if (rc.y !== undefined) dsh.dashOffsetY = rc.y + d / 2 - DASH_COL_CY;
+    },
+  });
   return list;
 }
 
