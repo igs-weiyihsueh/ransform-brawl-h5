@@ -1,4 +1,4 @@
-import { PLAYER_CONFIG } from '@/config/combatConfig';
+import { PLAYER_CONFIG, SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
 import { getResolvedDash } from '@/config/dashSchema';
 import {
   type DashChargeState,
@@ -478,7 +478,8 @@ export class PlayerControlSystem implements GameSystem {
     const attack: AttackData = intent.attack;
     const pos = player.getPosition();
     const facing = player.getFacing();
-    const scale = energy.getAttackScale();
+    // 用戶新大功能：二段變身攻擊範圍加成——把攻擊 shape 整體 scale ×二段倍率（★flag 關/非二段 → ×1 不變）。
+    const scale = energy.getAttackScale() * this.ctx.transform.getSecondTransformAttackRangeMult(player.playerId);
     // 十一輪#2 auto-aim：aim 非空 → 攻擊 shape 朝 aim；null → 水平 facing（十三輪#1#2 起玩家攻擊 aim 恆 null=只左右）。
     const aimArg = aim ?? undefined;
     // 傷害 = 基礎 × 能量倍率 × damage stat 聚合倍率（二段變身等，含 clamp）。
@@ -525,6 +526,10 @@ export class PlayerControlSystem implements GameSystem {
 
     // 充能回報：普攻打到人才 +1（招式命中不充）。
     energy.reportHit(attackerId, intent.isSkill, hitAny);
+    // 用戶新大功能：二段變身能量累積（★flag 關/未一段變身 → no-op）。普攻命中才累（比擊殺少）。
+    if (hitAny && !intent.isSkill) {
+      this.ctx.transform?.accumulateSecondTransform?.(attackerId, SECOND_TRANSFORM_CONFIG.energyPerHit);
+    }
     if (hitAny) {
       this.ctx.credit.consumeOnHit(attackerId);
       this.ctx.combo.onHit(attackerId);

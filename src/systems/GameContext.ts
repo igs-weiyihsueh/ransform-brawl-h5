@@ -79,6 +79,15 @@ export interface GameContext {
   getDashCharges?: (playerId: number) => number;
   getDashMaxCharges?: (playerId: number) => number;
   getDashCooldownProgress?: (playerId: number) => number;
+  /**
+   * 用戶新大功能：二段變身能量條 UI/特效讀取 hook（GameScene 綁 TransformSystem）。★feature flag 關時回 0/false。
+   * - getSecondTransformEnergyRatio：能量條填充 0~1。
+   * - isSecondTransformActive：是否二段變身中（放大+強化）。特效可讀此做邊緣觸發。
+   * - isSecondTransformAvailable：是否可累積（一段悟空後 且 flag 開）。
+   */
+  getSecondTransformEnergyRatio?: (playerId: number) => number;
+  isSecondTransformActive?: (playerId: number) => boolean;
+  isSecondTransformAvailable?: (playerId: number) => boolean;
   /** JP 累積獎池：三組燈/倍數池、集滿派彩（幕通關給燈、命中扣 credit 累積、灌 ticket）。 */
   readonly jp: JpSystem;
   /** 通用計時 buff 框架（頭盔能力 + 寶盒坐騎/二段變身共用）。 */

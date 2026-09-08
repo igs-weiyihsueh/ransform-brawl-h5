@@ -99,6 +99,9 @@ export class Player implements Hittable {
   /** debug：最近被誰打到。 */
   private lastHitBy = '';
 
+  /** 二段變身視覺放大倍率（1=常態；二段變身時放大，乘在 SPRITE_SCALE 上）。 */
+  private secondTransformScale = 1;
+
   /** 衝刺狀態。 */
   private dashing = false;
   private dashRemaining = 0;
@@ -199,11 +202,20 @@ export class Player implements Hittable {
     this.charKey = charKey;
     this.anim.destroy();
     this.anim = new CharacterAnimator(this.scene, charKey, x, y);
-    this.anim.setScale(SPRITE_SCALE);
+    this.anim.setScale(SPRITE_SCALE * this.secondTransformScale);
     this.anim.setFacing(this.facing);
     // 重建後狀態旗標歸零，避免卡在舊 attack。
     this.attacking = false;
     this.damagedRemaining = 0;
+  }
+
+  /**
+   * 二段變身視覺放大（用戶新大功能）：設定倍率（乘在 SPRITE_SCALE 上），立即重套 sprite scale。
+   * mult=1 還原常態。純視覺放大；攻擊範圍加成由 TransformSystem/判定端處理。
+   */
+  setSecondTransformScale(mult: number): void {
+    this.secondTransformScale = mult > 0 ? mult : 1;
+    this.anim.setScale(SPRITE_SCALE * this.secondTransformScale);
   }
 
   getCharacterKey(): string {

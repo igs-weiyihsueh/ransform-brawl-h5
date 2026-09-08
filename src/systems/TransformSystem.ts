@@ -32,6 +32,14 @@ import {
   shouldAutoFill,
   MASH_KNOCKBACK_RADIUS_PX,
 } from '@/systems/mashTransformMath';
+import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
+import {
+  type SecondTransformState,
+  makeSecondTransformState,
+  accumulateSecondEnergy,
+  decaySecondEnergy,
+  secondEnergyRatio,
+} from '@/systems/secondTransformMath';
 
 /**
  * TransformSystem — 變身系統（凡人 ↔ 悟空，決策 15fec2a4）。
@@ -61,6 +69,8 @@ export class TransformSystem implements GameSystem {
   >();
   /** 十五輪：連打變身腳下召喚陣特效 handle（per-player，非狀態；enter 建/tick 更新/complete·清 end）。 */
   private mashSummonHandles = new Map<number, Phaser.GameObjects.Container | null>();
+  /** 二段變身能量狀態（per-player，用戶新大功能；★feature flag 關時完全不動用）。 */
+  private secondStates = new Map<number, SecondTransformState>();
   private items: TransformItem[] = [];
   private spawnTimer = 0;
   /** 用戶 #7 牽引線（per-player 玩家色半透明線，貼地不擋）。 */
@@ -123,6 +133,9 @@ export class TransformSystem implements GameSystem {
 
     // 十五輪：連打變身填充推進（每 player）。
     this.tickMashTransform(dt);
+
+    // 用戶新大功能：二段變身能量消退（★feature flag 關時 no-op）。
+    this.tickSecondTransform(dt);
 
     // 用戶 #7：牽引線 + 指引箭頭（純視覺輔助，不改數值）。
     this.pulsePhase += dt;
@@ -502,5 +515,80 @@ export class TransformSystem implements GameSystem {
   getSoulRatio(playerId: number): number {
     const s = this.stateOf(playerId);
     return s.transformed ? s.soul / MAX_SOUL_POWER : 0;
+  }
+
+  // --- 用戶新大功能：二段變身能量條（★feature flag SECOND_TRANSFORM_CONFIG.enabled 預設關） ---
+
+  private secondStateOf(playerId: number): SecondTransformState {
+    let s = this.secondStates.get(playerId);
+    if (!s) {
+      s = makeSecondTransformState();
+      this.secondStates.set(playerId, s);
+    }
+    return s;
+  }
+
+  /**
+   * 二段變身「是否可累積能量」：feature flag 開 且 已是一段悟空變身後。
+   * 關 flag / 未變身（凡人）→ false，累積/查詢全走空（現有行為不變）。
+   */
+  isSecondTransformAvailable(playerId: number): boolean {
+    return SECOND_TRANSFORM_CONFIG.enabled && this.stateOf(playerId).transformed;
+  }
+
+  /**
+   * 打怪累積二段能量（GameScene onEnemyKilled / PlayerControl reportHit 呼叫）。
+   * ★flag 關 或 未一段變身 → no-op。滿 → 自動觸發二段（放大+攻擊範圍加成）。
+   * @param amount 累積量（擊殺用 energyPerKill、命中用 energyPerHit）。
+   */
+  accumulateSecondTransform(playerId: number, amount: number): void {
+    if (!this.isSecondTransformAvailable(playerId)) return;
+    const before = this.secondStateOf(playerId);
+    const after = accumulateSecondEnergy(before, amount, SECOND_TRANSFORM_CONFIG.fillThreshold);
+    this.secondStates.set(playerId, after);
+    if (!before.active && after.active) this.enterSecondTransform(playerId); // 剛觸發
+  }
+
+  /** 每幀推進二段能量消退（★flag 關 no-op）；退完解除二段。 */
+  private tickSecondTransform(dt: number): void {
+    if (!SECOND_TRANSFORM_CONFIG.enabled) return;
+    const players = this.ctx?.players ?? (this.ctx?.player ? [this.ctx.player] : []);
+    for (const p of players) {
+      const before = this.secondStateOf(p.playerId);
+      if (!before.active) continue;
+      const after = decaySecondEnergy(before, dt, SECOND_TRANSFORM_CONFIG.decayPerSec);
+      this.secondStates.set(p.playerId, after);
+      if (before.active && !after.active) this.exitSecondTransform(p.playerId); // 退完解除
+    }
+  }
+
+  /** 進二段：悟空放大 scaleMult（攻擊範圍加成由判定端讀 isSecondTransformActive×attackRangeMult）。 */
+  private enterSecondTransform(playerId: number): void {
+    const player = this.playerOf(playerId);
+    player?.setSecondTransformScale?.(SECOND_TRANSFORM_CONFIG.scaleMult);
+    player?.playTransformFlash?.(TRANSFORM_IFRAME); // 二段瞬間金光閃（特效 hook；界騎/特效可再讀邊緣觸發加強）
+  }
+
+  /** 解除二段：還原常態大小。 */
+  private exitSecondTransform(playerId: number): void {
+    const player = this.playerOf(playerId);
+    player?.setSecondTransformScale?.(1);
+  }
+
+  /** 接口（界騎 UI / 特效）：二段能量條填充比例 0~1（flag 關回 0）。 */
+  getSecondTransformEnergyRatio(playerId: number): number {
+    if (!SECOND_TRANSFORM_CONFIG.enabled) return 0;
+    return secondEnergyRatio(this.secondStateOf(playerId));
+  }
+
+  /** 接口（界騎 UI / 特效）：是否在二段變身中（flag 關回 false）。 */
+  isSecondTransformActive(playerId: number): boolean {
+    if (!SECOND_TRANSFORM_CONFIG.enabled) return false;
+    return this.secondStateOf(playerId).active;
+  }
+
+  /** 二段攻擊範圍加成倍率（1=常態；二段中回 attackRangeMult）。供攻擊判定端乘。 */
+  getSecondTransformAttackRangeMult(playerId: number): number {
+    return this.isSecondTransformActive(playerId) ? SECOND_TRANSFORM_CONFIG.attackRangeMult : 1;
   }
 }

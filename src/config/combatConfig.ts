@@ -66,6 +66,28 @@ export const DASH_CONFIG = {
 } as const;
 
 /**
+ * 二段變身能量條設定（用戶新大功能，型態 A＝沿用悟空、變大+強化）。★邊做邊調。
+ * ★feature flag：enabled 預設 false——關時 TransformSystem 完全不跑二段邏輯，行為 100% 不變（不影響用戶現測）。
+ * 前提：玩家已是一段悟空變身後才累積二段能量；滿自動觸發二段（放大+攻擊範圍加成）；二段隨時間消退，退完回一段常態。
+ */
+export const SECOND_TRANSFORM_CONFIG = {
+  /** ★feature flag：預設關（做好先不上線）。開才啟用二段變身。 */
+  enabled: false,
+  /** 擊殺一隻怪累積的能量（ratio，0~1 空間；預設約 8 隻滿）。 */
+  energyPerKill: 0.12,
+  /** 普攻命中一次累積的能量（ratio；比擊殺少）。 */
+  energyPerHit: 0.03,
+  /** 觸發二段的能量閾值（滿＝1）。 */
+  fillThreshold: 1,
+  /** 二段期間每秒能量消退（ratio/秒；1/decayPerSec≈二段持續秒數，預設約 8s）。 */
+  decayPerSec: 0.125,
+  /** 二段視覺放大倍率（悟空放大，乘在 SPRITE_SCALE 上）。 */
+  scaleMult: 1.4,
+  /** 二段攻擊範圍加成倍率（攻擊形狀 length/radius ×此值）。 */
+  attackRangeMult: 1.4,
+} as const;
+
+/**
  * 玩家普攻的 AttackData（對齊 Unity）。
  * 幾何數值為「未乘 scale」的原始 unit 值；實際判定時再 × GLOBAL_CHARACTER_SCALE。
  */

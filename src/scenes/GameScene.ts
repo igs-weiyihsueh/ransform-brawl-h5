@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CHARACTERS } from '@/config/animationConfig';
 import { chestChargeForResolved, getResolvedChest } from '@/config/chestSchema';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
+import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
 import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { BuffSystem } from '@/systems/BuffSystem';
@@ -163,6 +164,8 @@ export class GameScene extends Phaser.Scene {
       const shares = splitChestByDamage(total, damageByPlayer, player.playerId);
       for (const [pid, amount] of shares) {
         chest.addCharge(pid, amount); // 即時加值（不動時機/邏輯）
+        // 用戶新大功能：二段變身能量累積（★flag 關/未一段變身 → no-op）。有傷害貢獻的 player 才累。
+        if (amount > 0) transform.accumulateSecondTransform(pid, SECOND_TRANSFORM_CONFIG.energyPerKill);
         if (amount <= 0) continue;
         const anchor = uiSystem.getChestAnchor(pid);
         if (anchor)
@@ -274,6 +277,10 @@ export class GameScene extends Phaser.Scene {
     this.ctx.getDashCharges = (pid: number) => playerControl.getDashCharges(pid);
     this.ctx.getDashMaxCharges = (pid: number) => playerControl.getDashMaxCharges(pid);
     this.ctx.getDashCooldownProgress = (pid: number) => playerControl.getDashCooldownProgress(pid);
+    // 用戶新大功能：二段變身能量條 UI/特效讀取接口（界騎/特效後接；★flag 關時回 0/false）。
+    this.ctx.getSecondTransformEnergyRatio = (pid: number) => this.ctx.transform.getSecondTransformEnergyRatio(pid);
+    this.ctx.isSecondTransformActive = (pid: number) => this.ctx.transform.isSecondTransformActive(pid);
+    this.ctx.isSecondTransformAvailable = (pid: number) => this.ctx.transform.isSecondTransformAvailable(pid);
     // InputSystem 同時是 ctx.input 服務與 registry member；排最前做輸入 snapshot。
     this.register(this.ctx.input);
     this.register(this.ctx.buff); // 計時 buff 框架（頭盔/寶盒共用）：早更新，效果供後面讀
