@@ -40,4 +40,31 @@ describe('resolveGrabHintDisplay — 被抓提示位置偏移', () => {
     // 正確 = 基準(-90) + override(20) = -70；若日後誤成只回 override(20) 會紅。
     expect(resolveGrabHintDisplay({ grabHintOffsetY: 20 }).offsetY).toBe(-70);
   });
+
+  it('無 override → scale 1、fontPx = baseFontPx（行為不變）', () => {
+    const r = resolveGrabHintDisplay(undefined);
+    expect(r.scale).toBe(1);
+    expect(r.fontPx).toBe(GRAB_HINT_LAYOUT.baseFontPx);
+    expect(r.fontPx).toBe(22);
+  });
+
+  it('grabHintScale → scale 帶入、fontPx = base × scale', () => {
+    const r = resolveGrabHintDisplay({ grabHintScale: 1.5 });
+    expect(r.scale).toBe(1.5);
+    expect(r.fontPx).toBeCloseTo(22 * 1.5, 6);
+  });
+
+  it('scale 夾下限 0.3（過小/負值/0 → 0.3）', () => {
+    expect(resolveGrabHintDisplay({ grabHintScale: 0.1 }).scale).toBe(0.3);
+    expect(resolveGrabHintDisplay({ grabHintScale: -2 }).scale).toBe(0.3);
+    expect(resolveGrabHintDisplay({ grabHintScale: 0 }).scale).toBe(0.3);
+  });
+
+  it('位置與大小可同時 override（互不干擾）', () => {
+    const r = resolveGrabHintDisplay({ grabHintOffsetX: 10, grabHintOffsetY: 5, grabHintScale: 2 });
+    expect(r.offsetX).toBe(10);
+    expect(r.offsetY).toBe(-85);
+    expect(r.scale).toBe(2);
+    expect(r.fontPx).toBeCloseTo(44, 6);
+  });
 });

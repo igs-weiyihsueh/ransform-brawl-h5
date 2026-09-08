@@ -508,23 +508,33 @@ function buildOverheadEditables(): Editable[] {
     },
   });
 
-  // 被抓「攻擊倒數提示」位置（用戶：GrabSystem 黃字「按攻擊掙脫！+倒數」頭頂位置可調，歸屬 overhead）。
+  // 被抓「攻擊倒數提示」位置+大小（用戶：GrabSystem 黃字「按攻擊掙脫！+倒數」頭頂位置+大小可調，歸屬 overhead）。
   // 世界座標跟隨玩家頭上，基準偏移 (0,-90)（GRAB_HINT_LAYOUT）。additive 附掛 layout.grabHint（同 dash override）。
-  // box = 提示示意方框（GRAB_HINT_BOX_W×H），中心 = 玩家中心 + 基準 + override offset。拖=改 offset。
-  const layoutGrab = layout as unknown as { grabHint?: { grabHintOffsetX?: number; grabHintOffsetY?: number } };
-  if (!layoutGrab.grabHint) layoutGrab.grabHint = { grabHintOffsetX: 0, grabHintOffsetY: 0 };
+  // box = 提示示意方框(GRAB_HINT_BOX_W×H)×scale，中心 = 玩家中心 + 基準 + override offset。拖=改 offset、拉角=改 scale。
+  const layoutGrab = layout as unknown as {
+    grabHint?: { grabHintOffsetX?: number; grabHintOffsetY?: number; grabHintScale?: number };
+  };
+  if (!layoutGrab.grabHint) layoutGrab.grabHint = { grabHintOffsetX: 0, grabHintOffsetY: 0, grabHintScale: 1 };
   const grab = layoutGrab.grabHint;
   list.push({
-    key: 'grabHint.pos', label: '被抓「攻擊倒數提示」（位置）', origin: oOrigin, resizable: false,
+    key: 'grabHint.pos', label: '被抓「攻擊倒數提示」（位置+大小）', origin: oOrigin, resizable: true,
     get: () => {
+      const s = grab.grabHintScale ?? 1;
+      const w = GRAB_HINT_BOX_W * s;
+      const h = GRAB_HINT_BOX_H * s;
       const cx = GRAB_HINT_BASE_X + (grab.grabHintOffsetX ?? 0);
       const cy = GRAB_HINT_BASE_Y + (grab.grabHintOffsetY ?? 0);
-      return { x: cx - GRAB_HINT_BOX_W / 2, y: cy - GRAB_HINT_BOX_H / 2, width: GRAB_HINT_BOX_W, height: GRAB_HINT_BOX_H };
+      return { x: cx - w / 2, y: cy - h / 2, width: w, height: h };
     },
     set: (r) => {
-      // 左上回推中心 - 基準 = override offset（純位置，不碰抓人邏輯/秒數）。
-      if (r.x !== undefined) grab.grabHintOffsetX = r.x + GRAB_HINT_BOX_W / 2 - GRAB_HINT_BASE_X;
-      if (r.y !== undefined) grab.grabHintOffsetY = r.y + GRAB_HINT_BOX_H / 2 - GRAB_HINT_BASE_Y;
+      // 拉寬 → 反推整體 scale（等比，夾 0.3）。
+      if (r.width !== undefined) grab.grabHintScale = Math.max(0.3, r.width / GRAB_HINT_BOX_W);
+      const s = grab.grabHintScale ?? 1;
+      const w = GRAB_HINT_BOX_W * s;
+      const h = GRAB_HINT_BOX_H * s;
+      // 左上回推中心 - 基準 = override offset（純顯示，不碰抓人邏輯/秒數）。
+      if (r.x !== undefined) grab.grabHintOffsetX = r.x + w / 2 - GRAB_HINT_BASE_X;
+      if (r.y !== undefined) grab.grabHintOffsetY = r.y + h / 2 - GRAB_HINT_BASE_Y;
     },
   });
   return list;

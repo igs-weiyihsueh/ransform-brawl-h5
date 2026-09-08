@@ -603,31 +603,44 @@ export const GRAB_HINT_LAYOUT = {
   /** 相對玩家命中中心的基準偏移（px）。y 負=往上（頭頂上方）。 */
   baseOffsetX: 0,
   baseOffsetY: -90,
+  /** 提示文字基準字級（px；GrabSystem 建 text 用）。scale=1 時 = 此值。 */
+  baseFontPx: 22,
 } as const;
 
 /**
- * 被抓提示位置 override 預設（用戶要編輯器可調，同 JP/進度/衝刺 additive override 範式）。
- * grabHintOffsetX/Y 相對 GRAB_HINT_LAYOUT 基準再位移（editorStore layout.grabHint）。
+ * 被抓提示 override 預設（用戶要編輯器可調，同 JP/進度/衝刺 additive override 範式）。
+ * grabHintOffsetX/Y 相對 GRAB_HINT_LAYOUT 基準再位移、grabHintScale 整體縮放（editorStore layout.grabHint）。
  */
 export const GRAB_HINT_DISPLAY_DEFAULT = {
   grabHintOffsetX: 0,
   grabHintOffsetY: 0,
+  grabHintScale: 1,
 } as const;
 
+/** 提示縮放下限（避免縮到看不見/負值）。 */
+const GRAB_HINT_MIN_SCALE = 0.3;
+
 /**
- * 解析被抓提示顯示偏移（純函式，可測；同 resolveDashDisplay override 範式）。
- * 讀 override 優先、無則預設 0 位移；回傳相對玩家命中中心的最終偏移（基準 + override）。
- * GrabSystem 定位讀此（純顯示定位，不碰抓人邏輯/倒數秒數）。
+ * 解析被抓提示顯示（純函式，可測；同 resolveDashDisplay override 範式）。
+ * 讀 override 優先、無則預設；回傳相對玩家命中中心的最終偏移（基準 + override）+ 縮放 scale + 字級 fontPx。
+ * GrabSystem 定位/縮放讀此（純顯示，不碰抓人邏輯/倒數秒數/掙脫判定/閒置觸發）。
  */
 export function resolveGrabHintDisplay(ov?: {
   grabHintOffsetX?: number;
   grabHintOffsetY?: number;
-}): { offsetX: number; offsetY: number } {
+  grabHintScale?: number;
+}): { offsetX: number; offsetY: number; scale: number; fontPx: number } {
   const ox = ov?.grabHintOffsetX ?? GRAB_HINT_DISPLAY_DEFAULT.grabHintOffsetX;
   const oy = ov?.grabHintOffsetY ?? GRAB_HINT_DISPLAY_DEFAULT.grabHintOffsetY;
+  const s = Math.max(
+    GRAB_HINT_MIN_SCALE,
+    ov?.grabHintScale ?? GRAB_HINT_DISPLAY_DEFAULT.grabHintScale,
+  );
   return {
     offsetX: GRAB_HINT_LAYOUT.baseOffsetX + ox,
     offsetY: GRAB_HINT_LAYOUT.baseOffsetY + oy,
+    scale: s,
+    fontPx: GRAB_HINT_LAYOUT.baseFontPx * s,
   };
 }
 

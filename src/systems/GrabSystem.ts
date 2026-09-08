@@ -156,6 +156,7 @@ export class GrabSystem implements GameSystem {
         .setDepth(PANEL_DEPTH + 20);
     }
     s.hint.setPosition(pc.x + off.offsetX, pc.y + off.offsetY);
+    s.hint.setScale(off.scale); // 用戶：提示大小可調（scale override）；setScale 等比縮字級+描邊，origin(0.5,1) 底中對齊定位不飄
     s.hint.setText(`按攻擊掙脫！\n${secs}`);
     s.hint.setVisible(true);
 
@@ -203,16 +204,17 @@ export class GrabSystem implements GameSystem {
   }
 }
 
-/** 被抓提示位置 override（編輯器可調，additive 附掛 layout.grabHint，同 JP/進度/衝刺做法；界騎 b40e388）。 */
+/** 被抓提示 override（編輯器可調，additive 附掛 layout.grabHint，同 JP/進度/衝刺做法；界騎 b40e388 位置 + 大小 scale）。 */
 interface GrabHintOverride {
   grabHintOffsetX?: number;
   grabHintOffsetY?: number;
+  grabHintScale?: number;
 }
 
 /**
- * 讀 uiLayout override 裡的被抓提示位置 override（layout.grabHint，additive 附掛）。
- * 無 override / 無 grabHint 欄 → undefined（resolveGrabHintDisplay 用基準 -90，行為不變）。
- * 純讀 localStorage 定位設定（不碰抓人邏輯/倒數秒數/閒置觸發）。
+ * 讀 uiLayout override 裡的被抓提示 override（layout.grabHint，additive 附掛）。
+ * 無 override / 無 grabHint 欄 → undefined（resolveGrabHintDisplay 用基準 -90/scale 1，行為不變）。
+ * 純讀 localStorage 顯示設定（不碰抓人邏輯/倒數秒數/閒置觸發）。
  */
 function readGrabHintOverride(): GrabHintOverride | undefined {
   const raw = loadOverride(EDITOR_STORE_KEYS.uiLayout);
@@ -223,5 +225,6 @@ function readGrabHintOverride(): GrabHintOverride | undefined {
   return {
     grabHintOffsetX: typeof o.grabHintOffsetX === 'number' ? o.grabHintOffsetX : undefined,
     grabHintOffsetY: typeof o.grabHintOffsetY === 'number' ? o.grabHintOffsetY : undefined,
+    grabHintScale: typeof o.grabHintScale === 'number' ? o.grabHintScale : undefined,
   };
 }
