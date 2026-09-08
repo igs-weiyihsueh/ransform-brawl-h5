@@ -19,6 +19,7 @@ import {
   sparkleBurstCount,
   ticketBurstCount,
 } from '@/systems/comboRewardDisplay';
+import { getResolvedComboReward } from '@/config/comboRewardSchema';
 import type { ChestRewardKind } from '@/config/chestConfig';
 
 const BASE_PATH = 'assets/images/vfx';
@@ -362,7 +363,7 @@ export class EffectSystem {
       targets: txt,
       y: topY - COMBO_REWARD_FX.risePx,
       alpha: { from: 1, to: 0 },
-      duration: COMBO_REWARD_FX.durationSec * 1000,
+      duration: getResolvedComboReward().rewardDurationSec * 1000,
       ease: 'Sine.easeOut',
       onComplete: () => txt.destroy(),
     });
@@ -387,7 +388,8 @@ export class EffectSystem {
 
     // 彩票券：扇形噴出 + 重力回落 + 自轉。
     if (hasTicket) {
-      const n = ticketBurstCount(count, isMax);
+      const cr = getResolvedComboReward();
+      const n = ticketBurstCount(count, isMax, cr.burstMinTickets, cr.burstMaxTickets, cr.burstCountForMax);
       for (let i = 0; i < n; i++) {
         const sx = x + rnd(-c.spawnSpreadX, c.spawnSpreadX);
         const spr = this.scene.add.image(sx, spawnY, ticketKey);

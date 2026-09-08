@@ -1,9 +1,8 @@
 import {
-  COMBO_MAX_COUNT,
-  COMBO_WARNING_TIME,
   comboTimeoutFor,
   ticketsForCombo,
 } from '@/config/comboConfig';
+import { getResolvedComboReward } from '@/config/comboRewardSchema';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 
@@ -70,8 +69,9 @@ export class ComboSystem implements GameSystem {
     if (this.ctx.credit.isOutOfCredit(playerId)) return; // 耗盡不累積
     const s = this.stateOf(playerId);
     s.count += 1;
-    s.timer = comboTimeoutFor(s.count);
-    if (s.count >= COMBO_MAX_COUNT) {
+    const cr = getResolvedComboReward();
+    s.timer = comboTimeoutFor(s.count, cr.baseTimeout, cr.minTimeout, cr.timeoutDecay);
+    if (s.count >= cr.maxCount) {
       this.settle(playerId, true);
     }
   }
@@ -81,7 +81,7 @@ export class ComboSystem implements GameSystem {
     const s = this.stateOf(playerId);
     if (s.count <= 0) return;
     const count = s.count; // 快照（報獎表演用；下面歸零）
-    const tickets = ticketsForCombo(count);
+    const tickets = ticketsForCombo(count, getResolvedComboReward().ticketMultiplier);
     this.ctx.ticket.addTickets(playerId, tickets); // 產票歸屬：settle 的 player
     if (isMax) s.maxTriggered = true;
     s.count = 0;
@@ -106,7 +106,7 @@ export class ComboSystem implements GameSystem {
 
   isWarning(playerId: number): boolean {
     const s = this.stateOf(playerId);
-    return s.count > 0 && !this.isFrozen() && s.timer < COMBO_WARNING_TIME;
+    return s.count > 0 && !this.isFrozen() && s.timer < getResolvedComboReward().warningTime;
   }
 
   consumeMaxTriggered(playerId: number): boolean {

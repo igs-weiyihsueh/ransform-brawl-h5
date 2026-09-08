@@ -24,6 +24,7 @@ export const EDITOR_STORE_KEYS = {
   mapBounds: 'transformbrawl:mapBounds',
   secondTransform: 'transformbrawl:secondTransform',
   grab: 'transformbrawl:grab',
+  comboReward: 'transformbrawl:comboReward',
 } as const;
 
 export type EditorStoreKey = (typeof EDITOR_STORE_KEYS)[keyof typeof EDITOR_STORE_KEYS];
@@ -107,6 +108,7 @@ export const EDITOR_STORE_META: Record<
   mapBounds: { key: EDITOR_STORE_KEYS.mapBounds, label: '地圖邊界', target: 'src/config/mapConfig.ts MAP_BOUNDS_UNITS' },
   secondTransform: { key: EDITOR_STORE_KEYS.secondTransform, label: '二段變身', target: 'src/config/combatConfig.ts SECOND_TRANSFORM_CONFIG' },
   grab: { key: EDITOR_STORE_KEYS.grab, label: '被抓觸發', target: 'src/systems/grabMath.ts GRAB.idleTriggerSeconds' },
+  comboReward: { key: EDITOR_STORE_KEYS.comboReward, label: 'COMBO 獎', target: 'src/config/comboConfig.ts + comboRewardDisplay.ts (COMBO 獎結算/計時/報獎表演/噴發)' },
 } as const;
 
 /** 匯出全部設定的結構（下載 JSON 的頂層）。 */

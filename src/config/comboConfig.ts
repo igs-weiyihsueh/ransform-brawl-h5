@@ -17,16 +17,23 @@ export const COMBO_MAX_COUNT = 100;
 
 /**
  * 依當前連段數算計時窗：max(minTimeout, baseTimeout - count × decay)。
- * 連段越高窗越短（3s 起、每 +1 減 0.1s、最低 0.5s）。純函式，供測試。
+ * 連段越高窗越短（預設 3s 起、每 +1 減 0.1s、最低 0.5s）。純函式，供測試。
+ * @param count 當前連段數。
+ * @param baseTimeout/minTimeout/decay 可傳 override（省略用 config 預設；遊戲端傳 getResolvedComboReward()）。
  */
-export function comboTimeoutFor(count: number): number {
-  return Math.max(
-    COMBO_MIN_TIMEOUT,
-    COMBO_BASE_TIMEOUT - count * COMBO_TIMEOUT_DECAY,
-  );
+export function comboTimeoutFor(
+  count: number,
+  baseTimeout: number = COMBO_BASE_TIMEOUT,
+  minTimeout: number = COMBO_MIN_TIMEOUT,
+  decay: number = COMBO_TIMEOUT_DECAY,
+): number {
+  return Math.max(minTimeout, baseTimeout - count * decay);
 }
 
-/** 結算彩票數：ceil(count × multiplier)。純函式，供測試。 */
-export function ticketsForCombo(count: number): number {
-  return Math.ceil(count * COMBO_TICKET_MULTIPLIER);
+/**
+ * 結算彩票數：ceil(count × multiplier)。純函式，供測試。
+ * @param multiplier 可傳 override（省略用 config 預設 COMBO_TICKET_MULTIPLIER）。
+ */
+export function ticketsForCombo(count: number, multiplier: number = COMBO_TICKET_MULTIPLIER): number {
+  return Math.ceil(count * multiplier);
 }

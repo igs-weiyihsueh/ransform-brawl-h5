@@ -77,13 +77,20 @@ export const COMBO_TICKET_BURST = {
 /**
  * 依 combo 段數決定噴發彩票張數（純函式，可測）：
  * count 從 0 線性插到 countForMax → minTickets..maxTickets；isMax 再乘加成（夾在上限）。
+ * @param minTickets/maxTickets/countForMax 可傳 override（省略用 COMBO_TICKET_BURST 預設；遊戲端傳 resolved）。
  */
-export function ticketBurstCount(count: number, isMax: boolean): number {
+export function ticketBurstCount(
+  count: number,
+  isMax: boolean,
+  minTickets: number = COMBO_TICKET_BURST.minTickets,
+  maxTickets: number = COMBO_TICKET_BURST.maxTickets,
+  countForMax: number = COMBO_TICKET_BURST.countForMax,
+): number {
   const c = COMBO_TICKET_BURST;
-  const t = Math.min(1, Math.max(0, count / c.countForMax));
-  let n = Math.round(c.minTickets + (c.maxTickets - c.minTickets) * t);
+  const t = Math.min(1, Math.max(0, count / countForMax));
+  let n = Math.round(minTickets + (maxTickets - minTickets) * t);
   if (isMax) n = Math.round(n * c.maxBonusMul);
-  return Math.min(Math.round(c.maxTickets * c.maxBonusMul), Math.max(c.minTickets, n));
+  return Math.min(Math.round(maxTickets * c.maxBonusMul), Math.max(minTickets, n));
 }
 
 /** 依 combo 段數決定閃光點綴數量（純函式，可測）。 */
