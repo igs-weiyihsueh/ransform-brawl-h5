@@ -135,7 +135,7 @@ export class UISystem implements GameSystem {
     return DEFAULT_UI_LAYOUT;
   }
 
-  update(dt: number): void {
+  update(_dt: number): void {
     const players = this.ctx.players;
 
     // 玩家加入（F2~F4）→ 補建頭上 UI + 亮對應底部欄。
@@ -163,21 +163,11 @@ export class UISystem implements GameSystem {
       const mashing = this.ctx.transform.isMashingTransform(pid);
       overhead.setMashTransform(mashing, this.ctx.transform.getMashRatio(pid));
       // 魂力環顯示分流：連打中由 setMashTransform 接管（填充 mashRatio）；
-      // 否則沿用「變身後才顯魂力環（soulRatio）」邏輯（用戶 #1）。
+      // 否則沿用「變身後才顯魂力環（soulRatio）」邏輯（用戶 #1）。魂力環恢復原本用途，不被二段佔用。
       if (!mashing) {
-        // 二段變身能量條（用戶新大功能，讀翼騎接口，只讀不回寫，讀前 ?. graceful）：
-        //  一段悟空後且 flag 開（isSecondTransformAvailable）→ 魂力環位置改顯二段能量條（打怪累積）。
-        //  ★flag 關時核心回 available=false/ratio=0 → setSecondTransform 回 false → 完全走現有魂力環。
-        const secondAvail = this.ctx.isSecondTransformAvailable?.(pid) ?? false;
-        const secondActive = this.ctx.isSecondTransformActive?.(pid) ?? false;
-        const secondRatio = this.ctx.getSecondTransformEnergyRatio?.(pid) ?? 0;
-        const secondShown = overhead.setSecondTransform(secondAvail, secondActive, secondRatio);
-        // 二段條沒接管時才走現有魂力環（變身後顯 soulRatio）。
-        if (!secondShown) {
-          const transformed = this.ctx.transform.isTransformed(pid);
-          overhead.setSoulVisible(transformed);
-          if (transformed) overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
-        }
+        const transformed = this.ctx.transform.isTransformed(pid);
+        overhead.setSoulVisible(transformed);
+        if (transformed) overhead.setSoul(this.ctx.transform.getSoulRatio(pid));
       }
       overhead.setCredit(this.ctx.credit.getCredit(pid));
       // 沒 Credit 演出（閃紅 + 投幣提示 + 倒數）：讀 CreditSystem 耗盡狀態（只讀）。
@@ -188,9 +178,14 @@ export class UISystem implements GameSystem {
       overhead.setCombo(this.ctx.combo.getCombo(pid));
       overhead.setComboWarning(this.ctx.combo.isWarning(pid));
       if (this.ctx.combo.consumeMaxTriggered(pid)) overhead.showMaxCombo();
-      overhead.setEnergy(this.ctx.energy.getEnergy(pid));
-      overhead.setEnergyStage(this.ctx.energy.getSkillStage(pid));
-      overhead.updateEnergy(dt);
+      // 二段變身能量條（用戶正式規格：取代原 4 格技能槽；讀翼騎接口，只讀不回寫，?. graceful）：
+      //  打怪累積 getSecondTransformEnergyRatio 填充 → 滿→二段變身（核心放大/特效/攻擊範圍）→ 消退退完解除。
+      //  ★flag 關時核心回 available=false/ratio=0 → 空條（不影響現況）。放招功能已移除（用戶選 A）。
+      overhead.setSecondEnergy(
+        this.ctx.isSecondTransformAvailable?.(pid) ?? false,
+        this.ctx.isSecondTransformActive?.(pid) ?? false,
+        this.ctx.getSecondTransformEnergyRatio?.(pid) ?? 0,
+      );
     }
 
     // B. 下方面板：每個 active player 欄刷新自己的彩票 / 進度。

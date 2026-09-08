@@ -49,10 +49,12 @@ export const HUD_COLORS = {
   soulRingBg: 0x3a3a5a,
   /** 魂力環充填色。 */
   soulRingFill: 0xba68c8,
-  /** 二段變身能量條：累積中充填色（金橘，與魂力環紫色區隔；用戶新大功能）。 */
-  secondRingFill: 0xff9800,
-  /** 二段變身能量條：二段變身中（放大強化）充填色（亮紅金，滿格/消退更醒目）。 */
-  secondRingActive: 0xffe082,
+  /** 二段變身能量條（取代原 4 格技能槽）：底槽色（暗）。 */
+  secondBarBg: 0x3a3a5a,
+  /** 二段變身能量條：累積中填充色（金橘）。 */
+  secondBarFill: 0xff9800,
+  /** 二段變身能量條：二段變身中填充色（亮金，消退時醒目）。 */
+  secondBarActive: 0xffe082,
   /** Credit 底框色。 */
   creditBg: 0x000000,
   /** 金幣 icon 佔位色。 */
@@ -382,6 +384,20 @@ export const ENERGY_BAR_LAYOUT = {
     0x00ffff, // 階段1 skill2  = 青 (Unity Color.cyan)
     0xff0000, // 階段2 ultimate = 紅 (Unity Color.red)
   ],
+} as const;
+
+/**
+ * 二段變身能量條佈局（用戶正式規格：取代原 4 格技能槽 EnergyBar，改一條橫向填充條）。
+ * 位置沿用原 energy 區（OVERHEAD_LAYOUT.energy x/y），寬度對齊原 4 格總寬（4×16 + 3×6 = 82）、
+ * 高度同原格高，讓「格→條」視覺尺寸連續、佈局不跳。
+ */
+export const SECOND_ENERGY_BAR_LAYOUT = {
+  /** 條寬（px，≈ 原 4 格總寬）。 */
+  width: 82,
+  /** 條高（px，同原格高）。 */
+  height: 16,
+  /** 圓角半徑（px）。 */
+  cornerRadius: 4,
 } as const;
 
 /**
