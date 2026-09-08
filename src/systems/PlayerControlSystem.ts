@@ -401,14 +401,17 @@ export class PlayerControlSystem implements GameSystem {
   private landingKnockback(player: GameContext['player']): void {
     const land = player.getPosition?.();
     if (!land) return;
-    // VFX：落地衝擊 + 震退波（同時；貼落點地面）。
-    this.ctx.effects?.descendImpact?.(land.x, land.y);
-    this.ctx.effects?.shockwaveRing?.(land.x, land.y);
+    // ★用戶#1 bug 修：落地光效（降臨/震退）貼「腳下落地點」而非 getPosition()（=sprite 中心→會偏頭上）。
+    //   getFootPosition() = 中心往下偏腳部（同真空環）；fallback 用 land（無 getFootPosition 時）。
+    const foot = player.getFootPosition?.() ?? land;
+    this.ctx.effects?.descendImpact?.(foot.x, foot.y);
+    this.ctx.effects?.shockwaveRing?.(foot.x, foot.y);
+    // 震退判定仍以腳下落地點為圓心（衝擊波從地面擴散，對齊視覺）。
     const enemies = this.ctx.getEnemies?.() ?? [];
     for (const e of enemies) {
       const c = e.getHitCenter?.();
       if (!c) continue;
-      if (isInKnockbackRange(c, land, ENTRANCE_KNOCKBACK_RADIUS_PX)) e.applyLandingKnockback?.(land);
+      if (isInKnockbackRange(c, foot, ENTRANCE_KNOCKBACK_RADIUS_PX)) e.applyLandingKnockback?.(foot);
     }
   }
 

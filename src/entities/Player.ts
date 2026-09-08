@@ -220,6 +220,14 @@ export class Player implements Hittable {
     return { x: this.anim.sprite.x, y: this.anim.sprite.y };
   }
 
+  /**
+   * 腳下落地點（世界座標）＝ sprite 中心往下偏到腳部（同真空環 syncFootGlow 用的 footGlowCenter）。
+   * 供落地光效（descendImpact/shockwaveRing）貼腳下地面，而非 getPosition()（=sprite 中心，會偏頭上）。
+   */
+  getFootPosition(): Vec2 {
+    return footGlowCenter(this.anim.sprite.x, this.anim.sprite.y, this.foot.offsetX, this.scaledFootOffsetY());
+  }
+
   // --- 腳下真空環（搜索圈） ---
 
   /** 重畫/設定腳下識別標記（圓盤染色+尺寸 或 後備環）；建立/顯示切換時呼叫。 */
