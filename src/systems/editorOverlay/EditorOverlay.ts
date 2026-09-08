@@ -1,5 +1,14 @@
 import type { EditorInstance, EditorTabDef } from '@/systems/editorOverlay/editorMount';
-import { exportAllSettings, exportSettingsFilename, importAllSettings } from '@/config/editorStore';
+import {
+  applyToGame,
+  clearOverride,
+  EDITOR_STORE_KEYS,
+  exportAllSettings,
+  exportSettingsFilename,
+  hasOverride,
+  importAllSettings,
+  loadOverride,
+} from '@/config/editorStore';
 
 /**
  * EditorOverlay — 遊戲內展開編輯器的 overlay 殼（方案 A' 骨架）。
@@ -23,6 +32,8 @@ export class EditorOverlay {
   private editorHost: HTMLDivElement | null = null;
   private tabBar: HTMLDivElement | null = null;
   private statusEl: HTMLDivElement | null = null;
+  /** 二段變身開關 toggle 鈕（用戶自己開/關二段變身；讀翼騎 secondTransform override）。 */
+  private secondToggleBtn: HTMLButtonElement | null = null;
 
   private activeTabId: string | null = null;
   private activeInstance: EditorInstance | null = null;
@@ -119,6 +130,15 @@ export class EditorOverlay {
     closeBtn.textContent = '✕ 關閉';
     closeBtn.addEventListener('click', () => this.closeOverlay());
 
+    // 二段變身開關 toggle（用戶自己開/關二段變身；讀翼騎 secondTransform override）：
+    // 放頂列全域控制區（跨所有 tab 恆顯，最好找）。on=已啟用/off=預設關；切 ON→applyToGame enabled:true、
+    // 切 OFF→clearOverride（回打包預設關）。★套用後提示「重開遊戲生效」（getResolvedSecondTransformEnabled 重開讀）。
+    const secondBtn = document.createElement('button');
+    secondBtn.type = 'button';
+    secondBtn.className = 'tb-editor-second';
+    secondBtn.addEventListener('click', () => this.toggleSecondTransform());
+    this.secondToggleBtn = secondBtn;
+
     // 匯出全部設定（用戶指定）：讀所有 localStorage override → 下載結構化 JSON（給翼騎寫進 repo default）。
     const exportBtn = document.createElement('button');
     exportBtn.type = 'button';
@@ -143,6 +163,7 @@ export class EditorOverlay {
     importInput.addEventListener('change', (e) => this.handleImportFile(e));
 
     topBar.appendChild(tabBar);
+    topBar.appendChild(secondBtn);
     topBar.appendChild(importBtn);
     topBar.appendChild(importInput);
     topBar.appendChild(exportBtn);
@@ -165,6 +186,7 @@ export class EditorOverlay {
     this.editorHost = host;
     this.tabBar = tabBar;
     this.statusEl = status;
+    this.refreshSecondToggle(); // 依目前 override 狀態設 toggle 初始 on/off 顯示
   }
 
   /** 切換到某 tab：unmount 舊、lazy import 新、mount 到新容器。 */
@@ -292,6 +314,48 @@ export class EditorOverlay {
     await this.selectTab(tabId);
   }
 
+  /**
+   * 二段變身目前是否啟用（讀翼騎 secondTransform override）：有 override 且 enabled===true → on；
+   * 無 override（預設）或 enabled!==true → off。純讀，不改遊戲狀態。
+   */
+  private isSecondTransformOn(): boolean {
+    if (!hasOverride(EDITOR_STORE_KEYS.secondTransform)) return false;
+    const raw = loadOverride(EDITOR_STORE_KEYS.secondTransform);
+    return !!(raw && typeof raw === 'object' && (raw as { enabled?: unknown }).enabled === true);
+  }
+
+  /** 依目前 override 狀態刷新 toggle 鈕文字/樣式（on=已啟用/off=預設關）。 */
+  private refreshSecondToggle(): void {
+    const btn = this.secondToggleBtn;
+    if (!btn) return;
+    const on = this.isSecondTransformOn();
+    btn.textContent = on ? '二段變身：開' : '二段變身：關';
+    btn.classList.toggle('on', on);
+    btn.title = on
+      ? '二段變身已啟用（一段悟空後打怪累積能量→滿→二段變身放大強化）。點一下關閉。'
+      : '二段變身目前關閉（預設）。點一下開啟（一段悟空後可累積二段能量）。';
+  }
+
+  /**
+   * 切換二段變身開關（用戶自己開/關）：目前 off→套 override enabled:true 開啟；目前 on→clearOverride 回預設關。
+   * ★套用後提示「重開遊戲生效」（getResolvedSecondTransformEnabled 於遊戲啟動讀 override，符合套用→重開範式）。
+   */
+  private toggleSecondTransform(): void {
+    const turnOn = !this.isSecondTransformOn();
+    if (turnOn) {
+      const ok = applyToGame(EDITOR_STORE_KEYS.secondTransform, { version: 1, enabled: true });
+      this.setStatus(
+        ok
+          ? '二段變身已「開啟」。★重開遊戲生效（一段悟空後打怪累積能量→滿→二段變身放大強化）。'
+          : '開啟失敗（localStorage 不可用）。',
+      );
+    } else {
+      clearOverride(EDITOR_STORE_KEYS.secondTransform); // 回打包預設（關）
+      this.setStatus('二段變身已「關閉」（回預設）。★重開遊戲生效（回一段變身現況）。');
+    }
+    this.refreshSecondToggle();
+  }
+
   private injectStyle(): void {
     if (this.styleInjected || document.getElementById('tb-editor-overlay-style')) {
       this.styleInjected = true;
@@ -393,6 +457,23 @@ const OVERLAY_CSS = `
   font-size: 13px;
 }
 .tb-editor-import:hover { background: #34345a; }
+.tb-editor-second {
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: #2c2c48;
+  color: #9a9ab5;
+  border: 1px solid #5a5a3c;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tb-editor-second:hover { border-color: #ffb300; }
+.tb-editor-second.on {
+  background: #ff9800;
+  color: #1a1a2e;
+  border-color: #ff9800;
+  font-weight: bold;
+}
+.tb-editor-second.on:hover { background: #ffa726; }
 .tb-editor-host { flex: 1; overflow: hidden; position: relative; }
 .tb-editor-root { width: 100%; height: 100%; overflow: auto; }
 .tb-editor-status {
