@@ -548,9 +548,20 @@ export class Player implements Hittable {
    * 供敵人 targeting / 環繞 / 抓 排除此玩家（沒 credit＝無敵待機，不被鎖定/攻擊/抓/環繞，對齊 Unity isOutOfCredit）。
    */
   setOutOfCredit(active: boolean): void {
+    const was = this.outOfCredit;
     this.outOfCredit = active;
     // 十五輪 bug②：進耗盡（凍結，不能動）→ 強制切待機動畫（否則殘留之前的 move/attack 動畫）。
-    if (active) this.anim.play('idle');
+    if (active) {
+      this.anim.play('idle');
+      return;
+    }
+    // ★bug#2 修（用戶：英雄+credit警告倒數中按住方向鍵→投幣解除後 held 鍵沒重新觸發 walk、滑行）。
+    //   解除耗盡時清 transient 戰鬥旗標（damaged/attacking），避免它們殘留使 move() early-return（不播 move 動畫→滑行）；
+    //   動畫本身交回 PlayerControl 當幀依 held 輸入 play(move/idle)（move 方向未知，不在此主動 play）。
+    if (was) {
+      this.attacking = false;
+      this.damagedRemaining = 0;
+    }
   }
 
   /** 是否沒 credit（耗盡）狀態 → 敵人不鎖定/攻擊/抓/環繞（對齊 Unity）。 */
