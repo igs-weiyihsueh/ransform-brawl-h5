@@ -303,12 +303,12 @@ export class TransformSystem implements GameSystem {
    * @param ownerPlayerId 初始/擊落來源的擁有者 playerId（隨機來源忽略）。
    * @param pos 五輪#1：指定生成位置（初始道具放玩家落點旁）；省略=隨機位置（隨機刷）。
    */
-  spawnItem(source: ItemSource = 'random', ownerPlayerId?: number, pos?: { x: number; y: number }, launchDirX?: number): void {
+  spawnItem(source: ItemSource = 'random', ownerPlayerId?: number, pos?: { x: number; y: number }, launchDirX?: number, heroKey?: string): void {
     if (this.items.length >= MAX_ITEMS_ON_FIELD) return;
     const margin = 120;
     const x = pos ? pos.x : Phaser.Math.Between(margin, GAME_WIDTH - margin);
     const y = pos ? pos.y : Phaser.Math.Between(margin, GAME_HEIGHT - margin);
-    const item = new TransformItem(this.ctx.scene, x, y, ++this.itemSeq, source);
+    const item = new TransformItem(this.ctx.scene, x, y, ++this.itemSeq, source, heroKey);
     // 七輪#9 乙：初始道具進場後短暫免撿取（給玩家看箭頭走過去的時間，箭頭 3s showDuration 內不被秒撿）。
     if (source === 'initial') item.setPickupImmunity(INITIAL_ITEM_PICKUP_IMMUNITY_SEC);
     // 十六輪②：初始道具 spawn 彈跳（Unity 手感）——往指定側(launchDirX)拋物線飛落，落地前不可撿。
@@ -327,11 +327,17 @@ export class TransformSystem implements GameSystem {
   private onPickup(item: TransformItem, player: GameContext['player']): void {
     item.pickUp();
     const s = this.stateOf(player.playerId);
+    // 階段2：英雄變身道具（heroDrop，帶 heroKey）——★只在「已是英雄」時橫向換成道具帶的英雄。
+    //   凡人狀態撿到不觸發（凡人只能靠投幣變英雄，階段1 已定）。
+    if (item.source === 'heroDrop' && item.heroKey) {
+      if (s.transformed) this.transform(player, item.heroKey); // 英雄A→英雄B（switchCharacter+魂力滿+金閃）
+      return; // 凡人撿英雄道具：no-op（不觸發變身）
+    }
+    // 一般道具：變身中撿 → 回復魂力（階段1 保留）；凡人撿 → 無作用。
     if (s.transformed) {
       s.soul = Math.min(MAX_SOUL_POWER, s.soul + RECOVER_SOUL);
     }
-    // 階段1：★取消「凡人撿道具首次變身」——未變身撿道具不再進連打變身（變身改由投幣進場隨機抽英雄）。
-    //   凡人期間道具目前無作用（後續階段若要凡人撿道具效果再定；連打變身機制去留階段3決定）。
+    // 階段1：★取消「凡人撿道具首次變身」——未變身撿一般道具不再進連打變身（連打機制去留階段3決定）。
   }
 
   /**

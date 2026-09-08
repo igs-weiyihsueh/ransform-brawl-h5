@@ -3,6 +3,8 @@ import { CHARACTERS } from '@/config/animationConfig';
 import { chestChargeForResolved, getResolvedChest } from '@/config/chestSchema';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { getResolvedSecondTransform } from '@/config/secondTransformSchema';
+import { HERO_ROSTER, pickHero } from '@/config/heroRoster';
+import { shouldDropHeroItem } from '@/config/heroDropMath';
 import type { LevelData } from '@/config/levelSchema';
 import { Player, PLAYER_CHARACTERS } from '@/entities/Player';
 import { BuffSystem } from '@/systems/BuffSystem';
@@ -170,6 +172,12 @@ export class GameScene extends Phaser.Scene {
         const anchor = uiSystem.getChestAnchor(pid);
         if (anchor)
           effectsRef.flyEnergy(deathPos.x, deathPos.y, anchor.x, anchor.y, playerColor(pid));
+      }
+      // 階段2：怪死亡有機率掉落「英雄變身道具」（帶 roster 隨機抽的英雄 key；撿了換英雄）。
+      //   ★框架先鋪：roster 現只 SunWukong→道具帶 SunWukong（撿了換同一個，看不出換人，預期）；之後 roster 加英雄即自動生效。
+      if (shouldDropHeroItem()) {
+        const heroKey = pickHero(HERO_ROSTER) ?? undefined;
+        if (heroKey) transform.spawnItem('heroDrop', undefined, deathPos, undefined, heroKey);
       }
     };
     // 防穿透對所有 player（多人）：讓 spawner 讀 players[]。

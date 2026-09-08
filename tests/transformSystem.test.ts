@@ -35,16 +35,18 @@ function makeSystem() {
 
 // 透過型別逃逸呼叫 private 方法（測試核心狀態機）。
 function priv(sys: TransformSystem): {
-  onPickup: (item: { pickUp: () => void }, player: unknown) => void;
+  onPickup: (item: { pickUp: () => void; source?: string; heroKey?: string }, player: unknown) => void;
   takeSoulDamage: (player: unknown, d: number) => void;
 } {
   return sys as unknown as {
-    onPickup: (item: { pickUp: () => void }, player: unknown) => void;
+    onPickup: (item: { pickUp: () => void; source?: string; heroKey?: string }, player: unknown) => void;
     takeSoulDamage: (player: unknown, d: number) => void;
   };
 }
 
 const fakeItem = () => ({ pickUp: vi.fn() });
+/** 階段2：英雄變身道具（source='heroDrop'，帶 heroKey）。 */
+const heroDropItem = (heroKey: string) => ({ pickUp: vi.fn(), source: 'heroDrop' as const, heroKey });
 
 /**
  * 階段1（角色狀態機重構）：變身入口改為「投幣進場隨機抽英雄」transformToRandomHero
@@ -134,6 +136,37 @@ describe('TransformSystem — 變身/魂力', () => {
     transformToHero(sys, fakePlayer); // 未變身 → 再變身
     expect(sys.isTransformed(0)).toBe(true);
     expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER);
+  });
+
+  // ── 階段2：英雄換英雄（怪掉英雄道具，撿了橫向換英雄） ──
+  it('★階段2：英雄態撿英雄道具 → 換成道具帶的英雄 key（switchCharacter+魂力滿）', () => {
+    const { sys, calls, fakePlayer } = makeSystem();
+    transformToHero(sys, fakePlayer); // 先變英雄（SunWukong）
+    priv(sys).takeSoulDamage(fakePlayer, 60); // soul=40
+    const before = calls.switched.length;
+    priv(sys).onPickup(heroDropItem('SunWukong'), fakePlayer); // 撿英雄道具 → 橫向換
+    expect(sys.isTransformed(0)).toBe(true);
+    expect(sys.getHeroKey(0)).toBe('SunWukong'); // 換成道具帶的英雄
+    expect(sys.getSoul(0)).toBe(MAX_SOUL_POWER); // 換英雄魂力重新滿（非 +50 回魂）
+    expect(calls.switched.at(-1)).toBe('SunWukong'); // 有 switchCharacter
+    expect(calls.switched.length).toBe(before + 1);
+  });
+
+  it('★階段2：凡人態撿英雄道具 → 不觸發變身（凡人只能投幣變英雄）', () => {
+    const { sys, fakePlayer } = makeSystem();
+    expect(sys.isTransformed(0)).toBe(false); // 凡人
+    priv(sys).onPickup(heroDropItem('SunWukong'), fakePlayer);
+    expect(sys.isTransformed(0)).toBe(false); // 仍凡人、不變身
+    expect(sys.getHeroKey(0)).toBeNull();
+  });
+
+  it('★階段2：英雄道具帶的 heroKey 決定換成誰（非寫死 SunWukong）', () => {
+    const { sys, calls, fakePlayer } = makeSystem();
+    transformToHero(sys, fakePlayer);
+    // 帶不同 key（框架驗：換成道具指定的英雄，不寫死）。
+    priv(sys).onPickup(heroDropItem('HeroX'), fakePlayer);
+    expect(sys.getHeroKey(0)).toBe('HeroX');
+    expect(calls.switched.at(-1)).toBe('HeroX');
   });
 });
 

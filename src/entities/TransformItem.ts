@@ -8,8 +8,8 @@ export const ITEM_PICKUP_RADIUS = 0.8;
 /** 七輪#9 乙：初始道具進場後撿取免疫秒（給玩家看箭頭走過去的時間，箭頭 3s showDuration 內不被秒撿）。 */
 export const INITIAL_ITEM_PICKUP_IMMUNITY_SEC = 1.5;
 
-/** 道具來源（與 itemGuideMath.ItemSource 對齊）。 */
-export type ItemSourceKind = 'initial' | 'kill' | 'random';
+/** 道具來源（與 itemGuideMath.ItemSource 對齊）。'heroDrop'=階段2 怪掉英雄變身道具（帶 heroKey）。 */
+export type ItemSourceKind = 'initial' | 'kill' | 'random' | 'heroDrop';
 
 /**
  * TransformItem — 變身道具（場上可撿取的實體）。
@@ -30,6 +30,8 @@ export class TransformItem {
   readonly id: number;
   /** 七輪#9 乙：道具來源（'initial' 引導去撿 → 箭頭跳過距離 gate + 進場短暫免撿取）。 */
   readonly source: ItemSourceKind;
+  /** 階段2：英雄變身道具帶的英雄 key（source='heroDrop' 時有值；撿了換成此英雄）。非英雄道具=undefined。 */
+  readonly heroKey: string | undefined;
   /** 七輪#9 乙：撿取免疫剩餘秒（初始道具進場後短暫不可撿，給玩家看箭頭走過去的時間）；每幀由 TransformSystem 扣。 */
   private pickupImmunitySec = 0;
 
@@ -39,10 +41,11 @@ export class TransformItem {
   private vy = 0;
   private groundY = 0;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, id = 0, source: ItemSourceKind = 'random') {
+  constructor(scene: Phaser.Scene, x: number, y: number, id = 0, source: ItemSourceKind = 'random', heroKey?: string) {
     this.scene = scene;
     this.id = id;
     this.source = source;
+    this.heroKey = heroKey;
     const ring = scene.add.circle(0, 0, 22, 0xffe64d, 0.25);
     ring.setStrokeStyle(3, 0xffe64d);
     const core = scene.add.star(0, 0, 5, 8, 18, 0xffe64d);
