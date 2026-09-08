@@ -15,14 +15,16 @@ import {
 describe('surroundConfig — 環繞/推擠實驗開關', () => {
   beforeEach(() => resetSurroundRuntimeConfig());
 
-  it('預設＝contactSolver + slots + ★playerSolver legacy（怪-怪升級但玩家手感不動）', () => {
+  it('預設＝contactSolver + slots + ★playerSolver contactSolver（用戶拍板設為預設）', () => {
     expect(getOverlapSolver()).toBe('contactSolver');
     expect(getSurroundMode()).toBe('slots');
-    expect(getPlayerSolver()).toBe('legacy'); // ★階段②預設不動手感
+    expect(getPlayerSolver()).toBe('contactSolver'); // ★用戶 2026-09-08 拍板設為預設（免 console 切）
     expect(getSurroundRuntimeConfig()).toEqual(DEFAULT_SURROUND_RUNTIME_CONFIG);
   });
 
-  it('setPlayerSolver 切 contactSolver（玩家推擠開關，用戶實機試）→ 不影響另兩組', () => {
+  it('setPlayerSolver 切 legacy（一鍵切回舊推擠）再切回 contactSolver → 不影響另兩組', () => {
+    setPlayerSolver('legacy');
+    expect(getPlayerSolver()).toBe('legacy');
     setPlayerSolver('contactSolver');
     expect(getPlayerSolver()).toBe('contactSolver');
     expect(getOverlapSolver()).toBe('contactSolver');
@@ -53,11 +55,11 @@ describe('surroundConfig — 環繞/推擠實驗開關', () => {
   it('resetSurroundRuntimeConfig 回預設', () => {
     setSurroundMode('emergent');
     setOverlapSolver('legacy');
-    setPlayerSolver('contactSolver');
+    setPlayerSolver('legacy');
     resetSurroundRuntimeConfig();
     expect(getOverlapSolver()).toBe('contactSolver');
     expect(getSurroundMode()).toBe('slots');
-    expect(getPlayerSolver()).toBe('legacy');
+    expect(getPlayerSolver()).toBe('contactSolver');
   });
 
   it('setSurroundRuntimeConfig 可一次覆寫 playerSolver（缺欄不動）', () => {

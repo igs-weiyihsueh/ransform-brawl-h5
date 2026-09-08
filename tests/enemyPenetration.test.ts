@@ -6,10 +6,11 @@
  * ⚠️ 需 Phaser scene（Enemy 建 CharacterAnimator）→ jsdom + HEADLESS 共用 scene，每測 forceDestroy。
  * ⚠️ 菁英 immovable(像真牆,用戶試玩#1 a34476f)→ 菁英撞玩家頂菁英自己(不推玩家/不被玩家推倒退);
  */
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
+import { describe, expect, it, beforeAll, beforeEach, afterAll } from 'vitest';
 import Phaser from 'phaser';
 import { Enemy, ENEMY_CHARACTERS } from '@/entities/Enemy';
 import type { Vec2 } from '@/systems/hitDetection';
+import { setPlayerSolver, resetSurroundRuntimeConfig } from '@/config/surroundConfig';
 
 let game: Phaser.Game;
 let scene: Phaser.Scene;
@@ -36,6 +37,11 @@ beforeAll(async () => {
   });
 });
 afterAll(() => game?.destroy(true));
+
+// 本檔測 legacy 硬頂版「單幀頂到 minDist 邊緣」契約（playerSolver 現預設 contactSolver＝平滑多幀，
+//   會讓這些單幀斷言失敗）。明確設 legacy 隔離測硬頂版；平滑版另在 pushOutOfPlayerSmoothed.test.ts 測。
+beforeEach(() => setPlayerSolver('legacy'));
+afterAll(() => resetSurroundRuntimeConfig());
 
 function makeEnemy(x: number, y: number, charKey = ENEMY_CHARACTERS[0]): Enemy {
   return new Enemy(scene, x, y, charKey);
@@ -153,5 +159,30 @@ describe('Enemy.resolvePenetration — 多人防穿透', () => {
     // 死亡 → 早退不改位置。
     expect(after.x).toBeCloseTo(before.x);
     expect(after.y).toBeCloseTo(before.y);
+  });
+
+  describe('★預設 contactSolver（平滑版 pushOutOfPlayerSmoothed）整合', () => {
+    it('深度重疊 → 單幀只頂一小段（不瞬移，vs legacy 一次頂到邊緣）', () => {
+      setPlayerSolver('contactSolver');
+      const e = makeEnemy(5, 0); // 與 player 幾乎重疊，深度穿透
+      const before = e.getHitCenter();
+      e.resolvePenetration([player({ x: 0, y: 0 }, 60)]);
+      const c = e.getHitCenter();
+      const step = Math.hypot(c.x - before.x, c.y - before.y);
+      expect(step).toBeLessThanOrEqual(14 + 1e-6); // 單幀夾上限 maxStepPx
+      expect(c.x).toBeGreaterThan(before.x); // 方向遠離玩家
+      e.forceDestroy();
+    });
+
+    it('連續多幀套用 → 收斂到 minDist 邊緣（順順頂到位、不過衝）', () => {
+      setPlayerSolver('contactSolver');
+      const e = makeEnemy(5, 0);
+      const r = e.getBodyRadius();
+      const p = player({ x: 0, y: 0 }, 60);
+      for (let i = 0; i < 60; i += 1) e.resolvePenetration([p]);
+      const c = e.getHitCenter();
+      expect(Math.hypot(c.x, c.y)).toBeCloseTo(60 + r, 0); // 多幀收斂到 minDist
+      e.forceDestroy();
+    });
   });
 });

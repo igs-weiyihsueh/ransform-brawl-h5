@@ -13,11 +13,13 @@ import {
   calculateSeparation,
   combineWithSeparation,
   pushOutOfPlayer,
+  pushOutOfPlayerSmoothed,
   isChargeInvulnerable,
   shouldEnterCharge,
   SEPARATION_RADIUS_PX,
 } from '@/systems/enemySeparation';
 import { slotApproachDir, SLOT_REACH_THRESHOLD_PX, TRAVELER_AVOID_WEIGHT } from '@/systems/surroundSlots';
+import { getPlayerSolver } from '@/config/surroundConfig';
 import {
   buildAttackCircle,
   isPlayerInEnemyAttackShape,
@@ -251,11 +253,19 @@ export class Enemy implements Hittable {
         this.anim.sprite.y = fixed.y;
       } else {
         // 一般敵人：把自己推開。
-        const fixed = pushOutOfPlayer(
-          { x: this.anim.sprite.x, y: this.anim.sprite.y },
-          p.pos,
-          minDist,
-        );
+        // ContactSolver 階段②：playerSolver==='contactSolver' → 用平滑版（單幀上限+鬆弛，防深度重疊瞬移）；
+        //   legacy → 原硬頂版（一次頂到 minDist，不變）。
+        const fixed = getPlayerSolver() === 'contactSolver'
+          ? pushOutOfPlayerSmoothed(
+              { x: this.anim.sprite.x, y: this.anim.sprite.y },
+              p.pos,
+              minDist,
+            )
+          : pushOutOfPlayer(
+              { x: this.anim.sprite.x, y: this.anim.sprite.y },
+              p.pos,
+              minDist,
+            );
         this.anim.sprite.x = fixed.x;
         this.anim.sprite.y = fixed.y;
       }

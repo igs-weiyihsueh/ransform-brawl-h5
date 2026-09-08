@@ -27,17 +27,18 @@ export interface SurroundRuntimeConfig {
   surroundMode: SurroundMode;
   /**
    * 階段②：玩家 paceMove 推擠用哪套（玩家 vs 怪 / 玩家 vs 玩家）。
-   * ★預設 'legacy'——不動現有玩家操作手感（既有 pushOutOfPlayer/resolvePenetration/pushLoad 不變）。
-   * 'contactSolver'＝玩家移動前先過 paceMove 速度層預減速（唯一動手感的高風險點，用戶實機試再定去留）。
+   * ★預設 'contactSolver'（用戶 2026-09-08 拍板設為預設，免 console 切）：玩家移動前過 paceMove 速度層
+   * 預減速（削自己接近分量、不穿進怪）+ 怪被推開走平滑版 pushOutOfPlayerSmoothed（單幀上限+鬆弛，防瞬移）。
+   * 'legacy'＝原硬頂推怪 + 無 paceMove（開關保留，可 console 切回 window.__SURROUND__.setPlayerSolver('legacy')）。
    */
   playerSolver: PlayerSolver;
 }
 
-/** 預設：新 solver + 槽位法 + ★玩家 legacy（怪-怪升級、玩家手感不動）。 */
+/** 預設：新 solver + 槽位法 + ★玩家 contactSolver（用戶拍板設為預設；legacy 可 console 切回）。 */
 export const DEFAULT_SURROUND_RUNTIME_CONFIG: SurroundRuntimeConfig = {
   overlapSolver: 'contactSolver',
   surroundMode: 'slots',
-  playerSolver: 'legacy',
+  playerSolver: 'contactSolver',
 };
 
 // module-level 可變單例（執行期切換）。以淺拷貝初始化，避免共享參照被外部改到 DEFAULT。

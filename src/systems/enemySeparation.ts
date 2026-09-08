@@ -109,6 +109,48 @@ export function pushOutOfPlayer(
   return { x: playerPos.x + (dx / dist) * minDistPx, y: playerPos.y + (dy / dist) * minDistPx };
 }
 
+/** pushOutOfPlayerSmoothed 的預設參數（ContactSolver 玩家推怪防瞬移）。 */
+export const DEFAULT_PLAYER_PUSH_SMOOTH = {
+  /** 單幀最大推出位移（px）——防「深度重疊一次全解＝瞬移」。penetration 大時分多幀解到位。 */
+  maxStepPx: 14,
+  /** 鬆弛係數（0~1）：每幀只解 penetration 的這個比例（配合 maxStep 二選一取小者），更順。 */
+  relaxation: 0.5,
+};
+
+/**
+ * pushOutOfPlayer 的「平滑版」（ContactSolver 階段② 玩家推怪防瞬移）。
+ *
+ * 舊 pushOutOfPlayer 是一次把敵人硬頂到 minDist（單幀解完全部 penetration）——玩家快速走進怪群時，
+ * 深度重疊的怪單幀被彈一大段＝瞬移/傳送感。此版把「該解的 penetration」用
+ *   1) 鬆弛係數（每幀只解一部分）
+ *   2) 單幀最大位移上限 maxStepPx
+ * 兩者取「較小的移動量」→ penetration 大時分多幀順順解到位，小重疊仍一次解掉（不殘留穿透）。
+ *
+ * ★仍保證「不會更深穿透」：移動方向永遠沿「遠離玩家」，量 <= 完整修正量，收斂到 minDist。
+ * ★純函式，可測。只在 playerSolver==='contactSolver' 時由 resolvePenetration 呼叫；legacy 走原硬頂版（不變）。
+ */
+export function pushOutOfPlayerSmoothed(
+  enemyPos: Vec2,
+  playerPos: Vec2,
+  minDistPx: number,
+  maxStepPx: number = DEFAULT_PLAYER_PUSH_SMOOTH.maxStepPx,
+  relaxation: number = DEFAULT_PLAYER_PUSH_SMOOTH.relaxation,
+): Vec2 {
+  const dx = enemyPos.x - playerPos.x;
+  const dy = enemyPos.y - playerPos.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist >= minDistPx) return enemyPos; // 沒穿透
+  // 方向：遠離玩家（完全重疊 → 往右，與硬頂版一致）。
+  const ux = dist <= 0.0001 ? 1 : dx / dist;
+  const uy = dist <= 0.0001 ? 0 : dy / dist;
+  const fullCorrection = minDistPx - dist; // 要頂出多少才到 minDist
+  // 這幀先用鬆弛係數只解一部分，再夾單幀上限 maxStep，最後不超過 fullCorrection（不過衝穿到另一側）。
+  const relaxed = fullCorrection * Math.max(0, Math.min(1, relaxation));
+  const capped = maxStepPx > 0 ? Math.min(relaxed, maxStepPx) : relaxed;
+  const step = Math.min(capped, fullCorrection);
+  return { x: enemyPos.x + ux * step, y: enemyPos.y + uy * step };
+}
+
 /**
  * 攻擊出手面向（用戶新#2）：出手瞬間敵人該面向玩家那側。
  * dx = aimX - posX：明顯右→+1、明顯左→-1、|dx|≤閾值(玩家幾乎正上下)→保留 currentFacing（不亂轉）。
