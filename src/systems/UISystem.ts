@@ -165,7 +165,13 @@ export class UISystem implements GameSystem {
       //   （取代舊 getSoulRatio 魂力顯示 + 舊 SecondEnergyBar 橫條——二段能量統一由此圓環呈現。）
       const secondAvailable = this.ctx.isSecondTransformAvailable?.(pid) ?? false;
       overhead.setSoulVisible(secondAvailable);
-      if (secondAvailable) overhead.setSoul(this.ctx.getSecondTransformEnergyRatio?.(pid) ?? 0);
+      if (secondAvailable) {
+        // 界騎視覺：填充=能量 ratio、active 時圓環轉亮金（二段觸發爆亮）。
+        overhead.setSoul(
+          this.ctx.getSecondTransformEnergyRatio?.(pid) ?? 0,
+          this.ctx.isSecondTransformActive?.(pid) ?? false,
+        );
+      }
       overhead.setCredit(this.ctx.credit.getCredit(pid));
       // 沒 Credit 演出（閃紅 + 投幣提示 + 倒數）：讀 CreditSystem 耗盡狀態（只讀）。
       overhead.setOutOfCredit(

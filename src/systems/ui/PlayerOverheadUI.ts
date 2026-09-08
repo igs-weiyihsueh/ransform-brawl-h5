@@ -38,6 +38,7 @@ export class PlayerOverheadUI {
   private readonly groupCombo: Phaser.GameObjects.GameObject[] = [];
 
   private shownSoul = -1;
+  private shownSoulActive = false;
   private shownCredit = -1;
   private shownCombo = -1;
   /** COMBO 警告閃爍中旗標，避免重複啟動 tween。 */
@@ -214,11 +215,18 @@ export class PlayerOverheadUI {
     this.container.setPosition(x, y + OVERHEAD_LAYOUT.offsetY);
   }
 
-  /** 設定魂力比例（0..1）。環繞在編號牌外圈（同心）。stub：目前傳固定值。 */
-  setSoul(ratio: number): void {
+  /**
+   * 設定二段變身能量比例（0..1）。環繞在編號牌外圈（同心）。
+   * ★二段能量視覺（翼騎接口）：填充改用二段能量識別色（非魂力色）——
+   *   累積中=金橘(secondBarFill)；ratio=1 二段變身觸發(active)→亮金(secondBarActive) 爆亮提示滿觸發。
+   * @param ratio 二段能量填充比例 0..1（getSecondTransformEnergyRatio）。
+   * @param active 是否二段變身觸發中（isSecondTransformActive）→ 轉亮金。
+   */
+  setSoul(ratio: number, active = false): void {
     const clamped = Phaser.Math.Clamp(ratio, 0, 1);
-    if (clamped === this.shownSoul) return;
+    if (clamped === this.shownSoul && active === this.shownSoulActive) return;
     this.shownSoul = clamped;
+    this.shownSoulActive = active;
 
     const cfg = OVERHEAD_LAYOUT.badge;
     const g = this.soulRing;
@@ -228,11 +236,12 @@ export class PlayerOverheadUI {
       g.lineStyle(cfg.ringThickness, HUD_COLORS.soulRingBg, 1);
       g.strokeCircle(cfg.cx, cfg.cy, cfg.ringRadius);
     }
-    // 魂力充填弧（從 12 點鐘順時針，弧度表現魂力多寡）。
+    // 二段能量充填弧（從 12 點鐘順時針，弧度=能量多寡）；觸發中(active)轉亮金爆亮。
     if (clamped > 0) {
       const start = -Math.PI / 2;
       const end = start + Math.PI * 2 * clamped;
-      g.lineStyle(cfg.ringThickness, HUD_COLORS.soulRingFill, 1);
+      const fillColor = active ? HUD_COLORS.secondBarActive : HUD_COLORS.secondBarFill;
+      g.lineStyle(cfg.ringThickness, fillColor, 1);
       g.beginPath();
       g.arc(cfg.cx, cfg.cy, cfg.ringRadius, start, end, false);
       g.strokePath();
