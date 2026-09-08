@@ -44,9 +44,14 @@ export function accumulateIdle(
   return current; // 非戰鬥凍結（保留）
 }
 
-/** idle 是否已達觸發抓人門檻。 */
-export function shouldTriggerGrab(idleAccumulated: number): boolean {
-  return idleAccumulated >= GRAB.idleTriggerSeconds;
+/**
+ * idle 是否已達觸發抓人門檻。
+ * @param idleAccumulated 目前 idle 累積秒數。
+ * @param triggerSec 觸發門檻（秒）；省略用打包預設 GRAB.idleTriggerSeconds（相容舊呼叫端）。
+ *   遊戲端傳 getResolvedGrabIdleTriggerSec()（editorStore override 優先）讓用戶編輯器可調。
+ */
+export function shouldTriggerGrab(idleAccumulated: number, triggerSec: number = GRAB.idleTriggerSeconds): boolean {
+  return idleAccumulated >= triggerSec;
 }
 
 /**

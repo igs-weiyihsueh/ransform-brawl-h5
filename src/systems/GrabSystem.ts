@@ -15,6 +15,7 @@ import {
   tickGrabCountdown,
   shouldEscapeGrab,
 } from '@/systems/grabMath';
+import { getResolvedGrabIdleTriggerSec } from '@/config/grabSchema';
 
 /** 每個玩家的抓人狀態。 */
 interface GrabState {
@@ -85,8 +86,8 @@ export class GrabSystem implements GameSystem {
       const justEntered = waitingOrEntering; // 進場/待機期間視為重置
       s.idle = accumulateIdle(s.idle, dt, inCombat && !waitingOrEntering, hitThisFrame, justEntered);
 
-      // 滿門檻 → 最近敵人變 grabber 衝向玩家。
-      if (shouldTriggerGrab(s.idle) && combatEnemies.length > 0) {
+      // 滿門檻 → 最近敵人變 grabber 衝向玩家。（閒置觸發秒數 editorStore override 優先，無則 config 預設。）
+      if (shouldTriggerGrab(s.idle, getResolvedGrabIdleTriggerSec()) && combatEnemies.length > 0) {
         const grabber = this.nearestEnemy(player.getHitCenter(), combatEnemies);
         if (grabber) {
           grabber.setGrabber(true);
