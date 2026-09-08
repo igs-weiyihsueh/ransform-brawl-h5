@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
-import { BOTTOM_PANEL_LAYOUT, HUD_COLORS, HUD_FONT_FAMILY, PANEL_DEPTH, UI_ICONS } from '@/config/uiConfig';
+import { BOTTOM_PANEL_LAYOUT, HUD_COLORS, HUD_FONT_FAMILY, PANEL_DEPTH, UI_ICONS, resolveDashDisplay } from '@/config/uiConfig';
 import { playerColor } from '@/config/playerConfig';
 import { darkWedgeArc, isDashRecharging } from '@/systems/dashChargeDisplay';
+import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 import { isVisible, type PanelElement, type PanelLayout } from '@/config/uiLayoutSchema';
 
 /** 單一玩家欄：可刷新元素 + 淡化控制。 */
@@ -40,6 +41,8 @@ interface Slot {
   dashR: number;
   shownDashCharges: number;
   shownDashProgress: number;
+  /** 衝刺圖示進場 gate：角色待機/進場中隱藏，登場動畫完成才顯示（用戶指定）。 */
+  dashVisible: boolean;
 }
 
 /** 未加入欄的淡化透明度。 */
@@ -220,11 +223,13 @@ export class BottomPanel {
     const waitingH = platEl?.height ?? 0;
 
     // 衝刺充能「衝」圖示（用戶新系統）：圓底+「衝」字 + 右上數字 + 冷卻壓黑遮罩。
-    // 位置讀 config BOTTOM_PANEL_LAYOUT.dash（相對欄左上；additive 不動凍結 schema）。
+    // 位置/大小讀 config BOTTOM_PANEL_LAYOUT.dash + editorStore override（layout.dash，additive
+    // 不動凍結 schema；同 JP/進度可調範式）→ resolveDashDisplay 併預設。逆時針壓黑/數字/圖示都跟隨。
     const dcfg = BOTTOM_PANEL_LAYOUT.dash;
-    const dashCx = slotX + dcfg.cx;
-    const dashCy = slotY + dcfg.cy;
-    const dashR = dcfg.radius;
+    const dres = resolveDashDisplay(readDashOverride());
+    const dashCx = slotX + dres.cx;
+    const dashCy = slotY + dres.cy;
+    const dashR = dres.radius;
     const dashBase = track(scene.add.graphics()).setScrollFactor(0).setDepth(PANEL_DEPTH + 1);
     dashBase.fillStyle(dcfg.fill, 1);
     dashBase.fillCircle(dashCx, dashCy, dashR);
@@ -235,7 +240,7 @@ export class BottomPanel {
       scene.add
         .text(dashCx, dashCy, '衝', {
           fontFamily: HUD_FONT_FAMILY,
-          fontSize: dcfg.labelFontSize,
+          fontSize: `${dres.labelFontPx}px`,
           color: dcfg.labelColor,
           fontStyle: 'bold',
         })
@@ -250,9 +255,9 @@ export class BottomPanel {
     // 右上角數字（可用格數）。
     const dashCount = track(
       scene.add
-        .text(dashCx + dcfg.countOffsetX, dashCy + dcfg.countOffsetY, '3', {
+        .text(dashCx + dres.countOffsetX, dashCy + dres.countOffsetY, '3', {
           fontFamily: HUD_FONT_FAMILY,
-          fontSize: dcfg.countFontSize,
+          fontSize: `${dres.countFontPx}px`,
           color: '#ffffff',
           fontStyle: 'bold',
           stroke: '#000000',
@@ -292,7 +297,14 @@ export class BottomPanel {
       dashR,
       shownDashCharges: -1,
       shownDashProgress: -1,
+      // 進場 gate：預設隱藏，等 UISystem 依角色進場完成才 setDashVisible(true)（用戶指定）。
+      dashVisible: false,
     };
+    // 進場前先隱藏衝刺圖示（圓底/字/數字/壓黑遮罩），避免一開場待機/進場中就顯示。
+    dashBase.setVisible(false);
+    dashLabel.setVisible(false);
+    dashCount.setVisible(false);
+    dashDim.setVisible(false);
     this.drawProgress(slot, 0);
     return slot;
   }
@@ -371,6 +383,23 @@ export class BottomPanel {
   }
 
   /**
+   * 進場 gate（用戶指定）：設定某玩家欄衝刺「衝」圖示是否可見。
+   * 角色待機/登場動畫進行中 → visible=false（隱藏圓底/字/數字/壓黑）；
+   * 登場動畫完成後 → visible=true。只變動才套用（省開銷）。
+   * 圖示本身的數值/壓黑仍由 setDash 維護，可見性由此獨立控制（顯示時沿用最新狀態）。
+   */
+  setDashVisible(index: number, visible: boolean): void {
+    const slot = this.slots[index];
+    if (!slot) return;
+    if (visible === slot.dashVisible) return;
+    slot.dashVisible = visible;
+    slot.dashBase.setVisible(visible);
+    slot.dashLabel.setVisible(visible);
+    slot.dashCount.setVisible(visible);
+    slot.dashDim.setVisible(visible);
+  }
+
+  /**
    * 設定某玩家欄的衝刺充能顯示（用戶新系統，純顯示）：
    *  - 右上數字 = 目前可用格數 charges。
    *  - 未滿（charges<max，有格在回充）→「衝」圖示壓暗 + 依 cooldownProgress **逆時針**徑向消去壓黑
@@ -409,4 +438,28 @@ export class BottomPanel {
     }
     this.slots.length = 0;
   }
+}
+
+/** 衝刺圖示位置/大小 override（編輯器可調，additive 附掛 layout.dash）。 */
+interface DashDisplayOverride {
+  dashOffsetX?: number;
+  dashOffsetY?: number;
+  dashScale?: number;
+}
+
+/**
+ * 讀 uiLayout override 裡的衝刺圖示 override（layout.dash，additive 附掛，同 JP/進度做法）。
+ * 無 override / 無 dash 欄 → undefined（resolveDashDisplay 用打包預設，行為不變）。
+ */
+function readDashOverride(): DashDisplayOverride | undefined {
+  const raw = loadOverride(EDITOR_STORE_KEYS.uiLayout);
+  if (!raw || typeof raw !== 'object') return undefined;
+  const d = (raw as { dash?: unknown }).dash;
+  if (!d || typeof d !== 'object') return undefined;
+  const o = d as DashDisplayOverride;
+  return {
+    dashOffsetX: typeof o.dashOffsetX === 'number' ? o.dashOffsetX : undefined,
+    dashOffsetY: typeof o.dashOffsetY === 'number' ? o.dashOffsetY : undefined,
+    dashScale: typeof o.dashScale === 'number' ? o.dashScale : undefined,
+  };
 }

@@ -564,6 +564,57 @@ export const PROGRESS_TRANSFORM_DEFAULT = {
   progressOffsetY: 55,
 } as const;
 
+/**
+ * 衝刺「衝」圖示位置/大小 override 預設（用戶要編輯器可調，同 JP/進度範式）。
+ * dashOffsetX/Y 相對 BOTTOM_PANEL_LAYOUT.dash 基準位移；dashScale 整體縮放
+ * （半徑/字級/數字偏移一起等比縮放，逆時針壓黑動畫/數字/圖示都跟隨）。
+ */
+export const DASH_DISPLAY_DEFAULT = {
+  dashOffsetX: 0,
+  dashOffsetY: 0,
+  dashScale: 1,
+} as const;
+
+/** 從 px 字串（如 '30px'）取數值；解析失敗回 fallback。 */
+function pxNum(v: string, fallback: number): number {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * 解析衝刺「衝」圖示顯示參數（純函式，可測；同 JP/進度 override 範式）。
+ * 讀 override 優先、無則 BOTTOM_PANEL_LAYOUT.dash 打包預設。回傳「相對欄左上」的
+ * 圓心 cx/cy（含位移）、半徑、字級（px 數）、數字偏移——皆已套 dashScale 等比縮放。
+ * 逆時針壓黑/數字/圖示都吃這份 → 跟隨新位置大小。
+ */
+export function resolveDashDisplay(ov?: {
+  dashOffsetX?: number;
+  dashOffsetY?: number;
+  dashScale?: number;
+}): {
+  cx: number;
+  cy: number;
+  radius: number;
+  labelFontPx: number;
+  countFontPx: number;
+  countOffsetX: number;
+  countOffsetY: number;
+} {
+  const d = BOTTOM_PANEL_LAYOUT.dash;
+  const ox = ov?.dashOffsetX ?? DASH_DISPLAY_DEFAULT.dashOffsetX;
+  const oy = ov?.dashOffsetY ?? DASH_DISPLAY_DEFAULT.dashOffsetY;
+  const s = Math.max(0.2, ov?.dashScale ?? DASH_DISPLAY_DEFAULT.dashScale);
+  return {
+    cx: d.cx + ox,
+    cy: d.cy + oy,
+    radius: d.radius * s,
+    labelFontPx: pxNum(d.labelFontSize, 30) * s,
+    countFontPx: pxNum(d.countFontSize, 22) * s,
+    countOffsetX: d.countOffsetX * s,
+    countOffsetY: d.countOffsetY * s,
+  };
+}
+
 /** 進度條設計中心（縮放原點）＝ progressBars.PROGRESS_BAR 的 centerX/shownY。 */
 export const PROGRESS_CENTER = { x: 960, y: 96 } as const;
 

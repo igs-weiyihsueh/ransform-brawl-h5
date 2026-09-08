@@ -198,6 +198,12 @@ export class UISystem implements GameSystem {
         const cd = this.ctx.getDashCooldownProgress?.(pid) ?? 1;
         this.bottomPanel.setDash(i, charges, max, cd);
       }
+      // 進場 gate（用戶指定）：衝刺圖示要角色登場動畫完成後才顯示。
+      // 進場完成 = 非待機 且 非進場中（isEntering 落地當幀轉 false）。與頭上 UI 待機隔離同範式。
+      const p = players[i];
+      const waitingP = typeof p.isWaiting === 'function' && p.isWaiting();
+      const enteringP = typeof p.isEntering === 'function' && p.isEntering();
+      this.bottomPanel.setDashVisible(i, !waitingP && !enteringP);
     }
   }
 
