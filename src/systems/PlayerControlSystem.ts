@@ -68,6 +68,8 @@ export class PlayerControlSystem implements GameSystem {
   /** 用戶#3：per-player 變身進場浮起已經過秒（投幣起算）；-1=非浮起中。變身觸發旗（避免重複抽）。 */
   private floatElapsed = new Map<number, number>();
   private floatTransformed = new Set<number>();
+  /** 用戶#3 VFX：per-player 浮起光 handle（浮起起手→跟隨→變身時收）。 */
+  private riseGlowHandle = new Map<number, Phaser.GameObjects.Image | null>();
 
   /** 每玩家本次攻擊意圖（按鍵當下決定，hitDelay 到期據此結算）。 */
   private pendingIntent = new Map<number, AttackIntent | null>();
@@ -167,6 +169,9 @@ export class PlayerControlSystem implements GameSystem {
         player.startTransformFloat?.(); // 內含離開待機態；表演中由 isTransformFloating gate 不吃操控
         this.floatElapsed.set(pid, 0);
         this.floatTransformed.delete(pid);
+        // VFX：浮起光起手（貼角色，跟隨到變身時收）。
+        const gp = player.getPosition?.();
+        this.riseGlowHandle.set(pid, gp ? (this.ctx.effects?.riseGlowStart?.(gp.x, gp.y) ?? null) : null);
       }
       return; // 待機中不可移動/攻擊
     }
@@ -176,15 +181,24 @@ export class PlayerControlSystem implements GameSystem {
       const elapsed = (this.floatElapsed.get(pid) ?? 0) + dt;
       this.floatElapsed.set(pid, elapsed);
       player.updateTransformFloat?.(floatOffsetY(elapsed));
-      // 浮到時機 → 發光變身（隨機抽英雄；特效另掛）。旗標避免重複抽。
+      // VFX：浮起光跟隨角色（浮起中）。
+      const fp = player.getPosition?.();
+      if (fp) this.ctx.effects?.riseGlowUpdate?.(this.riseGlowHandle.get(pid) ?? null, fp.x, fp.y);
+      // 浮到時機 → 發光變身（隨機抽英雄）+ 變身閃 VFX + 收浮起光。旗標避免重複抽。
       if (!this.floatTransformed.has(pid) && shouldTransformDuringFloat(elapsed)) {
         this.floatTransformed.add(pid);
         this.ctx.transform?.transformToRandomHero?.(pid);
+        if (fp) this.ctx.effects?.transformFlash?.(fp.x, fp.y); // 發光變身瞬間閃
+        this.ctx.effects?.riseGlowEnd?.(this.riseGlowHandle.get(pid) ?? null); // 收浮起光
+        this.riseGlowHandle.delete(pid);
       }
       // 浮完 → 結束浮起、降臨（沿用既有拋物線進場到場上落點）。
       if (isFloatDone(elapsed)) {
         player.endTransformFloat?.();
         this.floatElapsed.delete(pid);
+        // 保底：若變身時機沒觸發到（極短 floatSec）也收掉浮起光。
+        this.ctx.effects?.riseGlowEnd?.(this.riseGlowHandle.get(pid) ?? null);
+        this.riseGlowHandle.delete(pid);
         this.enterGame(player); // 降臨（拋物線進場）
       }
       return;
@@ -370,12 +384,15 @@ export class PlayerControlSystem implements GameSystem {
   }
 
   /**
-   * 用戶#3 ④：變身降臨落地 → 以落點為中心震退範圍內敵人（衝擊波）。
-   * 讀 ctx.getEnemies，範圍內非菁英/非蓄力怪 applyLandingKnockback。特效另掛（本體只做震退位移）。
+   * 用戶#3 ④：變身降臨落地 → 以落點為中心震退範圍內敵人（衝擊波）+ 落地衝擊/震退波 VFX。
+   * 讀 ctx.getEnemies，範圍內非菁英/非蓄力怪 applyLandingKnockback。
    */
   private landingKnockback(player: GameContext['player']): void {
     const land = player.getPosition?.();
     if (!land) return;
+    // VFX：落地衝擊 + 震退波（同時；貼落點地面）。
+    this.ctx.effects?.descendImpact?.(land.x, land.y);
+    this.ctx.effects?.shockwaveRing?.(land.x, land.y);
     const enemies = this.ctx.getEnemies?.() ?? [];
     for (const e of enemies) {
       const c = e.getHitCenter?.();

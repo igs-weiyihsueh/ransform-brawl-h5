@@ -69,6 +69,14 @@ const ENEMY_ATTACK_VFX = {
   secondTransformAura: { key: 'vfx-second-transform-aura', path: `${BASE_PATH}/fx_second_transform_aura.png` },
   /** 二段變身能量條滿格閃（256×64，給界騎能量條 UI）。 */
   secondTransformBarFull: { key: 'vfx-second-transform-barfull', path: `${BASE_PATH}/fx_second_transform_barfull.png` },
+  /** ③投幣變身表演-浮起光（128×192，浮起階段貼角色身上，alpha 0→1 漸亮+scale 微升，持續 ~0.6~1.0s）。 */
+  riseGlow: { key: 'vfx-rise-glow', path: `${BASE_PATH}/fx_rise_glow.png` },
+  /** ③投幣變身表演-發光變身閃（384×384，變身瞬間中心對齊角色，scale 0.4→1.3 爆開後淡出，播一次 ~0.3s）。 */
+  transformFlash: { key: 'vfx-transform-flash', path: `${BASE_PATH}/fx_transform_flash.png` },
+  /** ③投幣變身表演-降臨落地衝擊（256×256，落點對齊地面，scale 0.7→1.1，先落→爆光→塵環淡出，~0.3s）。 */
+  descendImpact: { key: 'vfx-descend-impact', path: `${BASE_PATH}/fx_descend_impact.png` },
+  /** ③投幣變身表演-落地震退波（256×256，貼地壓扁橢圓，scale 0.3→1.6 擴散+alpha 1→0，~0.4s）。 */
+  shockwaveRing: { key: 'vfx-shockwave-ring', path: `${BASE_PATH}/fx_shockwave_ring.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -1386,6 +1394,131 @@ export class EffectSystem {
       duration: 250,
       ease: 'Quad.easeIn',
       onComplete: () => handle.destroy(),
+    });
+  }
+
+  // === ③投幣變身進場表演 VFX（翼騎 b17af4b hook；特效素材 fx_rise/flash/descend/shockwave） ===
+
+  /**
+   * ③浮起光起手（浮起階段貼角色身上；handle 式，浮完/變身時呼叫 riseGlowEnd 收）。
+   * alpha 0→1 漸亮 + scale 微升（~0.6~1.0s 起亮），跟隨角色由 riseGlowUpdate 更新位置。
+   * @returns handle（Image）或 null（素材未載）。
+   */
+  riseGlowStart(x: number, y: number): Phaser.GameObjects.Image | null {
+    const key = ENEMY_ATTACK_VFX.riseGlow.key;
+    if (!this.scene.textures.exists(key)) return null;
+    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
+    img.setDepth(PANEL_DEPTH + 14); // 角色身上、略低於變身閃
+    img.setBlendMode(Phaser.BlendModes.ADD);
+    img.setAlpha(0).setScale(0.9);
+    // 漸亮 + scale 微升（浮起起手感）。
+    this.scene.tweens.add({ targets: img, alpha: 1, duration: 400, ease: 'Quad.easeOut' });
+    this.scene.tweens.add({ targets: img, scale: 1.05, duration: 700, ease: 'Sine.easeOut' });
+    return img;
+  }
+
+  /** ③浮起光跟隨角色位置（每幀由浮起流程呼叫）。 */
+  riseGlowUpdate(handle: Phaser.GameObjects.Image | null, x: number, y: number): void {
+    if (!handle || !handle.active) return;
+    handle.setPosition(x, y);
+  }
+
+  /** ③浮起光收（浮完/變身時）→ 淡出移除。 */
+  riseGlowEnd(handle: Phaser.GameObjects.Image | null): void {
+    if (!handle) return;
+    this.scene.tweens.killTweensOf(handle);
+    if (!handle.active) { handle.destroy(); return; }
+    this.scene.tweens.add({
+      targets: handle,
+      alpha: 0,
+      duration: 160,
+      ease: 'Quad.easeIn',
+      onComplete: () => handle.destroy(),
+    });
+  }
+
+  /**
+   * ③發光變身瞬間閃（變身 hook 播一次；中心對齊角色）。
+   * scale 0.4→1.3 爆開後定住 + 後 40% 淡出，~0.3s。
+   */
+  transformFlash(x: number, y: number): void {
+    const key = ENEMY_ATTACK_VFX.transformFlash.key;
+    if (!this.scene.textures.exists(key)) return;
+    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
+    img.setDepth(PANEL_DEPTH + 16); // 角色上層（同變身金光）
+    img.setBlendMode(Phaser.BlendModes.ADD);
+    const base = 384;
+    img.setDisplaySize(base * 0.4, base * 0.4).setAlpha(1);
+    // scale 0.4→1.3 爆開（~300ms）。
+    this.scene.tweens.add({
+      targets: img,
+      displayWidth: base * 1.3,
+      displayHeight: base * 1.3,
+      duration: 300,
+      ease: 'Quad.easeOut',
+    });
+    // 後 40%（~120ms）淡出。
+    this.scene.tweens.add({
+      targets: img,
+      alpha: 0,
+      delay: 180,
+      duration: 120,
+      ease: 'Quad.easeIn',
+      onComplete: () => img.destroy(),
+    });
+  }
+
+  /**
+   * ③降臨落地衝擊（落地 hook 播一次；落點對齊地面）。
+   * scale 0.7→1.1（先落→爆光→塵環淡出），~0.3s。
+   */
+  descendImpact(x: number, y: number): void {
+    const key = ENEMY_ATTACK_VFX.descendImpact.key;
+    if (!this.scene.textures.exists(key)) return;
+    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.7); // 錨略偏下＝貼落點地面
+    img.setDepth(PANEL_DEPTH + 12); // 角色腳下/地面層
+    img.setBlendMode(Phaser.BlendModes.ADD);
+    const base = 256;
+    img.setDisplaySize(base * 0.7, base * 0.7).setAlpha(1);
+    this.scene.tweens.add({
+      targets: img,
+      displayWidth: base * 1.1,
+      displayHeight: base * 1.1,
+      duration: 300,
+      ease: 'Quad.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: img,
+      alpha: 0,
+      delay: 150,
+      duration: 150,
+      ease: 'Quad.easeIn',
+      onComplete: () => img.destroy(),
+    });
+  }
+
+  /**
+   * ③落地震退波（落地 hook 與 descendImpact 同時播；貼地壓扁橢圓）。
+   * ★單張靠引擎放大表現擴散：scale 0.3→1.6 向外擴散 + alpha 1→0 淡出，~0.4s。
+   */
+  shockwaveRing(x: number, y: number): void {
+    const key = ENEMY_ATTACK_VFX.shockwaveRing.key;
+    if (!this.scene.textures.exists(key)) return;
+    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
+    img.setDepth(PANEL_DEPTH + 11); // 地面層、略低於落地衝擊
+    img.setBlendMode(Phaser.BlendModes.ADD);
+    const base = 256;
+    // 貼地：y 方向壓扁成橢圓（0.5×），模擬地面透視波紋。
+    img.setDisplaySize(base * 0.3, base * 0.3 * 0.5).setAlpha(1);
+    // scale 0.3→1.6 向外擴散（放大＝擴散）。
+    this.scene.tweens.add({
+      targets: img,
+      displayWidth: base * 1.6,
+      displayHeight: base * 1.6 * 0.5,
+      alpha: 0,
+      duration: 400,
+      ease: 'Cubic.easeOut',
+      onComplete: () => img.destroy(),
     });
   }
 
