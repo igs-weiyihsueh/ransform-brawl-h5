@@ -84,6 +84,10 @@ const ENEMY_ATTACK_VFX = {
   mineExplosion: { key: 'vfx-mine-explosion', path: `${BASE_PATH}/fx_mine_explosion.png` },
   /** 魔尖塔環狀擴散技（2 新事件階段 B）：單張環 sprite，程式 scale 小→大 + alpha 淡出做漣漪/衝擊波擴散。 */
   towerRing: { key: 'vfx-tower-ring', path: `${BASE_PATH}/fx_tower_ring.png` },
+  /** ★魔尖塔環狀「預警」專屬貼圖（512×512，紅危險中空環帶+符文+俯視壓扁 Y0.5 已內建）。 */
+  towerRingWarning: { key: 'vfx-tower-ring-warning', path: `${BASE_PATH}/fx_tower_ring_warning.png` },
+  /** ★魔尖塔環狀「攻擊」專屬貼圖（512×512，紫魔能衝擊環+白刃芯+bloom+能量刺+符文+俯視壓扁 Y0.5 已內建）。 */
+  towerRingAttack: { key: 'vfx-tower-ring-attack', path: `${BASE_PATH}/fx_tower_ring_attack.png` },
   /** 魔尖塔尖塔怪靜態立繪（2 新事件；Enemy_Tower characterKey 換皮用，非 VFX 但同單張 PNG 載法）。 */
   towerSpire: { key: 'fx_tower_spire', path: `${BASE_PATH}/fx_tower_spire.png` },
 } as const;
@@ -1684,32 +1688,51 @@ export class EffectSystem {
     });
   }
 
-  /** 魔尖塔環狀貼地壓扁比例（Y 軸壓扁成俯視橢圓圓盤；判定另在 towerRingSkill 維持正圓，此僅視覺）。 */
-  /** 貼地圓盤 Y 軸壓扁比例（俯視橢圓；魔尖塔環 + 火雨預警/落點共用；判定另處維持正圓，此僅視覺）。 */
+  /** 貼地圓盤 Y 軸壓扁比例（俯視橢圓；魔尖塔環 Graphics 版 + 火雨預警/落點共用；判定另處維持正圓，此僅視覺）。 */
   private static readonly GROUND_SQUASH_Y = 0.5;
 
   /**
-   * ★魔尖塔「預警」環（C9 warning phase，學火雨 fireWarningRing 風格：紅色填充+紅邊+呼吸脈動＝危險範圍感）。
-   * 但維持「環狀」（環帶而非整片實心）+ 貼地壓扁（Y 0.5 俯視橢圓）。預警期間持續脈動，warningSec 到 → 淡出自清。
-   * asset 到位（fx_tower_ring_warning）可換貼圖；目前 Graphics。判定維持正圓（不影響 ringHitsPlayer）。
-   * @param x,y 塔視覺中心。@param diameterPx 環直徑（=2×半徑）。@param thicknessPx 環帶厚。@param durationMs 預警時長（=warningSec）。
+   * ★魔尖塔「預警」環（C9 warning phase）：專屬貼圖 fx_tower_ring_warning（紅危險環帶+符文，★俯視壓扁 Y0.5 已內建）。
+   * 貼圖：setScale 只對半徑（貼圖已壓扁，★不再套 GROUND_SQUASH_Y 免雙重壓扁）；alpha/亮度脈動 0.7↔1（越近攻擊越急迫感）
+   * + 緩慢自轉；warningSec 到 → alpha 快速歸零自清。素材未載 → 退回 Graphics 版（火雨風格紅填充脈動+程式壓扁）。
+   * 圓心=塔腳底 getTowerRingGroundCenter（貼地）。判定維持正圓（不影響 ringHitsPlayer）。
+   * @param x,y 塔腳底地面點。@param diameterPx 環直徑（=2×半徑）。@param thicknessPx 環帶厚（Graphics 退回用）。@param durationMs 預警時長（=warningSec）。
    */
   towerRingWarning(x: number, y: number, diameterPx: number, thicknessPx: number, durationMs: number): void {
     const d = Math.max(16, diameterPx);
-    const radius = d / 2;
-    const lw = Math.max(2, thicknessPx);
     const dur = Math.max(120, durationMs);
+    const key = ENEMY_ATTACK_VFX.towerRingWarning.key;
+    if (this.scene.textures.exists(key)) {
+      const spr = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5).setDepth(PANEL_DEPTH + 10);
+      spr.setDisplaySize(d, d).setAlpha(0.85); // ★貼圖已內建俯視壓扁 Y0.5 → 直徑對半徑、不再程式壓扁
+      // 脈動 0.7↔1（危險預警急迫感）+ 緩慢自轉。
+      const pulse = this.scene.tweens.add({
+        targets: spr, alpha: 0.7, duration: 240, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      });
+      const spin = this.scene.tweens.add({
+        targets: spr, angle: 360, duration: 6000, repeat: -1, ease: 'Linear',
+      });
+      // warningSec 到 → alpha 快速歸零自清（攻擊瞬間接手）。
+      this.scene.tweens.add({
+        targets: spr, alpha: 0, delay: Math.max(0, dur - 120), duration: 120, ease: 'Sine.easeIn',
+        onComplete: () => { pulse.stop(); spin.stop(); spr.destroy(); },
+      });
+      return;
+    }
+    this.towerRingWarningGraphics(x, y, d, Math.max(2, thicknessPx), dur);
+  }
+
+  /** 預警環 Graphics 退回版（素材未載）：火雨風格紅填充脈動 + 程式貼地壓扁。 */
+  private towerRingWarningGraphics(x: number, y: number, d: number, lw: number, dur: number): void {
+    const radius = d / 2;
     const sq = EffectSystem.GROUND_SQUASH_Y;
     const g = this.scene.add.graphics();
-    g.setPosition(x, y).setDepth(PANEL_DEPTH + 10); // 預警在攻擊環之下一點
-    // 火雨預警風格：環帶紅色半透明填充（annulus 填充帶＝危險範圍）+ 紅邊。
+    g.setPosition(x, y).setDepth(PANEL_DEPTH + 10);
     g.fillStyle(0xff3300, 0.22);
     g.fillCircle(0, 0, radius + lw / 2);
-    g.fillStyle(0x000000, 0); // 打洞：中心透空（環帶感）——用 blendMode ERASE 較重，這裡改用外圈填充+內圈描邊表現環帶
     g.lineStyle(Math.max(3, lw), 0xff5522, 0.9);
     g.strokeCircle(0, 0, radius);
-    g.setScale(1, sq).setAlpha(0.85); // 貼地壓扁
-    // 呼吸脈動（危險預警，比照 fireWarningRing）：alpha 0.55↔1 yoyo；warningSec 到淡出自清。
+    g.setScale(1, sq).setAlpha(0.85);
     const pulse = this.scene.tweens.add({
       targets: g, alpha: 0.55, duration: 250, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
     });
@@ -1720,34 +1743,53 @@ export class EffectSystem {
   }
 
   /**
-   * ★魔尖塔「攻擊/炸出」環（C9 active phase，真衝擊感：環帶爆閃亮起 → 力道迸發（環帶快速加粗+外擴一點+高亮）→ 收）。
-   * 魔尖塔能量紫（0x9b5cff，跟預警紅區隔）+ ADD 疊亮 + 貼地壓扁。非「預警圈變色」，是能量迸發衝擊。
-   * asset 到位（fx_tower_ring_attack）可換貼圖；目前 Graphics。判定維持正圓（active 命中在 EnemySpawner，此僅視覺）。
-   * @param durationMs 顯示時長（=ringIntervalSec，active 持續）。
+   * ★魔尖塔「攻擊/炸出」環（C9 active phase）：專屬貼圖 fx_tower_ring_attack（紫魔能衝擊環+白刃芯+bloom+能量刺，★俯視壓扁 Y0.5 已內建）。
+   * 預警結束瞬間播一次：scale 微擴 1.0→1.12 迸發 + 後 50% alpha 淡出（時長 0.3~0.45s，不吃滿 ringInterval）+ 輕微自轉。
+   * 貼圖 setScale 只對半徑（★不再套 GROUND_SQUASH_Y）。素材未載 → 退回 Graphics 版（雙層 ADD 紫爆閃+程式壓扁）。
+   * 圓心=塔腳底（貼地）。判定維持正圓（active 命中在 EnemySpawner，此僅視覺）。
+   * @param durationMs active 持續（=ringIntervalSec）；攻擊爆閃取其 0.3~0.45s。
    */
   towerRingActive(x: number, y: number, diameterPx: number, thicknessPx: number, durationMs: number): void {
     const d = Math.max(16, diameterPx);
-    const radius = d / 2;
-    const lw = Math.max(3, thicknessPx);
     const dur = Math.max(120, durationMs);
+    const key = ENEMY_ATTACK_VFX.towerRingAttack.key;
+    if (this.scene.textures.exists(key)) {
+      const burstMs = Math.min(450, Math.max(300, dur)); // 迸發時長 0.3~0.45s（不吃滿 ringInterval）
+      const spr = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5).setDepth(PANEL_DEPTH + 12).setBlendMode(Phaser.BlendModes.ADD);
+      spr.setDisplaySize(d, d).setAlpha(1); // ★貼圖已內建壓扁 → 直徑對半徑、不再程式壓扁
+      const base = spr.scale; // setDisplaySize 後的等效 scale（供迸發微擴基準）
+      spr.setScale(base); // 明確化
+      this.scene.tweens.add({ targets: spr, angle: 20, duration: burstMs, ease: 'Sine.easeOut' }); // 輕微自轉
+      // scale 微擴 1.0→1.12 迸發，後 50% alpha 淡出。
+      this.scene.tweens.add({
+        targets: spr, scale: base * 1.12, duration: burstMs, ease: 'Quad.easeOut',
+      });
+      this.scene.tweens.add({
+        targets: spr, alpha: 0, delay: burstMs * 0.5, duration: burstMs * 0.5, ease: 'Sine.easeIn',
+        onComplete: () => spr.destroy(),
+      });
+      return;
+    }
+    this.towerRingActiveGraphics(x, y, d, Math.max(3, thicknessPx), dur);
+  }
+
+  /** 攻擊環 Graphics 退回版（素材未載）：雙層 ADD 紫爆閃 + 程式貼地壓扁。 */
+  private towerRingActiveGraphics(x: number, y: number, d: number, lw: number, dur: number): void {
+    const radius = d / 2;
     const sq = EffectSystem.GROUND_SQUASH_Y;
-    // 內層：粗亮環帶（爆閃主體，能量紫，ADD 疊亮）。
     const core = this.scene.add.graphics();
     core.setPosition(x, y).setDepth(PANEL_DEPTH + 12).setBlendMode(Phaser.BlendModes.ADD);
     core.lineStyle(lw * 1.6, 0x9b5cff, 1);
     core.strokeCircle(0, 0, radius);
-    // 外層：細白熱高光環（迸發銳邊）。
     const edge = this.scene.add.graphics();
     edge.setPosition(x, y).setDepth(PANEL_DEPTH + 13).setBlendMode(Phaser.BlendModes.ADD);
     edge.lineStyle(Math.max(2, lw * 0.5), 0xe0c8ff, 1);
     edge.strokeCircle(0, 0, radius);
-    // 衝擊：兩層一起「爆閃」——瞬間亮起(scale 稍過衝 1.08→1) + alpha 1，貼地壓扁；短促比預警銳利。
     for (const g of [core, edge]) g.setScale(1.08, 1.08 * sq).setAlpha(0);
     this.scene.tweens.add({
       targets: [core, edge], scaleX: 1, scaleY: sq, alpha: 1,
       duration: Math.min(90, dur * 0.25), ease: 'Quad.easeOut',
       onComplete: () => {
-        // 迸發後衰減：core 微外擴淡出（力道擴散感）、edge 先收。
         this.scene.tweens.add({
           targets: edge, alpha: 0, duration: Math.max(80, dur * 0.3), ease: 'Sine.easeIn',
           onComplete: () => edge.destroy(),
