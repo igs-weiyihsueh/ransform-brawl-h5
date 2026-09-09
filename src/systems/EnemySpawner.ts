@@ -433,8 +433,6 @@ export class EnemySpawner {
    * ★環狀技碰攻擊判定＝高風險共用契約（decision a655c53d，走變身-leader review）。
    */
   private updateTowerRings(dt: number): void {
-    const WARNING_COLOR = 0xff3322; // C9 預警紅
-    const ATTACK_COLOR = 0x9b5cff; // active 攻擊紫
     for (const e of this.enemies) {
       if (!e.isTower() || e.isDead()) continue;
       const ring = e.getRingSkill();
@@ -450,12 +448,12 @@ export class EnemySpawner {
       const radius = ringRadiusForIndex(state.ringIndex, params);
       const thickness = params.halfThicknessPx * 2; // 環帶厚度（與 annulus 判定一致）
 
-      // VFX：進 warning → 紅色預警空心環（顯 warningSec）；進 active → 攻擊色空心環（顯 ringIntervalSec）。
+      // VFX：★預警/攻擊拆兩種特效——進 warning → towerRingWarning（紅填充+脈動危險感）；進 active → towerRingActive（能量迸發衝擊）。
       if (enterWarning && params.warningSec > 0) {
-        this.hitFeelFx?.towerRing?.(c.x, c.y, radius * 2, thickness, params.warningSec * 1000, WARNING_COLOR);
+        this.hitFeelFx?.towerRingWarning?.(c.x, c.y, radius * 2, thickness, params.warningSec * 1000);
       }
       if (enterActive) {
-        this.hitFeelFx?.towerRing?.(c.x, c.y, radius * 2, thickness, params.ringIntervalSec * 1000, ATTACK_COLOR);
+        this.hitFeelFx?.towerRingActive?.(c.x, c.y, radius * 2, thickness, params.ringIntervalSec * 1000);
       }
 
       // ★命中判定只在 active phase（warning 零判定，不變量①）。本環對同玩家只扣一次（不變量②）。
