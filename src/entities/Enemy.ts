@@ -465,6 +465,19 @@ export class Enemy implements Hittable {
     return { x: this.anim.sprite.x, y: this.anim.sprite.y + ENEMY_BODY_CENTER_OFFSET_Y * this.scaleFactor };
   }
 
+  /**
+   * 尖塔環狀技 VFX 圓心（C7）：塔用 setStaticTexture('fx_tower_spire', 0.5, 1.0)＝底部錨點（originY=1.0），
+   * 故 sprite.y 是塔「腳底」而非中心；環要畫在塔**視覺中心**（腳底往上半個顯示高度），才對準塔本體正中央。
+   * 非塔時 fallback getHitCenter（不影響其他怪）。
+   */
+  getTowerRingCenter(): Vec2 {
+    const sp = this.anim.sprite;
+    const originY = sp.originY ?? 1.0;
+    const h = sp.displayHeight || 0;
+    // 視覺中心 Y = sprite.y - (originY - 0.5) * displayHeight（origin 1.0 → 上移半高；origin 0.5 → 不動）。
+    return { x: sp.x, y: sp.y - (originY - 0.5) * h };
+  }
+
   getHitRadius(): number {
     return this.radiusPx;
   }

@@ -432,12 +432,12 @@ export class EnemySpawner {
         state = createTowerRingState();
         this.towerRingStates.set(e.id, state);
       }
-      const c = e.getHitCenter();
+      const c = e.getTowerRingCenter(); // C7：環 VFX 圓心 + 命中判定圓心都用塔視覺中心（對準塔本體正中央）
       // 1) 換環時序：達間隔 → 換下一環（固定半徑，循環）+ 播新環 VFX。
       const { advanced } = advanceTowerRing(state, dt, params);
       if (advanced) {
         const radius = ringRadiusForIndex(state.ringIndex, params);
-        // VFX：依序單環顯示——在該固定半徑畫一個環、下環出現前淡出（時長＝一個 ringInterval）。
+        // VFX：依序單環顯示——在該固定半徑畫一個環、下環出現前淡出（時長＝一個 ringInterval）。★圓心=塔視覺中心。
         this.hitFeelFx?.towerRing?.(c.x, c.y, radius * 2, params.ringIntervalSec * 1000);
       }
       // 2) 當前環固定半徑，環帶命中玩家（本環對同玩家只扣一次）。
