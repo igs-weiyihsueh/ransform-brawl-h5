@@ -480,6 +480,17 @@ export class Enemy implements Hittable {
     return { x: sp.x, y: sp.y - (originY - 0.5) * h };
   }
 
+  /**
+   * 尖塔環狀技「貼地圓盤」圓心（環改貼地壓扁後）：塔**底部（腳底/站的地面點）**——環以此為圓心往地面擴，才真的貼地不浮空。
+   * 塔 originY=1.0（底部錨點）→ 腳底 = sprite.y；一般 origin 用 sp.y + (1-originY)*displayHeight 推回底邊。
+   */
+  getTowerRingGroundCenter(): Vec2 {
+    const sp = this.anim.sprite;
+    const originY = sp.originY ?? 1.0;
+    const h = sp.displayHeight || 0;
+    return { x: sp.x, y: sp.y + (1 - originY) * h }; // origin 1.0 → sp.y（腳底）
+  }
+
   getHitRadius(): number {
     return this.radiusPx;
   }

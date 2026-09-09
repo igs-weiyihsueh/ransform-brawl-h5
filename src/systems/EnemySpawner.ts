@@ -443,7 +443,7 @@ export class EnemySpawner {
         state = createTowerRingState();
         this.towerRingStates.set(e.id, state);
       }
-      const c = e.getTowerRingCenter(); // C7：環 VFX 圓心 + 命中判定圓心都用塔視覺中心
+      const c = e.getTowerRingGroundCenter(); // ★環貼地圓盤圓心 = 塔底部/腳底地面點（VFX + 命中判定同圓心、往地面擴不浮空）
       const { enterWarning, enterActive, phase } = tickTowerRingPhase(state, dt, params);
       const radius = ringRadiusForIndex(state.ringIndex, params);
       const thickness = params.halfThicknessPx * 2; // 環帶厚度（與 annulus 判定一致）

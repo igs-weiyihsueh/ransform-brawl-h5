@@ -885,6 +885,7 @@ export class EffectSystem {
     g.x = x;
     g.y = y;
     g.setDepth(-5); // 在地上、角色之下（角色 PLAY_DEPTH=10）
+    g.setScale(1, EffectSystem.GROUND_SQUASH_Y); // ★貼地壓扁圓盤（俯視橢圓，跟魔尖塔環一致）；判定在 FireRainSystem 維持正圓
     // 預警脈動（呼吸）提示即將落下。
     this.scene.tweens.add({
       targets: g,
@@ -912,13 +913,17 @@ export class EffectSystem {
       // 貼圖爆發：落點火焰爆發，爆開放大+淡出+隨機旋轉（正式用 fireballImpact、佔位 aoeBurst 染橘紅）。
       const spr = this.scene.add.image(x, y, key);
       spr.setOrigin(0.5, 0.5).setDepth(ENERGY_FLY_DEPTH);
-      spr.setDisplaySize(radiusPx * 1.6, radiusPx * 1.6).setAlpha(1);
+      spr.setDisplaySize(radiusPx * 1.6, radiusPx * 1.6);
+      const sq = EffectSystem.GROUND_SQUASH_Y; // ★貼地壓扁圓盤（跟魔尖塔環/火雨預警一致俯視橢圓）
+      const baseX = spr.scaleX;
+      const baseY = spr.scaleY * sq;
+      spr.setScale(baseX, baseY).setAlpha(1);
       spr.setAngle(Math.random() * 360); // 隨機旋轉(每次爆發不同向)
       if (key === fallbackBurst) spr.setTint(0xff7722); // 佔位：白熱 burst 染火焰橘紅(真素材不染)
       this.scene.tweens.add({
         targets: spr,
-        displayWidth: radiusPx * 2.4,
-        displayHeight: radiusPx * 2.4,
+        scaleX: baseX * 1.5,
+        scaleY: baseY * 1.5, // 維持壓扁比例爆開
         alpha: 0,
         duration: 400,
         ease: 'Cubic.easeOut', // scale 炸開 + 後半淡出
@@ -926,17 +931,19 @@ export class EffectSystem {
       });
       return;
     }
-    // 後備：純 graphics 橘紅圓閃。
+    // 後備：純 graphics 橘紅圓閃（貼地壓扁）。
     const g = this.scene.add.graphics();
     g.fillStyle(0xffaa22, 0.85);
     g.fillCircle(0, 0, radiusPx);
     g.x = x;
     g.y = y;
     g.setDepth(ENERGY_FLY_DEPTH);
-    g.setScale(0.5);
+    const sq = EffectSystem.GROUND_SQUASH_Y;
+    g.setScale(0.5, 0.5 * sq); // ★貼地壓扁
     this.scene.tweens.add({
       targets: g,
-      scale: 1.15,
+      scaleX: 1.15,
+      scaleY: 1.15 * sq, // 維持壓扁比例
       alpha: 0,
       duration: 350,
       ease: 'Cubic.easeOut',
@@ -1678,7 +1685,8 @@ export class EffectSystem {
   }
 
   /** 魔尖塔環狀貼地壓扁比例（Y 軸壓扁成俯視橢圓圓盤；判定另在 towerRingSkill 維持正圓，此僅視覺）。 */
-  private static readonly TOWER_RING_SQUASH_Y = 0.5;
+  /** 貼地圓盤 Y 軸壓扁比例（俯視橢圓；魔尖塔環 + 火雨預警/落點共用；判定另處維持正圓，此僅視覺）。 */
+  private static readonly GROUND_SQUASH_Y = 0.5;
 
   /**
    * ★魔尖塔「預警」環（C9 warning phase，學火雨 fireWarningRing 風格：紅色填充+紅邊+呼吸脈動＝危險範圍感）。
@@ -1691,7 +1699,7 @@ export class EffectSystem {
     const radius = d / 2;
     const lw = Math.max(2, thicknessPx);
     const dur = Math.max(120, durationMs);
-    const sq = EffectSystem.TOWER_RING_SQUASH_Y;
+    const sq = EffectSystem.GROUND_SQUASH_Y;
     const g = this.scene.add.graphics();
     g.setPosition(x, y).setDepth(PANEL_DEPTH + 10); // 預警在攻擊環之下一點
     // 火雨預警風格：環帶紅色半透明填充（annulus 填充帶＝危險範圍）+ 紅邊。
@@ -1722,7 +1730,7 @@ export class EffectSystem {
     const radius = d / 2;
     const lw = Math.max(3, thicknessPx);
     const dur = Math.max(120, durationMs);
-    const sq = EffectSystem.TOWER_RING_SQUASH_Y;
+    const sq = EffectSystem.GROUND_SQUASH_Y;
     // 內層：粗亮環帶（爆閃主體，能量紫，ADD 疊亮）。
     const core = this.scene.add.graphics();
     core.setPosition(x, y).setDepth(PANEL_DEPTH + 12).setBlendMode(Phaser.BlendModes.ADD);
