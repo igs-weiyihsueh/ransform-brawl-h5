@@ -437,8 +437,8 @@ export class EnemySpawner {
       const { advanced } = advanceTowerRing(state, dt, params);
       if (advanced) {
         const radius = ringRadiusForIndex(state.ringIndex, params);
-        // VFX：依序單環顯示——在該固定半徑畫一個環、下環出現前淡出（時長＝一個 ringInterval）。★圓心=塔視覺中心。
-        this.hitFeelFx?.towerRing?.(c.x, c.y, radius * 2, params.ringIntervalSec * 1000);
+        // VFX：依序單環顯示——在該固定半徑畫一個★空心環（C8），環帶厚度=2×halfThickness（與 annulus 判定一致）。★圓心=塔視覺中心（C7）。
+        this.hitFeelFx?.towerRing?.(c.x, c.y, radius * 2, params.halfThicknessPx * 2, params.ringIntervalSec * 1000);
       }
       // 2) 當前環固定半徑，環帶命中玩家（本環對同玩家只扣一次）。
       const curRadius = ringRadiusForIndex(state.ringIndex, params);

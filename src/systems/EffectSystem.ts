@@ -1653,30 +1653,34 @@ export class EffectSystem {
   }
 
   /**
-   * 魔尖塔環狀技（2 新事件階段 B，征騎，★依序固定環）：在**固定半徑**顯示一個環，快速淡入 → 該環期間顯示 →
-   * 下環出現前淡出（不擴大！每環固定 diameter）。表現「一環接一環、由內往外、同時只一個環」。
-   * @param x,y 尖塔中心。@param diameterPx 這一環的固定直徑（=2×該環半徑）。@param durationMs 該環顯示時長（=ringInterval）。
+   * 魔尖塔環狀技（★依序固定環 + C8 空心環帶 annulus）：在**固定半徑**畫一圈**空心環**（strokeCircle 描邊、
+   * 中間透空，非實心圓）→ 快速淡入 → 該環期間顯示 → 下環出現前淡出（不擴大！每環固定半徑）。
+   * ★視覺環圈半徑＝ringRadiusForIndex、環帶厚度＝ringThicknessPx（描邊寬度）→ 與 annulus 命中判定一致（玩家站環帶上才被打、中心空）。
+   * C9 預警紅圈也用此（同半徑、傳紅色）。
+   * @param x,y 尖塔視覺中心（C7）。@param diameterPx 固定直徑（=2×該環半徑）。@param thicknessPx 環帶厚度（=ringThicknessPx，描邊寬度）。
+   * @param durationMs 顯示時長。@param color 環色（省略＝攻擊紫；C9 預警傳紅 0xff3322）。
    */
-  towerRing(x: number, y: number, diameterPx: number, durationMs: number): void {
-    const key = ENEMY_ATTACK_VFX.towerRing.key;
-    if (!this.scene.textures.exists(key)) return;
-    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
-    img.setDepth(PANEL_DEPTH + 11); // 地面層（與其他地面環同層級）
-    img.setBlendMode(Phaser.BlendModes.ADD);
-    const d = Math.max(16, diameterPx); // ★固定直徑（不擴大）
+  towerRing(x: number, y: number, diameterPx: number, thicknessPx: number, durationMs: number, color = 0x9b5cff): void {
+    const d = Math.max(16, diameterPx);
+    const radius = d / 2;
+    const lw = Math.max(2, thicknessPx); // 環帶厚度＝描邊寬度（對應判定 halfThickness×2）
     const dur = Math.max(120, durationMs);
-    // 出現：快速淡入 + 微微 pop（0.92→1.0 scale 感），非漣漪擴散。
-    img.setDisplaySize(d * 0.92, d * 0.92).setAlpha(0);
+    const g = this.scene.add.graphics();
+    g.setPosition(x, y).setDepth(PANEL_DEPTH + 11).setBlendMode(Phaser.BlendModes.ADD);
+    // ★空心環：只描邊、不填滿（中間透空）。
+    g.lineStyle(lw, color, 0.95);
+    g.strokeCircle(0, 0, radius);
+    // 出現：快速淡入 + 微微 pop（scale 0.92→1.0 感）→ 顯示 → 下環出現前淡出（同時只一個環）。
+    g.setScale(0.92).setAlpha(0);
     this.scene.tweens.add({
-      targets: img, displayWidth: d, displayHeight: d, alpha: 0.95,
+      targets: g, scale: 1, alpha: 0.95,
       duration: Math.min(120, dur * 0.35), ease: 'Quad.easeOut',
       onComplete: () => {
-        // 持續顯示到接近換環 → 淡出（下環出現前消失，畫面同時只一個環）。
         this.scene.tweens.add({
-          targets: img, alpha: 0,
+          targets: g, alpha: 0,
           delay: Math.max(0, dur * 0.4),
           duration: Math.max(80, dur * 0.5), ease: 'Sine.easeIn',
-          onComplete: () => img.destroy(),
+          onComplete: () => g.destroy(),
         });
       },
     });

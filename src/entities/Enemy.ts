@@ -47,8 +47,8 @@ export interface HitFeelFx {
   /** 用戶 #3 圓形範圍攻擊特效（純視覺）。 */
   enemyAoeRing?(x: number, y: number, radiusPx: number): Phaser.GameObjects.Image | null;
   enemyAoeBurst?(x: number, y: number, radiusPx: number): void;
-  /** 2 新事件階段 B 魔尖塔環狀擴散技（純視覺，單張環放大淡出）。 */
-  towerRing?(x: number, y: number, targetDiameterPx: number, durationMs: number): void;
+  /** 2 新事件階段 B 魔尖塔環狀技（★C8 空心環帶 annulus，strokeCircle 描邊）。thicknessPx=環帶厚度、color 省略=攻擊紫（C9 預警傳紅）。 */
+  towerRing?(x: number, y: number, diameterPx: number, thicknessPx: number, durationMs: number, color?: number): void;
 }
 
 /** 敵人可用的角色美術 key（debug 預覽用循環選擇）。 */
