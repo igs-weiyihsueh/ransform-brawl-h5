@@ -233,6 +233,14 @@ export class PlayerControlSystem implements GameSystem {
     const src = player.inputSource;
     if (!src) return; // 無 InputSource → 不操控
 
+    // ★2 新事件：麻痺（stun）中 → 不吃任何輸入（移動/攻擊/衝刺），倒數自動解除。★不扣血、純定住。
+    //   放在被抓 gate 前後皆可（互斥狀態）；tickStun 推進倒數+閃爍視覺；仍麻痺則 early-return。
+    if (typeof player.isStunned === 'function' && player.isStunned()) {
+      player.tickStun?.(dt);
+      this.clearDashShield(pid); // 麻痺打斷衝刺→防護罩不殘留
+      if (player.isStunned()) return; // 仍麻痺：這幀不操控
+    }
+
     // 十五輪 bug①：被抓中 → 不吃輸入（GrabSystem.setGrabbed 已強制 idle 待機動畫；此 gate 防 PlayerControl 每幀用輸入 move/attack 覆蓋掉 grab idle）。
     //   同時清 dash 防護罩（被抓打斷衝刺→防護罩不殘留，見 bug④）。
     if (typeof player.isGrabbed === 'function' && player.isGrabbed()) {

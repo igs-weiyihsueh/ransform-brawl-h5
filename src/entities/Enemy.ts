@@ -588,9 +588,13 @@ export class Enemy implements Hittable {
     if (this.state === 'death') return;
 
     // 定身（麻痺/凍結）：停止行動（移動/攻擊/AI），只保留 idle 動畫，倒數。
+    // ★2 新事件麻痺視覺：閃爍（每 ~0.1s 切半透明）提示定住；解除復原 alpha。
     if (this.stunRemaining > 0) {
       this.stunRemaining -= dt;
       this.anim.play('idle');
+      const blink = Math.floor(this.stunRemaining / 0.1) % 2 === 0;
+      this.anim.sprite.setAlpha(blink ? 0.55 : 1);
+      if (this.stunRemaining <= 0) this.anim.sprite.setAlpha(1);
       return;
     }
 

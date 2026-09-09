@@ -91,6 +91,8 @@ export class Player implements Hittable {
 
   /** 被抓中（isGrabbed，用戶試玩#4）：不能動、藍閃、倒數掙脫；由 GrabSystem 控制。 */
   private grabbed = false;
+  /** ★2 新事件：麻痺（stun）剩餘秒數（>0：地雷爆炸/魔尖塔環狀技命中→定住 N 秒不能移動/攻擊，時間到自動解除；★不扣血、純定住）。 */
+  private stunRemaining = 0;
   /** 十六輪 bug1：被抓時按攻擊的掙脫輸入旗標（PlayerControl 被抓 gate 設、GrabSystem consume）——不實際普攻(保持 idle)但驅動掙脫。 */
   private struggleInput = false;
 
@@ -579,7 +581,7 @@ export class Player implements Hittable {
 
   /** 依移動向量更新位置、面向與 idle/move 動畫。 */
   move(moveVec: Vec2, dt: number): void {
-    if (this.hitlagRemaining > 0 || this.grabbed) return; // hitlag / 被抓：凍結玩家位移
+    if (this.hitlagRemaining > 0 || this.grabbed || this.stunRemaining > 0) return; // hitlag / 被抓 / 麻痺：凍結玩家位移
     const speedPx = PLAYER_CONFIG.moveSpeed * PPU * this.speedMult * this.pushLoadMult;
     this.anim.sprite.x += moveVec.x * speedPx * dt;
     this.anim.sprite.y += moveVec.y * speedPx * dt;
@@ -632,6 +634,36 @@ export class Player implements Hittable {
   /** 是否處於 hitlag（PlayerControlSystem 用來凍結移動/衝刺推進）。 */
   isInHitlag(): boolean {
     return this.hitlagRemaining > 0;
+  }
+
+  // --- ★2 新事件：麻痺（stun）狀態（地雷爆炸/魔尖塔環狀技命中→定住 N 秒） ---
+
+  /**
+   * 套用麻痺 N 秒（additive，取較長者）——定住不能移動/攻擊/衝刺，時間到自動解除。
+   * ★不扣血（角色無血量）、不觸發被打倒扣二段能量（那是攻擊命中的獨立邏輯）；純「暫時定住」。
+   * 供事件觸發（地雷爆炸/環狀技命中）呼叫，與 Enemy.applyStun 對稱。
+   */
+  applyStun(seconds: number): void {
+    if (seconds <= 0) return;
+    this.stunRemaining = Math.max(this.stunRemaining, seconds);
+    this.anim.play('idle'); // 麻痺即停動作、切待機動畫
+  }
+
+  /** 是否麻痺中（PlayerControlSystem gate：麻痺時不吃移動/攻擊/衝刺輸入）。 */
+  isStunned(): boolean {
+    return this.stunRemaining > 0;
+  }
+
+  /** 每幀推進麻痺倒數（PlayerControlSystem 呼叫）；歸零自動解除。回傳是否仍麻痺。 */
+  tickStun(dt: number): boolean {
+    if (this.stunRemaining > 0) {
+      this.stunRemaining = Math.max(0, this.stunRemaining - dt);
+      // 麻痺視覺：閃爍（每 ~0.1s 切半透明，簡單提示定住）。解除復原 alpha。
+      const blink = Math.floor(this.stunRemaining / 0.1) % 2 === 0;
+      this.anim.sprite.setAlpha(blink ? 0.55 : 1);
+      if (this.stunRemaining === 0) this.anim.sprite.setAlpha(1);
+    }
+    return this.stunRemaining > 0;
   }
 
   /**
