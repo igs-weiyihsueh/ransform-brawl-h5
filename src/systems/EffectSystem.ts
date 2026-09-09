@@ -81,6 +81,8 @@ const ENEMY_ATTACK_VFX = {
   mineWarning: { key: 'vfx-mine-warning', path: `${BASE_PATH}/fx_mine_warning.png` },
   /** 2 新事件-地雷爆炸（256×256，延遲到→範圍爆炸播一次，scale 依 radiusPx）。 */
   mineExplosion: { key: 'vfx-mine-explosion', path: `${BASE_PATH}/fx_mine_explosion.png` },
+  /** 魔尖塔環狀擴散技（2 新事件階段 B）：單張環 sprite，程式 scale 小→大 + alpha 淡出做漣漪/衝擊波擴散。 */
+  towerRing: { key: 'vfx-tower-ring', path: `${BASE_PATH}/fx_tower_ring.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -1565,6 +1567,30 @@ export class EffectSystem {
     img.setDisplaySize(d * 0.6, d * 0.6).setAlpha(1);
     this.scene.tweens.add({ targets: img, displayWidth: d * 1.1, displayHeight: d * 1.1, duration: 350, ease: 'Quad.easeOut' });
     this.scene.tweens.add({ targets: img, alpha: 0, delay: 175, duration: 175, ease: 'Quad.easeIn', onComplete: () => img.destroy() });
+  }
+
+  /**
+   * 魔尖塔環狀擴散技（2 新事件階段 B，征騎）：單張環 sprite 從小 scale 到 targetDiameterPx，alpha 1→0 淡出，
+   * 表現「環半徑一圈圈向外擴大」的漣漪/衝擊波。duration 對齊 gameplay 環擴到 maxRadius 的時間。
+   * @param x,y 尖塔中心。@param targetDiameterPx 環擴到的最終直徑（=2×maxRadius）。@param durationMs 擴散時長。
+   */
+  towerRing(x: number, y: number, targetDiameterPx: number, durationMs: number): void {
+    const key = ENEMY_ATTACK_VFX.towerRing.key;
+    if (!this.scene.textures.exists(key)) return;
+    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
+    img.setDepth(PANEL_DEPTH + 11); // 地面層（與其他地面環同層級）
+    img.setBlendMode(Phaser.BlendModes.ADD);
+    const startPx = Math.max(16, targetDiameterPx * 0.05); // 從很小開始
+    img.setDisplaySize(startPx, startPx).setAlpha(0.9);
+    this.scene.tweens.add({
+      targets: img,
+      displayWidth: Math.max(startPx, targetDiameterPx),
+      displayHeight: Math.max(startPx, targetDiameterPx),
+      alpha: 0,
+      duration: Math.max(120, durationMs),
+      ease: 'Sine.easeOut',
+      onComplete: () => img.destroy(),
+    });
   }
 
   deathParticle(x: number, y: number, color: number): void {

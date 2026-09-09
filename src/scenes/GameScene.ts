@@ -191,8 +191,24 @@ export class GameScene extends Phaser.Scene {
     spawner.getAllPlayers = () => this.ctx.players;
     // 階段3：玩家被怪擊中 → 二段能量倒扣（★flag 關/能量 0/未一段變身 → no-op 由 TransformSystem gate）。
     spawner.onPlayerHit = (pid) => transform.loseSecondTransformEnergy(pid);
+    // 魔尖塔環狀技命中玩家 → 扣 energyCost 段能量（ratio 已在 EnemySpawner 算好：段×energyLossOnHit）。
+    spawner.onPlayerRingHit = (pid, energyRatio) => transform.loseSecondTransformEnergy(pid, energyRatio);
     // hitFeel 表演注入：新生敵人受擊/死亡時播白閃/punch/火花/死亡粒子（純視覺）。
     spawner.hitFeelFx = effects;
+
+    // debug 掛勾（無頭 probe/E2E 用；不影響玩法）：魔尖塔尖塔怪 spawn + 存活數自查。
+    (window as unknown as { __TOWER__?: unknown }).__TOWER__ = {
+      spawn: (x: number, y: number, hp?: number, ring?: { intervalSec?: number; expandPxPerRing?: number; energyCost?: number }) =>
+        spawner.spawnTower(x, y, hp, ring),
+      aliveCount: () => spawner.getAliveTowerCount(),
+      /** probe 用：對第一座存活尖塔猛打致死（驗被打掉清除 + onTowerDestroyed）。 */
+      killFirst: () => {
+        const t = spawner.getEnemies().find((e) => e.isTower() && !e.isDead());
+        if (!t) return false;
+        for (let i = 0; i < 999 && !t.isDead(); i += 1) t.takeHit(50, 0, { x: t.getHitCenter().x, y: t.getHitCenter().y });
+        return true;
+      },
+    };
 
     // 開箱報獎表演（第5項，純視覺）：openChest 尾段回呼 → 在該玩家寶盒位置演出。
     // ⚠️ chest 數值(addTickets/buff)已在 openChest 即時套用、此處只做視覺、與數值解耦。
@@ -230,6 +246,26 @@ export class GameScene extends Phaser.Scene {
     const mineTrap = new MineTrapSystem();
     wave.onMineTrap = (node) => mineTrap.deployMines(node);
     this.mineTrapSystem = mineTrap; // registerSystems 再註冊（需每幀 update 推進地雷倒數）
+
+    // 2 新事件階段 B：★橋接尖塔怪(征騎 EnemySpawner)↔守護波(波騎 WaveSystem)接口。
+    //   進 TowerWave 節點 → onTowerWave(node)：生 node.towerCount 座尖塔（各 towerHp+ringSkill），橫向均分場上。
+    wave.onTowerWave = (node) => {
+      const n = Math.max(1, node.towerCount);
+      const ring = {
+        intervalSec: node.ringSkill.intervalSec,
+        expandPxPerRing: node.ringSkill.expandPxPerRing,
+        energyCost: node.ringSkill.energyCost,
+      };
+      const margin = GAME_WIDTH * 0.18;
+      const span = GAME_WIDTH - margin * 2;
+      const y = GAME_HEIGHT * 0.42;
+      for (let i = 0; i < n; i += 1) {
+        const x = n === 1 ? GAME_WIDTH * 0.5 : margin + (span * i) / (n - 1);
+        spawner.spawnTower(x, y, node.towerHp, ring);
+      }
+    };
+    // 每摧毀一座尖塔 → 通知守護波累計（波騎判 towersDestroyed>=towerCount 過關提前 advance）。
+    spawner.onTowerDestroyed = () => wave.notifyTowerDestroyed();
 
     this.registerSystems();
 

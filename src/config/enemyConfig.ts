@@ -81,6 +81,16 @@ export interface EnemyAIConfig {
    * 菁英 Enemy_Elite=true（Unity hitStun=0.05 幾乎不退像牆）；一般敵人省略/false 照舊被頂開。
    */
   immovable?: boolean;
+  /**
+   * 魔尖塔環狀技（2 新事件階段 B）：設此欄＝這隻是「尖塔怪」——固定不動、週期放環狀擴散技（環圈判定、中心空）。
+   * 命中玩家扣 energyCost 段能量。搭配 moveSpeed:0 + immovable:true（固定塔）。省略＝一般怪（不放環）。
+   * intervalSec 每環間隔秒、expandPxPerRing 每環擴大速度(px/秒)、energyCost 命中扣能量段數。
+   */
+  ringSkill?: {
+    intervalSec: number;
+    expandPxPerRing: number;
+    energyCost: number;
+  };
 }
 
 /** 近戰圓形攻擊的 AttackData 輔助。 */
@@ -166,5 +176,23 @@ export const ENEMY_AI: Record<string, EnemyAIConfig> = {
     knockbackForce: 2,
     immovable: true, // 防穿透豁免：玩家頂不動菁英，改成玩家被擋在菁英外（用戶 #4，對應像牆）
     scale: 1.85, // 十六輪設定打包：用戶匯出菁英放大 1.85
+  },
+  // 魔尖塔尖塔怪（2 新事件階段 B）：固定不動的塔，週期放環狀擴散技，被打掉=清除。
+  //   moveSpeed 0 + detectRange 0（永不追擊/近戰，只站著）+ immovable（玩家推不動）+ ringSkill（環狀技標記）。
+  //   一般近戰/射彈欄位保留但不生效（detectRange 0 → 恆 idle，不進 chase/charge/attack）。
+  Enemy_Tower: {
+    characterKey: 'Enemy_Elite', // 視覺沿用菁英 sprite（大體型像塔）；AI key 'Enemy_Tower' 帶 ringSkill（未另做塔專屬素材）
+    hp: 12, // 尖塔血量（towerHp 可由 TowerWave 節點覆蓋）
+    moveSpeed: 0, // 固定不動
+    detectRange: 0, // 永不偵測玩家 → 恆 idle（不追擊/不近戰），攻擊全靠 ringSkill
+    attackRange: 0,
+    chargeTime: 0,
+    attackCooldown: 0,
+    attackKind: 'melee', // 佔位（不生效，detectRange 0）
+    attack: meleeCircle(0, 0, 0, 0),
+    hitStun: 0.15, // 像牆幾乎不退
+    knockbackForce: 0,
+    immovable: true, // 固定塔：玩家推不動
+    ringSkill: { intervalSec: 2, expandPxPerRing: 160, energyCost: 2 }, // 環狀技（TowerWave 節點可覆蓋）
   },
 };

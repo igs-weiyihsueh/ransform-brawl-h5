@@ -47,6 +47,8 @@ export interface HitFeelFx {
   /** 用戶 #3 圓形範圍攻擊特效（純視覺）。 */
   enemyAoeRing?(x: number, y: number, radiusPx: number): Phaser.GameObjects.Image | null;
   enemyAoeBurst?(x: number, y: number, radiusPx: number): void;
+  /** 2 新事件階段 B 魔尖塔環狀擴散技（純視覺，單張環放大淡出）。 */
+  towerRing?(x: number, y: number, targetDiameterPx: number, durationMs: number): void;
 }
 
 /** 敵人可用的角色美術 key（debug 預覽用循環選擇）。 */
@@ -96,7 +98,9 @@ export class Enemy implements Hittable {
   private readonly scaleFactor: number;
 
   private hp: number;
-  private readonly maxHp: number;
+  private maxHp: number;
+  /** 尖塔環狀技參數覆寫（TowerWave 節點設定，spawnTower 套用；null＝用 config.ringSkill）。 */
+  private ringSkillOverride: { intervalSec: number; expandPxPerRing: number; energyCost: number } | null = null;
   private readonly radiusPx: number;
 
   private state: EnemyState = 'chase';
@@ -539,12 +543,39 @@ export class Enemy implements Hittable {
     return this.cfg.characterKey;
   }
 
+  /** 是否為尖塔怪（有 ringSkill 設定＝魔尖塔的塔，固定不動、週期放環狀技）。 */
+  isTower(): boolean {
+    return this.getRingSkill() != null;
+  }
+
+  /** 尖塔環狀技參數（非尖塔回 null）。 */
+  getRingSkill(): { intervalSec: number; expandPxPerRing: number; energyCost: number } | null {
+    return this.ringSkillOverride ?? this.cfg.ringSkill ?? null;
+  }
+
+  /** 覆寫環狀技參數（TowerWave 節點 ringSkill 由 spawnTower 套用；缺欄沿用 config）。 */
+  setRingSkillOverride(ring: { intervalSec?: number; expandPxPerRing?: number; energyCost?: number }): void {
+    const base = this.cfg.ringSkill ?? { intervalSec: 2, expandPxPerRing: 160, energyCost: 2 };
+    this.ringSkillOverride = {
+      intervalSec: ring.intervalSec != null && ring.intervalSec > 0 ? ring.intervalSec : base.intervalSec,
+      expandPxPerRing: ring.expandPxPerRing != null && ring.expandPxPerRing >= 0 ? ring.expandPxPerRing : base.expandPxPerRing,
+      energyCost: ring.energyCost != null && ring.energyCost >= 0 ? ring.energyCost : base.energyCost,
+    };
+  }
+
   getHp(): number {
     return this.hp;
   }
 
   getMaxHp(): number {
     return this.maxHp;
+  }
+
+  /** 覆寫血量（尖塔怪 towerHp 由 TowerWave 節點設定，spawn 後套用；同步 hp/maxHp）。 */
+  setMaxHp(hp: number): void {
+    if (!Number.isFinite(hp) || hp <= 0) return;
+    this.maxHp = hp;
+    this.hp = hp;
   }
 
   getState(): EnemyState {
