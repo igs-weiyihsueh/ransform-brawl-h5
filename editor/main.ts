@@ -572,6 +572,23 @@ function renderSpawnInspector(node: SpawnNodeData): void {
     fireHint.textContent = '選火雨 preset → 此波次進行時降該種火雨；（無火雨）= 不附加。';
   }
   inspectorEl.appendChild(fireHint);
+
+  // 附加地雷（用戶：地雷=附加類，比照 attachFireRain，刷怪波也可附加）。
+  const mineTitle = document.createElement('div');
+  mineTitle.className = 'section-title';
+  mineTitle.style.marginTop = '12px';
+  mineTitle.textContent = '附加地雷（可選）';
+  inspectorEl.appendChild(mineTitle);
+  renderAttachMineTrap(node);
+  const mineHint = document.createElement('div');
+  mineHint.className = 'hint';
+  if (node.attachMineTrap && node.attachMineTrap in MINE_PRESETS) {
+    const m = MINE_PRESETS[node.attachMineTrap];
+    mineHint.textContent = `💣 此波附加地雷：全場自動撒 ${m.count} 顆、爆炸半徑 ${Math.round(m.radiusPx)}px、延遲 ${m.delaySec}s、麻痺 ${m.paralyzeSec}s。（跟隨本波進行）`;
+  } else {
+    mineHint.textContent = '選地雷 preset → 此波次進行時全場自動撒該種地雷；（無地雷）= 不附加。';
+  }
+  inspectorEl.appendChild(mineHint);
 }
 
 function renderRewardInspector(node: RewardNodeData): void {
@@ -620,8 +637,8 @@ function renderEventInspector(node: EventNodeData): void {
   if (!isTower && !isFire) renderGuardExtras(node);
 }
 
-/** 附加地雷下拉（無 / 地雷 preset 名）。任何 Event 節點皆可附加。 */
-function renderAttachMineTrap(node: EventNodeData): void {
+/** 附加地雷下拉（無 / 地雷 preset 名）。任何 Spawn／Event 節點皆可附加（地雷=附加類）。 */
+function renderAttachMineTrap(node: { attachMineTrap?: string }): void {
   const NONE = '__none__';
   const opts: [string, string][] = [
     [NONE, '（無地雷）'],
