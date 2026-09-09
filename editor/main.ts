@@ -624,7 +624,7 @@ function renderEventInspector(node: EventNodeData): void {
   const typeHint = document.createElement('div');
   typeHint.className = 'hint';
   typeHint.textContent = isTower
-    ? '🗼 魔尖塔波（單獨波次）：限時內打完全部尖塔＝過關，限時到沒打完＝失敗但不 GameOver、直接進下關。參數在「事件編輯器」魔尖塔子分頁編。'
+    ? '🗼 魔尖塔波（單獨波次）：限時內打完全部尖塔＝過關，限時到沒打完＝失敗但不 GameOver、直接進下關。參數在「事件編輯器」魔尖塔子分頁編。下方可附加火雨/地雷。'
     : isFire
       ? '🔥 純火雨波：全場自動撒火柱。參數在「事件編輯器」火雨子分頁編。'
       : '🛡 守護事件（撐過時限勝）。下方可為此守護選擇附加火雨（覆蓋 preset 預設）+ 附加地雷 + 自訂補怪。';
@@ -633,8 +633,45 @@ function renderEventInspector(node: EventNodeData): void {
   // 附加地雷（用戶：地雷=附加類，任何事件都可附加）。
   renderAttachMineTrap(node);
 
-  // 守護 preset 才顯附加火雨 + 補怪 drip（火雨/魔尖塔 preset 不適用）。
+  // 守護 preset：附加火雨（三態）+ 補怪 drip。魔尖塔波（A1）：也顯附加火雨（比照 Spawn 的簡單下拉）。
   if (!isTower && !isFire) renderGuardExtras(node);
+  else if (isTower) renderTowerAttachFireRain(node);
+}
+
+/** A1：魔尖塔波節點附加火雨（比照 Spawn 的簡單下拉：（無火雨）/ 火雨 preset 名 → node.attachFireRain）。 */
+function renderTowerAttachFireRain(node: EventNodeData): void {
+  const fireTitle = document.createElement('div');
+  fireTitle.className = 'section-title';
+  fireTitle.style.marginTop = '12px';
+  fireTitle.textContent = '附加火雨（可選）';
+  inspectorEl.appendChild(fireTitle);
+
+  const NONE = '__none__';
+  const fireOptions: [string, string][] = [
+    [NONE, '（無火雨）'],
+    ...Object.keys(FIRE_RAIN_PRESETS).map((k): [string, string] => [k, `🔥 ${k}`]),
+  ];
+  // 'none' 明確無 也視為未附加；自訂 preset 名補一個當前值避免下拉丟失。
+  const cur = node.attachFireRain && node.attachFireRain !== 'none' ? node.attachFireRain : NONE;
+  if (node.attachFireRain && node.attachFireRain !== 'none' && !fireOptions.some(([v]) => v === node.attachFireRain)) {
+    fireOptions.push([node.attachFireRain, `（自訂）${node.attachFireRain}`]);
+  }
+  inspectorEl.appendChild(
+    fieldRow('附加火雨', selectInput(cur, fireOptions, (v) => {
+      if (v === NONE) delete node.attachFireRain;
+      else node.attachFireRain = v;
+      renderInspector();
+    })),
+  );
+  const fireHint = document.createElement('div');
+  fireHint.className = 'hint';
+  if (node.attachFireRain && node.attachFireRain in FIRE_RAIN_PRESETS) {
+    const p = FIRE_RAIN_PRESETS[node.attachFireRain];
+    fireHint.textContent = `🔥 此魔尖塔波附加火雨：每 ${p.intervalSec}s 齊落 ${p.burstCount} 道、半徑 ${Math.round(p.radiusPx)}px、預警 ${p.warningSec}s、傷害 ${p.damage}。（跟隨塔波進行）`;
+  } else {
+    fireHint.textContent = '選火雨 preset → 此魔尖塔波進行時降該種火雨；（無火雨）= 不附加。（需 game-side 讀取端到齊才會真降）';
+  }
+  inspectorEl.appendChild(fireHint);
 }
 
 /** 附加地雷下拉（無 / 地雷 preset 名）。任何 Spawn／Event 節點皆可附加（地雷=附加類）。 */

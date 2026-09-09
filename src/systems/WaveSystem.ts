@@ -175,6 +175,45 @@ export class WaveSystem implements GameSystem {
   }
 
   /**
+   * 魔尖塔波狀態公開 accessor（B5/B6 進度條+倒數，比照 getGuardEvent 那套；征騎 ProgressBarSystem 讀）。
+   * 「塔波進行中」＝目前節點是 tower Event 且已觸發（eventTriggered）、尚未 advance。
+   * 非塔波時：isTowerWaveActive()→false、其餘回 0（安全預設，ProgressBar 可據此切換金條/塔條）。
+   */
+  private currentTowerPreset(): TowerPreset | null {
+    const node = this.currentNode();
+    if (node?.nodeType !== 'Event') return null;
+    const en = (node as EventNodeData).eventPresetName;
+    return isResolvedTowerPreset(en) ? getResolvedTowerPreset(en) : null;
+  }
+
+  /** 目前是否為魔尖塔波進行中（tower Event 節點 + 已觸發生塔、未 advance）。 */
+  isTowerWaveActive(): boolean {
+    return this.currentTowerPreset() !== null && this.eventTriggered;
+  }
+
+  /** 已消滅尖塔數（進度條分子；非塔波回 0）。 */
+  getTowerWaveDestroyed(): number {
+    return this.isTowerWaveActive() ? this.towersDestroyed : 0;
+  }
+
+  /** 當前塔波總塔數（進度條分母；非塔波回 0）。 */
+  getTowerWaveTotal(): number {
+    const t = this.currentTowerPreset();
+    return t && this.eventTriggered ? t.towerCount : 0;
+  }
+
+  /** 塔波剩餘倒數秒（B6；非塔波回 0）。 */
+  getTowerWaveRemaining(): number {
+    return this.isTowerWaveActive() ? Math.max(0, this.eventHold) : 0;
+  }
+
+  /** 塔波限時秒數（B6 分母；非塔波回 0）。 */
+  getTowerWaveTimeLimit(): number {
+    const t = this.currentTowerPreset();
+    return t && this.eventTriggered ? t.timeLimitSec : 0;
+  }
+
+  /**
    * 目前該不該降火雨 + 用哪組參數（用戶#2 修正版，FireRainSystem 讀此驅動）：
    * - 任何 Spawn 節點帶 attachFireRain（火雨 preset 名）→ 該波次進行時降該火雨（附加，取代舊獨立 Event 火雨節點）。
    * - 守護波進行中且守護 preset 帶 attachFireRain（火雨 preset 名）→ 該火雨（守護+火雨）。

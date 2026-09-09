@@ -102,6 +102,34 @@ describe('魔尖塔=單獨波次 Event eventPresetName=tower preset', () => {
   });
 });
 
+describe('魔尖塔波狀態 accessor（B5/B6 進度條+倒數）', () => {
+  it('非塔波（Spawn）→ isTowerWaveActive false、其餘 accessor 回 0', () => {
+    const ws = makeWave([
+      { nodeType: 'Spawn', killQuota: 1, maxAlive: 1, spawnThreshold: 1, spawnInterval: 1, spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }] },
+    ]);
+    expect(ws.isTowerWaveActive()).toBe(false);
+    expect(ws.getTowerWaveDestroyed()).toBe(0);
+    expect(ws.getTowerWaveTotal()).toBe(0);
+    expect(ws.getTowerWaveRemaining()).toBe(0);
+    expect(ws.getTowerWaveTimeLimit()).toBe(0);
+  });
+
+  it('Tower4 觸發後 → active、total=4、timeLimit=60、倒數遞減、destroyed 隨 notify 累計', () => {
+    const ws = makeWave([{ nodeType: 'Event', eventPresetName: 'Tower4' }]);
+    ws.update(0.016); // 觸發生塔
+    expect(ws.isTowerWaveActive()).toBe(true);
+    expect(ws.getTowerWaveTotal()).toBe(4);
+    expect(ws.getTowerWaveTimeLimit()).toBe(60);
+    const rem0 = ws.getTowerWaveRemaining();
+    expect(rem0).toBeGreaterThan(0);
+    expect(rem0).toBeLessThanOrEqual(60);
+    ws.notifyTowerDestroyed(); ws.notifyTowerDestroyed();
+    expect(ws.getTowerWaveDestroyed()).toBe(2);
+    ws.update(1); // 倒數遞減
+    expect(ws.getTowerWaveRemaining()).toBeLessThan(rem0);
+  });
+});
+
 describe('schema：attachMineTrap + tower preset Event 驗證', () => {
   it('合法 attachMineTrap（Spawn）通過', () => {
     const r = validateLevels(wrap([

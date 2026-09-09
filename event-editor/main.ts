@@ -49,6 +49,7 @@ import {
 } from '@/config/editorStore';
 
 const SCENE_W = 1920;
+const SCENE_H = 1080;
 
 /**
  * mount 化（方案 A' 遊戲內展開）：DOM 查找 scope 進 editorRoot（overlay 容器），不吃 document 全域。
@@ -372,7 +373,7 @@ function twBuildSelect(): void {
 function twBuildInspector(): void {
   const insp = $('tw-inspector'); insp.innerHTML = '';
   const p = twPreset(); if (!p) return;
-  const on = () => { /* 純數值，無預覽 */ };
+  const on = () => twRender();
   insp.appendChild(numberRow('尖塔數 towerCount', p.towerCount, (v) => { p.towerCount = Math.max(1, Math.round(v)); }, { min: 1, max: 12, step: 1, int: true }, on));
   insp.appendChild(numberRow('限時 timeLimit (s)', p.timeLimitSec, (v) => { p.timeLimitSec = v; }, { min: 1, max: 300, step: 5 }, on));
   insp.appendChild(numberRow('尖塔血量 towerHp', p.towerHp, (v) => { p.towerHp = v; }, { min: 1, max: 1000, step: 10 }, on));
@@ -385,8 +386,126 @@ function twBuildInspector(): void {
   insp.appendChild(numberRow('環厚 ringThickness (px)', r.ringThicknessPx, (v) => { r.ringThicknessPx = v; }, { min: 1, max: 100, step: 1 }, on));
   insp.appendChild(numberRow('環預警秒數 warning (s)', r.warningSec, (v) => { r.warningSec = v; }, { min: 0, max: 3, step: 0.1 }, on));
   insp.appendChild(numberRow('扣能量段數 energyCost', r.energyCost, (v) => { r.energyCost = Math.round(v); }, { min: 0, max: 6, step: 1, int: true }, on));
+  // A2：塔位置區塊——按鈕清除自訂位置（回預設環形）。拖曳在 tw-preview canvas。
+  const posTitle = document.createElement('div');
+  posTitle.className = 'section-title'; posTitle.style.marginTop = '12px';
+  posTitle.textContent = '塔位置（拖曳左側預覽圓點；未設＝預設環形）';
+  insp.appendChild(posTitle);
+  const posBtn = document.createElement('button');
+  posBtn.textContent = p.positions && p.positions.length > 0 ? '清除自訂位置（回預設環形）' : '（目前用預設環形）';
+  posBtn.disabled = !(p.positions && p.positions.length > 0);
+  posBtn.addEventListener('click', () => { delete p.positions; twBuildInspector(); twRender(); });
+  insp.appendChild(posBtn);
 }
-function twRefreshAll(): void { twBuildSelect(); twBuildInspector(); }
+function twRefreshAll(): void { twBuildSelect(); twBuildInspector(); twRender(); }
+
+/** 取得目前 preset 的有效塔位（自訂 positions 補足到 towerCount；未設＝預設環形）。回傳場景座標 {x,y}[]。 */
+function twEffectivePositions(p: TowerPreset): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  const cx = SCENE_W / 2, cy = SCENE_H / 2;
+  const ringR = Math.min(SCENE_W, SCENE_H) * 0.3; // 預設環形半徑
+  for (let i = 0; i < p.towerCount; i += 1) {
+    const custom = p.positions?.[i];
+    if (custom) { out.push({ x: custom.x, y: custom.y }); continue; }
+    const ang = -Math.PI / 2 + (i / p.towerCount) * Math.PI * 2; // 由正上方順時針均分
+    out.push({ x: cx + Math.cos(ang) * ringR, y: cy + Math.sin(ang) * ringR });
+  }
+  return out;
+}
+
+/** 場景→canvas 座標（fit 1920×1080 進畫布、置中 letterbox）。回傳 {toCv, toScene, s, ox, oy}。 */
+function twMapping(cv: HTMLCanvasElement) {
+  const s = Math.min(cv.width / SCENE_W, cv.height / SCENE_H);
+  const ox = (cv.width - SCENE_W * s) / 2;
+  const oy = (cv.height - SCENE_H * s) / 2;
+  return {
+    s, ox, oy,
+    toCv: (x: number, y: number) => ({ x: ox + x * s, y: oy + y * s }),
+    toScene: (cxp: number, cyp: number) => ({ x: (cxp - ox) / s, y: (cyp - oy) / s }),
+  };
+}
+
+let twDragIndex = -1; // 目前拖曳的塔索引（-1=無）
+
+function twRender(): void {
+  const cv = $<HTMLCanvasElement>('tw-preview'); const ctx = cv.getContext('2d'); if (!ctx) return;
+  const W = cv.width, H = cv.height; ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#10101c'; ctx.fillRect(0, 0, W, H);
+  const p = twPreset(); if (!p) return;
+  const m = twMapping(cv);
+  // 場景參考框（1920×1080 完整場景）。
+  ctx.strokeStyle = '#3a3a5c'; ctx.lineWidth = 1;
+  ctx.strokeRect(m.ox, m.oy, SCENE_W * m.s, SCENE_H * m.s);
+  // 塔位標記。
+  const positions = twEffectivePositions(p);
+  const scale = p.towerScale ?? 1;
+  positions.forEach((pos, i) => {
+    const c = m.toCv(pos.x, pos.y);
+    const isCustom = !!p.positions?.[i];
+    const r = 8 * scale;
+    ctx.fillStyle = i === twDragIndex ? '#ffd45c' : (isCustom ? '#6c8cff' : '#59d98e');
+    ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(4, r), 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#e6e6f0'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = '#e6e6f0'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(i + 1), c.x, c.y - Math.max(4, r) - 3);
+  });
+  ctx.fillStyle = '#9a9ab5'; ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(`${p.towerCount} 座塔（綠＝預設環形／藍＝自訂位置）｜塔大小 ×${scale.toFixed(1)}｜拖曳圓點設位置`, 8, H - 8);
+}
+
+/** 綁定 tw-preview 的拖曳（在 main() 呼叫一次）。 */
+function twBindDrag(): void {
+  const cv = $<HTMLCanvasElement>('tw-preview');
+  const pick = (ev: PointerEvent): number => {
+    const rect = cv.getBoundingClientRect();
+    const px = (ev.clientX - rect.left) * (cv.width / rect.width);
+    const py = (ev.clientY - rect.top) * (cv.height / rect.height);
+    const p = twPreset(); if (!p) return -1;
+    const m = twMapping(cv);
+    const positions = twEffectivePositions(p);
+    let best = -1, bestD = 16 * 16; // 命中半徑 16px
+    positions.forEach((pos, i) => {
+      const c = m.toCv(pos.x, pos.y);
+      const d = (c.x - px) ** 2 + (c.y - py) ** 2;
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    return best;
+  };
+  cv.addEventListener('pointerdown', (ev) => {
+    twDragIndex = pick(ev);
+    if (twDragIndex >= 0) { cv.setPointerCapture(ev.pointerId); twRender(); }
+  });
+  cv.addEventListener('pointermove', (ev) => {
+    if (twDragIndex < 0) return;
+    const p = twPreset(); if (!p) return;
+    const rect = cv.getBoundingClientRect();
+    const px = (ev.clientX - rect.left) * (cv.width / rect.width);
+    const py = (ev.clientY - rect.top) * (cv.height / rect.height);
+    const m = twMapping(cv);
+    const sc = m.toScene(px, py);
+    // clamp 進場景範圍。
+    const x = Math.max(0, Math.min(SCENE_W, Math.round(sc.x)));
+    const y = Math.max(0, Math.min(SCENE_H, Math.round(sc.y)));
+    // 寫入 positions（不足補足到目前拖曳索引，用有效位置當初值）。
+    if (!p.positions) p.positions = [];
+    const eff = twEffectivePositions(p);
+    while (p.positions.length <= twDragIndex) {
+      const idx = p.positions.length;
+      p.positions.push({ x: Math.round(eff[idx].x), y: Math.round(eff[idx].y) });
+    }
+    p.positions[twDragIndex] = { x, y };
+    twRender();
+  });
+  const end = (ev: PointerEvent) => {
+    if (twDragIndex >= 0) {
+      twDragIndex = -1;
+      try { cv.releasePointerCapture(ev.pointerId); } catch { /* noop */ }
+      twBuildInspector(); twRender(); // 更新「清除自訂位置」按鈕態
+    }
+  };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+}
 function twInitLoad(): void {
   const raw = loadOverride(EDITOR_STORE_KEYS.tower);
   if (raw !== null) {
@@ -412,6 +531,9 @@ function switchTab(tab: Tab): void {
     $(`tab-${t}`).classList.toggle('active', t === tab);
     $(`pane-${t}`).classList.toggle('active', t === tab);
   }
+  if (tab === 'firerain') frRender();
+  else if (tab === 'guard') gdRender();
+  else if (tab === 'tower') twRender(); // A2：切到魔尖塔重繪塔位預覽
 }
 
 /** 四份都套用（火雨/守護/地雷/魔尖塔分存四 key）。回傳是否全成功。 */
@@ -450,7 +572,8 @@ function main(): void {
   $<HTMLSelectElement>('gd-preset-select').addEventListener('change', (e) => { gdCurrent = (e.target as HTMLSelectElement).value; gdBuildInspector(); gdRender(); });
   $('gd-zoom').addEventListener('input', (e) => { gdZoom = parseFloat((e.target as HTMLInputElement).value); $('gd-zoom-val').textContent = `${gdZoom}×`; gdRender(); });
   $<HTMLSelectElement>('mn-preset-select').addEventListener('change', (e) => { mnCurrent = (e.target as HTMLSelectElement).value; mnBuildInspector(); });
-  $<HTMLSelectElement>('tw-preset-select').addEventListener('change', (e) => { twCurrent = (e.target as HTMLSelectElement).value; twBuildInspector(); });
+  $<HTMLSelectElement>('tw-preset-select').addEventListener('change', (e) => { twCurrent = (e.target as HTMLSelectElement).value; twBuildInspector(); twRender(); });
+  twBindDrag(); // A2：塔位置拖曳
 
   // 共用按鈕：對「當前分頁」載入/下載；套用/清除則兩者都動（分存兩 key）。
   $('btn-load-default').addEventListener('click', () => {
@@ -629,6 +752,12 @@ const EDITOR_BODY_HTML = `
 </div>
 <div class="tabpane" id="pane-tower">
   <div class="layout">
+    <div class="stage-wrap">
+      <canvas id="tw-preview" class="preview" width="640" height="360"></canvas>
+      <div class="zoom-row">
+        <span>塔位置：滑鼠拖曳圓點調整（場景 1920×1080 座標）。</span>
+      </div>
+    </div>
     <div class="col-inspector">
       <div class="preset-row">
         <label for="tw-preset-select">魔尖塔 Preset</label>
@@ -636,7 +765,7 @@ const EDITOR_BODY_HTML = `
       </div>
       <div class="section-title">魔尖塔參數（Tower，單獨波次）</div>
       <div id="tw-inspector"></div>
-      <div class="hint">魔尖塔=單獨波次：關卡「事件」節點 preset 選此即為魔尖塔波（限時內打完全部尖塔＝過關，限時到沒打完＝失敗但不 GameOver、直接進下關）。環狀技＝尖塔週期放的同心環攻擊（依序往外擴、命中扣能量）。</div>
+      <div class="hint">魔尖塔=單獨波次：關卡「事件」節點 preset 選此即為魔尖塔波（限時內打完全部尖塔＝過關，限時到沒打完＝失敗但不 GameOver、直接進下關）。環狀技＝尖塔週期放的同心環攻擊（依序往外擴、命中扣能量、炸前顯紅圈預警 warningSec）。塔位置預覽可拖曳（未設＝預設環形）。</div>
     </div>
   </div>
 </div>
