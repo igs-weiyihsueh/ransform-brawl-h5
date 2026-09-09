@@ -119,6 +119,33 @@ export function validateTower(json: unknown): ValidateTowerResult {
         });
       }
     }
+    // 登場訊息（選填，比照 guardSchema）：文字若提供須字串（''合法）、秒數若提供須 >=0（0 合法）。
+    if (p.introEventText !== undefined && typeof p.introEventText !== 'string') {
+      errors.push(`${label}「introEventText」若提供必須是字串。`);
+    }
+    if (p.towerMessageText !== undefined && typeof p.towerMessageText !== 'string') {
+      errors.push(`${label}「towerMessageText」若提供必須是字串。`);
+    }
+    checkNumOptional(p, 'eventTextDurationSec', label, errors, { min: 0 });
+    // D：塔血條 UI（選填，比照 guardSchema statue UI；offsetY 可負→不設 min）。
+    checkNumOptional(p, 'barWidthPx', label, errors, { min: 0 });
+    checkNumOptional(p, 'barHeightPx', label, errors, { min: 0 });
+    checkNumOptional(p, 'barOffsetYPx', label, errors);
+    checkNumOptional(p, 'labelOffsetYPx', label, errors);
+    // E：過關獎勵券（選填，>=0，0 合法）。
+    checkNumOptional(p, 'rewardTickets', label, errors, { min: 0 });
+    // B：開場演出（選填，比照守護波 introFocusSec/spotlightRadiusPx/maxWalkSec；gatherPointPx 物件 {x,y}）。
+    checkNumOptional(p, 'introFocusSec', label, errors, { min: 0 });
+    checkNumOptional(p, 'spotlightRadiusPx', label, errors, { min: 0 });
+    checkNumOptional(p, 'maxWalkSec', label, errors, { min: 0 });
+    if (p.gatherPointPx !== undefined) {
+      const gp = asObject(p.gatherPointPx);
+      if (!gp) errors.push(`${label} 的「gatherPointPx」若提供必須是物件 {x,y}。`);
+      else {
+        checkNum(gp, 'x', `${label} gatherPointPx`, errors);
+        checkNum(gp, 'y', `${label} gatherPointPx`, errors);
+      }
+    }
     const ring = asObject(p.ringSkill);
     if (!ring) {
       errors.push(`${label} 的「環狀技 ringSkill」缺少或不是物件。`);

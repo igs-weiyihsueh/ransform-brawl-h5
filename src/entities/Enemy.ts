@@ -100,6 +100,15 @@ export class Enemy implements Hittable {
 
   private hp: number;
   private maxHp: number;
+  /** 塔血條（比照守護波雕像血條：容器含底條+填充+標籤，每幀依 hpRatio 更新寬度）。null＝未建（非塔或尚未建）。 */
+  private towerHpBar: {
+    container: Phaser.GameObjects.Container;
+    fill: Phaser.GameObjects.Rectangle;
+    widthPx: number;
+    offsetYPx: number;
+  } | null = null;
+  /** 塔血條 UI 尺寸（波騎 preset barWidthPx/barHeightPx/barOffsetYPx/labelOffsetYPx，setTowerHpBarUi 傳入；預設比照雕像）。 */
+  private towerBarUi = { barWidthPx: 120, barHeightPx: 14, barOffsetYPx: 24, labelOffsetYPx: -12 };
   /** 尖塔環狀技參數覆寫（TowerWave 節點設定，spawnTower 套用；null＝用 config.ringSkill）。 */
   private ringSkillOverride: {
     ringCount: number;
@@ -660,6 +669,54 @@ export class Enemy implements Hittable {
     });
   }
 
+  /**
+   * 塔血條 UI 尺寸（波騎 preset：barWidthPx/barHeightPx/barOffsetYPx[塔頭上偏移]/labelOffsetYPx）。
+   * 須在 createTowerHpBar 前呼叫（GameScene spawnTower 時傳）。省略欄位用預設（比照雕像血條）。
+   */
+  setTowerHpBarUi(ui: Partial<{ barWidthPx: number; barHeightPx: number; barOffsetYPx: number; labelOffsetYPx: number }>): void {
+    this.towerBarUi = {
+      barWidthPx: ui.barWidthPx ?? this.towerBarUi.barWidthPx,
+      barHeightPx: ui.barHeightPx ?? this.towerBarUi.barHeightPx,
+      barOffsetYPx: ui.barOffsetYPx ?? this.towerBarUi.barOffsetYPx,
+      labelOffsetYPx: ui.labelOffsetYPx ?? this.towerBarUi.labelOffsetYPx,
+    };
+  }
+
+  /**
+   * 建塔血條（比照守護波雕像血條：底條 0x333333 + 綠填充 + 「尖塔」標籤），置於塔頭上方。
+   * offsetY 以塔腳(sprite.y, origin 底部)往上 displayHeight + barOffsetYPx。只對塔有效、重複呼叫忽略。
+   */
+  createTowerHpBar(): void {
+    if (!this.isTower() || this.towerHpBar) return;
+    const sp = this.anim.sprite;
+    const ui = this.towerBarUi;
+    const topY = -sp.displayHeight - ui.barOffsetYPx; // 相對塔腳往上（origin 底部→往上 displayHeight 到塔頭再加偏移）
+    const bg = sp.scene.add.rectangle(0, topY, ui.barWidthPx, ui.barHeightPx, 0x333333).setOrigin(0.5, 0.5);
+    const fill = sp.scene.add
+      .rectangle(-ui.barWidthPx / 2, topY, ui.barWidthPx, Math.max(1, ui.barHeightPx - 2), 0x66bb6a)
+      .setOrigin(0, 0.5); // 左對齊，寬度隨 hpRatio 縮
+    const label = sp.scene.add
+      .text(0, topY + ui.labelOffsetYPx, '尖塔', { fontSize: '14px', color: '#ffffff' })
+      .setOrigin(0.5, 1);
+    const container = sp.scene.add.container(sp.x, sp.y, [bg, fill, label]).setDepth(sp.depth + 1);
+    this.towerHpBar = { container, fill, widthPx: ui.barWidthPx, offsetYPx: ui.barOffsetYPx };
+    this.syncTowerHpBar();
+  }
+
+  /** 每幀同步塔血條：跟隨塔位置 + 填充寬度 = widthPx × hpRatio。 */
+  private syncTowerHpBar(): void {
+    if (!this.towerHpBar) return;
+    const sp = this.anim.sprite;
+    this.towerHpBar.container.setPosition(sp.x, sp.y);
+    const ratio = this.maxHp > 0 ? Math.max(0, Math.min(1, this.hp / this.maxHp)) : 0;
+    this.towerHpBar.fill.width = this.towerHpBar.widthPx * ratio;
+  }
+
+  private destroyTowerHpBar(): void {
+    this.towerHpBar?.container.destroy();
+    this.towerHpBar = null;
+  }
+
   getHp(): number {
     return this.hp;
   }
@@ -687,6 +744,7 @@ export class Enemy implements Hittable {
   /** 每幀更新：套擊退殘速 → 跑狀態機 → 更新動畫。 */
   update(playerPos: Vec2 | null, dt: number): void {
     if (this.dead) return;
+    if (this.towerHpBar) this.syncTowerHpBar(); // 塔血條每幀跟位置+更新填充（塔靜止，位置固定但保險同步）
 
     // 記錄移動前位置（immovable 菁英防穿透用：只擋自己前進、不被玩家推回）。
     this.prevPos = { x: this.anim.sprite.x, y: this.anim.sprite.y };
@@ -1075,6 +1133,13 @@ export class Enemy implements Hittable {
     if (this.anim.isStaticTexture?.()) {
       this.dead = true;
       const sp = this.anim.sprite;
+      // 塔血條隨塔淡出一起消（避免血條殘留）。
+      if (this.towerHpBar) {
+        sp.scene.tweens.add({
+          targets: this.towerHpBar.container, alpha: 0, duration: 220, ease: 'Sine.easeIn',
+          onComplete: () => this.destroyTowerHpBar(),
+        });
+      }
       sp.scene.tweens.add({
         targets: sp, alpha: 0, duration: 220, ease: 'Sine.easeIn',
         onComplete: () => this.anim.destroy(),

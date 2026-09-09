@@ -10,7 +10,11 @@ import { WaveSystem, type TowerPreset } from '@/systems/WaveSystem';
 import { clearResolvedMineCache } from '@/config/mineSchema';
 import { clearResolvedTowerCache } from '@/config/towerSchema';
 import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
+import { TOWER_MESSAGE_DEFAULTS } from '@/config/towerConfig';
 import type { LevelData, LevelsFile } from '@/config/levelSchema';
+
+/** 塔波 gate 時長＝Tower4 preset eventTextDurationSec（未設→預設）；測試推過此值才觸發生塔。 */
+const TOWER_GATE_ADVANCE = TOWER_MESSAGE_DEFAULTS.eventTextDurationSec + 0.05;
 import type { MinePreset } from '@/config/mineConfig';
 
 function wrap(nodes: unknown[]): LevelsFile {
@@ -31,19 +35,28 @@ function makeWave(nodes: unknown[]): WaveSystem {
   return ws;
 }
 
-/** 變體：捕捉 waveMessage 呼叫（測塔波/守護波開頭訊息）。 */
-function makeWaveCapturingMsgs(nodes: unknown[]): { ws: WaveSystem; msgs: string[] } {
+/** 變體：捕捉登場訊息呼叫（waveMessage 單段 / timedEventText 大字 / guardText 提示）測塔波/守護波開頭。 */
+function makeWaveCapturingMsgs(nodes: unknown[]): {
+  ws: WaveSystem; msgs: string[]; eventTexts: string[]; guardTexts: string[];
+} {
   const msgs: string[] = [];
+  const eventTexts: string[] = [];
+  const guardTexts: string[] = [];
   const ws = new WaveSystem(wrap(nodes).levels);
   const ctx = {
-    effects: { waveMessage: (t: string) => { msgs.push(t); }, fireRainAnnounce: () => {} },
+    effects: {
+      waveMessage: (t: string) => { msgs.push(t); },
+      fireRainAnnounce: () => {},
+      timedEventText: (_d: number, t: string) => { eventTexts.push(t); },
+      guardText: (t: string) => { guardTexts.push(t); return { fadeOut: () => {} }; },
+    },
     spawner: { spawn: () => ({}), clear: () => {} },
     players: [],
     player: { getPosition: () => ({ x: 0, y: 0 }) },
     getEnemies: () => [],
   } as unknown as Parameters<WaveSystem['init']>[0];
-  ws.init(ctx); // init 進節點 0 → announceNode
-  return { ws, msgs };
+  ws.init(ctx); // init 進節點 0 → enterNode（塔波兩段訊息）/ announceNode
+  return { ws, msgs, eventTexts, guardTexts };
 }
 
 beforeEach(() => {
@@ -82,10 +95,10 @@ describe('魔尖塔=單獨波次 Event eventPresetName=tower preset', () => {
     const ws = makeWave([{ nodeType: 'Event', eventPresetName: 'Tower4' }]);
     let got: TowerPreset | null = null;
     ws.onTowerWave = (p) => { got = p; };
-    ws.update(0.016); // gate 窗內：waveMessage 顯示中，先不生塔
+    ws.update(0.016); // gate 窗內：兩段訊息顯示中，先不生塔
     expect(got).toBeNull();
     expect(ws.isTowerWaveActive()).toBe(false);
-    ws.update(WAVE_MESSAGE_FX.durationSec + 0.05); // gate 跑完 → 生塔
+    ws.update(TOWER_GATE_ADVANCE); // gate 跑完（塔波訊息顯完）→ 生塔
     expect(got).not.toBeNull();
     expect(got!.towerCount).toBe(4);
     expect(got!.ringSkill.ringCount).toBeGreaterThan(0);
@@ -98,7 +111,7 @@ describe('魔尖塔=單獨波次 Event eventPresetName=tower preset', () => {
     ]);
     let won: boolean | null = null;
     ws.onTowerWaveResult = (w) => { won = w; };
-    ws.update(WAVE_MESSAGE_FX.durationSec + 0.05); // gate 跑完，生 4 塔
+    ws.update(TOWER_GATE_ADVANCE); // gate 跑完，生 4 塔
     for (let i = 0; i < 4; i += 1) ws.notifyTowerDestroyed();
     ws.update(0.016); // 判過關
     expect(won).toBe(true);
@@ -112,7 +125,7 @@ describe('魔尖塔=單獨波次 Event eventPresetName=tower preset', () => {
     ]);
     let won: boolean | null = null;
     ws.onTowerWaveResult = (w) => { won = w; };
-    ws.update(WAVE_MESSAGE_FX.durationSec + 0.05); // gate 跑完，生塔
+    ws.update(TOWER_GATE_ADVANCE); // gate 跑完，生塔
     // 不打塔，硬推超過限時（Tower4=60s）
     for (let i = 0; i < 61 * 60; i += 1) ws.update(1 / 60);
     expect(won).toBe(false);
@@ -137,7 +150,7 @@ describe('魔尖塔波狀態 accessor（B5/B6 進度條+倒數）+ towerGate', (
     ws.update(0.016); // gate 窗內
     expect(ws.isTowerWaveActive()).toBe(false); // 塔還沒生，進度條先不顯塔條
     expect(ws.getTowerWaveTotal()).toBe(0);
-    ws.update(WAVE_MESSAGE_FX.durationSec + 0.05); // gate 跑完，生塔
+    ws.update(TOWER_GATE_ADVANCE); // gate 跑完，生塔
     expect(ws.isTowerWaveActive()).toBe(true);
     expect(ws.getTowerWaveTotal()).toBe(4);
     expect(ws.getTowerWaveTimeLimit()).toBe(60);
@@ -151,13 +164,15 @@ describe('魔尖塔波狀態 accessor（B5/B6 進度條+倒數）+ towerGate', (
   });
 });
 
-describe('塔波登場開頭訊息（announceNode 對 tower 節點發 waveMessage，用戶爆氣修）', () => {
-  it('進 Tower4 節點 → 發「魔尖塔！打掉尖塔！」開頭訊息（之前被 announceNode gate 掉）', () => {
-    const { msgs } = makeWaveCapturingMsgs([{ nodeType: 'Event', eventPresetName: 'Tower4' }]);
-    expect(msgs.some((m) => m.includes('魔尖塔'))).toBe(true);
+describe('塔波登場兩段訊息（照搬守護波 timedEventText+guardText，用戶爆氣修）', () => {
+  it('進 Tower4 節點 → timedEventText 大字「魔尖塔！」+ guardText 提示「打掉所有尖塔！」（兩段，不發單段 waveMessage）', () => {
+    const { msgs, eventTexts, guardTexts } = makeWaveCapturingMsgs([{ nodeType: 'Event', eventPresetName: 'Tower4' }]);
+    expect(eventTexts.some((m) => m.includes('魔尖塔'))).toBe(true); // 大字
+    expect(guardTexts.some((m) => m.includes('尖塔'))).toBe(true); // 提示
+    expect(msgs.length).toBe(0); // 不再走單段 waveMessage（避免與兩段重疊）
   });
 
-  it('進 Guard60 守護波 → 不發節點 waveMessage（有自己開場序列，避免重疊）', () => {
+  it('進 Guard60 守護波 → WaveSystem 不發節點 waveMessage（GuardEvent 自己開場）', () => {
     const { msgs } = makeWaveCapturingMsgs([{ nodeType: 'Event', eventPresetName: 'Guard60' }]);
     expect(msgs.length).toBe(0);
   });
@@ -169,21 +184,21 @@ describe('A1：魔尖塔波節點附加火雨（getActiveFireRainPreset 認 Towe
     const getFR = () => (ws as unknown as { getActiveFireRainPreset: () => unknown }).getActiveFireRainPreset();
     ws.update(0.016); // towerGate 窗內：塔沒生 → 火雨也先按住
     expect(getFR()).toBeNull();
-    ws.update(WAVE_MESSAGE_FX.durationSec + 0.05); // gate 跑完、塔生成 → 降火雨
+    ws.update(TOWER_GATE_ADVANCE); // gate 跑完、塔生成 → 降火雨
     expect(getFR()).not.toBeNull();
   });
 
   it('Tower4 attachFireRain=none → 觸發後仍 null（明確無火雨）', () => {
     const ws = makeWave([{ nodeType: 'Event', eventPresetName: 'Tower4', attachFireRain: 'none' }]);
     const getFR = () => (ws as unknown as { getActiveFireRainPreset: () => unknown }).getActiveFireRainPreset();
-    ws.update(WAVE_MESSAGE_FX.durationSec + 0.05);
+    ws.update(TOWER_GATE_ADVANCE);
     expect(getFR()).toBeNull();
   });
 
   it('Tower4 無 attachFireRain → 觸發後 null', () => {
     const ws = makeWave([{ nodeType: 'Event', eventPresetName: 'Tower4' }]);
     const getFR = () => (ws as unknown as { getActiveFireRainPreset: () => unknown }).getActiveFireRainPreset();
-    ws.update(WAVE_MESSAGE_FX.durationSec + 0.05);
+    ws.update(TOWER_GATE_ADVANCE);
     expect(getFR()).toBeNull();
   });
 });

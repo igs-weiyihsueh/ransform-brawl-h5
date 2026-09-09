@@ -41,6 +41,9 @@ import {
   type TowerFile,
 } from '@/config/towerSchema';
 import type { TowerPreset } from '@/config/towerConfig';
+import { TOWER_MESSAGE_DEFAULTS } from '@/config/towerConfig';
+import { TOWER_UI_DEFAULTS } from '@/config/towerConfig';
+import { TOWER_INTRO_DEFAULTS } from '@/config/towerConfig';
 import {
   EDITOR_STORE_KEYS,
   applyToGame,
@@ -378,6 +381,37 @@ function twBuildInspector(): void {
   insp.appendChild(numberRow('限時 timeLimit (s)', p.timeLimitSec, (v) => { p.timeLimitSec = v; }, { min: 1, max: 300, step: 5 }, on));
   insp.appendChild(numberRow('尖塔血量 towerHp', p.towerHp, (v) => { p.towerHp = v; }, { min: 1, max: 1000, step: 10 }, on));
   insp.appendChild(numberRow('塔大小 towerScale (×)', p.towerScale ?? 1, (v) => { p.towerScale = v; }, { min: 0.2, max: 4, step: 0.1 }, on));
+  // 登場訊息（照搬守護波兩段：事件宣告大字 + 提示 + 顯示時間）。
+  const msgTitle = document.createElement('div');
+  msgTitle.className = 'section-title'; msgTitle.style.marginTop = '12px';
+  msgTitle.textContent = '登場訊息（兩段，比照守護波）';
+  insp.appendChild(msgTitle);
+  const md = TOWER_MESSAGE_DEFAULTS;
+  insp.appendChild(textRow('事件宣告大字 introEventText', p.introEventText ?? md.introEventText, (v) => { p.introEventText = v; }, on));
+  insp.appendChild(textRow('提示訊息 towerMessageText', p.towerMessageText ?? md.towerMessageText, (v) => { p.towerMessageText = v; }, on));
+  insp.appendChild(numberRow('宣告顯示秒數 eventTextDuration (s)', p.eventTextDurationSec ?? md.eventTextDurationSec, (v) => { p.eventTextDurationSec = v; }, { min: 0, max: 10, step: 0.5 }, on));
+  // D：塔血條 UI（比照守護波雕像血條）。E：過關獎勵券。
+  const uiTitle = document.createElement('div');
+  uiTitle.className = 'section-title'; uiTitle.style.marginTop = '12px';
+  uiTitle.textContent = '塔血條 UI + 過關獎勵';
+  insp.appendChild(uiTitle);
+  const ud = TOWER_UI_DEFAULTS;
+  insp.appendChild(numberRow('血條寬 barWidth (px)', p.barWidthPx ?? ud.barWidthPx, (v) => { p.barWidthPx = v; }, { min: 0, max: 400, step: 5 }, on));
+  insp.appendChild(numberRow('血條高 barHeight (px)', p.barHeightPx ?? ud.barHeightPx, (v) => { p.barHeightPx = v; }, { min: 0, max: 60, step: 1 }, on));
+  insp.appendChild(numberRow('血條 Y 位移 barOffsetY (px)', p.barOffsetYPx ?? ud.barOffsetYPx, (v) => { p.barOffsetYPx = v; }, { min: -300, max: 300, step: 5 }, on));
+  insp.appendChild(numberRow('標籤 Y 位移 labelOffsetY (px)', p.labelOffsetYPx ?? ud.labelOffsetYPx, (v) => { p.labelOffsetYPx = v; }, { min: -300, max: 300, step: 5 }, on));
+  insp.appendChild(numberRow('過關獎勵券 rewardTickets', p.rewardTickets ?? ud.rewardTickets, (v) => { p.rewardTickets = Math.max(0, Math.round(v)); }, { min: 0, max: 100, step: 1, int: true }, on));
+  // B：開場演出（玩家聚集中央 + 聚焦壓黑 + 定格，比照守護波但走位目標＝中央非四角）。
+  const introTitle = document.createElement('div');
+  introTitle.className = 'section-title'; introTitle.style.marginTop = '12px';
+  introTitle.textContent = '開場演出（玩家聚集中央+聚焦壓黑）';
+  insp.appendChild(introTitle);
+  const id = TOWER_INTRO_DEFAULTS;
+  insp.appendChild(numberRow('聚焦壓黑時長 introFocus (s)', p.introFocusSec ?? id.introFocusSec, (v) => { p.introFocusSec = v; }, { min: 0, max: 10, step: 0.5 }, on));
+  insp.appendChild(numberRow('聚焦亮圈半徑 spotlightRadius (px)', p.spotlightRadiusPx ?? id.spotlightRadiusPx, (v) => { p.spotlightRadiusPx = v; }, { min: 0, max: 600, step: 10 }, on));
+  insp.appendChild(numberRow('走位逾時 maxWalk (s)', p.maxWalkSec ?? id.maxWalkSec, (v) => { p.maxWalkSec = v; }, { min: 0, max: 10, step: 0.5 }, on));
+  insp.appendChild(numberRow('聚集點 X gatherX (px)', p.gatherPointPx?.x ?? id.gatherPointPx.x, (v) => { p.gatherPointPx = { x: v, y: p.gatherPointPx?.y ?? id.gatherPointPx.y }; }, { min: 0, max: 1920, step: 10 }, on));
+  insp.appendChild(numberRow('聚集點 Y gatherY (px)', p.gatherPointPx?.y ?? id.gatherPointPx.y, (v) => { p.gatherPointPx = { x: p.gatherPointPx?.x ?? id.gatherPointPx.x, y: v }; }, { min: 0, max: 1080, step: 10 }, on));
   const r = p.ringSkill;
   insp.appendChild(numberRow('環數 ringCount', r.ringCount, (v) => { r.ringCount = Math.max(1, Math.round(v)); }, { min: 1, max: 8, step: 1, int: true }, on));
   insp.appendChild(numberRow('最內環半徑 baseRadius (px)', r.baseRadiusPx, (v) => { r.baseRadiusPx = v; }, { min: 0, max: 400, step: 5 }, on));

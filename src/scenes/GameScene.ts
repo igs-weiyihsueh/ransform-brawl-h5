@@ -3,6 +3,8 @@ import { CHARACTERS } from '@/config/animationConfig';
 import { chestChargeForResolved, getResolvedChest } from '@/config/chestSchema';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { resolveTowerPositions } from '@/systems/towerRingSkill';
+import { resolveTowerIntro, resolveTowerUi, resolveTowerMessages } from '@/config/towerConfig';
+import { TowerIntroSequence } from '@/systems/TowerIntroSequence';
 import { HERO_ROSTER, pickHero } from '@/config/heroRoster';
 import { shouldDropHeroItem } from '@/config/heroDropMath';
 import { WEAPON_ITEM_TEXTURES } from '@/config/weaponItemConfig';
@@ -58,6 +60,10 @@ export class GameScene extends Phaser.Scene {
   private mineTrapSystem?: MineTrapSystem;
   /** 用戶 #3：JP 燈 HUD（3組×5顆，飛光終點+反映 JpSystem litCount）。 */
   private jpLampHud?: JpLampHud;
+  /** 魔尖塔波開場演出序列（塔波照搬守護波 GuardEvent intro：玩家聚集中央→聚焦壓黑定格→生塔）；active 時每幀 tick。 */
+  private towerIntro: TowerIntroSequence | null = null;
+  /** 塔波過關獎勵券數（onTowerWave 時由 preset resolveTowerUi.rewardTickets 設，onTowerWaveResult(true) 發獎用）。 */
+  private towerRewardTickets = 10;
 
   /** 試玩模式注入的關卡（由 main.ts 經 scene data 傳入）；一般玩家為 undefined。 */
   private previewLevels?: LevelData[];
@@ -209,6 +215,10 @@ export class GameScene extends Phaser.Scene {
         for (let i = 0; i < 999 && !t.isDead(); i += 1) t.takeHit(50, 0, { x: t.getHitCenter().x, y: t.getHitCenter().y });
         return true;
       },
+      /** probe 用：直接觸發塔波 onTowerWave（模擬波騎 gate 跑完），驗開場序列（聚集→聚焦→生塔）。 */
+      triggerWave: (preset: unknown) => wave.onTowerWave?.(preset as never),
+      /** probe 用：讀開場定格/鎖操作旗標。 */
+      flags: () => ({ scriptedControl: this.ctx.scriptedControl, guardFocusPause: this.ctx.guardFocusPause }),
     };
 
     // 開箱報獎表演（第5項，純視覺）：openChest 尾段回呼 → 在該玩家寶盒位置演出。
@@ -265,15 +275,52 @@ export class GameScene extends Phaser.Scene {
       // A2：塔位＝preset.positions 前 N 座（有則用），不足/省略用預設環形補到 towerCount（1920×1080 場景座標）。
       const positions = resolveTowerPositions(preset.positions, n, GAME_WIDTH, GAME_HEIGHT);
       const scale = preset.towerScale != null && preset.towerScale > 0 ? preset.towerScale : 1; // A3：塔 sprite 縮放（省略=1）
-      // B4：塔波登場 intro——壓黑烘托（波騎 towerGate 已擋好訊息時序：收到 onTowerWave 時 waveMessage 已顯完）。
-      effects.towerIntro?.();
-      for (let i = 0; i < n; i += 1) {
-        const t = spawner.spawnTower(positions[i].x, positions[i].y, preset.towerHp, ring, scale);
-        t.playTowerAppear?.(); // B4：塔登場發亮
-      }
+      // 波騎 preset 欄位解析（resolveTowerIntro/Ui/Messages 純函式，逐欄 ?? 預設，0-nullish 安全）。
+      const intro = resolveTowerIntro(preset);
+      const ui = resolveTowerUi(preset);
+      const msgs = resolveTowerMessages(preset);
+      this.towerRewardTickets = ui.rewardTickets; // E：過關發獎用（onTowerWaveResult 讀）
+      // 生塔動作（聚焦結束後才執行）：生 towerCount 座塔 + 血條 + 發亮。
+      const spawnTowers = () => {
+        for (let i = 0; i < n; i += 1) {
+          const t = spawner.spawnTower(positions[i].x, positions[i].y, preset.towerHp, ring, scale);
+          t.setTowerHpBarUi?.({
+            barWidthPx: ui.barWidthPx, barHeightPx: ui.barHeightPx,
+            barOffsetYPx: ui.barOffsetYPx, labelOffsetYPx: ui.labelOffsetYPx,
+          });
+          t.createTowerHpBar?.(); // D：每座塔血條（比照守護波雕像血條）
+          t.playTowerAppear?.(); // B4：塔登場發亮
+        }
+      };
+      // ★塔波照搬守護波 GuardEvent 開場：玩家聚集中央 → 聚焦壓黑+定格 → 生塔+發亮 → combat。
+      //   中心＝波騎 gatherPointPx（可編、預設畫面中央 960,540）；聚集半徑用預設（波騎未給 gatherOffsetPx）。
+      this.towerIntro?.forceFinish(); // 保險：上一場 intro 未清乾淨先收掉
+      this.towerIntro = new TowerIntroSequence(this.ctx, {
+        center: { x: intro.gatherPointPx.x, y: intro.gatherPointPx.y },
+        maxWalkSec: intro.maxWalkSec,
+        introFocusSec: intro.introFocusSec,
+        spotlightRadiusPx: intro.spotlightRadiusPx,
+        introEventText: msgs.introEventText,
+        eventTextDurationSec: msgs.eventTextDurationSec,
+        towerMessageText: msgs.towerMessageText,
+        onCombatStart: spawnTowers,
+      });
     };
     // 每摧毀一座尖塔 → 通知守護波累計（波騎判 towersDestroyed>=towerCount 過關提前 advance）。
     spawner.onTowerDestroyed = () => wave.notifyTowerDestroyed();
+    // ★塔波結算（比照 GuardEvent.finish 發獎）：過關(won=true)→發寶盒進度給本地 P1；不論勝敗都收乾淨 intro。
+    //   （多人獎勵分配之後另議，比照守護波先給 P1。）
+    wave.onTowerWaveResult = (won: boolean) => {
+      this.towerIntro?.forceFinish(); // 保險：波結束時若 intro 還在（極端 skip）→ 解鎖/清聚焦
+      this.towerIntro = null;
+      if (won) {
+        const reward = this.towerRewardTickets; // E：波騎 preset rewardTickets（過關發寶盒進度給 P1，比照守護波發獎）
+        this.ctx.chest.addCharge(this.ctx.player.playerId, reward);
+        console.info(`[Tower] 過關！寶盒進度 +${reward}`);
+      } else {
+        console.info('[Tower] 失敗（時限內未打完），無獎勵，關卡續行');
+      }
+    };
 
     this.registerSystems();
 
@@ -381,6 +428,11 @@ export class GameScene extends Phaser.Scene {
     const focusPause = this.ctx.guardFocusPause;
     for (const sys of this.systems) {
       sys.update(focusPause && sys.name !== 'WaveSystem' ? 0 : dt);
+    }
+    // ★塔波開場序列：用真實 dt tick（不吃 focusPause 凍結，否則聚焦計時器卡死；比照 WaveSystem 驅動 GuardEvent focus）。
+    //   走位/聚焦期間 guardFocusPause 由序列自己開關；玩法系統照上面凍結。intro 完成 → 生塔已觸發、清空。
+    if (this.towerIntro) {
+      if (this.towerIntro.update(dt)) this.towerIntro = null;
     }
     // 用戶 #3：JP 燈 HUD 反映 JpSystem 各組 litCount（純顯示，僅變動時重繪）。
     // 十五輪：amountOf 傳派彩票面（倍數×JP_TICKET_FACE）→ JP 金額 live 反映 JpSystem。

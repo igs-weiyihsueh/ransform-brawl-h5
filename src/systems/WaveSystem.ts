@@ -14,6 +14,7 @@ import { getResolvedMinePreset, isResolvedMinePreset } from '@/config/mineSchema
 import { getResolvedTowerPreset, isResolvedTowerPreset } from '@/config/towerSchema';
 import type { MinePreset } from '@/config/mineConfig';
 import type { TowerPreset } from '@/config/towerConfig';
+import { resolveTowerMessages } from '@/config/towerConfig';
 import { shouldSpawnMore, shouldAdvanceSpawn, pickSpawnPoint } from '@/systems/waveMath';
 import type {
   EnemyType,
@@ -162,6 +163,8 @@ export class WaveSystem implements GameSystem {
    * gate 跑完（<=0）才觸發 onTowerWave（征騎收到即跑壓黑+生塔+發亮）。倒數在 update() 遞減。
    */
   private towerGateSec = 0;
+  /** 塔波提示大字（towerMessageText，guardText 顯示元件）的淡出 handle；塔波結束/換節點時 fadeOut。 */
+  private towerGuardTextHandle: { fadeOut: () => void } | null = null;
 
   /** debug/UI：目前守護波（若有）。 */
   getGuardEvent(): GuardEvent | null {
@@ -444,6 +447,8 @@ export class WaveSystem implements GameSystem {
 
     // 過關：限時內打完全部尖塔 → 提前結束。
     if (this.towersDestroyed >= t.towerCount) {
+      this.towerGuardTextHandle?.fadeOut(); // 收尾淡出塔波提示大字
+      this.towerGuardTextHandle = null;
       this.onTowerWaveResult?.(true);
       this.advanceNode();
       return;
@@ -451,6 +456,8 @@ export class WaveSystem implements GameSystem {
     // 失敗：限時到還沒打完 → 不 GameOver，一樣前進下一節點。
     if (this.eventHold <= 0) {
       this.eventHold = 0;
+      this.towerGuardTextHandle?.fadeOut();
+      this.towerGuardTextHandle = null;
       this.onTowerWaveResult?.(false);
       this.advanceNode();
     }
@@ -559,7 +566,20 @@ export class WaveSystem implements GameSystem {
     // B4：進 tower Event 節點 → 按住一個 waveMessage 時長才生塔（塔波提示文字顯完 → 壓黑+生塔+發亮 by 征騎）。
     //   gate 內 eventTriggered 維持 false → isTowerWaveActive() 回 false（征騎進度條先不顯塔條）。非塔波 gate=0。
     const isTowerNode = entered?.nodeType === 'Event' && isResolvedTowerPreset((entered as EventNodeData).eventPresetName);
-    this.towerGateSec = isTowerNode ? WAVE_MESSAGE_FX.durationSec : 0;
+    if (isTowerNode) {
+      // 塔波登場照搬守護波兩段訊息（用戶：塔=守護波同類型）：introEventText 大字（timedEventText，顯 eventTextDurationSec）
+      //   + towerMessageText 提示（guardText，同守護波顯示元件，別另造）。towerGate 對齊 eventTextDurationSec，
+      //   訊息顯完那刻才發 onTowerWave（征騎壓黑+生塔）。
+      const tmsg = resolveTowerMessages(getResolvedTowerPreset((entered as EventNodeData).eventPresetName));
+      if (tmsg.introEventText !== '') this.ctx.effects?.timedEventText?.(tmsg.eventTextDurationSec, tmsg.introEventText);
+      if (tmsg.towerMessageText !== '') this.towerGuardTextHandle = this.ctx.effects?.guardText?.(tmsg.towerMessageText) ?? null;
+      this.towerGateSec = tmsg.eventTextDurationSec;
+    } else {
+      this.towerGateSec = 0;
+      // 換節點若殘留塔波提示大字 → 淡出（保險，避免跨節點殘留）。
+      this.towerGuardTextHandle?.fadeOut();
+      this.towerGuardTextHandle = null;
+    }
   }
 
   /** 過場提示（#9，純視覺）：進節點時依類型顯示螢幕中央提示文字。 */
@@ -568,12 +588,12 @@ export class WaveSystem implements GameSystem {
     if (!node) return;
     // 守護波 Event 節點：不發節點宣告 waveMessage——守護波有自己的開場序列
     //   （GuardEvent timedEventText「限時事件」→嚴格接續「協力合作，守護雕像」），再發節點宣告會重疊（用戶回報）。
-    // ★塔波/火雨/一般事件都要發（塔波沒有等價開場序列，之前被一併跳過→塔波缺開頭訊息，用戶爆氣）：
-    //   只有「守護 preset」（既非火雨 preset、也非塔 preset）才 return；tower/火雨→發 waveMessageFor 對應提示。
+    // ★塔波：也不在此發 waveMessage——塔波登場改用守護波兩段訊息（enterNode 的 timedEventText+guardText），
+    //   若這裡再發單段 waveMessage 會與兩段訊息重疊。火雨/一般事件才發 waveMessageFor。
     if (node.nodeType === 'Event') {
       const en = (node as { eventPresetName?: string }).eventPresetName;
-      const isGuardPreset = !!en && !isResolvedFireRainPreset(en) && !isResolvedTowerPreset(en);
-      if (isGuardPreset) return; // 守護波 → 跳過節點宣告（有自己開場）
+      const isFire = !!en && isResolvedFireRainPreset(en);
+      if (!isFire) return; // 守護波 + 塔波 → 跳過單段節點宣告（各有自己的開場訊息）；只有純火雨波發
     }
     if (node.nodeType === 'Spawn') this.spawnWaveNumber += 1; // 累計波序（跨關）
     const text = waveMessageFor(node, this.spawnWaveNumber);

@@ -51,8 +51,145 @@ export interface TowerPreset {
    * 省略／長度不足 towerCount → game-side 用預設環形/散佈補足。長度可 != towerCount（前 N 座用設定、其餘預設）。
    */
   positions?: TowerPosition[];
+  /**
+   * 登場訊息（比照守護波 GuardMessages，additive；省略＝用 TOWER_MESSAGE_DEFAULTS）。
+   * resolveTowerMessages 逐欄 ?? 解析；WaveSystem 塔波登場用 EffectSystem timedEventText/guardText 顯示兩段。
+   */
+  introEventText?: string;
+  /** 提示訊息（比照守護波 guardMessageText，如「打掉所有尖塔！」）。 */
+  towerMessageText?: string;
+  /** 事件宣告大字顯示秒數（比照守護波 eventTextDurationSec；towerGate 對齊此值）。 */
+  eventTextDurationSec?: number;
+  /**
+   * D：塔血條 UI（比照 GUARD_STATUE_UI 的 bar 欄；additive，省略＝TOWER_UI_DEFAULTS）。
+   * resolveTowerUi 逐欄 ?? 解析（0-nullish 安全）。game-side 征騎讀解析值繪製塔血條/標籤。
+   */
+  barWidthPx?: number;
+  barHeightPx?: number;
+  barOffsetYPx?: number;
+  labelOffsetYPx?: number;
+  /**
+   * E：過關獎勵券數（比照守護波 rewardTickets）。過關 onTowerWaveResult(true) 時 game-side 發寶盒進度/獎券。
+   * 省略＝TOWER_UI_DEFAULTS.rewardTickets。
+   */
+  rewardTickets?: number;
+  /**
+   * B：開場演出參數（比照守護波，但★走位目標＝中央聚集點，非雕像四角）。additive，省略＝TOWER_INTRO_DEFAULTS。
+   * resolveTowerIntro 逐欄 ?? 解析。game-side 征騎讓玩家走到 gatherPoint→聚焦壓黑 introFocusSec→定格。
+   */
+  introFocusSec?: number;
+  spotlightRadiusPx?: number;
+  maxWalkSec?: number;
+  /** 玩家開場聚集點（場景座標，1920×1080 基準；★塔波＝中央聚集，非守護波四角）。省略＝畫面中央。 */
+  gatherPointPx?: TowerPosition;
   /** 環狀技參數（尖塔週期放的環狀攻擊；征騎執行期照吃）。 */
   ringSkill: RingSkillParams;
+}
+
+/** 塔波開場演出預設（比照守護波 introFocusSec/spotlightRadiusPx/maxWalkSec；gatherPoint 預設畫面中央）。 */
+export const TOWER_INTRO_DEFAULTS = {
+  introFocusSec: 3,
+  spotlightRadiusPx: 200,
+  maxWalkSec: 3.5,
+  gatherPointPx: { x: 960, y: 540 }, // 1920×1080 中央（★塔波玩家聚集到中間）
+} as const;
+
+/** 解析後的塔波開場演出（全必填）。 */
+export interface TowerIntro {
+  introFocusSec: number;
+  spotlightRadiusPx: number;
+  maxWalkSec: number;
+  gatherPointPx: TowerPosition;
+}
+
+/**
+ * 解析塔波開場演出（純函式，抽給測騎；比照守護波開場參數）：preset optional 欄位 ?? 預設。
+ * ★0-nullish 安全：用 ?? 非 ||（introFocusSec 可 0＝不壓黑立即）。gatherPointPx 逐軸 ??（x/y 可為 0）。
+ */
+export function resolveTowerIntro(preset: {
+  introFocusSec?: number;
+  spotlightRadiusPx?: number;
+  maxWalkSec?: number;
+  gatherPointPx?: { x?: number; y?: number };
+}): TowerIntro {
+  return {
+    introFocusSec: preset.introFocusSec ?? TOWER_INTRO_DEFAULTS.introFocusSec,
+    spotlightRadiusPx: preset.spotlightRadiusPx ?? TOWER_INTRO_DEFAULTS.spotlightRadiusPx,
+    maxWalkSec: preset.maxWalkSec ?? TOWER_INTRO_DEFAULTS.maxWalkSec,
+    gatherPointPx: {
+      x: preset.gatherPointPx?.x ?? TOWER_INTRO_DEFAULTS.gatherPointPx.x,
+      y: preset.gatherPointPx?.y ?? TOWER_INTRO_DEFAULTS.gatherPointPx.y,
+    },
+  };
+}
+
+/** 塔血條 UI + 獎勵預設（比照 GUARD_STATUE_UI_DEFAULTS + 守護 rewardTickets）。 */
+export const TOWER_UI_DEFAULTS = {
+  barWidthPx: 160,
+  barHeightPx: 16,
+  barOffsetYPx: 90,
+  labelOffsetYPx: -80,
+  rewardTickets: 10,
+} as const;
+
+/** 解析後的塔 UI + 獎勵（全必填）。 */
+export interface TowerUi {
+  barWidthPx: number;
+  barHeightPx: number;
+  barOffsetYPx: number;
+  labelOffsetYPx: number;
+  rewardTickets: number;
+}
+
+/**
+ * 解析塔血條 UI + 獎勵（純函式，抽給測騎；比照 resolveGuardStatueUi）：preset optional 欄位 ?? 預設。
+ * ★0-nullish 安全：用 ?? 非 ||（offsetY 可 0/負、rewardTickets 可 0，不可被 || 吃掉）。
+ */
+export function resolveTowerUi(preset: {
+  barWidthPx?: number;
+  barHeightPx?: number;
+  barOffsetYPx?: number;
+  labelOffsetYPx?: number;
+  rewardTickets?: number;
+}): TowerUi {
+  return {
+    barWidthPx: preset.barWidthPx ?? TOWER_UI_DEFAULTS.barWidthPx,
+    barHeightPx: preset.barHeightPx ?? TOWER_UI_DEFAULTS.barHeightPx,
+    barOffsetYPx: preset.barOffsetYPx ?? TOWER_UI_DEFAULTS.barOffsetYPx,
+    labelOffsetYPx: preset.labelOffsetYPx ?? TOWER_UI_DEFAULTS.labelOffsetYPx,
+    rewardTickets: preset.rewardTickets ?? TOWER_UI_DEFAULTS.rewardTickets,
+  };
+}
+
+/** 塔波登場訊息預設（比照 GUARD_MESSAGE_DEFAULTS）。 */
+export const TOWER_MESSAGE_DEFAULTS = {
+  introEventText: '魔尖塔降臨',
+  towerMessageText: '打倒所有魔尖塔！',
+  eventTextDurationSec: 3,
+} as const;
+
+/** 解析後的塔波訊息（全必填）。 */
+export interface TowerMessages {
+  introEventText: string;
+  towerMessageText: string;
+  eventTextDurationSec: number;
+}
+
+/**
+ * 解析塔波登場訊息（純函式，抽給測騎；比照 resolveGuardMessages）：preset optional 欄位 ?? 預設。
+ * ★文字用 ?? 保留（空字串 '' 保留＝用戶可清空文字不退預設；只有 undefined 才退預設）。
+ * ★eventTextDurationSec 用 ?? 保留（0 合法＝不顯示/立即，非 || 吃 0）。
+ */
+export function resolveTowerMessages(preset: {
+  introEventText?: string;
+  towerMessageText?: string;
+  eventTextDurationSec?: number;
+}): TowerMessages {
+  return {
+    introEventText: preset.introEventText ?? TOWER_MESSAGE_DEFAULTS.introEventText,
+    towerMessageText: preset.towerMessageText ?? TOWER_MESSAGE_DEFAULTS.towerMessageText,
+    eventTextDurationSec: preset.eventTextDurationSec ?? TOWER_MESSAGE_DEFAULTS.eventTextDurationSec,
+  };
 }
 
 /** 魔尖塔 preset 表（名稱 key；用戶可在事件編輯器選/編）。Tower4=四塔預設、Tower6=六塔。 */
