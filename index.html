@@ -2,6 +2,12 @@
 <html lang="zh-Hant">
   <head>
     <meta charset="UTF-8" />
+    <!-- ★根治「更新後看到舊版」：GitHub Pages 無法設 server header，改由 HTML meta 讓 index.html 不被快取。
+         每次 revalidate index → 拿最新 index → 引用最新 content-hash 的 JS chunk（hash 變必重抓）→ 更新自動生效，用戶免手動清快取。
+         JS/asset 本身是 Vite content-hash 檔名，可安全長快取（內容變檔名就變）。 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
