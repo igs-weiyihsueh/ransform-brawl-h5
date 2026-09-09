@@ -94,6 +94,8 @@ export interface EnemyAIConfig {
     ringIntervalSec: number;
     ringThicknessPx: number;
     energyCost: number;
+    /** C9：環炸前紅圈預警秒數（>=0；省略 game-side 補 0.5）。 */
+    warningSec?: number;
   };
 }
 
@@ -197,6 +199,6 @@ export const ENEMY_AI: Record<string, EnemyAIConfig> = {
     hitStun: 0.15, // 像牆幾乎不退
     knockbackForce: 0,
     immovable: true, // 固定塔：玩家推不動
-    ringSkill: { ringCount: 3, baseRadiusPx: 90, radiusStepPx: 120, ringIntervalSec: 0.6, ringThicknessPx: 40, energyCost: 2 }, // 依序固定環（TowerWave 節點可覆蓋）
+    ringSkill: { ringCount: 3, baseRadiusPx: 90, radiusStepPx: 120, ringIntervalSec: 0.6, ringThicknessPx: 40, energyCost: 2, warningSec: 0.5 }, // 依序固定環（TowerWave 節點可覆蓋）
   },
 };

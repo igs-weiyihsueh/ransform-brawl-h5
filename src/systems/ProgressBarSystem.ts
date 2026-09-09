@@ -10,6 +10,7 @@ import {
   barLeftX,
   barWidth,
   guardTimeRatio,
+  towerKillRatio,
   nodeIconKind,
   nodeMarkerState,
   nodeMarkerX,
@@ -43,6 +44,8 @@ export class ProgressBarSystem implements GameSystem {
   private gfx!: Phaser.GameObjects.Graphics; // bar 底槽 + 段填充繩 + 節點圓底
   private guardGfx!: Phaser.GameObjects.Graphics; // 守護波倒數金條
   private guardText!: Phaser.GameObjects.Text; // 守護金條剩餘秒數文字
+  private towerGfx!: Phaser.GameObjects.Graphics; // ★魔尖塔波進度條（剩塔數）
+  private towerText!: Phaser.GameObjects.Text; // 塔波剩塔數 + 倒數秒文字
   private nodeIcons: Phaser.GameObjects.Image[] = [];
   private builtCount = -1; // 已建 icon 對應的節點數（重建判斷）
   private pulseT = 0;
@@ -80,6 +83,21 @@ export class ProgressBarSystem implements GameSystem {
       .setOrigin(0.5, 0.5)
       .setVisible(false);
     this.xform.add(this.guardText);
+    // ★魔尖塔波進度條（剩塔數）+ 文字（塔數 + 倒數秒），比照守護金條放 xform、固定螢幕座標。
+    this.towerGfx = scene.add.graphics();
+    this.xform.add(this.towerGfx);
+    this.towerText = scene.add
+      .text(PROGRESS_BAR.centerX, PROGRESS_BAR.shownY + PROGRESS_BAR.tower.offsetY + PROGRESS_BAR.tower.height / 2, '', {
+        fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+        fontSize: '18px',
+        color: '#ffffff',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5, 0.5)
+      .setVisible(false);
+    this.xform.add(this.towerText);
   }
 
   update(dt: number): void {
@@ -89,11 +107,10 @@ export class ProgressBarSystem implements GameSystem {
     const types = wave.getNodeTypes();
     const guard = wave.getGuardEvent();
     const guardActive = !!guard && !guard.isFinished();
+    const towerActive = wave.isTowerWaveActive?.() ?? false; // ★塔波進行中（gate 內/非塔波=false）
 
-    // 隱藏條件：守護波中 / 無節點 / 關卡跑完（nodeIndex >= total）→ 往上滑走。
-    // bug 修：收起目標依整體變換(scale/posY)反推，確保不論調到哪個位置/縮放都完整移出畫面頂端
-    // （原本固定 slideHideOffsetY 在「移到下方」或「縮小」時收不乾淨、殘留半條）。
-    const hidden = guardActive || total <= 0 || nodeIndex >= total;
+    // 隱藏條件：守護波中 / ★塔波中 / 無節點 / 關卡跑完（nodeIndex >= total）→ 往上滑走。
+    const hidden = guardActive || towerActive || total <= 0 || nodeIndex >= total;
     const targetY = hidden ? progressHideLocalY(this.xf.scale, this.xf.posY) : PROGRESS_BAR.shownY;
     // 指數趨近（slideSpeed）。
     const k = 1 - Math.exp(-PROGRESS_BAR.slideSpeed * dt);
@@ -127,6 +144,41 @@ export class ProgressBarSystem implements GameSystem {
       this.guardText.setVisible(true);
     } else {
       this.guardText.setVisible(false);
+    }
+
+    // ★魔尖塔波進度條（B5 剩塔數 + B6 倒數；塔波才顯示，固定螢幕座標不隨 root 滑走）。
+    this.towerGfx.clear();
+    if (towerActive) {
+      const destroyed = wave.getTowerWaveDestroyed?.() ?? 0;
+      const totalTowers = wave.getTowerWaveTotal?.() ?? 0;
+      const remaining = wave.getTowerWaveRemaining?.() ?? 0;
+      const ratio = towerKillRatio(destroyed, totalTowers); // B5：已消滅/總塔數（0 空→1 滿）
+      const tw = PROGRESS_BAR.tower.width;
+      const tx = PROGRESS_BAR.centerX - tw / 2;
+      const ty = PROGRESS_BAR.shownY + PROGRESS_BAR.tower.offsetY;
+      const th = PROGRESS_BAR.tower.height;
+      this.towerGfx.fillStyle(0x000000, 0.55);
+      this.towerGfx.fillRoundedRect(tx, ty, tw, th, 6);
+      if (ratio > 0) {
+        this.towerGfx.fillStyle(0x9b5cff, 1); // 塔條＝環狀技紫（呼應魔尖塔）
+        this.towerGfx.fillRoundedRect(tx, ty, Math.max(12, tw * ratio), th, 6);
+      }
+      // 分段刻度（每座塔一格）：畫 totalTowers-1 條分隔線，讓「打掉幾/N」看得出格數。
+      if (totalTowers > 1) {
+        this.towerGfx.lineStyle(1, 0xffffff, 0.35);
+        for (let i = 1; i < totalTowers; i += 1) {
+          const sx = tx + (tw * i) / totalTowers;
+          this.towerGfx.lineBetween(sx, ty, sx, ty + th);
+        }
+      }
+      this.towerGfx.lineStyle(2, 0xffffff, 0.8);
+      this.towerGfx.strokeRoundedRect(tx, ty, tw, th, 6);
+      // 文字：剩塔數（total-destroyed 座）+ 倒數秒。
+      const left = Math.max(0, totalTowers - destroyed);
+      this.towerText.setText(`剩 ${left} 塔　${Math.max(0, Math.ceil(remaining))}s`);
+      this.towerText.setVisible(true);
+    } else {
+      this.towerText.setVisible(false);
     }
   }
 

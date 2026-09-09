@@ -127,3 +127,43 @@ export function ringHitsPlayer(
   const d = Math.hypot(dx, dy);
   return Math.abs(d - ringRadius) <= halfThicknessPx + playerRadius;
 }
+
+/**
+ * A2 預設塔位（環形/散佈）：當 preset.positions 省略或不足 towerCount 時，game-side 補足到 towerCount 座。
+ * 以場中心為圓心排成一圈（n==1 直接放中心）；半徑取場寬/高較小邊的 ~0.28，避免貼邊。
+ * 純函式（給測騎測）。座標＝場景座標（1920×1080 基準，與 GAME_WIDTH/HEIGHT 同基準）。
+ */
+export function defaultTowerPositions(n: number, sceneW: number, sceneH: number): Vec2[] {
+  const count = Math.max(1, Math.floor(n));
+  const cx = sceneW / 2;
+  const cy = sceneH * 0.46; // 略高於正中（給下方玩家/UI 空間）
+  if (count === 1) return [{ x: cx, y: cy }];
+  const ringR = Math.min(sceneW, sceneH) * 0.28;
+  const out: Vec2[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const ang = -Math.PI / 2 + (i / count) * Math.PI * 2; // 從正上方順時針均分
+    out.push({ x: cx + Math.cos(ang) * ringR, y: cy + Math.sin(ang) * ringR });
+  }
+  return out;
+}
+
+/**
+ * A2 解析塔位：前 N 座用 preset.positions（若有、依序），其餘（含 positions 省略/不足）用 defaultTowerPositions 補到 towerCount。
+ * ★長度可 != towerCount：前 min(positions.length, count) 用設定、其餘用預設環形補足。純函式。
+ */
+export function resolveTowerPositions(
+  positions: readonly Vec2[] | undefined,
+  towerCount: number,
+  sceneW: number,
+  sceneH: number,
+): Vec2[] {
+  const count = Math.max(1, Math.floor(towerCount));
+  const defaults = defaultTowerPositions(count, sceneW, sceneH);
+  const given = positions ?? [];
+  const out: Vec2[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const p = given[i];
+    out.push(p && Number.isFinite(p.x) && Number.isFinite(p.y) ? { x: p.x, y: p.y } : defaults[i]);
+  }
+  return out;
+}

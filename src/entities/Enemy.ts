@@ -107,6 +107,7 @@ export class Enemy implements Hittable {
     ringIntervalSec: number;
     ringThicknessPx: number;
     energyCost: number;
+    warningSec: number;
   } | null = null;
   private readonly radiusPx: number;
 
@@ -582,8 +583,12 @@ export class Enemy implements Hittable {
     ringIntervalSec: number;
     ringThicknessPx: number;
     energyCost: number;
+    warningSec: number;
   } | null {
-    return this.ringSkillOverride ?? this.cfg.ringSkill ?? null;
+    if (this.ringSkillOverride) return this.ringSkillOverride;
+    if (!this.cfg.ringSkill) return null;
+    // config 的 ringSkill 可能沒 warningSec（舊 config）→ 補預設 0.5。
+    return { warningSec: 0.5, ...this.cfg.ringSkill };
   }
 
   /** 覆寫環狀技參數（TowerWave 節點 ringSkill 由 spawnTower 套用；缺欄沿用 config）。 */
@@ -594,10 +599,12 @@ export class Enemy implements Hittable {
     ringIntervalSec?: number;
     ringThicknessPx?: number;
     energyCost?: number;
+    warningSec?: number;
   }): void {
     const base = this.cfg.ringSkill ?? {
       ringCount: 3, baseRadiusPx: 90, radiusStepPx: 120, ringIntervalSec: 0.6, ringThicknessPx: 40, energyCost: 2,
     };
+    const baseWarning = (base as { warningSec?: number }).warningSec ?? 0.5;
     this.ringSkillOverride = {
       ringCount: ring.ringCount != null && ring.ringCount >= 1 ? Math.floor(ring.ringCount) : base.ringCount,
       baseRadiusPx: ring.baseRadiusPx != null && ring.baseRadiusPx >= 0 ? ring.baseRadiusPx : base.baseRadiusPx,
@@ -605,7 +612,29 @@ export class Enemy implements Hittable {
       ringIntervalSec: ring.ringIntervalSec != null && ring.ringIntervalSec > 0 ? ring.ringIntervalSec : base.ringIntervalSec,
       ringThicknessPx: ring.ringThicknessPx != null && ring.ringThicknessPx > 0 ? ring.ringThicknessPx : base.ringThicknessPx,
       energyCost: ring.energyCost != null && ring.energyCost >= 0 ? ring.energyCost : base.energyCost,
+      warningSec: ring.warningSec != null && ring.warningSec >= 0 ? ring.warningSec : baseWarning,
     };
+  }
+
+  /** A3：設定尖塔 sprite 縮放（towerScale，>0；1＝原尺寸）。塔靜態立繪 setStaticTexture 後套用。 */
+  setTowerScale(scale: number): void {
+    if (!Number.isFinite(scale) || scale <= 0) return;
+    this.anim.sprite.setScale(scale);
+  }
+
+  /**
+   * ★B4 塔登場發亮：塔 sprite 短暫加色高亮 + 微 pop（scale 1→1.12→1），烘托「魔尖塔登場」。
+   * 純視覺、不動行為（塔仍靜止）；tint 短暫後清回原色。基準 scale 沿用當前（含 towerScale）。
+   */
+  playTowerAppear(): void {
+    const sp = this.anim.sprite;
+    const baseScale = sp.scaleX || 1;
+    sp.setTint(0xffe08a); // 暖金高亮
+    sp.scene.tweens.add({
+      targets: sp, scaleX: baseScale * 1.12, scaleY: baseScale * 1.12,
+      duration: 180, yoyo: true, ease: 'Quad.easeOut',
+      onComplete: () => sp.clearTint(),
+    });
   }
 
   getHp(): number {

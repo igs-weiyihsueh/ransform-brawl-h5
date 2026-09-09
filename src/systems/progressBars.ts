@@ -28,6 +28,8 @@ export const PROGRESS_BAR = {
   pulseThreshold: 0.75,
   /** 守護波倒數條（bar 下方，錯開不重疊）。 */
   guard: { width: 600, height: 16, offsetY: 46 },
+  /** 魔尖塔波進度條（剩塔數；bar 下方，比照守護金條位置）。 */
+  tower: { width: 600, height: 16, offsetY: 46 },
 } as const;
 
 /** 三態節點染色（六輪#6，對照 Unity LevelProgressUI：i<cur 已過黃、i==cur 當前白、i>cur 未到暗）。 */
@@ -51,6 +53,15 @@ export function levelProgressRatio(nodeIndex: number, total: number): number {
 export function guardTimeRatio(remaining: number, timeLimit: number): number {
   if (timeLimit <= 0) return 0;
   return Math.min(1, Math.max(0, remaining / timeLimit));
+}
+
+/**
+ * ★B5 魔尖塔波進度比例（0..1）= 已消滅塔數 / 總塔數。
+ * 一開始空（0/N=0）、打掉一座前進一格、全打完＝滿（1）＝過關。純函式（測騎可測）。
+ */
+export function towerKillRatio(destroyed: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.min(1, Math.max(0, destroyed / total));
 }
 
 /** 主進度條可視內容從中心往下最遠的點（節點圓底 + 一點餘裕）。 */

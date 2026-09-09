@@ -6,6 +6,7 @@ import {
   barLeftX,
   barWidth,
   guardTimeRatio,
+  towerKillRatio,
   levelProgressRatio,
   nodeIconKind,
   nodeMarkerState,
@@ -40,6 +41,18 @@ describe('progressBars — 進度/倒數比例', () => {
 
   it('守護波倒數：timeLimit<=0 → 0（防呆）', () => {
     expect(guardTimeRatio(10, 0)).toBe(0);
+  });
+
+  it('★B5 塔波進度：已消滅/總塔數，0(空)→1(滿=過關)，0..1 clamp', () => {
+    expect(towerKillRatio(0, 4)).toBe(0); // 一開始空
+    expect(towerKillRatio(1, 4)).toBe(0.25); // 打掉一座前進一格
+    expect(towerKillRatio(4, 4)).toBe(1); // 全打完滿
+    expect(towerKillRatio(5, 4)).toBe(1); // clamp 上限
+    expect(towerKillRatio(-1, 4)).toBe(0); // clamp 下限
+  });
+
+  it('★B5 塔波進度：total<=0 → 0（非塔波/防呆）', () => {
+    expect(towerKillRatio(2, 0)).toBe(0);
   });
 
   it('佈局參數合理（珠串結構：perNodeWidth/nodeRadius/barHeight/guard.height > 0，#2 重組）', () => {

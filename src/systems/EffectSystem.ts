@@ -755,6 +755,31 @@ export class EffectSystem {
    * @param x,y 雕像螢幕座標（spotlight 透明中心對準此）。
    * @param radiusPx 亮圈金環半徑（點綴）。
    */
+  /**
+   * ★B4 魔尖塔波登場壓黑（比照守護波聚焦壓暗，但塔波多座、用全螢幕短暫壓黑烘托「塔登場」）：
+   * 全螢幕壓黑淡入 → hold → 淡出自動清（純視覺，不 gate 遊戲；訊息時序由波騎 towerGate 擋好）。
+   * 塔本身發亮由 Enemy.playTowerAppear 各自跑。
+   * @param holdMs 壓黑持續（含淡入淡出外的停留），預設 ~600ms。
+   */
+  towerIntro(holdMs = 600): void {
+    const depth = ENERGY_FLY_DEPTH + 8; // 壓在場上角色/塔之下一點（塔仍可見、烘托登場）
+    const dim = this.scene.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55)
+      .setScrollFactor(0)
+      .setDepth(depth)
+      .setAlpha(0);
+    const fadeMs = 250;
+    this.scene.tweens.add({
+      targets: dim, alpha: 1, duration: fadeMs, ease: 'Sine.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: dim, alpha: 0, delay: Math.max(0, holdMs), duration: fadeMs, ease: 'Sine.easeIn',
+          onComplete: () => dim.destroy(),
+        });
+      },
+    });
+  }
+
   guardSpotlight(x: number, y: number, radiusPx = 200): { fadeOut: () => void } {
     const depth = ENERGY_FLY_DEPTH + 10; // 960：壓暗蓋住場上角色/敵人/背景（雕像由呼叫端提到此之上）
     const objs: Phaser.GameObjects.GameObject[] = [];

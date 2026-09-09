@@ -254,11 +254,21 @@ export class EnemySpawner {
     x: number,
     y: number,
     towerHp?: number,
-    ringOverride?: { intervalSec?: number; expandPxPerRing?: number; energyCost?: number },
+    ringOverride?: {
+      ringCount?: number;
+      baseRadiusPx?: number;
+      radiusStepPx?: number;
+      ringIntervalSec?: number;
+      ringThicknessPx?: number;
+      energyCost?: number;
+      warningSec?: number;
+    },
+    scale?: number,
   ): Enemy {
     const e = this.spawn('Enemy_Tower', x, y);
     if (towerHp != null) e.setMaxHp(towerHp);
     if (ringOverride) e.setRingSkillOverride(ringOverride);
+    if (scale != null && scale > 0) e.setTowerScale(scale); // A3：塔 sprite 縮放
     return e;
   }
 

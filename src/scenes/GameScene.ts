@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CHARACTERS } from '@/config/animationConfig';
 import { chestChargeForResolved, getResolvedChest } from '@/config/chestSchema';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
+import { resolveTowerPositions } from '@/systems/towerRingSkill';
 import { HERO_ROSTER, pickHero } from '@/config/heroRoster';
 import { shouldDropHeroItem } from '@/config/heroDropMath';
 import { WEAPON_ITEM_TEXTURES } from '@/config/weaponItemConfig';
@@ -259,13 +260,16 @@ export class GameScene extends Phaser.Scene {
         ringIntervalSec: preset.ringSkill.ringIntervalSec,
         ringThicknessPx: preset.ringSkill.ringThicknessPx,
         energyCost: preset.ringSkill.energyCost,
+        warningSec: preset.ringSkill.warningSec, // C9：環炸前紅圈預警秒數（波騎 schema 5b6d17d）
       };
-      const margin = GAME_WIDTH * 0.18;
-      const span = GAME_WIDTH - margin * 2;
-      const y = GAME_HEIGHT * 0.42;
+      // A2：塔位＝preset.positions 前 N 座（有則用），不足/省略用預設環形補到 towerCount（1920×1080 場景座標）。
+      const positions = resolveTowerPositions(preset.positions, n, GAME_WIDTH, GAME_HEIGHT);
+      const scale = preset.towerScale != null && preset.towerScale > 0 ? preset.towerScale : 1; // A3：塔 sprite 縮放（省略=1）
+      // B4：塔波登場 intro——壓黑烘托（波騎 towerGate 已擋好訊息時序：收到 onTowerWave 時 waveMessage 已顯完）。
+      effects.towerIntro?.();
       for (let i = 0; i < n; i += 1) {
-        const x = n === 1 ? GAME_WIDTH * 0.5 : margin + (span * i) / (n - 1);
-        spawner.spawnTower(x, y, preset.towerHp, ring);
+        const t = spawner.spawnTower(positions[i].x, positions[i].y, preset.towerHp, ring, scale);
+        t.playTowerAppear?.(); // B4：塔登場發亮
       }
     };
     // 每摧毀一座尖塔 → 通知守護波累計（波騎判 towersDestroyed>=towerCount 過關提前 advance）。
