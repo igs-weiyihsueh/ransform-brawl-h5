@@ -33,8 +33,10 @@ interface FakePlayer {
   x: number;
   y: number;
   stunned: number;
+  bodyR: number;
   isWaiting(): boolean;
   getFootPosition(): { x: number; y: number };
+  getBodyRadius(): number;
   applyStun(sec: number): void;
 }
 
@@ -45,8 +47,10 @@ function makePlayer(id: number, x = 99999, y = 99999): FakePlayer {
     x,
     y,
     stunned: 0,
+    bodyR: 50, // 玩家體型半徑（≈ getBodyRadius/vacuum，測用固定值）
     isWaiting() { return this.waiting; },
     getFootPosition() { return { x: this.x, y: this.y }; },
+    getBodyRadius() { return this.bodyR; },
     applyStun(sec: number) { this.stunned += sec; },
   };
 }
@@ -170,20 +174,34 @@ describe('MineTrapSystem 踩雷式', () => {
     expect(e.stunned).toBe(0);
   });
 
-  it('② 觸發範圍貼合地雷本體（非爆炸半徑）：玩家在 radiusPx 內但 bodyR 外 → 不觸發；進 bodyR 內 → 觸發', () => {
+  it('② 觸發＝玩家圓與地雷圓相交（體型半徑+本體半徑）：完全分離不觸發；相交（sprite 疊到）觸發', () => {
     expect(PRESET.radiusPx).toBeGreaterThan(MINE_BODY_RADIUS_PX); // 前提：爆炸半徑 >> 本體半徑
     const { sys, players, triggeredCount, mineAt } = makeSys(() => PRESET);
     const p = makePlayer(0);
     players.push(p);
     sys.update(0.016); // 撒
     const target = mineAt(0);
-    // 站在「爆炸半徑內、但地雷本體半徑外」（本體外一點點）→ 不該觸發（觸發貼合本體大小）。
-    p.x = target.x + MINE_BODY_RADIUS_PX + 5;
+    const triggerDist = p.getBodyRadius() + MINE_BODY_RADIUS_PX; // 兩圓相交門檻（50+13=63）
+    // 兩圓「完全分離」（距離 > 體型半徑+本體半徑）→ 不觸發，即使在爆炸半徑 radiusPx(120) 內。
+    p.x = target.x + triggerDist + 8;
     p.y = target.y;
     sys.update(0.016);
     expect(triggeredCount()).toBe(0);
-    // 走進地雷本體半徑內 → 觸發。
-    p.x = target.x + MINE_BODY_RADIUS_PX - 2;
+    // 兩圓「相交」（玩家 sprite 邊緣碰到地雷本體，距離 < 門檻）→ 觸發（不需中心對中心）。
+    p.x = target.x + triggerDist - 8;
+    sys.update(0.016);
+    expect(triggeredCount()).toBeGreaterThanOrEqual(1);
+  });
+
+  it('② 觸發不需中心重疊：玩家中心離地雷 > 本體半徑(13) 但兩圓相交（體型半徑補足）→ 仍觸發', () => {
+    const { sys, players, triggeredCount, mineAt } = makeSys(() => PRESET);
+    const p = makePlayer(0);
+    players.push(p);
+    sys.update(0.016);
+    const target = mineAt(0);
+    // 中心距離 = 30（> 本體半徑 13，舊版只用 13 會漏；新版 50+13=63 內 → 觸發）。
+    p.x = target.x + 30;
+    p.y = target.y;
     sys.update(0.016);
     expect(triggeredCount()).toBeGreaterThanOrEqual(1);
   });

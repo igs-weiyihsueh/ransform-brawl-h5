@@ -146,15 +146,19 @@ export class MineTrapSystem implements GameSystem {
   }
 
   /**
-   * 是否有「在場、非待機」玩家的 footPosition **真的踩到這顆地雷本體**（★觸發半徑＝地雷本體半徑
-   * MINE_BODY_RADIUS_PX，貼合看到的地雷大小；與爆炸波及半徑 radiusPx 脫鉤）。★只玩家、怪不算。
+   * 是否有「在場、非待機」玩家**踩到/碰到這顆地雷本體**（★兩圓相交判定：玩家體型圓 與 地雷本體圓
+   * 一相交就觸發——`dist(footPosition, 地雷) <= 玩家體型半徑 + MINE_BODY_RADIUS_PX`）。
+   * 玩家體型半徑用 getBodyRadius()（＝推怪真空/腳下體型半徑，與 paceMove/ContactBody 等碰撞判定一致），
+   * 這樣「玩家 sprite 視覺踩到/疊到地雷」就觸發，不需中心對中心。★只玩家、怪不算；爆炸範圍 radiusPx 另計不變。
    */
   private playerSteppedOn(m: ActiveMine): boolean {
     const center = { x: m.x, y: m.y };
     for (const p of this.ctx.players) {
       if (typeof p.isWaiting === 'function' && p.isWaiting()) continue; // 待機（面板上）不踩雷
       const pos = p.getFootPosition?.() ?? p.getPosition?.();
-      if (pos && isInBlastRange(pos, center, MINE_BODY_RADIUS_PX)) return true;
+      if (!pos) continue;
+      const bodyR = p.getBodyRadius?.() ?? p.getHitRadius?.() ?? 0; // 玩家體型半徑（碰撞用）
+      if (isInBlastRange(pos, center, bodyR + MINE_BODY_RADIUS_PX)) return true; // 兩圓相交＝踩到
     }
     return false;
   }

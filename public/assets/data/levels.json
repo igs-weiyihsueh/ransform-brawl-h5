@@ -36,6 +36,10 @@
           "nodeType": "Event",
           "eventPresetName": "Guard60",
           "attachFireRain": "FireRain"
+        },
+        {
+          "nodeType": "Event",
+          "eventPresetName": "Tower4"
         }
       ]
     }

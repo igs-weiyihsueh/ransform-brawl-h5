@@ -55,8 +55,9 @@ export class GrabSystem implements GameSystem {
 
   update(dt: number): void {
     const livingEnemies = this.ctx.getEnemies().filter((e) => !e.isDead());
-    // 戰鬥階段：場上有活的、非-grabber 敵人。
-    const combatEnemies = livingEnemies.filter((e) => !e.isGrabber());
+    // 戰鬥階段：場上有活的、非-grabber、★非尖塔（塔是靜止建築，不該被選為 grabber/被拖去抓玩家）敵人。
+    //   ★魔尖塔修：塔 moveSpeed=0 但 grabberChaseStep 用 GRABBER_SPEED_PX 會無視 moveSpeed 強制拖動→靜止塔被拖著跑+抓人。排除 isTower。
+    const combatEnemies = livingEnemies.filter((e) => !e.isGrabber() && !e.isTower());
     const inCombat = combatEnemies.length > 0;
 
     for (const player of this.ctx.players) {
