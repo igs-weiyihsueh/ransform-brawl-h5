@@ -5,6 +5,7 @@ import { UI_ICONS, UI_LAYOUT_ASSET, PANEL_DEPTH } from '@/config/uiConfig';
 import { validateUiLayout, isVisible, type ScreenElement } from '@/config/uiLayoutSchema';
 import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
+import { MINE_BODY_RADIUS_PX } from '@/systems/mineTrapMath';
 import { ENERGY_FLY, flyAlpha, flyPosition, flyScale } from '@/systems/energyFlyMath';
 import {
   CHEST_REWARD_FX,
@@ -1581,7 +1582,7 @@ export class EffectSystem {
   mineMarkerStart(x: number, y: number, _radiusPx: number): Phaser.GameObjects.GameObject | null {
     const g = this.scene.add.graphics();
     g.setPosition(x, y).setDepth(PANEL_DEPTH + 9); // 地面層（比觸發預警圈 +10 稍低）
-    const bodyR = 13; // ★固定小尺寸的地雷本體（不隨爆炸半徑放大、不像預警圈）
+    const bodyR = MINE_BODY_RADIUS_PX; // ★固定小尺寸的地雷本體（=踩雷觸發半徑，與爆炸半徑脫鉤）
     // 深色圓身。
     g.fillStyle(0x2a2a30, 0.95);
     g.fillCircle(0, 0, bodyR);

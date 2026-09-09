@@ -13,6 +13,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { MineTrapSystem } from '@/systems/MineTrapSystem';
+import { MINE_BODY_RADIUS_PX } from '@/systems/mineTrapMath';
 import type { MinePreset } from '@/config/mineConfig';
 import type { GameContext } from '@/systems/GameContext';
 
@@ -167,6 +168,24 @@ describe('MineTrapSystem 踩雷式', () => {
     expect(triggeredCount()).toBe(0);
     expect(mineCount()).toBe(PRESET.count);
     expect(e.stunned).toBe(0);
+  });
+
+  it('② 觸發範圍貼合地雷本體（非爆炸半徑）：玩家在 radiusPx 內但 bodyR 外 → 不觸發；進 bodyR 內 → 觸發', () => {
+    expect(PRESET.radiusPx).toBeGreaterThan(MINE_BODY_RADIUS_PX); // 前提：爆炸半徑 >> 本體半徑
+    const { sys, players, triggeredCount, mineAt } = makeSys(() => PRESET);
+    const p = makePlayer(0);
+    players.push(p);
+    sys.update(0.016); // 撒
+    const target = mineAt(0);
+    // 站在「爆炸半徑內、但地雷本體半徑外」（本體外一點點）→ 不該觸發（觸發貼合本體大小）。
+    p.x = target.x + MINE_BODY_RADIUS_PX + 5;
+    p.y = target.y;
+    sys.update(0.016);
+    expect(triggeredCount()).toBe(0);
+    // 走進地雷本體半徑內 → 觸發。
+    p.x = target.x + MINE_BODY_RADIUS_PX - 2;
+    sys.update(0.016);
+    expect(triggeredCount()).toBeGreaterThanOrEqual(1);
   });
 
   it('④ per-mine 再生：踩爆一顆後，隔 respawnDelaySec 才補回（非立即），補到 maintainCount 上限', () => {

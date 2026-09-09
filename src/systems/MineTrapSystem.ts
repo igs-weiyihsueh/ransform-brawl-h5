@@ -3,7 +3,7 @@ import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import type { MinePreset } from '@/config/mineConfig';
 import { STUN_DEFAULT_SEC } from '@/config/eventsConfig';
-import { isInBlastRange, tickMineDelay } from '@/systems/mineTrapMath';
+import { isInBlastRange, tickMineDelay, MINE_BODY_RADIUS_PX } from '@/systems/mineTrapMath';
 import { pickFireRainPoint } from '@/systems/fireRainMath';
 import type { Vec2 } from '@/systems/hitDetection';
 
@@ -36,7 +36,7 @@ interface ActiveMine {
  *  - non-null → null（離開節點）：清乾淨、重置旗標，下個地雷節點再撒。
  *
  * 踩雷行為（每幀）：
- *  1) 未觸發的地雷：檢查任一在場非待機玩家 footPosition 進入 radiusPx → 觸發該顆（收靜置本體、起閃爍預警圈 + 啟動 delaySec 倒數）。
+ *  1) 未觸發的地雷：檢查任一在場非待機玩家 footPosition 進入「地雷本體半徑 MINE_BODY_RADIUS_PX」（★貼合看到的地雷大小、非爆炸半徑）→ 觸發該顆（收靜置本體、起閃爍預警圈 + 啟動 delaySec 倒數）。
  *     ★只玩家踩觸發，怪走過不觸發。
  *  2) 已觸發的地雷：倒數 remaining，<=0 → explode（mineExplosion VFX + radiusPx 內「玩家+怪」applyStun(paralyzeSec)）。
  * ★爆炸不分敵我（怪也麻痺）、★不扣血（麻痺＝定住，角色無血量）。撒點責任在 game-side（比照火雨自撒）。
@@ -145,13 +145,16 @@ export class MineTrapSystem implements GameSystem {
     this.mines = still;
   }
 
-  /** 是否有「在場、非待機」玩家的 footPosition 進入這顆地雷的 radiusPx（★只玩家、怪不算）。 */
+  /**
+   * 是否有「在場、非待機」玩家的 footPosition **真的踩到這顆地雷本體**（★觸發半徑＝地雷本體半徑
+   * MINE_BODY_RADIUS_PX，貼合看到的地雷大小；與爆炸波及半徑 radiusPx 脫鉤）。★只玩家、怪不算。
+   */
   private playerSteppedOn(m: ActiveMine): boolean {
     const center = { x: m.x, y: m.y };
     for (const p of this.ctx.players) {
       if (typeof p.isWaiting === 'function' && p.isWaiting()) continue; // 待機（面板上）不踩雷
       const pos = p.getFootPosition?.() ?? p.getPosition?.();
-      if (pos && isInBlastRange(pos, center, m.radiusPx)) return true;
+      if (pos && isInBlastRange(pos, center, MINE_BODY_RADIUS_PX)) return true;
     }
     return false;
   }

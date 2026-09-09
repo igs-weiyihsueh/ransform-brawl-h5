@@ -5,6 +5,13 @@
  * 這裡抽「範圍命中判定」+ 延遲倒數推進純函式（rng/Phaser 無關，好測）。
  */
 
+/**
+ * ★地雷本體半徑（像素）：撒下靜止地雷 sprite 的視覺大小，也＝踩雷「觸發判定」半徑。
+ * 觸發範圍貼合看到的地雷本體（玩家 footPosition 進此半徑才觸發），與爆炸波及半徑 radiusPx 脫鉤。
+ * EffectSystem.mineMarkerStart 畫本體、MineTrapSystem.playerSteppedOn 判觸發，共用此常數以保一致。
+ */
+export const MINE_BODY_RADIUS_PX = 13;
+
 /** 目標是否在地雷爆炸範圍內（歐氏距離 <= radiusPx）。 */
 export function isInBlastRange(
   targetPos: { x: number; y: number },
