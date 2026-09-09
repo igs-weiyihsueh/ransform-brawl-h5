@@ -624,9 +624,14 @@ export class PlayerControlSystem implements GameSystem {
 
     // 充能回報：普攻打到人才 +1（招式命中不充）。
     energy.reportHit(attackerId, intent.isSkill, hitAny);
-    // 用戶新大功能：二段變身能量累積（★flag 關/未一段變身 → no-op）。普攻命中才累（比擊殺少）。
-    if (hitAny && !intent.isSkill) {
-      this.ctx.transform?.accumulateSecondTransform?.(attackerId, SECOND_TRANSFORM_CONFIG.energyPerHit);
+    // 用戶新大功能：二段變身能量累積（★flag 關/未一段變身 → no-op）。
+    // ★用戶調整：①按實際命中隻數累加（打中 N 隻 → +N 份 energyPerHit，非一次揮擊只 1 份）
+    //   ②普攻+技能命中都累（移除 !intent.isSkill 限制）。energyPerHit/fillThreshold 數值先不動（實機試集滿速度）。
+    if (hits.length > 0) {
+      this.ctx.transform?.accumulateSecondTransform?.(
+        attackerId,
+        SECOND_TRANSFORM_CONFIG.energyPerHit * hits.length,
+      );
     }
     if (hitAny) {
       this.ctx.credit.consumeOnHit(attackerId);
