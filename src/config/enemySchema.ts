@@ -175,7 +175,9 @@ export function assertValidEnemies(raw: unknown): EnemyFile {
 
 /**
  * 解析遊戲要用的敵人設定表（純函式，抽給測騎）：
- * - override 通過 validateEnemies → 用 override.enemies（用戶在 enemy-editor 套用的）。
+ * - override 通過 validateEnemies → **merge：override 有定義的 key 覆蓋、override 沒定義的 key 保留打包預設**。
+ *   （★根治：舊 JSON override 沒有的新怪如 Enemy_Tower 不被整個取代蓋掉→塔恢復正確。
+ *    per-enemy key 層級 shallow merge：每隻怪整個用 override 版或 packaged 版。）
  * - override 為 null / 壞 / validate 失敗 → 回打包預設 ENEMY_AI（行為 100% 不變）。
  * @param override loadOverride(EDITOR_STORE_KEYS.enemies) 的原始物件（未驗證）；null=無 override。
  * @param packaged 打包預設敵人表（預設 ENEMY_AI）。
@@ -186,7 +188,8 @@ export function resolveEnemies(
 ): Record<string, EnemyAIConfig> {
   if (override === null || override === undefined) return packaged;
   const result = validateEnemies(override);
-  return result.ok ? result.data.enemies : packaged;
+  // ★merge 非整個 replace：打包預設打底，override 有的怪覆蓋；override 沒有的新怪（如 Enemy_Tower）保留預設。
+  return result.ok ? { ...packaged, ...result.data.enemies } : packaged;
 }
 
 /** 已解析的敵人表 cache（遊戲啟動讀一次；重開遊戲才換，符合「套用→重開生效」）。 */
