@@ -121,6 +121,16 @@ export class WaveSystem implements GameSystem {
   /** 事件節點（MineTrap/TowerWave）保持計時 + 是否已觸發（進節點時設，倒數完前進）。 */
   private eventHold = 0;
   private eventTriggered = false;
+  /**
+   * 魔尖塔（TowerWave）階段 B：本波已摧毀尖塔數。征騎 TowerSystem 每摧毀一座呼叫 notifyTowerDestroyed()，
+   * 本系統累計；達 node.towerCount → 過關（提前 advance）。進 node 時歸 0。
+   */
+  private towersDestroyed = 0;
+  /**
+   * 魔尖塔結果回呼（階段 B，供遊戲端/征騎收尾清尖塔、播勝敗演出）：true=過關(打完)、false=失敗(限時到沒打完)。
+   * ★失敗不 GameOver：兩者都 advance 下一節點（沿用守護波規格 decision）。
+   */
+  onTowerWaveResult: ((won: boolean) => void) | null = null;
 
   /** 進行中的守護波（Event 節點）；null 表示非守護波。 */
   private guardEvent: GuardEvent | null = null;
@@ -147,6 +157,15 @@ export class WaveSystem implements GameSystem {
   /** Debug（N 熱鍵，搬自 Unity LevelProgressManager:103）：請求強制完成當前節點、跳下一個。下一幀 update() 處理。 */
   requestSkipCurrentNode(): void {
     this.skipRequested = true;
+  }
+
+  /**
+   * 魔尖塔（TowerWave 階段 B）：征騎 TowerSystem 每摧毀一座尖塔呼叫此，本系統累計。
+   * 達當前 TowerWave 節點 towerCount → updateTowerWaveNode 判過關（提前 advance）。
+   * 只在 TowerWave 節點進行中有意義（非 TowerWave 節點呼叫無害，換節點會歸 0）。
+   */
+  notifyTowerDestroyed(): void {
+    this.towersDestroyed += 1;
   }
 
   /**
@@ -241,10 +260,9 @@ export class WaveSystem implements GameSystem {
       return Math.min(1, Math.max(0, 1 - this.eventHold / total));
     }
     if (node.nodeType === 'TowerWave') {
-      // 進度＝已過時間 / 限時（階段 A；階段 B 改以尖塔擊破數為主）。未觸發→0。
-      if (!this.eventTriggered) return 0;
-      if (node.timeLimitSec <= 0) return 0;
-      return Math.min(1, Math.max(0, 1 - this.eventHold / node.timeLimitSec));
+      // 進度＝已摧毀尖塔數 / 目標塔數（階段 B：對齊用戶「打掉幾/N 塔」）。未觸發或無塔→0。
+      if (!this.eventTriggered || node.towerCount <= 0) return 0;
+      return Math.min(1, Math.max(0, this.towersDestroyed / node.towerCount));
     }
     return 0;
   }
@@ -353,15 +371,34 @@ export class WaveSystem implements GameSystem {
    * ★階段 A：實際尖塔怪 entity/環狀技傷害/★守護波失敗判定（限時內打不完＝失敗）＝階段 B（高風險，走變身-leader 把關，
    *   先跟異靈確認生命週期設計再動）。本階段只鋪節點流程 + 觸發點 + 參數傳遞。
    */
+  /**
+   * 魔尖塔節點（階段 B：守護波勝敗判定；接階段 A onTowerWave 鉤子）。
+   * 走到此節點→觸發 onTowerWave 生成 N 座尖塔（征騎 entity）→守護波：限時 timeLimitSec、目標打掉 towerCount 座。
+   * ★勝敗雙結束條件（沿用守護波規格 decision f45c7d08，變身-leader 把關）：
+   *   - 限時內打完全部尖塔（towersDestroyed >= towerCount）＝過關 → 提前 advance。
+   *   - 限時到還沒打完＝失敗 → ★不 GameOver、一樣 advance 下一節點（不重來/不扣命）。
+   *   兩者都走既有 advanceNode()（不新增波次生命週期、不動 killQuota/clamp/人數縮放不變量）。
+   * 尖塔擊破數由征騎 TowerSystem 呼 notifyTowerDestroyed() 累計；onTowerWaveResult(won) 供收尾清尖塔/播演出。
+   */
   private updateTowerWaveNode(node: TowerWaveNodeData, dt: number): void {
-    if (this.eventHold <= 0 && !this.eventTriggered) {
+    if (!this.eventTriggered) {
       this.eventTriggered = true;
-      this.eventHold = node.timeLimitSec; // 限時；階段 B 會改成「打完 or 限時到」雙結束條件 + 勝敗判定
-      this.onTowerWave?.(node); // 觸發入口（階段 B 遊戲端接：生成 N 座尖塔→環狀技→限時勝敗）
+      this.eventHold = node.timeLimitSec; // 限時倒數
+      this.towersDestroyed = 0; // 本波擊破數歸零
+      this.onTowerWave?.(node); // 觸發入口（征騎接：生成 towerCount 座尖塔＋環狀技）
     }
     this.eventHold -= dt;
+
+    // 過關：限時內打完全部尖塔 → 提前結束。
+    if (this.towersDestroyed >= node.towerCount) {
+      this.onTowerWaveResult?.(true);
+      this.advanceNode();
+      return;
+    }
+    // 失敗：限時到還沒打完 → 不 GameOver，一樣前進下一節點。
     if (this.eventHold <= 0) {
       this.eventHold = 0;
+      this.onTowerWaveResult?.(false);
       this.advanceNode();
     }
   }
@@ -438,6 +475,7 @@ export class WaveSystem implements GameSystem {
     this.rewardHold = 0; // 換節點清獎勵演出計時（用戶 #3）
     this.eventHold = 0; // 換節點清事件（MineTrap/TowerWave）計時
     this.eventTriggered = false;
+    this.towersDestroyed = 0; // 換節點清魔尖塔擊破數（階段 B）
     // group 分層：進 Spawn 節點時依 node.groups 重建 per-group 狀態；無 groups → 空陣列（走扁平單流）。
     const enteredNode = this.currentLevel()?.nodes[index];
     const groups = enteredNode?.nodeType === 'Spawn' ? (enteredNode as SpawnNodeData).groups : undefined;

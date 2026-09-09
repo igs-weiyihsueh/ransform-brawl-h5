@@ -105,3 +105,51 @@ describe('階段 A WaveSystem — 觸發鉤子 + 前進', () => {
     expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('階段 B 魔尖塔守護波勝敗判定（雙結束條件；失敗不 GameOver 繼續下關）', () => {
+  it('★ 限時內打完全部尖塔 → 過關（提前 advance、onTowerWaveResult(true)）', () => {
+    const level = { id: 'L', nodes: [{ ...TOWER, towerCount: 3, timeLimitSec: 100 }, { nodeType: 'Reward', rewardTickets: 5 }] } as unknown as LevelData;
+    const sys = makeWave([level]);
+    let result: boolean | null = null;
+    sys.onTowerWaveResult = (won) => { result = won; };
+    sys.update(1 / 60); // 觸發
+    // 征騎摧毀 3 座（呼 notifyTowerDestroyed）
+    sys.notifyTowerDestroyed(); sys.notifyTowerDestroyed(); sys.notifyTowerDestroyed();
+    sys.update(1 / 60); // 下一幀判過關（遠早於 100s 限時）
+    expect(result).toBe(true); // 過關
+    expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1); // 提前 advance
+  });
+
+  it('★ 限時到還沒打完 → 失敗（onTowerWaveResult(false)）但不 GameOver、一樣 advance 下一節點', () => {
+    const level = { id: 'L', nodes: [{ ...TOWER, towerCount: 4, timeLimitSec: 2 }, { nodeType: 'Reward', rewardTickets: 5 }] } as unknown as LevelData;
+    const sys = makeWave([level]);
+    let result: boolean | null = null;
+    sys.onTowerWaveResult = (won) => { result = won; };
+    sys.update(1 / 60);
+    sys.notifyTowerDestroyed(); // 只打掉 1 座（不足 4）
+    for (let i = 0; i < 60 * 3; i += 1) sys.update(1 / 60); // 跑過 2s 限時
+    expect(result).toBe(false); // 失敗
+    expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1); // ★失敗仍 advance（不 GameOver、不卡住）
+  });
+
+  it('★ getNodeProgress = 已摧毀 / towerCount（打掉幾座）', () => {
+    const level = { id: 'L', nodes: [{ ...TOWER, towerCount: 4, timeLimitSec: 100 }] } as unknown as LevelData;
+    const sys = makeWave([level]);
+    sys.update(1 / 60); // 觸發
+    expect(sys.getNodeProgress()).toBeCloseTo(0); // 0/4
+    sys.notifyTowerDestroyed(); sys.notifyTowerDestroyed();
+    expect(sys.getNodeProgress()).toBeCloseTo(0.5); // 2/4
+  });
+
+  it('換節點後 towersDestroyed 歸零（不把上波擊破數帶進下一 TowerWave）', () => {
+    const level = { id: 'L', nodes: [
+      { ...TOWER, towerCount: 1, timeLimitSec: 100 },
+      { ...TOWER, towerCount: 4, timeLimitSec: 100 },
+    ] } as unknown as LevelData;
+    const sys = makeWave([level]);
+    sys.update(1 / 60); sys.notifyTowerDestroyed(); sys.update(1 / 60); // 第一波打完(1/1)過關進第二波
+    expect(nodeIdx(sys)).toBe(1);
+    sys.update(1 / 60); // 第二波觸發
+    expect(sys.getNodeProgress()).toBeCloseTo(0); // 歸零（非 1/4 沿用上波）
+  });
+});
