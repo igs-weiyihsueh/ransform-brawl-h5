@@ -77,6 +77,10 @@ const ENEMY_ATTACK_VFX = {
   descendImpact: { key: 'vfx-descend-impact', path: `${BASE_PATH}/fx_descend_impact.png` },
   /** ③投幣變身表演-落地震退波（256×256，貼地壓扁橢圓，scale 0.3→1.6 擴散+alpha 1→0，~0.4s）。 */
   shockwaveRing: { key: 'vfx-shockwave-ring', path: `${BASE_PATH}/fx_shockwave_ring.png` },
+  /** 2 新事件-地雷預警圈（256×256，地雷鋪下後 delaySec 內持續脈動顯示範圍，給玩家反應）。 */
+  mineWarning: { key: 'vfx-mine-warning', path: `${BASE_PATH}/fx_mine_warning.png` },
+  /** 2 新事件-地雷爆炸（256×256，延遲到→範圍爆炸播一次，scale 依 radiusPx）。 */
+  mineExplosion: { key: 'vfx-mine-explosion', path: `${BASE_PATH}/fx_mine_explosion.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */
@@ -1520,6 +1524,47 @@ export class EffectSystem {
       ease: 'Cubic.easeOut',
       onComplete: () => img.destroy(),
     });
+  }
+
+  // === 2 新事件-地雷 VFX（MineTrapSystem 呼叫；預警圈 handle 式持續脈動 / 爆炸一次性） ===
+
+  /**
+   * 地雷預警圈起手（鋪雷後 delaySec 內持續顯示範圍，脈動提示；handle 式，爆炸時 End 收）。
+   * 貼地（origin 0.5,0.5、depth 地面層）；displaySize 依 radiusPx（爆炸半徑，直徑=2×r）。
+   * @returns handle（Image）或 null（素材未載）。
+   */
+  mineWarningStart(x: number, y: number, radiusPx: number): Phaser.GameObjects.Image | null {
+    const key = ENEMY_ATTACK_VFX.mineWarning.key;
+    if (!this.scene.textures.exists(key)) return null;
+    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
+    img.setDepth(PANEL_DEPTH + 10); // 地面層（角色下）
+    img.setBlendMode(Phaser.BlendModes.ADD);
+    const d = Math.max(16, radiusPx * 2); // 直徑=覆蓋爆炸半徑
+    img.setDisplaySize(d, d).setAlpha(0.85);
+    this.scene.tweens.add({
+      targets: img, alpha: 0.45, duration: 400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+    return img;
+  }
+
+  /** 地雷預警圈收（爆炸瞬間）→ 立即移除（爆炸 VFX 接手）。 */
+  mineWarningEnd(handle: Phaser.GameObjects.Image | null): void {
+    if (!handle) return;
+    this.scene.tweens.killTweensOf(handle);
+    handle.destroy();
+  }
+
+  /** 地雷爆炸（延遲到播一次；貼地、範圍依 radiusPx）。scale 0.6→1.1 爆開+後段淡出，~0.35s。 */
+  mineExplosion(x: number, y: number, radiusPx: number): void {
+    const key = ENEMY_ATTACK_VFX.mineExplosion.key;
+    if (!this.scene.textures.exists(key)) return;
+    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
+    img.setDepth(PANEL_DEPTH + 13);
+    img.setBlendMode(Phaser.BlendModes.ADD);
+    const d = Math.max(16, radiusPx * 2);
+    img.setDisplaySize(d * 0.6, d * 0.6).setAlpha(1);
+    this.scene.tweens.add({ targets: img, displayWidth: d * 1.1, displayHeight: d * 1.1, duration: 350, ease: 'Quad.easeOut' });
+    this.scene.tweens.add({ targets: img, alpha: 0, delay: 175, duration: 175, ease: 'Quad.easeIn', onComplete: () => img.destroy() });
   }
 
   deathParticle(x: number, y: number, color: number): void {

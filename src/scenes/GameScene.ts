@@ -36,6 +36,7 @@ import { ProgressBarSystem } from '@/systems/ProgressBarSystem';
 import { FireRainSystem } from '@/systems/FireRainSystem';
 import { GrabSystem } from '@/systems/GrabSystem';
 import { WaveSystem } from '@/systems/WaveSystem';
+import { MineTrapSystem } from '@/systems/MineTrapSystem';
 
 /**
  * GameScene — 主場景（系統註冊表版）。
@@ -52,6 +53,8 @@ export class GameScene extends Phaser.Scene {
   private ctx!: GameContext;
   /** UISystem 實例（create 提前建立供擊殺回呼取寶盒錨點；registerSystems 再註冊）。 */
   private uiSystem!: UISystem;
+  /** 2 新事件階段 B：地雷陷阱系統（create 建+接 onMineTrap，registerSystems 再註冊供每幀 update）。 */
+  private mineTrapSystem?: MineTrapSystem;
   /** 用戶 #3：JP 燈 HUD（3組×5顆，飛光終點+反映 JpSystem litCount）。 */
   private jpLampHud?: JpLampHud;
 
@@ -223,6 +226,11 @@ export class GameScene extends Phaser.Scene {
       });
     };
 
+    // 2 新事件階段 B：地雷陷阱實體——接波騎 onMineTrap 觸發鉤子（定點鋪雷→預警圈→延遲爆→範圍麻痺不分敵我不扣血）。
+    const mineTrap = new MineTrapSystem();
+    wave.onMineTrap = (node) => mineTrap.deployMines(node);
+    this.mineTrapSystem = mineTrap; // registerSystems 再註冊（需每幀 update 推進地雷倒數）
+
     this.registerSystems();
 
     for (const sys of this.systems) {
@@ -309,6 +317,7 @@ export class GameScene extends Phaser.Scene {
     this.register(this.ctx.chest); // 寶盒：擊殺累積能量/自動開箱
     this.register(this.ctx.jp); // JP：幕通關給燈/命中累積倍數/集滿派彩
     this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
+    if (this.mineTrapSystem) this.register(this.mineTrapSystem); // 2 新事件：地雷陷阱（接 onMineTrap，每幀推進延遲爆）
     this.register(new FireRainSystem()); // 天降火雨（守護波進行中觸發，只傷玩家）
     this.register(new GrabSystem()); // 抓人機制：沒打怪 8s → grabber 衝來抓、攻擊/倒數掙脫（per-player）
     this.register(new ProgressBarSystem()); // 頂部進度條 HUD：關卡進度 + 守護波倒數（讀 wave/guard）
