@@ -1692,13 +1692,16 @@ export class EffectSystem {
     const dur = Math.max(120, durationMs);
     const g = this.scene.add.graphics();
     g.setPosition(x, y).setDepth(PANEL_DEPTH + 11).setBlendMode(Phaser.BlendModes.ADD);
-    // ★空心環：只描邊、不填滿（中間透空）。
+    // ★空心環：只描邊、不填滿（中間透空）。半徑用真正圓半徑畫（判定另在 towerRingSkill、維持正圓不受此影響）。
     g.lineStyle(lw, color, 0.95);
     g.strokeCircle(0, 0, radius);
-    // 出現：快速淡入 + 微微 pop（scale 0.92→1.0 感）→ 顯示 → 下環出現前淡出（同時只一個環）。
-    g.setScale(0.92).setAlpha(0);
+    // ★貼地壓扁（參考 chargeDisk 俯視腳底盤 scaleY 0.5）：Y 軸壓扁成橢圓＝平貼地面的圓盤，非立著的正圓平面。
+    //   判定維持正圓（towerRingSkill.ringHitsPlayer 用真半徑，不受視覺壓扁影響）——純視覺調整。
+    const GROUND_SQUASH_Y = 0.5;
+    // 出現：X 快速 pop 0.92→1、Y 維持壓扁（0.92→1 再乘壓扁比）→ 顯示 → 下環出現前淡出（同時只一個環）。
+    g.setScale(0.92, 0.92 * GROUND_SQUASH_Y).setAlpha(0);
     this.scene.tweens.add({
-      targets: g, scale: 1, alpha: 0.95,
+      targets: g, scaleX: 1, scaleY: GROUND_SQUASH_Y, alpha: 0.95,
       duration: Math.min(120, dur * 0.35), ease: 'Quad.easeOut',
       onComplete: () => {
         this.scene.tweens.add({
