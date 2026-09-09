@@ -57,6 +57,13 @@ if (isPreviewMode()) {
   });
   bridge.start();
 } else {
+  // 版本自動更新檢查（部署/體驗改善）：正式遊戲頁啟動時輪詢 version.json，偵測新版部署→提示用戶更新，
+  //   根治 GitHub Pages index.html HTTP 快取導致「更新後載到舊版」（無 SW、http-equiv meta 無法覆蓋 server header）。
+  void (async () => {
+    const { startVersionCheck } = await import('@/systems/versionCheck');
+    startVersionCheck();
+  })();
+
   // 遊戲內展開編輯器（方案 A'）：非試玩模式才掛 overlay（右下浮動鈕→展開編輯器面板）。
   // 動態 import 殼（遊戲主 bundle 不含編輯器 code，點開浮動鈕/tab 才 lazy 載各編輯器）。
   void (async () => {
