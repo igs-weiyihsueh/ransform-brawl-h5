@@ -155,6 +155,14 @@ export class WaveSystem implements GameSystem {
    */
   private mineGateSec = 0;
 
+  /**
+   * B4：塔波登場流程比照火雨/地雷——「塔波提示文字(waveMessage) → 顯完 → 壓黑+生塔+塔發亮」不重疊。
+   * 進 tower Event 節點時設此延遲秒數（一個 waveMessage 時長）；期間 updateTowerWaveNode 按住不發 onTowerWave
+   * （故 gate 內 eventTriggered 仍 false → isTowerWaveActive() 回 false、進度條先不顯塔條）。
+   * gate 跑完（<=0）才觸發 onTowerWave（征騎收到即跑壓黑+生塔+發亮）。倒數在 update() 遞減。
+   */
+  private towerGateSec = 0;
+
   /** debug/UI：目前守護波（若有）。 */
   getGuardEvent(): GuardEvent | null {
     return this.guardEvent;
@@ -234,6 +242,16 @@ export class WaveSystem implements GameSystem {
     if (this.fireRainActive && node?.nodeType === 'Event') {
       const en = (node as { eventPresetName: string }).eventPresetName;
       return isResolvedFireRainPreset(en) ? getResolvedFireRainPreset(en) : null;
+    }
+    // A1：魔尖塔波 Event 節點附加火雨（用戶：魔尖塔波節點可追加火雨）。
+    //   editor 寫 node.attachFireRain（'none' 或火雨 preset 名）；此處讀取端認 Tower 節點。
+    //   ★時序：只在塔波已觸發（eventTriggered，towerGate 跑完塔已生）後才降——比照 Spawn 的 gate 觀念、
+    //   避免塔波提示文字/壓黑 intro 期間火雨太早下（與 mine/fire gate 一致）。'none'→不降。
+    if (node?.nodeType === 'Event' && isResolvedTowerPreset((node as EventNodeData).eventPresetName)) {
+      if (!this.eventTriggered) return null; // towerGate 內 / 尚未生塔 → 火雨先按住
+      const raw = (node as { attachFireRain?: string }).attachFireRain;
+      if (raw && raw !== 'none') return getResolvedFireRainPreset(raw);
+      return null;
     }
     // 守護波 + 守護 preset 帶火雨 preset 名。六輪#1：node.attachFireRain 三態可 per-node 覆蓋 preset 預設。
     // 十四輪：★只在 combat phase 才降火雨（對齊 Unity 解暗後 StartNodeModifiers）——開場 introMove/reveal/focus
@@ -364,6 +382,8 @@ export class WaveSystem implements GameSystem {
     if (this.fireRainGateSec > 0) this.fireRainGateSec = Math.max(0, this.fireRainGateSec - dt);
     // 用戶：地雷訊息/撒雷晚於波次宣告（比照火雨）→ gate 倒數，期間 getActiveMinePreset 回 null。
     if (this.mineGateSec > 0) this.mineGateSec = Math.max(0, this.mineGateSec - dt);
+    // B4：塔波登場 gate 倒數，期間 updateTowerWaveNode 按住不發 onTowerWave（讓 waveMessage 先顯完）。
+    if (this.towerGateSec > 0) this.towerGateSec = Math.max(0, this.towerGateSec - dt);
 
     // Debug（N 熱鍵）：強制完成當前節點、跳下一個（搬自 Unity skipCurrentNode）。
     //   守護波→forceFinish 乾淨結束(cleanup 雕像/清怪/解鎖/spotlight)；火雨→清 active；Spawn/Reward→直接 advance。
@@ -411,11 +431,14 @@ export class WaveSystem implements GameSystem {
    */
   private updateTowerWaveNode(node: EventNodeData, dt: number): void {
     const t: TowerPreset = getResolvedTowerPreset(node.eventPresetName);
+    // B4：gate 期間（waveMessage 顯示中）先不生塔——按住 onTowerWave，讓塔波提示文字先顯完。
+    //   gate 內 eventTriggered 維持 false → isTowerWaveActive() 回 false（進度條先不顯塔條）。
+    if (this.towerGateSec > 0) return;
     if (!this.eventTriggered) {
       this.eventTriggered = true;
       this.eventHold = t.timeLimitSec; // 限時倒數
       this.towersDestroyed = 0; // 本波擊破數歸零
-      this.onTowerWave?.(t); // 觸發入口（征騎接：生成 towerCount 座尖塔＋ringSkill 環狀技）
+      this.onTowerWave?.(t); // 觸發入口（征騎接：waveMessage 已顯完 → 壓黑+生成 towerCount 座尖塔＋發亮＋ringSkill 環狀技）
     }
     this.eventHold -= dt;
 
@@ -533,6 +556,10 @@ export class WaveSystem implements GameSystem {
     //   讓「第 N 波」先出、地雷（含「小心地雷！」宣告 game-side 發）接其後。無地雷 gate=0（不影響）。
     const hasMine = !!(entered as { attachMineTrap?: string })?.attachMineTrap;
     this.mineGateSec = hasMine ? WAVE_MESSAGE_FX.durationSec : 0;
+    // B4：進 tower Event 節點 → 按住一個 waveMessage 時長才生塔（塔波提示文字顯完 → 壓黑+生塔+發亮 by 征騎）。
+    //   gate 內 eventTriggered 維持 false → isTowerWaveActive() 回 false（征騎進度條先不顯塔條）。非塔波 gate=0。
+    const isTowerNode = entered?.nodeType === 'Event' && isResolvedTowerPreset((entered as EventNodeData).eventPresetName);
+    this.towerGateSec = isTowerNode ? WAVE_MESSAGE_FX.durationSec : 0;
   }
 
   /** 過場提示（#9，純視覺）：進節點時依類型顯示螢幕中央提示文字。 */
