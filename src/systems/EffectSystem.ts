@@ -1570,26 +1570,32 @@ export class EffectSystem {
   }
 
   /**
-   * 魔尖塔環狀擴散技（2 新事件階段 B，征騎）：單張環 sprite 從小 scale 到 targetDiameterPx，alpha 1→0 淡出，
-   * 表現「環半徑一圈圈向外擴大」的漣漪/衝擊波。duration 對齊 gameplay 環擴到 maxRadius 的時間。
-   * @param x,y 尖塔中心。@param targetDiameterPx 環擴到的最終直徑（=2×maxRadius）。@param durationMs 擴散時長。
+   * 魔尖塔環狀技（2 新事件階段 B，征騎，★依序固定環）：在**固定半徑**顯示一個環，快速淡入 → 該環期間顯示 →
+   * 下環出現前淡出（不擴大！每環固定 diameter）。表現「一環接一環、由內往外、同時只一個環」。
+   * @param x,y 尖塔中心。@param diameterPx 這一環的固定直徑（=2×該環半徑）。@param durationMs 該環顯示時長（=ringInterval）。
    */
-  towerRing(x: number, y: number, targetDiameterPx: number, durationMs: number): void {
+  towerRing(x: number, y: number, diameterPx: number, durationMs: number): void {
     const key = ENEMY_ATTACK_VFX.towerRing.key;
     if (!this.scene.textures.exists(key)) return;
     const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
     img.setDepth(PANEL_DEPTH + 11); // 地面層（與其他地面環同層級）
     img.setBlendMode(Phaser.BlendModes.ADD);
-    const startPx = Math.max(16, targetDiameterPx * 0.05); // 從很小開始
-    img.setDisplaySize(startPx, startPx).setAlpha(0.9);
+    const d = Math.max(16, diameterPx); // ★固定直徑（不擴大）
+    const dur = Math.max(120, durationMs);
+    // 出現：快速淡入 + 微微 pop（0.92→1.0 scale 感），非漣漪擴散。
+    img.setDisplaySize(d * 0.92, d * 0.92).setAlpha(0);
     this.scene.tweens.add({
-      targets: img,
-      displayWidth: Math.max(startPx, targetDiameterPx),
-      displayHeight: Math.max(startPx, targetDiameterPx),
-      alpha: 0,
-      duration: Math.max(120, durationMs),
-      ease: 'Sine.easeOut',
-      onComplete: () => img.destroy(),
+      targets: img, displayWidth: d, displayHeight: d, alpha: 0.95,
+      duration: Math.min(120, dur * 0.35), ease: 'Quad.easeOut',
+      onComplete: () => {
+        // 持續顯示到接近換環 → 淡出（下環出現前消失，畫面同時只一個環）。
+        this.scene.tweens.add({
+          targets: img, alpha: 0,
+          delay: Math.max(0, dur * 0.4),
+          duration: Math.max(80, dur * 0.5), ease: 'Sine.easeIn',
+          onComplete: () => img.destroy(),
+        });
+      },
     });
   }
 

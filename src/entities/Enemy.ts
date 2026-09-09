@@ -100,7 +100,14 @@ export class Enemy implements Hittable {
   private hp: number;
   private maxHp: number;
   /** 尖塔環狀技參數覆寫（TowerWave 節點設定，spawnTower 套用；null＝用 config.ringSkill）。 */
-  private ringSkillOverride: { intervalSec: number; expandPxPerRing: number; energyCost: number } | null = null;
+  private ringSkillOverride: {
+    ringCount: number;
+    baseRadiusPx: number;
+    radiusStepPx: number;
+    ringIntervalSec: number;
+    ringThicknessPx: number;
+    energyCost: number;
+  } | null = null;
   private readonly radiusPx: number;
 
   private state: EnemyState = 'chase';
@@ -548,17 +555,36 @@ export class Enemy implements Hittable {
     return this.getRingSkill() != null;
   }
 
-  /** 尖塔環狀技參數（非尖塔回 null）。 */
-  getRingSkill(): { intervalSec: number; expandPxPerRing: number; energyCost: number } | null {
+  /** 尖塔環狀技參數（非尖塔回 null）。對齊波騎 RingSkillParams 欄位。 */
+  getRingSkill(): {
+    ringCount: number;
+    baseRadiusPx: number;
+    radiusStepPx: number;
+    ringIntervalSec: number;
+    ringThicknessPx: number;
+    energyCost: number;
+  } | null {
     return this.ringSkillOverride ?? this.cfg.ringSkill ?? null;
   }
 
   /** 覆寫環狀技參數（TowerWave 節點 ringSkill 由 spawnTower 套用；缺欄沿用 config）。 */
-  setRingSkillOverride(ring: { intervalSec?: number; expandPxPerRing?: number; energyCost?: number }): void {
-    const base = this.cfg.ringSkill ?? { intervalSec: 2, expandPxPerRing: 160, energyCost: 2 };
+  setRingSkillOverride(ring: {
+    ringCount?: number;
+    baseRadiusPx?: number;
+    radiusStepPx?: number;
+    ringIntervalSec?: number;
+    ringThicknessPx?: number;
+    energyCost?: number;
+  }): void {
+    const base = this.cfg.ringSkill ?? {
+      ringCount: 3, baseRadiusPx: 90, radiusStepPx: 120, ringIntervalSec: 0.6, ringThicknessPx: 40, energyCost: 2,
+    };
     this.ringSkillOverride = {
-      intervalSec: ring.intervalSec != null && ring.intervalSec > 0 ? ring.intervalSec : base.intervalSec,
-      expandPxPerRing: ring.expandPxPerRing != null && ring.expandPxPerRing >= 0 ? ring.expandPxPerRing : base.expandPxPerRing,
+      ringCount: ring.ringCount != null && ring.ringCount >= 1 ? Math.floor(ring.ringCount) : base.ringCount,
+      baseRadiusPx: ring.baseRadiusPx != null && ring.baseRadiusPx >= 0 ? ring.baseRadiusPx : base.baseRadiusPx,
+      radiusStepPx: ring.radiusStepPx != null && ring.radiusStepPx >= 0 ? ring.radiusStepPx : base.radiusStepPx,
+      ringIntervalSec: ring.ringIntervalSec != null && ring.ringIntervalSec > 0 ? ring.ringIntervalSec : base.ringIntervalSec,
+      ringThicknessPx: ring.ringThicknessPx != null && ring.ringThicknessPx > 0 ? ring.ringThicknessPx : base.ringThicknessPx,
       energyCost: ring.energyCost != null && ring.energyCost >= 0 ? ring.energyCost : base.energyCost,
     };
   }

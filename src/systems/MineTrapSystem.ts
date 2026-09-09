@@ -1,7 +1,7 @@
 import type Phaser from 'phaser';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
-import type { MineTrapNodeData } from '@/config/levelSchema';
+import type { ResolvedMineTrap } from '@/systems/WaveSystem';
 import { STUN_DEFAULT_SEC } from '@/config/eventsConfig';
 import { isInBlastRange, tickMineDelay } from '@/systems/mineTrapMath';
 
@@ -18,8 +18,8 @@ interface ActiveMine {
 /**
  * MineTrapSystem — 地雷陷阱實體（2 新事件階段 B）。
  *
- * 接波騎 WaveSystem.onMineTrap(node) 觸發鉤子 → 依 node.points 定點鋪雷 → 顯預警圈（脈動 delaySec）
- * → 延遲到爆炸（mineExplosion VFX）→ radiusPx 範圍內「玩家+怪」呼叫 applyStun(paralyzeSec) 麻痺。
+ * 接波騎 WaveSystem.onMineTrap(ResolvedMineTrap) 觸發鉤子 → 依 WaveSystem 火雨式撒好的 resolved.points 逐點鋪雷
+ * → 顯預警圈（脈動 delaySec）→ 延遲到爆炸（mineExplosion VFX）→ radiusPx 範圍內「玩家+怪」呼叫 applyStun(paralyzeSec) 麻痺。
  * ★不分敵我（怪也麻痺）、★不扣血（麻痺＝定住，角色無血量）。
  *
  * 走 decision a655c53d：碰共用 gameplay 契約（Enemy.applyStun/麻痺）→ 變身-leader review。
@@ -35,14 +35,14 @@ export class MineTrapSystem implements GameSystem {
   }
 
   /**
-   * 接 onMineTrap 鉤子：依 node.points 定點鋪雷（每點一顆），顯預警圈、起 delaySec 倒數。
-   * points 空 → 不鋪（合法，框架階段可空）。
+   * 接 onMineTrap 鉤子（★火雨式自動撒）：直接用 WaveSystem 已全場撒好的 resolved.points 逐點鋪雷
+   * （不自算落點），顯預警圈、起 delaySec 倒數。points 空 → 不鋪（合法）。
    */
-  deployMines(node: MineTrapNodeData): void {
-    const delay = node.delaySec > 0 ? node.delaySec : 3;
-    const paralyze = node.paralyzeSec > 0 ? node.paralyzeSec : STUN_DEFAULT_SEC;
-    const radius = Math.max(0, node.radiusPx);
-    for (const p of node.points ?? []) {
+  deployMines(resolved: ResolvedMineTrap): void {
+    const delay = resolved.delaySec > 0 ? resolved.delaySec : 3;
+    const paralyze = resolved.paralyzeSec > 0 ? resolved.paralyzeSec : STUN_DEFAULT_SEC;
+    const radius = Math.max(0, resolved.radiusPx);
+    for (const p of resolved.points ?? []) {
       const warning = this.ctx.effects?.mineWarningStart?.(p.x, p.y, radius) ?? null;
       this.mines.push({ x: p.x, y: p.y, remaining: delay, radiusPx: radius, paralyzeSec: paralyze, warning });
     }

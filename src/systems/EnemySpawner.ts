@@ -14,13 +14,12 @@ import { Projectile } from '@/systems/Projectile';
 import { SurroundSlotManager, type ISurroundTarget } from '@/systems/SurroundSlotManager';
 import { isValidEnemyTarget } from '@/systems/targetingMath';
 import {
-  type ActiveRing,
-  type TowerRingRuntimeParams,
+  type TowerRingState,
   resolveTowerRingParams,
-  spawnRing,
-  advanceRing,
+  createTowerRingState,
+  advanceTowerRing,
+  ringRadiusForIndex,
   ringHitsPlayer,
-  tickRingTimer,
 } from '@/systems/towerRingSkill';
 import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
 
@@ -47,11 +46,9 @@ export class EnemySpawner {
     null;
   private meleeCircleFlash = 0;
 
-  // === 魔尖塔環狀技（2 新事件階段 B）===
-  /** 每座尖塔的放環計時器（key=Enemy.id）。 */
-  private towerRingTimers = new Map<number, number>();
-  /** 進行中的環（跨尖塔共用一個池；每個 ring 記自己 center/radius）。 */
-  private activeRings: { ring: ActiveRing; params: TowerRingRuntimeParams }[] = [];
+  // === 魔尖塔環狀技（2 新事件階段 B，★依序固定環）===
+  /** 每座尖塔的環狀技狀態（key=Enemy.id）：目前第幾環 + 換環計時 + 本環命中去重。 */
+  private towerRingStates = new Map<number, TowerRingState>();
   /**
    * ★給波騎守護波判定用：尖塔被摧毀事件（帶剩餘存活尖塔數）。GameScene/WaveSystem 綁定判「打完 N 塔過關」。
    */
@@ -406,7 +403,7 @@ export class EnemySpawner {
       this.releaseSurroundFor(e);
       this.balanceCooldownById.delete(e.id); // 十六輪③：清失衡遷移冷卻（避免 map 洩漏）
       if (e.isTower()) {
-        this.towerRingTimers.delete(e.id); // 尖塔被打掉 → 清放環計時器
+        this.towerRingStates.delete(e.id); // 尖塔被打掉 → 清環狀技狀態
         towerDied = true;
       }
     }
@@ -416,50 +413,47 @@ export class EnemySpawner {
   }
 
   /**
-   * 魔尖塔環狀技每幀更新（2 新事件階段 B）：
-   *  1) 每座存活尖塔跑放環計時器（tickRingTimer），達 intervalSec → 生新環（spawnRing）+ 播 VFX。
-   *  2) 推進所有進行中的環（advanceRing 擴大半徑），超過 maxRadius 移除。
-   *  3) 環圈（annulus，中心空）命中玩家 → 扣 energyCost 段能量（onPlayerRingHit，一個環對同玩家只扣一次）。
+   * 魔尖塔環狀技每幀更新（2 新事件階段 B，★依序固定環）：
+   *  每座存活尖塔持一份 TowerRingState（第幾環 + 換環計時 + 本環命中去重）。
+   *  1) advanceTowerRing：計時達 ringIntervalSec → 前環消失、換下一環（固定半徑、循環回內圈）；換環時播新環 VFX。
+   *  2) 當前環（固定半徑 baseRadius+ringIndex×radiusStep）環帶（annulus，中心空）命中玩家 →
+   *     扣 energyCost 段能量（onPlayerRingHit，本環對同玩家只扣一次，換環時去重重置）。
+   * ★同時畫面只有一個環（前環消失下環才出）；環不連續擴大（每環固定半徑）。
    * ★環狀技碰攻擊判定＝高風險共用契約（decision a655c53d，走變身-leader review）。
    */
   private updateTowerRings(dt: number): void {
-    // 1) 每座尖塔放環。
     for (const e of this.enemies) {
       if (!e.isTower() || e.isDead()) continue;
       const ring = e.getRingSkill();
       if (!ring) continue;
       const params = resolveTowerRingParams(ring);
-      const prev = this.towerRingTimers.get(e.id) ?? 0;
-      const { fire, timer } = tickRingTimer(prev, dt, params.intervalSec);
-      this.towerRingTimers.set(e.id, timer);
-      if (fire) {
-        const c = e.getHitCenter();
-        this.activeRings.push({ ring: spawnRing(c, params), params });
-        // VFX：單張環放大淡出，直徑對齊 maxRadius×2、時長＝擴到 maxRadius 的秒數。
-        const durMs = params.expandPxPerSec > 0 ? (params.maxRadiusPx / params.expandPxPerSec) * 1000 : 800;
-        this.hitFeelFx?.towerRing?.(c.x, c.y, params.maxRadiusPx * 2, durMs);
+      let state = this.towerRingStates.get(e.id);
+      if (!state) {
+        state = createTowerRingState();
+        this.towerRingStates.set(e.id, state);
       }
-    }
-    if (this.activeRings.length === 0) return;
-    // 2)+3) 推進環 + 命中判定。
-    const survivors: { ring: ActiveRing; params: TowerRingRuntimeParams }[] = [];
-    for (const entry of this.activeRings) {
-      const alive = advanceRing(entry.ring, dt, entry.params);
-      // 對每個玩家做環圈命中（annulus）。一個環對同玩家只扣一次（ring.hitPlayers 去重）。
+      const c = e.getHitCenter();
+      // 1) 換環時序：達間隔 → 換下一環（固定半徑，循環）+ 播新環 VFX。
+      const { advanced } = advanceTowerRing(state, dt, params);
+      if (advanced) {
+        const radius = ringRadiusForIndex(state.ringIndex, params);
+        // VFX：依序單環顯示——在該固定半徑畫一個環、下環出現前淡出（時長＝一個 ringInterval）。
+        this.hitFeelFx?.towerRing?.(c.x, c.y, radius * 2, params.ringIntervalSec * 1000);
+      }
+      // 2) 當前環固定半徑，環帶命中玩家（本環對同玩家只扣一次）。
+      const curRadius = ringRadiusForIndex(state.ringIndex, params);
       for (const p of this.getAllPlayers()) {
         const pid = p.playerId;
-        if (entry.ring.hitPlayers.has(pid)) continue;
+        if (state.hitPlayersThisRing.has(pid)) continue;
         const pc = p.getVacuumCenter?.() ?? p.getHitCenter();
         const pr = p.getVacuumRadius?.() ?? p.getHitRadius();
-        if (ringHitsPlayer(entry.ring, pc, pr)) {
-          entry.ring.hitPlayers.add(pid);
-          const energyRatio = entry.params.energyCost * SECOND_TRANSFORM_CONFIG.energyLossOnHit;
+        if (ringHitsPlayer(c, curRadius, params.halfThicknessPx, pc, pr)) {
+          state.hitPlayersThisRing.add(pid);
+          const energyRatio = params.energyCost * SECOND_TRANSFORM_CONFIG.energyLossOnHit;
           this.onPlayerRingHit?.(pid, energyRatio);
         }
       }
-      if (alive) survivors.push(entry);
     }
-    this.activeRings = survivors;
   }
 
   /** 守護波目標介面：可判定命中(Hittable) + 提供位置(AI aim) + 受傷。 */

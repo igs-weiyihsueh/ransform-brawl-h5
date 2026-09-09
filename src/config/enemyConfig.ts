@@ -84,11 +84,15 @@ export interface EnemyAIConfig {
   /**
    * 魔尖塔環狀技（2 新事件階段 B）：設此欄＝這隻是「尖塔怪」——固定不動、週期放環狀擴散技（環圈判定、中心空）。
    * 命中玩家扣 energyCost 段能量。搭配 moveSpeed:0 + immovable:true（固定塔）。省略＝一般怪（不放環）。
-   * intervalSec 每環間隔秒、expandPxPerRing 每環擴大速度(px/秒)、energyCost 命中扣能量段數。
+   * ★依序固定環 schema（對齊波騎 RingSkillParams）：ringCount 環數、baseRadiusPx 最內環半徑、
+   *   radiusStepPx 每層遞增半徑、ringIntervalSec 每環間隔秒、ringThicknessPx 環厚、energyCost 扣能量段數。
    */
   ringSkill?: {
-    intervalSec: number;
-    expandPxPerRing: number;
+    ringCount: number;
+    baseRadiusPx: number;
+    radiusStepPx: number;
+    ringIntervalSec: number;
+    ringThicknessPx: number;
     energyCost: number;
   };
 }
@@ -193,6 +197,6 @@ export const ENEMY_AI: Record<string, EnemyAIConfig> = {
     hitStun: 0.15, // 像牆幾乎不退
     knockbackForce: 0,
     immovable: true, // 固定塔：玩家推不動
-    ringSkill: { intervalSec: 2, expandPxPerRing: 160, energyCost: 2 }, // 環狀技（TowerWave 節點可覆蓋）
+    ringSkill: { ringCount: 3, baseRadiusPx: 90, radiusStepPx: 120, ringIntervalSec: 0.6, ringThicknessPx: 40, energyCost: 2 }, // 依序固定環（TowerWave 節點可覆蓋）
   },
 };

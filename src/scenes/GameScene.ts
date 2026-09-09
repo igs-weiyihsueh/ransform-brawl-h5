@@ -242,26 +242,31 @@ export class GameScene extends Phaser.Scene {
       });
     };
 
-    // 2 新事件階段 B：地雷陷阱實體——接波騎 onMineTrap 觸發鉤子（定點鋪雷→預警圈→延遲爆→範圍麻痺不分敵我不扣血）。
+    // 2 新事件：地雷陷阱——接波騎 onMineTrap(ResolvedMineTrap)（WaveSystem 已火雨式全場撒好 points）→
+    //   直接逐點佈雷→預警圈→延遲爆→範圍麻痺不分敵我不扣血。
     const mineTrap = new MineTrapSystem();
-    wave.onMineTrap = (node) => mineTrap.deployMines(node);
+    wave.onMineTrap = (resolved) => mineTrap.deployMines(resolved);
     this.mineTrapSystem = mineTrap; // registerSystems 再註冊（需每幀 update 推進地雷倒數）
 
-    // 2 新事件階段 B：★橋接尖塔怪(征騎 EnemySpawner)↔守護波(波騎 WaveSystem)接口。
-    //   進 TowerWave 節點 → onTowerWave(node)：生 node.towerCount 座尖塔（各 towerHp+ringSkill），橫向均分場上。
-    wave.onTowerWave = (node) => {
-      const n = Math.max(1, node.towerCount);
+    // 2 新事件：★橋接尖塔怪(征騎 EnemySpawner)↔守護波(波騎 WaveSystem)接口。
+    //   魔尖塔併 Event 後 onTowerWave 參數 node→TowerWaveParams：生 params.towerCount 座尖塔
+    //   （各 towerHp + ringSkill 依序固定環參數），橫向均分場上。
+    wave.onTowerWave = (params) => {
+      const n = Math.max(1, params.towerCount);
       const ring = {
-        intervalSec: node.ringSkill.intervalSec,
-        expandPxPerRing: node.ringSkill.expandPxPerRing,
-        energyCost: node.ringSkill.energyCost,
+        ringCount: params.ringSkill.ringCount,
+        baseRadiusPx: params.ringSkill.baseRadiusPx,
+        radiusStepPx: params.ringSkill.radiusStepPx,
+        ringIntervalSec: params.ringSkill.ringIntervalSec,
+        ringThicknessPx: params.ringSkill.ringThicknessPx,
+        energyCost: params.ringSkill.energyCost,
       };
       const margin = GAME_WIDTH * 0.18;
       const span = GAME_WIDTH - margin * 2;
       const y = GAME_HEIGHT * 0.42;
       for (let i = 0; i < n; i += 1) {
         const x = n === 1 ? GAME_WIDTH * 0.5 : margin + (span * i) / (n - 1);
-        spawner.spawnTower(x, y, node.towerHp, ring);
+        spawner.spawnTower(x, y, params.towerHp, ring);
       }
     };
     // 每摧毀一座尖塔 → 通知守護波累計（波騎判 towersDestroyed>=towerCount 過關提前 advance）。

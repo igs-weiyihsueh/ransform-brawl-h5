@@ -2,123 +2,95 @@
 import { describe, expect, it } from 'vitest';
 import {
   resolveTowerRingParams,
-  spawnRing,
-  advanceRing,
+  ringRadiusForIndex,
+  createTowerRingState,
+  advanceTowerRing,
   ringHitsPlayer,
-  tickRingTimer,
   DEFAULT_TOWER_RING_PARAMS,
 } from '@/systems/towerRingSkill';
 
-describe('towerRingSkill — 魔尖塔環狀擴散技純邏輯', () => {
-  describe('resolveTowerRingParams（RingSkillParams→執行期，0-nullish 合法）', () => {
-    it('提供值 → 採用', () => {
-      const p = resolveTowerRingParams({ intervalSec: 3, expandPxPerRing: 200, energyCost: 1 });
-      expect(p.intervalSec).toBe(3);
-      expect(p.expandPxPerSec).toBe(200);
-      expect(p.energyCost).toBe(1);
-    });
-    it('expandPxPerRing=0 合法（不擴大）、energyCost=0 合法（不扣）', () => {
-      const p = resolveTowerRingParams({ intervalSec: 2, expandPxPerRing: 0, energyCost: 0 });
-      expect(p.expandPxPerSec).toBe(0);
-      expect(p.energyCost).toBe(0);
-    });
-    it('缺欄/非正 intervalSec → 用預設', () => {
-      const p = resolveTowerRingParams(null);
-      expect(p).toMatchObject({
-        intervalSec: DEFAULT_TOWER_RING_PARAMS.intervalSec,
-        expandPxPerSec: DEFAULT_TOWER_RING_PARAMS.expandPxPerSec,
-        energyCost: DEFAULT_TOWER_RING_PARAMS.energyCost,
+describe('towerRingSkill — 魔尖塔依序固定環（★重做：一環接一環、非漣漪擴散）', () => {
+  describe('resolveTowerRingParams（吃波騎 schema 欄位，0-nullish）', () => {
+    it('新欄位 ringCount/baseRadiusPx/radiusStepPx/ringIntervalSec/ringThicknessPx/energyCost → 採用', () => {
+      const p = resolveTowerRingParams({
+        ringCount: 5, baseRadiusPx: 100, radiusStepPx: 140, ringIntervalSec: 0.5, ringThicknessPx: 40, energyCost: 3,
       });
-      const p2 = resolveTowerRingParams({ intervalSec: 0, expandPxPerRing: 100, energyCost: 2 });
-      expect(p2.intervalSec).toBe(DEFAULT_TOWER_RING_PARAMS.intervalSec); // 0 非正 → 預設
+      expect(p.ringCount).toBe(5);
+      expect(p.baseRadiusPx).toBe(100);
+      expect(p.radiusStepPx).toBe(140);
+      expect(p.ringIntervalSec).toBe(0.5);
+      expect(p.halfThicknessPx).toBe(20); // ringThicknessPx 40 → 半寬 20
+      expect(p.energyCost).toBe(3);
+    });
+    it('缺欄 → 預設', () => {
+      const p = resolveTowerRingParams(null);
+      expect(p).toEqual(DEFAULT_TOWER_RING_PARAMS);
+    });
+    it('ringCount 非正 → 預設；baseRadiusPx 0 合法', () => {
+      const p = resolveTowerRingParams({ ringCount: 0, baseRadiusPx: 0 });
+      expect(p.ringCount).toBe(DEFAULT_TOWER_RING_PARAMS.ringCount);
+      expect(p.baseRadiusPx).toBe(0);
     });
   });
 
-  describe('spawnRing + advanceRing', () => {
-    const params = resolveTowerRingParams({ intervalSec: 2, expandPxPerRing: 100, energyCost: 2 });
-    it('新環半徑從 0 開始、hitPlayers 空', () => {
-      const r = spawnRing({ x: 50, y: 60 }, params);
-      expect(r.radius).toBe(0);
-      expect(r.center).toEqual({ x: 50, y: 60 });
-      expect(r.hitPlayers.size).toBe(0);
+  describe('ringRadiusForIndex（第 N 環固定半徑 = base + N×step）', () => {
+    const p = resolveTowerRingParams({ ringCount: 4, baseRadius: 90, radiusStepPx: 120 });
+    it('第 0 環最小＝baseRadius', () => expect(ringRadiusForIndex(0, p)).toBe(90));
+    it('第 1 環＝base+step', () => expect(ringRadiusForIndex(1, p)).toBe(210));
+    it('第 3 環＝base+3×step（由內往外遞增）', () => expect(ringRadiusForIndex(3, p)).toBe(90 + 360));
+  });
+
+  describe('★advanceTowerRing（依序換環：達間隔→換下一環固定半徑→循環→清命中去重）', () => {
+    const p = resolveTowerRingParams({ ringCount: 3, baseRadius: 90, radiusStepPx: 120, ringIntervalSec: 0.6 });
+    it('未達間隔 → 不換環', () => {
+      const s = createTowerRingState();
+      expect(advanceTowerRing(s, 0.3, p).advanced).toBe(false);
+      expect(s.ringIndex).toBe(0); // 仍第 0 環
     });
-    it('advanceRing 每幀半徑 += expandPxPerSec×dt', () => {
-      const r = spawnRing({ x: 0, y: 0 }, params);
-      advanceRing(r, 0.5, params);
-      expect(r.radius).toBeCloseTo(50); // 100×0.5
-      advanceRing(r, 0.5, params);
-      expect(r.radius).toBeCloseTo(100);
+    it('達間隔 → 換到下一環（index+1）+ advanced=true', () => {
+      const s = createTowerRingState();
+      const r = advanceTowerRing(s, 0.6, p);
+      expect(r.advanced).toBe(true);
+      expect(s.ringIndex).toBe(1);
     });
-    it('超過 maxRadius → advanceRing 回 false（該移除）', () => {
-      const small = resolveTowerRingParams({ intervalSec: 2, expandPxPerRing: 100, energyCost: 2 }, { maxRadiusPx: 60 });
-      const r = spawnRing({ x: 0, y: 0 }, small);
-      expect(advanceRing(r, 0.5, small)).toBe(true); // r=50 <=60
-      expect(advanceRing(r, 0.5, small)).toBe(false); // r=100 >60 → 移除
+    it('★生到第 ringCount 環後循環回第 0 環（週而復始）', () => {
+      const s = createTowerRingState(); // index 0
+      advanceTowerRing(s, 0.6, p); // →1
+      advanceTowerRing(s, 0.6, p); // →2
+      advanceTowerRing(s, 0.6, p); // →0（循環，ringCount=3：0,1,2,0）
+      expect(s.ringIndex).toBe(0);
+    });
+    it('★換環時清空 hitPlayersThisRing（新環對同玩家可再扣一次）', () => {
+      const s = createTowerRingState();
+      s.hitPlayersThisRing.add(0);
+      advanceTowerRing(s, 0.6, p);
+      expect(s.hitPlayersThisRing.size).toBe(0);
+    });
+    it('餘數保留（timer 累積不丟）', () => {
+      const s = createTowerRingState();
+      advanceTowerRing(s, 0.9, p); // 0.9 → 換環，timer 餘 0.3
+      expect(s.timer).toBeCloseTo(0.3);
     });
   });
 
-  describe('★ringHitsPlayer（環圈判定，中心空 annulus）', () => {
-    const params = resolveTowerRingParams({ intervalSec: 2, expandPxPerRing: 100, energyCost: 2 }, { halfThickness: 18 });
+  describe('★ringHitsPlayer（固定半徑環帶 annulus，中心空）', () => {
     const tower = { x: 0, y: 0 };
-
-    it('環圈剛好掃到玩家（d≈radius）→ 命中', () => {
-      const r = spawnRing(tower, params);
-      r.radius = 100;
-      // 玩家在距塔 100 處、半徑 20 → |100-100|=0 <= 18+20 → 命中
-      expect(ringHitsPlayer(r, { x: 100, y: 0 }, 20)).toBe(true);
+    const half = 20;
+    it('站在環帶上（d≈ringRadius）→ 命中', () => {
+      expect(ringHitsPlayer(tower, 200, half, { x: 200, y: 0 }, 20)).toBe(true);
     });
-    it('★中心空：環已擴很大、玩家在中心附近（d 遠小於 radius）→ 不命中（環內側是空的）', () => {
-      const r = spawnRing(tower, params);
-      r.radius = 300;
-      // 玩家在塔中心(d=0)、環半徑 300 → |0-300|=300 > 18+20 → 不命中（環早掃過中心了）
-      expect(ringHitsPlayer(r, { x: 0, y: 0 }, 20)).toBe(false);
+    it('★中心空：玩家在塔中心附近、環半徑大（d 遠小於 ringRadius）→ 不命中', () => {
+      expect(ringHitsPlayer(tower, 300, half, { x: 0, y: 0 }, 20)).toBe(false);
     });
-    it('環還沒擴到玩家（radius 遠小於 d）→ 不命中', () => {
-      const r = spawnRing(tower, params);
-      r.radius = 50;
-      // 玩家在距塔 300 處 → |300-50|=250 > 18+20 → 環還沒到
-      expect(ringHitsPlayer(r, { x: 300, y: 0 }, 20)).toBe(false);
+    it('環外（d 遠大於 ringRadius）→ 不命中', () => {
+      expect(ringHitsPlayer(tower, 100, half, { x: 400, y: 0 }, 20)).toBe(false);
     });
-    it('環帶邊緣容差：|d-radius| == half+r → 命中（含等號）', () => {
-      const r = spawnRing(tower, params);
-      r.radius = 100;
-      // d=138、radius=100 → |138-100|=38 == 18+20 → 命中（邊界）
-      expect(ringHitsPlayer(r, { x: 138, y: 0 }, 20)).toBe(true);
-      expect(ringHitsPlayer(r, { x: 139, y: 0 }, 20)).toBe(false); // 差 1px → 不命中
+    it('環帶邊界容差 |d-r|==half+playerR → 命中（含等號），差 1px → 不中', () => {
+      expect(ringHitsPlayer(tower, 200, half, { x: 240, y: 0 }, 20)).toBe(true); // |240-200|=40==20+20
+      expect(ringHitsPlayer(tower, 200, half, { x: 241, y: 0 }, 20)).toBe(false);
     });
-    it('斜向距離也對（3-4-5）', () => {
-      const r = spawnRing(tower, params);
-      r.radius = 100;
-      // 玩家 (60,80) → d=100 → 命中
-      expect(ringHitsPlayer(r, { x: 60, y: 80 }, 5)).toBe(true);
-    });
-  });
-
-  describe('tickRingTimer（達間隔才生環）', () => {
-    it('累積未達 intervalSec → 不生', () => {
-      const { fire, timer } = tickRingTimer(0.5, 0.5, 2);
-      expect(fire).toBe(false);
-      expect(timer).toBeCloseTo(1.0);
-    });
-    it('達 intervalSec → 生環 + timer 扣掉間隔（保留餘數）', () => {
-      const { fire, timer } = tickRingTimer(1.8, 0.5, 2);
-      expect(fire).toBe(true);
-      expect(timer).toBeCloseTo(0.3); // 2.3 - 2
-    });
-  });
-
-  describe('hitPlayers 去重（一個環對同玩家只扣一次）', () => {
-    it('呼叫端用 ring.hitPlayers 記已扣玩家 → 同環第二次不重扣', () => {
-      const params = resolveTowerRingParams({ intervalSec: 2, expandPxPerRing: 100, energyCost: 2 });
-      const r = spawnRing({ x: 0, y: 0 }, params);
-      r.radius = 100;
-      const playerCenter = { x: 100, y: 0 };
-      const pid = 0;
-      // 首次命中 + 記錄
-      expect(ringHitsPlayer(r, playerCenter, 20) && !r.hitPlayers.has(pid)).toBe(true);
-      r.hitPlayers.add(pid);
-      // 第二次雖仍幾何命中，但已記錄 → 呼叫端不重扣
-      expect(ringHitsPlayer(r, playerCenter, 20) && !r.hitPlayers.has(pid)).toBe(false);
+    it('斜向距離（3-4-5）', () => {
+      expect(ringHitsPlayer(tower, 100, half, { x: 60, y: 80 }, 5)).toBe(true); // d=100
     });
   });
 });
