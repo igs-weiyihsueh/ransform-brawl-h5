@@ -18,7 +18,6 @@ import {
   resolveTowerRingParams,
   createTowerRingState,
   tickTowerRingPhase,
-  ringRadiusForIndex,
   ringHitsPlayer,
 } from '@/systems/towerRingSkill';
 import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
@@ -443,27 +442,34 @@ export class EnemySpawner {
         state = createTowerRingState();
         this.towerRingStates.set(e.id, state);
       }
-      const c = e.getTowerRingGroundCenter(); // ★環貼地圓盤圓心 = 塔底部/腳底地面點（VFX + 命中判定同圓心、往地面擴不浮空）
+      // ★視覺/判定圓心分開（異靈定案）：
+      //   視覺 vc = 塔物件視覺中心（塔身中段）→ 環套住塔、塔立在環正中央（美術感）。
+      //   判定 jc = 塔腳底地面點 → 玩家站地面踩環帶被打、命中位置不變（不動 gameplay）。
+      const vc = e.getTowerRingCenter(); // 視覺圓心＝塔物件中段
+      const jc = e.getTowerRingGroundCenter(); // 判定圓心＝塔腳底地面
       const { enterWarning, enterActive, phase } = tickTowerRingPhase(state, dt, params);
-      const radius = ringRadiusForIndex(state.ringIndex, params);
+      // ★最內環 baseRadius 涵蓋塔物件大小：max(preset baseRadius, 塔物件半徑×1.1)→ 最內環從塔邊緣往外包住塔、不穿過塔身。
+      const effectiveBase = Math.max(params.baseRadiusPx, e.getTowerObjectRadius() * 1.1);
+      const radius = effectiveBase + state.ringIndex * params.radiusStepPx;
       const thickness = params.halfThicknessPx * 2; // 環帶厚度（與 annulus 判定一致）
 
-      // VFX：★預警/攻擊拆兩種特效——進 warning → towerRingWarning（紅填充+脈動危險感）；進 active → towerRingActive（能量迸發衝擊）。
+      // VFX（用視覺圓心 vc＝塔物件中心，塔在環中央）：warning → towerRingWarning、active → towerRingActive。
       if (enterWarning && params.warningSec > 0) {
-        this.hitFeelFx?.towerRingWarning?.(c.x, c.y, radius * 2, thickness, params.warningSec * 1000);
+        this.hitFeelFx?.towerRingWarning?.(vc.x, vc.y, radius * 2, thickness, params.warningSec * 1000);
       }
       if (enterActive) {
-        this.hitFeelFx?.towerRingActive?.(c.x, c.y, radius * 2, thickness, params.ringIntervalSec * 1000);
+        this.hitFeelFx?.towerRingActive?.(vc.x, vc.y, radius * 2, thickness, params.ringIntervalSec * 1000);
       }
 
       // ★命中判定只在 active phase（warning 零判定，不變量①）。本環對同玩家只扣一次（不變量②）。
+      //   ★判定圓心用 jc（塔腳底地面正圓）＝玩家站地面踩環帶被打、命中位置不變（不隨視覺上抬、不動 gameplay）。
       if (phase !== 'active') continue;
       for (const p of this.getAllPlayers()) {
         const pid = p.playerId;
         if (state.hitPlayersThisRing.has(pid)) continue;
         const pc = p.getVacuumCenter?.() ?? p.getHitCenter();
         const pr = p.getVacuumRadius?.() ?? p.getHitRadius();
-        if (ringHitsPlayer(c, radius, params.halfThicknessPx, pc, pr)) {
+        if (ringHitsPlayer(jc, radius, params.halfThicknessPx, pc, pr)) {
           state.hitPlayersThisRing.add(pid);
           const energyRatio = params.energyCost * SECOND_TRANSFORM_CONFIG.energyLossOnHit;
           this.onPlayerRingHit?.(pid, energyRatio); // 沿用非改契約（不變量③）

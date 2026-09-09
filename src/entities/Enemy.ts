@@ -491,6 +491,17 @@ export class Enemy implements Hittable {
     return { x: sp.x, y: sp.y + (1 - originY) * h }; // origin 1.0 → sp.y（腳底）
   }
 
+  /**
+   * 尖塔「物件半徑」（環以塔物件大小為中心/包住塔用）：塔顯示尺寸的半寬/半高取大者。
+   * 用於環最內圈 baseRadius 下限——讓最內環從塔物件邊緣往外、把塔物件包住（不穿過塔身）。
+   */
+  getTowerObjectRadius(): number {
+    const sp = this.anim.sprite;
+    const w = sp.displayWidth || 0;
+    const h = sp.displayHeight || 0;
+    return Math.max(w, h) / 2;
+  }
+
   getHitRadius(): number {
     return this.radiusPx;
   }

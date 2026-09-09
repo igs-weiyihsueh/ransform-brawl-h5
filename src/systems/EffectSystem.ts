@@ -1705,17 +1705,14 @@ export class EffectSystem {
     if (this.scene.textures.exists(key)) {
       const spr = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5).setDepth(PANEL_DEPTH + 10);
       spr.setDisplaySize(d, d).setAlpha(0.85); // ★貼圖已內建俯視壓扁 Y0.5 → 直徑對半徑、不再程式壓扁
-      // 脈動 0.7↔1（危險預警急迫感）+ 緩慢自轉。
+      // 脈動 0.7↔1（危險預警急迫感）。★不自轉——已壓扁橢圓貼圖做平面旋轉會看起來「立起來上下翻」非貼地平轉，故靜態朝向。
       const pulse = this.scene.tweens.add({
         targets: spr, alpha: 0.7, duration: 240, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
-      });
-      const spin = this.scene.tweens.add({
-        targets: spr, angle: 360, duration: 6000, repeat: -1, ease: 'Linear',
       });
       // warningSec 到 → alpha 快速歸零自清（攻擊瞬間接手）。
       this.scene.tweens.add({
         targets: spr, alpha: 0, delay: Math.max(0, dur - 120), duration: 120, ease: 'Sine.easeIn',
-        onComplete: () => { pulse.stop(); spin.stop(); spr.destroy(); },
+        onComplete: () => { pulse.stop(); spr.destroy(); },
       });
       return;
     }
@@ -1759,7 +1756,7 @@ export class EffectSystem {
       spr.setDisplaySize(d, d).setAlpha(1); // ★貼圖已內建壓扁 → 直徑對半徑、不再程式壓扁
       const base = spr.scale; // setDisplaySize 後的等效 scale（供迸發微擴基準）
       spr.setScale(base); // 明確化
-      this.scene.tweens.add({ targets: spr, angle: 20, duration: burstMs, ease: 'Sine.easeOut' }); // 輕微自轉
+      // ★不自轉——已壓扁橢圓貼圖平面旋轉會看似「立起來上下翻」非貼地平轉，故靜態朝向。
       // scale 微擴 1.0→1.12 迸發，後 50% alpha 淡出。
       this.scene.tweens.add({
         targets: spr, scale: base * 1.12, duration: burstMs, ease: 'Quad.easeOut',
