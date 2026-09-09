@@ -1,9 +1,11 @@
 import type Phaser from 'phaser';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
-import type { ResolvedMineTrap } from '@/systems/WaveSystem';
+import type { MinePreset } from '@/config/mineConfig';
 import { STUN_DEFAULT_SEC } from '@/config/eventsConfig';
 import { isInBlastRange, tickMineDelay } from '@/systems/mineTrapMath';
+import { pickFireRainPoint } from '@/systems/fireRainMath';
+import type { Vec2 } from '@/systems/hitDetection';
 
 /** 場上一顆地雷的執行期狀態。 */
 interface ActiveMine {
@@ -16,39 +18,61 @@ interface ActiveMine {
 }
 
 /**
- * MineTrapSystem — 地雷陷阱實體（2 新事件階段 B）。
+ * MineTrapSystem — 地雷陷阱（2 新事件·單一架構重構：★附加類、讀取式，比照 FireRainSystem）。
  *
- * 接波騎 WaveSystem.onMineTrap(ResolvedMineTrap) 觸發鉤子 → 依 WaveSystem 火雨式撒好的 resolved.points 逐點鋪雷
- * → 顯預警圈（脈動 delaySec）→ 延遲到爆炸（mineExplosion VFX）→ radiusPx 範圍內「玩家+怪」呼叫 applyStun(paralyzeSec) 麻痺。
- * ★不分敵我（怪也麻痺）、★不扣血（麻痺＝定住，角色無血量）。
+ * 觸發＝讀取式（非回呼）：每幀讀 WaveSystem.getActiveMinePreset()：
+ *  - 有 preset 且本節點還沒撒過 → 用 pickFireRainPoint 全場撒 count 顆 → 逐點鋪雷（一批，鋪下即延遲爆）。
+ *  - preset 變 null（離開節點）→ 重置「已撒」旗標，下次進地雷節點可再撒。
+ * 鋪雷後：顯預警圈（脈動 delaySec）→ 延遲爆炸（mineExplosion VFX）→ radiusPx 範圍內「玩家+怪」applyStun(paralyzeSec)。
+ * ★不分敵我（怪也麻痺）、★不扣血（麻痺＝定住，角色無血量）。撒點責任在 game-side（比照火雨 FireRainSystem 自撒）。
  *
  * 走 decision a655c53d：碰共用 gameplay 契約（Enemy.applyStun/麻痺）→ 變身-leader review。
- * 觸發方式：本階段採「鋪下即延遲爆」（定點佈置＋delaySec 倒數）；碰觸觸發之後可加。
  */
 export class MineTrapSystem implements GameSystem {
   readonly name = 'MineTrapSystem';
   private ctx!: GameContext;
   private mines: ActiveMine[] = [];
+  /** 本次地雷節點是否已撒過（讀取式防每幀重撒；preset 變 null 時重置）。 */
+  private deployedThisNode = false;
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
   }
 
   /**
-   * 接 onMineTrap 鉤子（★火雨式自動撒）：直接用 WaveSystem 已全場撒好的 resolved.points 逐點鋪雷
-   * （不自算落點），顯預警圈、起 delaySec 倒數。points 空 → 不鋪（合法）。
+   * 用 pickFireRainPoint 全場撒 preset.count 顆 → 逐點鋪雷（顯預警圈、起 delaySec 倒數）。
+   * 撒點比照火雨（全場隨機+縮邊+不重疊）；撒不出（太擠）的略過。
    */
-  deployMines(resolved: ResolvedMineTrap): void {
-    const delay = resolved.delaySec > 0 ? resolved.delaySec : 3;
-    const paralyze = resolved.paralyzeSec > 0 ? resolved.paralyzeSec : STUN_DEFAULT_SEC;
-    const radius = Math.max(0, resolved.radiusPx);
-    for (const p of resolved.points ?? []) {
+  private scatterMines(preset: MinePreset): void {
+    const delay = preset.delaySec > 0 ? preset.delaySec : 3;
+    const paralyze = preset.paralyzeSec > 0 ? preset.paralyzeSec : STUN_DEFAULT_SEC;
+    const radius = Math.max(0, preset.radiusPx);
+    const edge = preset.edgeMarginPx ?? 0;
+    const placed: Vec2[] = [];
+    for (let i = 0; i < preset.count; i += 1) {
+      // maxConcurrent 用 count（本批要撒 count 顆，不受火雨並發上限限制）。
+      const p = pickFireRainPoint(placed, Math.random, radius, edge, preset.count);
+      if (!p) continue; // 太擠撒不下 → 略過這顆
+      placed.push(p);
       const warning = this.ctx.effects?.mineWarningStart?.(p.x, p.y, radius) ?? null;
       this.mines.push({ x: p.x, y: p.y, remaining: delay, radiusPx: radius, paralyzeSec: paralyze, warning });
     }
   }
 
   update(dt: number): void {
+    // 讀取式觸發（比照 FireRainSystem）：每幀讀 getActiveMinePreset。
+    //   有 preset 且本節點還沒撒 → 撒一批；preset 變 null（離開節點）→ 重置旗標供下個地雷節點再撒。
+    //   ★boot 安全：ctx/wave 未就緒（boot 早期幀）→ 早退，不撒不 throw（不影響 ctx wiring）。
+    const preset = this.ctx?.wave?.getActiveMinePreset?.() ?? null;
+    if (preset !== null) {
+      if (!this.deployedThisNode) {
+        this.scatterMines(preset);
+        this.deployedThisNode = true;
+      }
+    } else {
+      this.deployedThisNode = false;
+    }
+
     if (this.mines.length === 0) return;
     const still: ActiveMine[] = [];
     for (const m of this.mines) {

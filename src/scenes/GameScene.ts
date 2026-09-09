@@ -53,7 +53,7 @@ export class GameScene extends Phaser.Scene {
   private ctx!: GameContext;
   /** UISystem 實例（create 提前建立供擊殺回呼取寶盒錨點；registerSystems 再註冊）。 */
   private uiSystem!: UISystem;
-  /** 2 新事件階段 B：地雷陷阱系統（create 建+接 onMineTrap，registerSystems 再註冊供每幀 update）。 */
+  /** 2 新事件：地雷陷阱系統（附加類讀取式；create 建、registerSystems 註冊供每幀 update 讀 getActiveMinePreset）。 */
   private mineTrapSystem?: MineTrapSystem;
   /** 用戶 #3：JP 燈 HUD（3組×5顆，飛光終點+反映 JpSystem litCount）。 */
   private jpLampHud?: JpLampHud;
@@ -242,31 +242,30 @@ export class GameScene extends Phaser.Scene {
       });
     };
 
-    // 2 新事件：地雷陷阱——接波騎 onMineTrap(ResolvedMineTrap)（WaveSystem 已火雨式全場撒好 points）→
-    //   直接逐點佈雷→預警圈→延遲爆→範圍麻痺不分敵我不扣血。
+    // 2 新事件（單一架構重構）：地雷＝附加類、讀取式（比照火雨）。MineSystem 每幀讀 wave.getActiveMinePreset()
+    //   自撒地雷，無 onMineTrap 回呼（波騎已移除）。此處只建立 + 註冊（每幀 update 讀 preset + 推進倒數）。
     const mineTrap = new MineTrapSystem();
-    wave.onMineTrap = (resolved) => mineTrap.deployMines(resolved);
-    this.mineTrapSystem = mineTrap; // registerSystems 再註冊（需每幀 update 推進地雷倒數）
+    this.mineTrapSystem = mineTrap; // registerSystems 再註冊
 
     // 2 新事件：★橋接尖塔怪(征騎 EnemySpawner)↔守護波(波騎 WaveSystem)接口。
-    //   魔尖塔併 Event 後 onTowerWave 參數 node→TowerWaveParams：生 params.towerCount 座尖塔
-    //   （各 towerHp + ringSkill 依序固定環參數），橫向均分場上。
-    wave.onTowerWave = (params) => {
-      const n = Math.max(1, params.towerCount);
+    //   魔尖塔＝單獨波次（Event + tower preset）：onTowerWave 帶 TowerPreset（波騎 updateEventNode 解析 preset 後給）。
+    //   生 preset.towerCount 座尖塔（各 towerHp + ringSkill 依序固定環參數），橫向均分場上。
+    wave.onTowerWave = (preset) => {
+      const n = Math.max(1, preset.towerCount);
       const ring = {
-        ringCount: params.ringSkill.ringCount,
-        baseRadiusPx: params.ringSkill.baseRadiusPx,
-        radiusStepPx: params.ringSkill.radiusStepPx,
-        ringIntervalSec: params.ringSkill.ringIntervalSec,
-        ringThicknessPx: params.ringSkill.ringThicknessPx,
-        energyCost: params.ringSkill.energyCost,
+        ringCount: preset.ringSkill.ringCount,
+        baseRadiusPx: preset.ringSkill.baseRadiusPx,
+        radiusStepPx: preset.ringSkill.radiusStepPx,
+        ringIntervalSec: preset.ringSkill.ringIntervalSec,
+        ringThicknessPx: preset.ringSkill.ringThicknessPx,
+        energyCost: preset.ringSkill.energyCost,
       };
       const margin = GAME_WIDTH * 0.18;
       const span = GAME_WIDTH - margin * 2;
       const y = GAME_HEIGHT * 0.42;
       for (let i = 0; i < n; i += 1) {
         const x = n === 1 ? GAME_WIDTH * 0.5 : margin + (span * i) / (n - 1);
-        spawner.spawnTower(x, y, params.towerHp, ring);
+        spawner.spawnTower(x, y, preset.towerHp, ring);
       }
     };
     // 每摧毀一座尖塔 → 通知守護波累計（波騎判 towersDestroyed>=towerCount 過關提前 advance）。
@@ -358,7 +357,7 @@ export class GameScene extends Phaser.Scene {
     this.register(this.ctx.chest); // 寶盒：擊殺累積能量/自動開箱
     this.register(this.ctx.jp); // JP：幕通關給燈/命中累積倍數/集滿派彩
     this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
-    if (this.mineTrapSystem) this.register(this.mineTrapSystem); // 2 新事件：地雷陷阱（接 onMineTrap，每幀推進延遲爆）
+    if (this.mineTrapSystem) this.register(this.mineTrapSystem); // 2 新事件：地雷（讀取式每幀讀 getActiveMinePreset 自撒+推進延遲爆）
     this.register(new FireRainSystem()); // 天降火雨（守護波進行中觸發，只傷玩家）
     this.register(new GrabSystem()); // 抓人機制：沒打怪 8s → grabber 衝來抓、攻擊/倒數掙脫（per-player）
     this.register(new ProgressBarSystem()); // 頂部進度條 HUD：關卡進度 + 守護波倒數（讀 wave/guard）
