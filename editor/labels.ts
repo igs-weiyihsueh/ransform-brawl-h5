@@ -17,8 +17,6 @@ export const NODE_TYPE_LABELS: Readonly<Record<NodeType, string>> = {
   Spawn: '刷怪',
   Reward: '獎勵',
   Event: '事件',
-  MineTrap: '地雷陷阱',
-  TowerWave: '魔尖塔',
 };
 
 /** 敵種 → 中文。 */

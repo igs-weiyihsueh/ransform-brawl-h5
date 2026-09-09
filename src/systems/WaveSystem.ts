@@ -11,21 +11,39 @@ import {
 } from '@/config/fireRainSchema';
 import { getResolvedGuardPreset } from '@/config/guardSchema';
 import { shouldSpawnMore, shouldAdvanceSpawn, pickSpawnPoint } from '@/systems/waveMath';
+import { pickFireRainPoint } from '@/systems/fireRainMath';
 import type {
   EnemyType,
+  EventNodeData,
+  EventType,
   LevelData,
   LevelNodeData,
-  MineTrapNodeData,
+  MineTrapParams,
   SpawnEntry,
   SpawnGroup,
   SpawnNodeData,
-  TowerWaveNodeData,
+  TowerWaveParams,
 } from '@/config/levelSchema';
 import type { Enemy } from '@/entities/Enemy';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import { GuardEvent } from '@/systems/GuardEvent';
 import { waveMessageFor, WAVE_MESSAGE_FX } from '@/systems/waveMessage';
+
+/**
+ * 地雷陷阱觸發回呼帶的「已解析」資料（用戶：火雨式自動撒）。
+ * WaveSystem 用 pickFireRainPoint 全場撒好 points（遊戲端不用自己算落點），連同 delay/paralyze/radius 一起給。
+ */
+export interface ResolvedMineTrap {
+  /** 已全場自動撒好的地雷座標（count 顆；遊戲端逐點鋪雷）。 */
+  points: { x: number; y: number }[];
+  /** 延遲爆炸秒數。 */
+  delaySec: number;
+  /** 命中麻痺秒數。 */
+  paralyzeSec: number;
+  /** 爆炸半徑（像素）。 */
+  radiusPx: number;
+}
 
 /** 獎勵節點報獎演出保持時間（秒，用戶 #3：banner 浮現 0.35 + 停 3s + 退出/飛光 ≈ 0.35+3+0.3+0.7）。 */
 const REWARD_HOLD_SEC = 4.4;
@@ -109,15 +127,16 @@ export class WaveSystem implements GameSystem {
   private rewardHold = 0;
 
   /**
-   * 地雷陷阱節點觸發回呼（用戶 2 新事件 階段 A）：走到 MineTrap 節點時觸發一次，帶節點參數。
-   * 階段 B 遊戲端接：依 node.points 鋪雷、node.delaySec 後爆炸、node.radiusPx 範圍內玩家麻痺 node.paralyzeSec（用翼騎 applyStun）。
+   * 地雷陷阱觸發回呼（用戶：地雷併進事件、火雨式自動撒）：走到 mineTrap 事件時觸發一次。
+   * ★WaveSystem 已用 pickFireRainPoint 全場自動撒好 count 顆座標，回呼帶「已解析 points + delaySec/paralyzeSec/radiusPx」
+   *   給遊戲端 MineTrapSystem 鋪雷（遊戲端不用自己算落點；比照火雨全場撒，用戶不打座標）。
    */
-  onMineTrap: ((node: MineTrapNodeData) => void) | null = null;
+  onMineTrap: ((resolved: ResolvedMineTrap) => void) | null = null;
   /**
-   * 魔尖塔節點觸發回呼（用戶 2 新事件 階段 A）：走到 TowerWave 節點時觸發一次，帶節點參數。
-   * 階段 B 遊戲端接：生成 node.towerCount 座尖塔（各 node.towerHp）、環狀技、限時 node.timeLimitSec 勝敗判定（★守護波失敗判定高風險，變身-leader 把關）。
+   * 魔尖塔觸發回呼（用戶：魔尖塔併進事件、比照守護波）：走到 towerWave 事件時觸發一次，帶 towerWave 參數。
+   * 遊戲端（征騎）生成 towerCount 座尖塔（各 towerHp + ringSkill 環狀技）；勝敗判定＝本系統（走既有 advance）。
    */
-  onTowerWave: ((node: TowerWaveNodeData) => void) | null = null;
+  onTowerWave: ((params: TowerWaveParams) => void) | null = null;
   /** 事件節點（MineTrap/TowerWave）保持計時 + 是否已觸發（進節點時設，倒數完前進）。 */
   private eventHold = 0;
   private eventTriggered = false;
@@ -240,6 +259,21 @@ export class WaveSystem implements GameSystem {
       return Math.min(1, Math.max(0, this.kills / quota));
     }
     if (node.nodeType === 'Event') {
+      const eventType: EventType = node.eventType ?? 'guard';
+      if (eventType === 'mineTrap') {
+        // 進度＝已過時間 / 總保持（delaySec+paralyzeSec+緩衝）；未觸發→0。
+        if (!this.eventTriggered || !node.mineTrap) return 0;
+        const total = node.mineTrap.delaySec + node.mineTrap.paralyzeSec + 0.5;
+        if (total <= 0) return 0;
+        return Math.min(1, Math.max(0, 1 - this.eventHold / total));
+      }
+      if (eventType === 'towerWave') {
+        // 進度＝已摧毀尖塔數 / 目標塔數（對齊用戶「打掉幾/N 塔」）。未觸發或無塔→0。
+        const tc = node.towerWave?.towerCount ?? 0;
+        if (!this.eventTriggered || tc <= 0) return 0;
+        return Math.min(1, Math.max(0, this.towersDestroyed / tc));
+      }
+      // guard/fireRain：守護波 → 已過時間/限時。
       const g = this.guardEvent;
       if (!g) return 0;
       const limit = g.getTimeLimit();
@@ -251,18 +285,6 @@ export class WaveSystem implements GameSystem {
       if (this.rewardHold <= 0) return 0; // 尚未進入或已結束
       if (this.rewardHold > REWARD_FILL_DURATION) return 0; // 報獎流程階段，尚未開始填滿
       return Math.min(1, Math.max(0, 1 - this.rewardHold / REWARD_FILL_DURATION)); // 末段 lerp 0→1
-    }
-    if (node.nodeType === 'MineTrap') {
-      // 進度＝已過時間 / 總保持（delaySec+paralyzeSec+緩衝）；未觸發→0。
-      if (!this.eventTriggered) return 0;
-      const total = node.delaySec + node.paralyzeSec + 0.5;
-      if (total <= 0) return 0;
-      return Math.min(1, Math.max(0, 1 - this.eventHold / total));
-    }
-    if (node.nodeType === 'TowerWave') {
-      // 進度＝已摧毀尖塔數 / 目標塔數（階段 B：對齊用戶「打掉幾/N 塔」）。未觸發或無塔→0。
-      if (!this.eventTriggered || node.towerCount <= 0) return 0;
-      return Math.min(1, Math.max(0, this.towersDestroyed / node.towerCount));
     }
     return 0;
   }
@@ -327,10 +349,6 @@ export class WaveSystem implements GameSystem {
       this.updateSpawnNode(node, dt);
     } else if (node.nodeType === 'Event') {
       this.updateEventNode(node, dt);
-    } else if (node.nodeType === 'MineTrap') {
-      this.updateMineTrapNode(node, dt);
-    } else if (node.nodeType === 'TowerWave') {
-      this.updateTowerWaveNode(node, dt);
     } else {
       // Reward（用戶 #3）：進節點時觸發一次報獎演出（onReward），保持一段時間讓演出播完再前進。
       if (this.rewardHold <= 0) {
@@ -351,12 +369,19 @@ export class WaveSystem implements GameSystem {
    * ★階段 A：實際地雷實體/爆炸範圍判定/麻痺套用＝階段 B（麻痺 applyStun 是翼騎的、實體是征騎的，波騎不碰）。
    *   本階段只鋪節點流程 + 觸發點 + 參數傳遞（onMineTrap 帶 node 參數給遊戲端接）。
    */
-  private updateMineTrapNode(node: MineTrapNodeData, dt: number): void {
-    if (this.eventHold <= 0 && !this.eventTriggered) {
+  private updateMineTrapNode(node: EventNodeData, dt: number): void {
+    const m = node.mineTrap;
+    if (!this.eventTriggered) {
       this.eventTriggered = true;
-      // 保持＝延遲爆炸 + 麻痺時長 + 小緩衝，讓階段 B 的爆炸/麻痺演出跑完再前進。
-      this.eventHold = node.delaySec + node.paralyzeSec + 0.5;
-      this.onMineTrap?.(node); // 觸發入口（階段 B 遊戲端接：定點鋪雷→延遲爆炸→範圍麻痺）
+      const delaySec = m ? m.delaySec : 3;
+      const paralyzeSec = m ? m.paralyzeSec : 3;
+      // 保持＝延遲爆炸 + 麻痺時長 + 小緩衝，讓遊戲端爆炸/麻痺演出跑完再前進。
+      this.eventHold = delaySec + paralyzeSec + 0.5;
+      if (m) {
+        // ★火雨式全場自動撒：用 pickFireRainPoint 撒 count 顆（全場隨機+縮邊+不重疊），遊戲端不用算落點。
+        const points = this.scatterMinePoints(m);
+        this.onMineTrap?.({ points, delaySec: m.delaySec, paralyzeSec: m.paralyzeSec, radiusPx: m.radiusPx });
+      }
     }
     this.eventHold -= dt;
     if (this.eventHold <= 0) {
@@ -365,32 +390,39 @@ export class WaveSystem implements GameSystem {
     }
   }
 
+  /** 火雨式撒地雷落點：重用 pickFireRainPoint（全場 MAP_BOUNDS 隨機 + 縮邊 + 不重疊）撒 count 顆。 */
+  private scatterMinePoints(m: MineTrapParams): { x: number; y: number }[] {
+    const points: { x: number; y: number }[] = [];
+    const edge = m.edgeMarginPx ?? 0;
+    for (let i = 0; i < m.count; i += 1) {
+      // maxConcurrent 給 count（允許同時 count 顆），落點彼此不重疊（radius 為間隔基準）。
+      const p = pickFireRainPoint(points, Math.random, m.radiusPx, edge, m.count);
+      if (p) points.push(p);
+    }
+    return points;
+  }
+
   /**
-   * 魔尖塔節點（用戶 2 新事件 階段 A：框架+觸發鉤子）。走到此節點→觸發 onTowerWave 入口一次，
-   * 保持 timeLimitSec（限時）後前進。
-   * ★階段 A：實際尖塔怪 entity/環狀技傷害/★守護波失敗判定（限時內打不完＝失敗）＝階段 B（高風險，走變身-leader 把關，
-   *   先跟異靈確認生命週期設計再動）。本階段只鋪節點流程 + 觸發點 + 參數傳遞。
-   */
-  /**
-   * 魔尖塔節點（階段 B：守護波勝敗判定；接階段 A onTowerWave 鉤子）。
-   * 走到此節點→觸發 onTowerWave 生成 N 座尖塔（征騎 entity）→守護波：限時 timeLimitSec、目標打掉 towerCount 座。
-   * ★勝敗雙結束條件（沿用守護波規格 decision f45c7d08，變身-leader 把關）：
+   * 魔尖塔事件（守護波勝敗判定；比照守護波，接 onTowerWave）。
+   * ★勝敗雙結束條件（decision f45c7d08，變身-leader 把關）：
    *   - 限時內打完全部尖塔（towersDestroyed >= towerCount）＝過關 → 提前 advance。
-   *   - 限時到還沒打完＝失敗 → ★不 GameOver、一樣 advance 下一節點（不重來/不扣命）。
+   *   - 限時到還沒打完＝失敗 → ★不 GameOver、一樣 advance 下一節點。
    *   兩者都走既有 advanceNode()（不新增波次生命週期、不動 killQuota/clamp/人數縮放不變量）。
    * 尖塔擊破數由征騎 TowerSystem 呼 notifyTowerDestroyed() 累計；onTowerWaveResult(won) 供收尾清尖塔/播演出。
    */
-  private updateTowerWaveNode(node: TowerWaveNodeData, dt: number): void {
+  private updateTowerWaveNode(node: EventNodeData, dt: number): void {
+    const t = node.towerWave;
+    if (!t) { this.advanceNode(); return; } // 無參數（不該發生，validate 擋）→ 不卡住
     if (!this.eventTriggered) {
       this.eventTriggered = true;
-      this.eventHold = node.timeLimitSec; // 限時倒數
+      this.eventHold = t.timeLimitSec; // 限時倒數
       this.towersDestroyed = 0; // 本波擊破數歸零
-      this.onTowerWave?.(node); // 觸發入口（征騎接：生成 towerCount 座尖塔＋環狀技）
+      this.onTowerWave?.(t); // 觸發入口（征騎接：生成 towerCount 座尖塔＋ringSkill 環狀技）
     }
     this.eventHold -= dt;
 
     // 過關：限時內打完全部尖塔 → 提前結束。
-    if (this.towersDestroyed >= node.towerCount) {
+    if (this.towersDestroyed >= t.towerCount) {
       this.onTowerWaveResult?.(true);
       this.advanceNode();
       return;
@@ -403,11 +435,21 @@ export class WaveSystem implements GameSystem {
     }
   }
 
-  /** Event 節點：火雨 preset → 純火雨波（計時）；否則守護波（建 GuardEvent）。 */
-  private updateEventNode(node: { eventPresetName: string }, dt: number): void {
+  /**
+   * Event 節點分派（用戶：地雷/魔尖塔併進事件）：依 eventType 走對應邏輯。
+   * - mineTrap：火雨式撒地雷。
+   * - towerWave：守護波勝敗判定。
+   * - guard/fireRain（含省略＝guard 向後相容）：eventPresetName 驅動（火雨 preset→純火雨波；否則守護波）。
+   */
+  private updateEventNode(node: EventNodeData, dt: number): void {
+    const eventType: EventType = node.eventType ?? 'guard';
+    if (eventType === 'mineTrap') { this.updateMineTrapNode(node, dt); return; }
+    if (eventType === 'towerWave') { this.updateTowerWaveNode(node, dt); return; }
+
+    const presetName = node.eventPresetName ?? '';
     // 純火雨 Event 節點（eventPresetName 是火雨 preset）：計時跑完前進，不建守護/雕像。
-    if (isResolvedFireRainPreset(node.eventPresetName)) {
-      const preset = getResolvedFireRainPreset(node.eventPresetName);
+    if (isResolvedFireRainPreset(presetName)) {
+      const preset = getResolvedFireRainPreset(presetName);
       if (this.fireRainRemaining <= 0 && !this.fireRainActive) {
         this.fireRainActive = true;
         this.fireRainRemaining = preset.durationSec;
@@ -421,12 +463,11 @@ export class WaveSystem implements GameSystem {
     }
     // 守護波（含可選 attachFireRain）。
     if (!this.guardEvent) {
-      // 七輪：守護 preset 決定時限/HP/演出；drip（補怪）可由 Event 節點 per-node 覆蓋（node.X ?? preset.X）。
-      this.guardEvent = new GuardEvent(this.ctx, node.eventPresetName, {
-        maxAlive: (node as { maxAlive?: number }).maxAlive,
-        spawnThreshold: (node as { spawnThreshold?: number }).spawnThreshold,
-        spawnInterval: (node as { spawnInterval?: number }).spawnInterval,
-        spawns: (node as { spawns?: { enemyType: string; weight: number }[] }).spawns,
+      this.guardEvent = new GuardEvent(this.ctx, presetName, {
+        maxAlive: node.maxAlive,
+        spawnThreshold: node.spawnThreshold,
+        spawnInterval: node.spawnInterval,
+        spawns: node.spawns,
       });
     }
     const done = this.guardEvent.update(dt);

@@ -23,11 +23,15 @@ export function waveMessageFor(node: LevelNodeData, waveNumber: number): string 
   switch (node.nodeType) {
     case 'Spawn':
       return `第 ${waveNumber} 波`;
-    case 'Event':
-      // 守護波（Guard 系列 preset）：保護雕像。其他 Event 也給通用提示。
-      return node.eventPresetName.toLowerCase().startsWith('guard')
+    case 'Event': {
+      // 依 eventType 給提示（地雷/魔尖塔併進事件）；guard 系列 preset→守護波，其餘通用。
+      const et = node.eventType ?? 'guard';
+      if (et === 'mineTrap') return '地雷陷阱！';
+      if (et === 'towerWave') return '魔尖塔！打掉尖塔！';
+      return (node.eventPresetName ?? '').toLowerCase().startsWith('guard')
         ? '守護波！保護雕像！'
         : '事件！';
+    }
     case 'Reward':
       return '過關！';
     default:

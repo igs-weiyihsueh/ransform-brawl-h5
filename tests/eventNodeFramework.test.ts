@@ -1,23 +1,24 @@
 // @vitest-environment jsdom
 /**
- * 2 新事件 階段 A：事件節點框架（地雷陷阱 MineTrap + 魔尖塔 TowerWave）。
- * - schema：兩型節點 validateLevels 驗證（合法放行/壞欄擋）。
- * - WaveSystem：走到節點 → 觸發 onMineTrap/onTowerWave 入口一次（帶參數）→ 保持後前進。
- * - 向後相容：NODE_TYPES 含新型、舊關卡不受影響。
- * ★階段 A 只驗框架+觸發+參數；實體/爆炸/麻痺/尖塔勝敗＝階段 B（不在此測）。
+ * 2 新事件（整套改造版）：地雷/魔尖塔併進「事件（Event）」底下（eventType 分派，跟守護波/火雨並列）。
+ * - schema：Event 節點依 eventType 驗證（guard/fireRain/mineTrap/towerWave）。
+ * - 地雷：火雨式自動撒（count/radiusPx/delaySec/paralyzeSec）；WaveSystem 撒好 points 傳 onMineTrap。
+ * - 魔尖塔：守護波勝敗（towerWave 參數 + ringSkill）；onTowerWave 帶參、勝敗雙結束、失敗不 GameOver。
+ * - 向後相容：無 eventType 舊 Event（守護波）＝guard。
  */
 import { describe, expect, it } from 'vitest';
-import { validateLevels, LEVELS_SCHEMA_VERSION, NODE_TYPES } from '@/config/levelSchema';
+import { validateLevels, LEVELS_SCHEMA_VERSION, NODE_TYPES, EVENT_TYPES } from '@/config/levelSchema';
 import { WaveSystem } from '@/systems/WaveSystem';
 import type { GameContext } from '@/systems/GameContext';
-import type { LevelData, LevelsFile, MineTrapNodeData, TowerWaveNodeData } from '@/config/levelSchema';
+import type { LevelData, LevelsFile, ResolvedMineTrap, TowerWaveParams } from '@/systems/WaveSystem';
 
 const wrap = (node: unknown): LevelsFile => ({
   version: LEVELS_SCHEMA_VERSION,
   levels: [{ id: 'L', nodes: [node] } as unknown as LevelData],
 });
-const MINE = { nodeType: 'MineTrap', points: [{ x: 100, y: 200 }], delaySec: 3, paralyzeSec: 3, radiusPx: 120 };
-const TOWER = { nodeType: 'TowerWave', towerCount: 4, timeLimitSec: 60, towerHp: 100, ringSkill: { intervalSec: 3, expandPxPerRing: 40, energyCost: 2 } };
+const MINE = { nodeType: 'Event', eventType: 'mineTrap', mineTrap: { count: 8, radiusPx: 120, delaySec: 3, paralyzeSec: 3 } };
+const TOWER = { nodeType: 'Event', eventType: 'towerWave', towerWave: { towerCount: 4, timeLimitSec: 60, towerHp: 100, ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2 } } };
+const GUARD = { nodeType: 'Event', eventPresetName: 'Guard60' }; // 無 eventType＝guard（向後相容）
 
 function makeWave(levels: LevelData[]): WaveSystem {
   const sys = new WaveSystem(levels);
@@ -32,124 +33,93 @@ function makeWave(levels: LevelData[]): WaveSystem {
 }
 const nodeIdx = (sys: WaveSystem): number => (sys as unknown as { getNodeIndex: () => number }).getNodeIndex();
 
-describe('階段 A schema — MineTrap / TowerWave 驗證', () => {
-  it('NODE_TYPES 含 MineTrap / TowerWave（node 序列可放）', () => {
-    expect(NODE_TYPES).toContain('MineTrap');
-    expect(NODE_TYPES).toContain('TowerWave');
+describe('事件整套 schema — Event eventType 分派', () => {
+  it('NODE_TYPES 不再含 MineTrap/TowerWave（併進 Event）；EVENT_TYPES 含 4 種', () => {
+    expect(NODE_TYPES).not.toContain('MineTrap');
+    expect(NODE_TYPES).not.toContain('TowerWave');
+    expect(EVENT_TYPES).toEqual(['guard', 'fireRain', 'mineTrap', 'towerWave']);
   });
 
-  it('★ 合法地雷陷阱放行', () => {
+  it('★ 合法地雷事件放行（火雨式撒佈參數，無座標）', () => {
     expect(validateLevels(wrap(MINE)).ok).toBe(true);
-    expect(validateLevels(wrap({ ...MINE, points: [] })).ok).toBe(true); // 空點合法（框架階段可先空）
   });
-  it('壞地雷：points 非陣列 / 座標缺 / 秒數負 → 擋', () => {
-    expect(validateLevels(wrap({ ...MINE, points: 'x' })).ok).toBe(false);
-    expect(validateLevels(wrap({ ...MINE, points: [{ x: 1 }] })).ok).toBe(false);
-    expect(validateLevels(wrap({ ...MINE, delaySec: -1 })).ok).toBe(false);
-    expect(validateLevels(wrap({ ...MINE, radiusPx: -5 })).ok).toBe(false);
+  it('壞地雷：count<1 / 半徑負 / 延遲負 / mineTrap 缺 → 擋', () => {
+    expect(validateLevels(wrap({ ...MINE, mineTrap: { ...MINE.mineTrap, count: 0 } })).ok).toBe(false);
+    expect(validateLevels(wrap({ ...MINE, mineTrap: { ...MINE.mineTrap, radiusPx: -1 } })).ok).toBe(false);
+    expect(validateLevels(wrap({ ...MINE, mineTrap: { ...MINE.mineTrap, delaySec: -1 } })).ok).toBe(false);
+    expect(validateLevels(wrap({ nodeType: 'Event', eventType: 'mineTrap' })).ok).toBe(false);
   });
 
-  it('★ 合法魔尖塔放行', () => {
+  it('★ 合法魔尖塔事件放行（含新 ringSkill 欄位）', () => {
     expect(validateLevels(wrap(TOWER)).ok).toBe(true);
   });
-  it('壞魔尖塔：towerCount<1 / 限時<=0 / 血量<=0 / ringSkill 缺或欄位壞 → 擋', () => {
-    expect(validateLevels(wrap({ ...TOWER, towerCount: 0 })).ok).toBe(false);
-    expect(validateLevels(wrap({ ...TOWER, timeLimitSec: 0 })).ok).toBe(false);
-    expect(validateLevels(wrap({ ...TOWER, towerHp: -1 })).ok).toBe(false);
-    expect(validateLevels(wrap({ ...TOWER, ringSkill: undefined })).ok).toBe(false);
-    expect(validateLevels(wrap({ ...TOWER, ringSkill: { intervalSec: 0, expandPxPerRing: 40, energyCost: 2 } })).ok).toBe(false);
+  it('壞魔尖塔：towerCount<1 / limit<=0 / ringSkill 欄位壞 → 擋', () => {
+    expect(validateLevels(wrap({ ...TOWER, towerWave: { ...TOWER.towerWave, towerCount: 0 } })).ok).toBe(false);
+    expect(validateLevels(wrap({ ...TOWER, towerWave: { ...TOWER.towerWave, timeLimitSec: 0 } })).ok).toBe(false);
+    expect(validateLevels(wrap({ ...TOWER, towerWave: { ...TOWER.towerWave, ringSkill: { ...TOWER.towerWave.ringSkill, ringCount: 0 } } })).ok).toBe(false);
+    expect(validateLevels(wrap({ ...TOWER, towerWave: { ...TOWER.towerWave, ringSkill: { ...TOWER.towerWave.ringSkill, ringIntervalSec: 0 } } })).ok).toBe(false);
   });
 
-  it('★ 向後相容：舊扁平 Spawn 關卡不受影響仍合法', () => {
-    const flat = { nodeType: 'Spawn', killQuota: 5, maxAlive: 5, spawnThreshold: 3, spawnInterval: 0.5, spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }] };
-    expect(validateLevels(wrap(flat)).ok).toBe(true);
+  it('★ 向後相容：無 eventType 舊 Event（守護波）仍合法', () => {
+    expect(validateLevels(wrap(GUARD)).ok).toBe(true);
   });
 });
 
-describe('階段 A WaveSystem — 觸發鉤子 + 前進', () => {
-  it('★ 走到 MineTrap 節點 → 觸發 onMineTrap 一次（帶參數）→ 保持後前進', () => {
+describe('事件整套 WaveSystem — 地雷觸發（火雨式撒好 points）', () => {
+  it('★ 走到地雷事件 → onMineTrap 一次，帶「已撒好的 points」+ 參數 → 保持後前進', () => {
     const level = { id: 'L', nodes: [MINE, { nodeType: 'Reward', rewardTickets: 5 }] } as unknown as LevelData;
     const sys = makeWave([level]);
     let calls = 0;
-    let received: MineTrapNodeData | null = null;
-    sys.onMineTrap = (n) => { calls += 1; received = n; };
-    // 跑到觸發
-    for (let i = 0; i < 5; i += 1) sys.update(1 / 60);
-    expect(calls).toBe(1); // 只觸發一次
-    expect(received!.delaySec).toBe(3);
-    expect(received!.points.length).toBe(1);
-    // 保持 delaySec+paralyzeSec+0.5 = 6.5s 後前進
-    for (let i = 0; i < 60 * 7; i += 1) sys.update(1 / 60);
-    expect(calls).toBe(1); // 不重複觸發
-    expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1); // 已前進
-  });
-
-  it('★ 走到 TowerWave 節點 → 觸發 onTowerWave 一次（帶參數）→ 限時後前進', () => {
-    const level = { id: 'L', nodes: [{ ...TOWER, timeLimitSec: 2 }, { nodeType: 'Reward', rewardTickets: 5 }] } as unknown as LevelData;
-    const sys = makeWave([level]);
-    let calls = 0;
-    let received: TowerWaveNodeData | null = null;
-    sys.onTowerWave = (n) => { calls += 1; received = n; };
+    let received: ResolvedMineTrap | null = null;
+    sys.onMineTrap = (r) => { calls += 1; received = r; };
     for (let i = 0; i < 5; i += 1) sys.update(1 / 60);
     expect(calls).toBe(1);
-    expect(received!.towerCount).toBe(4);
-    expect(received!.ringSkill.energyCost).toBe(2);
-    for (let i = 0; i < 60 * 3; i += 1) sys.update(1 / 60); // >2s 限時
-    expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1);
-  });
-
-  it('無 onMineTrap/onTowerWave 回呼也不炸（optional，仍會前進）', () => {
-    const level = { id: 'L', nodes: [{ ...MINE, delaySec: 0, paralyzeSec: 0 }, { nodeType: 'Reward' }] } as unknown as LevelData;
-    const sys = makeWave([level]);
-    expect(() => { for (let i = 0; i < 60 * 2; i += 1) sys.update(1 / 60); }).not.toThrow();
+    expect(received!.points.length).toBeGreaterThan(0); // WaveSystem 已自動撒好座標（火雨式）
+    expect(received!.points.length).toBeLessThanOrEqual(8); // <= count
+    expect(received!.delaySec).toBe(3);
+    expect(received!.paralyzeSec).toBe(3);
+    expect(received!.radiusPx).toBe(120);
+    for (let i = 0; i < 60 * 7; i += 1) sys.update(1 / 60);
+    expect(calls).toBe(1);
     expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1);
   });
 });
 
-describe('階段 B 魔尖塔守護波勝敗判定（雙結束條件；失敗不 GameOver 繼續下關）', () => {
-  it('★ 限時內打完全部尖塔 → 過關（提前 advance、onTowerWaveResult(true)）', () => {
-    const level = { id: 'L', nodes: [{ ...TOWER, towerCount: 3, timeLimitSec: 100 }, { nodeType: 'Reward', rewardTickets: 5 }] } as unknown as LevelData;
+describe('事件整套 WaveSystem — 魔尖塔守護波勝敗（雙結束，失敗不 GameOver）', () => {
+  it('★ 限時內打完全部尖塔 → 過關（提前 advance + result true）', () => {
+    const level = { id: 'L', nodes: [{ ...TOWER, towerWave: { ...TOWER.towerWave, towerCount: 3, timeLimitSec: 100 } }, { nodeType: 'Reward' }] } as unknown as LevelData;
     const sys = makeWave([level]);
     let result: boolean | null = null;
+    let params: TowerWaveParams | null = null;
+    sys.onTowerWave = (p) => { params = p; };
     sys.onTowerWaveResult = (won) => { result = won; };
-    sys.update(1 / 60); // 觸發
-    // 征騎摧毀 3 座（呼 notifyTowerDestroyed）
+    sys.update(1 / 60);
+    expect(params!.towerCount).toBe(3);
+    expect(params!.ringSkill.energyCost).toBe(2);
     sys.notifyTowerDestroyed(); sys.notifyTowerDestroyed(); sys.notifyTowerDestroyed();
-    sys.update(1 / 60); // 下一幀判過關（遠早於 100s 限時）
-    expect(result).toBe(true); // 過關
-    expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1); // 提前 advance
+    sys.update(1 / 60);
+    expect(result).toBe(true);
+    expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1);
   });
 
-  it('★ 限時到還沒打完 → 失敗（onTowerWaveResult(false)）但不 GameOver、一樣 advance 下一節點', () => {
-    const level = { id: 'L', nodes: [{ ...TOWER, towerCount: 4, timeLimitSec: 2 }, { nodeType: 'Reward', rewardTickets: 5 }] } as unknown as LevelData;
+  it('★ 限時到沒打完 → 失敗（result false）但不 GameOver、仍 advance', () => {
+    const level = { id: 'L', nodes: [{ ...TOWER, towerWave: { ...TOWER.towerWave, towerCount: 4, timeLimitSec: 2 } }, { nodeType: 'Reward' }] } as unknown as LevelData;
     const sys = makeWave([level]);
     let result: boolean | null = null;
     sys.onTowerWaveResult = (won) => { result = won; };
     sys.update(1 / 60);
-    sys.notifyTowerDestroyed(); // 只打掉 1 座（不足 4）
-    for (let i = 0; i < 60 * 3; i += 1) sys.update(1 / 60); // 跑過 2s 限時
-    expect(result).toBe(false); // 失敗
-    expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1); // ★失敗仍 advance（不 GameOver、不卡住）
+    sys.notifyTowerDestroyed(); // 只打 1/4
+    for (let i = 0; i < 60 * 3; i += 1) sys.update(1 / 60);
+    expect(result).toBe(false);
+    expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1); // 失敗仍前進（不卡不 GameOver）
   });
 
-  it('★ getNodeProgress = 已摧毀 / towerCount（打掉幾座）', () => {
-    const level = { id: 'L', nodes: [{ ...TOWER, towerCount: 4, timeLimitSec: 100 }] } as unknown as LevelData;
+  it('getNodeProgress 魔尖塔＝摧毀數/towerCount', () => {
+    const level = { id: 'L', nodes: [{ ...TOWER, towerWave: { ...TOWER.towerWave, towerCount: 4, timeLimitSec: 100 } }] } as unknown as LevelData;
     const sys = makeWave([level]);
-    sys.update(1 / 60); // 觸發
-    expect(sys.getNodeProgress()).toBeCloseTo(0); // 0/4
+    sys.update(1 / 60);
+    expect(sys.getNodeProgress()).toBeCloseTo(0);
     sys.notifyTowerDestroyed(); sys.notifyTowerDestroyed();
-    expect(sys.getNodeProgress()).toBeCloseTo(0.5); // 2/4
-  });
-
-  it('換節點後 towersDestroyed 歸零（不把上波擊破數帶進下一 TowerWave）', () => {
-    const level = { id: 'L', nodes: [
-      { ...TOWER, towerCount: 1, timeLimitSec: 100 },
-      { ...TOWER, towerCount: 4, timeLimitSec: 100 },
-    ] } as unknown as LevelData;
-    const sys = makeWave([level]);
-    sys.update(1 / 60); sys.notifyTowerDestroyed(); sys.update(1 / 60); // 第一波打完(1/1)過關進第二波
-    expect(nodeIdx(sys)).toBe(1);
-    sys.update(1 / 60); // 第二波觸發
-    expect(sys.getNodeProgress()).toBeCloseTo(0); // 歸零（非 1/4 沿用上波）
+    expect(sys.getNodeProgress()).toBeCloseTo(0.5);
   });
 });
