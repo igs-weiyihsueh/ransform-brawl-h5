@@ -226,7 +226,10 @@ function renderNodeList(): void {
 }
 
 function nodeSummary(node: LevelNodeData): string {
-  if (node.nodeType === 'Spawn') return `${nodeTypeLabel('Spawn')}（殺敵 ${node.killQuota}）`;
+  if (node.nodeType === 'Spawn') {
+    const g = Array.isArray(node.groups) && node.groups.length > 0 ? `，${node.groups.length} group` : '';
+    return `${nodeTypeLabel('Spawn')}（殺敵 ${node.killQuota}${g}）`;
+  }
   if (node.nodeType === 'Reward') {
     return `${nodeTypeLabel('Reward')}${node.rewardPresetName ? `（${node.rewardPresetName}）` : ''}`;
   }
@@ -269,6 +272,22 @@ function numberInput(value: number, onChange: (v: number) => void): HTMLInputEle
     onChange(Number.isFinite(v) ? v : 0);
     // 只更新節點列表摘要，不整頁重繪（避免游標跳走）。
     renderNodeList();
+  });
+  return input;
+}
+
+/** 選填數字輸入：空字串 → null（省略欄位）；有值 → number。用於 group.minConcurrent。 */
+function optionalNumberInput(value: number | undefined, onChange: (v: number | null) => void): HTMLInputElement {
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.step = 'any';
+  input.placeholder = '（省略＝同上限）';
+  input.value = value === undefined ? '' : String(value);
+  input.addEventListener('input', () => {
+    const s = input.value.trim();
+    if (s.length === 0) { onChange(null); return; }
+    const v = Number(s);
+    onChange(Number.isFinite(v) ? v : null);
   });
   return input;
 }
@@ -347,37 +366,30 @@ function renderInspector(): void {
   else renderEventInspector(node);
 }
 
-function renderSpawnInspector(node: SpawnNodeData): void {
-  inspectorEl.appendChild(fieldRow('殺敵數', numberInput(node.killQuota, (v) => { node.killQuota = v; })));
-  inspectorEl.appendChild(fieldRow('場上上限', numberInput(node.maxAlive, (v) => { node.maxAlive = v; })));
-  inspectorEl.appendChild(fieldRow('補怪門檻', numberInput(node.spawnThreshold, (v) => { node.spawnThreshold = v; })));
-  inspectorEl.appendChild(fieldRow('生怪間隔（秒）', numberInput(node.spawnInterval, (v) => { node.spawnInterval = v; })));
-
-  const spawnsTitle = document.createElement('div');
-  spawnsTitle.className = 'section-title';
-  spawnsTitle.style.marginTop = '12px';
-  spawnsTitle.textContent = '敵人配置（敵種 + 權重）';
-  inspectorEl.appendChild(spawnsTitle);
-
-  node.spawns.forEach((entry, si) => {
+/**
+ * 敵種+權重列編輯器（node.spawns 與 group.spawns 共用）：渲染每筆 {enemyType,weight} + 刪除 + 新增。
+ * @param container 掛載處　@param spawns 目標陣列（就地改）　@param onStructuralChange 增刪後重繪。
+ */
+function renderSpawnEntriesEditor(
+  container: HTMLElement,
+  spawns: SpawnEntry[],
+  onStructuralChange: () => void,
+): void {
+  spawns.forEach((entry, si) => {
     const row = document.createElement('div');
     row.className = 'spawn-entry';
-
     const sel = document.createElement('select');
-    // 可維護性根治：敵種清單動態讀 enemies 單一來源（enemy-editor 加怪自動出現）；
-    //   ∪ 目前值（確保現有 preset 值即使不在清單也顯示、不遺失）。
+    // 敵種清單動態讀 enemies 單一來源（enemy-editor 加怪自動出現）∪ 目前值（不遺失現有）。
     const dyn = getEnemyTypeKeys();
     const typeList = dyn.includes(entry.enemyType) ? dyn : [...dyn, entry.enemyType];
     for (const t of typeList) {
       const opt = document.createElement('option');
-      opt.value = t; // JSON 值維持英文 key
-      opt.textContent = enemyTypeLabel(t); // 顯示中文（英文），未知怪 fallback 原 key
+      opt.value = t;
+      opt.textContent = enemyTypeLabel(t);
       if (t === entry.enemyType) opt.selected = true;
       sel.appendChild(opt);
     }
-    sel.addEventListener('change', () => {
-      entry.enemyType = sel.value as EnemyType;
-    });
+    sel.addEventListener('change', () => { entry.enemyType = sel.value as EnemyType; });
     row.appendChild(sel);
 
     const w = document.createElement('input');
@@ -394,23 +406,133 @@ function renderSpawnInspector(node: SpawnNodeData): void {
     const del = document.createElement('button');
     del.className = 'danger';
     del.textContent = '✕';
-    del.addEventListener('click', () => {
-      node.spawns.splice(si, 1);
-      renderInspector();
-    });
+    del.addEventListener('click', () => { spawns.splice(si, 1); onStructuralChange(); });
     row.appendChild(del);
-
-    inspectorEl.appendChild(row);
+    container.appendChild(row);
   });
 
   const addBtn = document.createElement('button');
   addBtn.textContent = '+ 新增敵種';
   addBtn.addEventListener('click', () => {
     const keys = getEnemyTypeKeys();
-    node.spawns.push({ enemyType: keys[0] ?? ENEMY_TYPES[0], weight: 1 });
+    spawns.push({ enemyType: keys[0] ?? ENEMY_TYPES[0], weight: 1 });
+    onStructuralChange();
+  });
+  container.appendChild(addBtn);
+}
+
+/** 扁平單流 Spawn 編輯（無 groups，向後相容）：maxAlive/threshold/interval + spawns + 「切換多 group」。 */
+function renderFlatSpawnEditor(node: SpawnNodeData): void {
+  inspectorEl.appendChild(fieldRow('場上上限', numberInput(node.maxAlive, (v) => { node.maxAlive = v; })));
+  inspectorEl.appendChild(fieldRow('補怪門檻', numberInput(node.spawnThreshold, (v) => { node.spawnThreshold = v; })));
+  inspectorEl.appendChild(fieldRow('生怪間隔（秒）', numberInput(node.spawnInterval, (v) => { node.spawnInterval = v; })));
+
+  const spawnsTitle = document.createElement('div');
+  spawnsTitle.className = 'section-title';
+  spawnsTitle.style.marginTop = '12px';
+  spawnsTitle.textContent = '敵人配置（敵種 + 權重）';
+  inspectorEl.appendChild(spawnsTitle);
+  renderSpawnEntriesEditor(inspectorEl, node.spawns, renderInspector);
+
+  // 切換成多 group：用現有扁平參數當第一個 group 起點（label「主流」），不遺失原設定。
+  const toGroups = document.createElement('button');
+  toGroups.style.marginTop = '10px';
+  toGroups.textContent = '⇢ 切換成多 group（分層刷怪）';
+  toGroups.title = '把目前扁平設定轉成第一個 group，之後可再加更多 group 並行';
+  toGroups.addEventListener('click', () => {
+    node.groups = [{
+      label: '主流',
+      spawns: node.spawns.map((s) => ({ ...s })),
+      spawnInterval: node.spawnInterval,
+      maxConcurrent: node.maxAlive,
+      ...(node.spawnThreshold !== node.maxAlive ? { minConcurrent: node.spawnThreshold } : {}),
+    }];
     renderInspector();
   });
-  inspectorEl.appendChild(addBtn);
+  inspectorEl.appendChild(toGroups);
+}
+
+/** 多 group 巢狀編輯（有 groups）：每 group 可編 label/spawns/interval/maxConcurrent/minConcurrent + 刪除 + 新增 group + 切回扁平。 */
+function renderSpawnGroupsEditor(node: SpawnNodeData): void {
+  const groups = node.groups!;
+  const title = document.createElement('div');
+  title.className = 'section-title';
+  title.style.marginTop = '12px';
+  title.textContent = `刷怪分層 groups（${groups.length} 組並行）`;
+  inspectorEl.appendChild(title);
+
+  groups.forEach((g, gi) => {
+    const box = document.createElement('div');
+    box.className = 'group-box';
+    box.style.cssText = 'border:1px solid var(--line,#3a3a5c);border-radius:6px;padding:8px;margin-bottom:10px;';
+
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:6px;';
+    const gLabel = document.createElement('strong');
+    gLabel.textContent = `Group ${gi + 1}`;
+    head.appendChild(gLabel);
+    const spacer = document.createElement('span');
+    spacer.style.flex = '1';
+    head.appendChild(spacer);
+    const delG = document.createElement('button');
+    delG.className = 'danger';
+    delG.textContent = '刪除此 group';
+    delG.addEventListener('click', () => {
+      groups.splice(gi, 1);
+      if (groups.length === 0) delete node.groups; // 全刪 → 退回扁平
+      renderInspector();
+    });
+    head.appendChild(delG);
+    box.appendChild(head);
+
+    box.appendChild(fieldRow('標籤 label', textInput(g.label ?? '', (v) => {
+      if (v.length === 0) delete g.label; else g.label = v;
+    })));
+    box.appendChild(fieldRow('生怪間隔（秒）', numberInput(g.spawnInterval, (v) => { g.spawnInterval = v; })));
+    box.appendChild(fieldRow('同時上限 maxConcurrent', numberInput(g.maxConcurrent, (v) => { g.maxConcurrent = v; })));
+    // minConcurrent optional：空欄=省略（門檻＝maxConcurrent）；填數=補怪觸發門檻。
+    box.appendChild(fieldRow('補怪門檻 minConcurrent（選填）', optionalNumberInput(g.minConcurrent, (v) => {
+      if (v === null) delete g.minConcurrent; else g.minConcurrent = v;
+    })));
+
+    const spTitle = document.createElement('div');
+    spTitle.className = 'section-title';
+    spTitle.textContent = '敵人配置（敵種 + 權重）';
+    box.appendChild(spTitle);
+    renderSpawnEntriesEditor(box, g.spawns, renderInspector);
+
+    inspectorEl.appendChild(box);
+  });
+
+  const addG = document.createElement('button');
+  addG.style.marginTop = '4px';
+  addG.textContent = '+ 新增 group';
+  addG.addEventListener('click', () => {
+    const keys = getEnemyTypeKeys();
+    groups.push({
+      label: `Group ${groups.length + 1}`,
+      spawns: [{ enemyType: keys[0] ?? ENEMY_TYPES[0], weight: 1 }],
+      spawnInterval: 1,
+      maxConcurrent: 3,
+    });
+    renderInspector();
+  });
+  inspectorEl.appendChild(addG);
+
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  hint.style.marginTop = '6px';
+  hint.textContent = '每個 group 各自獨立維持場上數並行（例：雜兵狂刷 + 遠程零星 + 菁英偶爾）。過關仍看上方「殺敵數」（全場擊殺）。全刪 group 會退回單一扁平設定。';
+  inspectorEl.appendChild(hint);
+}
+
+function renderSpawnInspector(node: SpawnNodeData): void {
+  // killQuota 恆為 node 層全場過關（扁平/多 group 都用）。
+  inspectorEl.appendChild(fieldRow('殺敵數（全場過關）', numberInput(node.killQuota, (v) => { node.killQuota = v; })));
+
+  const hasGroups = Array.isArray(node.groups) && node.groups.length > 0;
+  if (hasGroups) renderSpawnGroupsEditor(node);
+  else renderFlatSpawnEditor(node);
 
   // 附加火雨（用戶試玩#2）：一般波次可附加火雨事件。無 = 省略欄位。
   const fireTitle = document.createElement('div');
