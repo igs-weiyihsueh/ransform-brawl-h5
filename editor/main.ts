@@ -12,20 +12,16 @@
  */
 import {
   ENEMY_TYPES,
-  EVENT_TYPES,
   LEVELS_SCHEMA_VERSION,
   assertValidLevels,
   type EnemyType,
   type EventNodeData,
-  type EventType,
   type LevelData,
   type LevelNodeData,
   type LevelsFile,
-  type MineTrapParams,
   type RewardNodeData,
   type SpawnEntry,
   type SpawnNodeData,
-  type TowerWaveParams,
   validateLevels,
 } from '@/config/levelSchema';
 import {
@@ -43,6 +39,8 @@ import { enemyTypeLabel, nodeTypeLabel } from './labels';
 import { getEnemyTypeKeys } from '@/config/enemySchema';
 import { GUARD_PRESETS } from '@/config/guardConfig';
 import { FIRE_RAIN_PRESETS } from '@/config/fireRainConfig';
+import { MINE_PRESETS } from '@/config/mineConfig';
+import { TOWER_PRESETS } from '@/config/towerConfig';
 
 // ---- 編輯狀態（可變草稿；匯出時才驗證） ----------------------------------
 // 注意：編輯過程用寬鬆型別草稿（欄位可能暫時不合法），匯出前才收斂驗證。
@@ -104,18 +102,7 @@ function defaultRewardNode(): RewardNodeData {
   return { nodeType: 'Reward' };
 }
 function defaultEventNode(): EventNodeData {
-  return { nodeType: 'Event', eventType: 'guard', eventPresetName: 'Guard60' };
-}
-/** 地雷陷阱事件參數預設（用戶：火雨式自動撒；decision dfa9a033 delay3/麻痺3）。 */
-function defaultMineTrapParams(): MineTrapParams {
-  return { count: 8, radiusPx: 120, delaySec: 3, paralyzeSec: 3 };
-}
-/** 魔尖塔事件參數預設（decision dfa9a033 尖塔數 4/環狀技扣 2 能量）。 */
-function defaultTowerWaveParams(): TowerWaveParams {
-  return {
-    towerCount: 4, timeLimitSec: 60, towerHp: 100,
-    ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2 },
-  };
+  return { nodeType: 'Event', eventPresetName: 'Guard60' };
 }
 
 function makeNode(type: LevelNodeData['nodeType']): LevelNodeData {
@@ -248,12 +235,11 @@ function nodeSummary(node: LevelNodeData): string {
   if (node.nodeType === 'Reward') {
     return `${nodeTypeLabel('Reward')}${node.rewardPresetName ? `（${node.rewardPresetName}）` : ''}`;
   }
-  // Event：依 eventType 描述（守護波/火雨用 preset 名；地雷/魔尖塔用參數）。
-  const et = node.eventType ?? 'guard';
-  if (et === 'mineTrap') return `事件·地雷陷阱（${node.mineTrap?.count ?? 0} 雷）`;
-  if (et === 'towerWave') return `事件·魔尖塔（${node.towerWave?.towerCount ?? 0} 塔／${node.towerWave?.timeLimitSec ?? 0}s）`;
-  if (et === 'fireRain') return `事件·火雨（${node.eventPresetName ?? ''}）`;
-  return `事件·守護波（${node.eventPresetName ?? ''}）`;
+  // Event：純 eventPresetName 描述（tower preset→魔尖塔 / 火雨 preset→火雨 / 否則守護波）。
+  const en = node.eventPresetName ?? '';
+  if (en in TOWER_PRESETS) return `事件·魔尖塔（${en}）`;
+  if (en in FIRE_RAIN_PRESETS) return `事件·火雨（${en}）`;
+  return `事件·守護波（${en}）`;
 }
 
 function moveNode(from: number, to: number): void {
@@ -384,49 +370,6 @@ function renderInspector(): void {
   if (node.nodeType === 'Spawn') renderSpawnInspector(node);
   else if (node.nodeType === 'Reward') renderRewardInspector(node);
   else renderEventInspector(node);
-}
-
-/** 地雷陷阱參數編輯（火雨式自動撒；用戶只設 數量/半徑/延遲/麻痺，無座標）。 */
-function renderMineTrapParamsEditor(node: EventNodeData): void {
-  if (!node.mineTrap) node.mineTrap = defaultMineTrapParams();
-  const m = node.mineTrap;
-  inspectorEl.appendChild(fieldRow('地雷數量', numberInput(m.count, (v) => { m.count = Math.max(1, Math.round(v)); })));
-  inspectorEl.appendChild(fieldRow('爆炸半徑（px）', numberInput(m.radiusPx, (v) => { m.radiusPx = v; })));
-  inspectorEl.appendChild(fieldRow('延遲爆炸（秒）', numberInput(m.delaySec, (v) => { m.delaySec = v; })));
-  inspectorEl.appendChild(fieldRow('麻痺秒數', numberInput(m.paralyzeSec, (v) => { m.paralyzeSec = v; })));
-  const hint = document.createElement('div');
-  hint.className = 'hint';
-  hint.style.marginTop = '6px';
-  hint.textContent = '比照天降火雨：走到此節點→全場自動撒 N 顆地雷（位置系統隨機，用戶不用打座標）→延遲後爆炸範圍麻痺。';
-  inspectorEl.appendChild(hint);
-}
-
-/** 魔尖塔參數編輯（比照守護波；尖塔數/限時/血量/環狀技，對接征騎執行期）。 */
-function renderTowerWaveParamsEditor(node: EventNodeData): void {
-  if (!node.towerWave) node.towerWave = defaultTowerWaveParams();
-  const t = node.towerWave;
-  inspectorEl.appendChild(fieldRow('尖塔數', numberInput(t.towerCount, (v) => { t.towerCount = Math.max(1, Math.round(v)); })));
-  inspectorEl.appendChild(fieldRow('限時（秒）', numberInput(t.timeLimitSec, (v) => { t.timeLimitSec = v; })));
-  inspectorEl.appendChild(fieldRow('尖塔血量', numberInput(t.towerHp, (v) => { t.towerHp = v; })));
-
-  const title = document.createElement('div');
-  title.className = 'section-title';
-  title.style.marginTop = '12px';
-  title.textContent = '環狀技參數';
-  inspectorEl.appendChild(title);
-  const r = t.ringSkill;
-  inspectorEl.appendChild(fieldRow('環數', numberInput(r.ringCount, (v) => { r.ringCount = Math.max(1, Math.round(v)); })));
-  inspectorEl.appendChild(fieldRow('最內環半徑（px）', numberInput(r.baseRadiusPx, (v) => { r.baseRadiusPx = v; })));
-  inspectorEl.appendChild(fieldRow('每層遞增半徑（px）', numberInput(r.radiusStepPx, (v) => { r.radiusStepPx = v; })));
-  inspectorEl.appendChild(fieldRow('每層間隔（秒）', numberInput(r.ringIntervalSec, (v) => { r.ringIntervalSec = v; })));
-  inspectorEl.appendChild(fieldRow('環厚（px）', numberInput(r.ringThicknessPx, (v) => { r.ringThicknessPx = v; })));
-  inspectorEl.appendChild(fieldRow('扣能量段數', numberInput(r.energyCost, (v) => { r.energyCost = v; })));
-
-  const hint = document.createElement('div');
-  hint.className = 'hint';
-  hint.style.marginTop = '6px';
-  hint.textContent = '比照守護波：走到此節點→生成 N 座尖塔（限時內打完過關，限時到沒打完＝失敗但不 GameOver、直接進下關）；尖塔週期放環狀技。';
-  inspectorEl.appendChild(hint);
 }
 
 /**
@@ -645,70 +588,60 @@ function renderRewardInspector(node: RewardNodeData): void {
 }
 
 function renderEventInspector(node: EventNodeData): void {
-  // 事件類型選擇（用戶：守護波/火雨/地雷/魔尖塔 並列在「事件」底下）。
-  if (!node.eventType) node.eventType = 'guard';
-  const typeLabels: Record<EventType, string> = {
-    guard: '🛡 守護波',
-    fireRain: '🔥 天降火雨',
-    mineTrap: '💣 地雷陷阱',
-    towerWave: '🗼 魔尖塔',
-  };
-  const typeOpts = EVENT_TYPES.map((t): [string, string] => [t, typeLabels[t]]);
-  inspectorEl.appendChild(
-    fieldRow('事件類型', selectInput(node.eventType, typeOpts, (v) => {
-      node.eventType = v as EventType;
-      // 切類型時補預設參數（保留既有；缺才補）。
-      if (node.eventType === 'guard' && !node.eventPresetName) node.eventPresetName = 'Guard60';
-      if (node.eventType === 'fireRain' && (!node.eventPresetName || GUARD_PRESETS[node.eventPresetName])) node.eventPresetName = 'FireRain';
-      if (node.eventType === 'mineTrap' && !node.mineTrap) node.mineTrap = defaultMineTrapParams();
-      if (node.eventType === 'towerWave' && !node.towerWave) node.towerWave = defaultTowerWaveParams();
-      renderInspector();
-    })),
-  );
-
-  // 地雷/魔尖塔：各自參數編輯（比照火雨/守護波併進事件）。
-  if (node.eventType === 'mineTrap') { renderMineTrapParamsEditor(node); return; }
-  if (node.eventType === 'towerWave') { renderTowerWaveParamsEditor(node); return; }
-  if (node.eventType === 'fireRain') { renderFireRainEventInspector(node); return; }
-
-  // 守護波（guard）：preset + 附加火雨 + 補怪 drip（既有 UI）。
-  renderGuardEventInspector(node);
-}
-
-/** 純火雨事件編輯（eventType=fireRain）：選火雨 preset 名。 */
-function renderFireRainEventInspector(node: EventNodeData): void {
-  const opts: [string, string][] = Object.keys(FIRE_RAIN_PRESETS).map((k) => [k, `🔥 ${k}`]);
-  if (node.eventPresetName && !opts.some(([v]) => v === node.eventPresetName)) {
-    opts.unshift([node.eventPresetName, `（自訂）${node.eventPresetName}`]);
-  }
-  inspectorEl.appendChild(
-    fieldRow('火雨 preset', selectInput(node.eventPresetName ?? 'FireRain', opts, (v) => { node.eventPresetName = v; renderInspector(); })),
-  );
-  const hint = document.createElement('div');
-  hint.className = 'hint';
-  hint.textContent = '純火雨波：全場自動撒火柱（選 preset 控密度/半徑/間隔）。';
-  inspectorEl.appendChild(hint);
-}
-
-function renderGuardEventInspector(node: EventNodeData): void {
-  // 事件下拉：守護 preset。
+  // 單一架構：Event 節點只有一個 preset 下拉（守護/火雨/魔尖塔 presets 都在 eventPresetName）。
+  // 守護 preset 顯附加火雨/drip；魔尖塔/火雨 preset 顯對應提示。另加 attachMineTrap 下拉（附加地雷）。
   const guardOpts: [string, string][] = Object.keys(GUARD_PRESETS).map((k) => [k, `🛡 守護：${k}`]);
-  const options = [...guardOpts];
+  const towerOpts: [string, string][] = Object.keys(TOWER_PRESETS).map((k) => [k, `🗼 魔尖塔：${k}`]);
+  const fireOpts: [string, string][] = Object.keys(FIRE_RAIN_PRESETS).map((k) => [k, `🔥 火雨：${k}`]);
+  const options: [string, string][] = [...guardOpts, ...towerOpts, ...fireOpts];
   const currentPreset = node.eventPresetName ?? 'Guard60';
   if (!options.some(([v]) => v === currentPreset)) {
     options.unshift([currentPreset, `（自訂）${currentPreset}`]);
   }
   inspectorEl.appendChild(
-    fieldRow('守護 preset', selectInput(currentPreset, options, (v) => { node.eventPresetName = v; renderInspector(); })),
+    fieldRow('事件 preset', selectInput(currentPreset, options, (v) => { node.eventPresetName = v; renderInspector(); })),
   );
-  const hint = document.createElement('div');
-  hint.className = 'hint';
-  const guard = GUARD_PRESETS[node.eventPresetName ?? ''];
-  hint.textContent = guard
-    ? '🛡 守護事件（撐過時限勝）。下方可為此守護選擇附加火雨（覆蓋 preset 預設）。'
-    : '🛡 守護事件（撐過時限勝）。';
-  inspectorEl.appendChild(hint);
 
+  const isTower = currentPreset in TOWER_PRESETS;
+  const isFire = currentPreset in FIRE_RAIN_PRESETS;
+  const typeHint = document.createElement('div');
+  typeHint.className = 'hint';
+  typeHint.textContent = isTower
+    ? '🗼 魔尖塔波（單獨波次）：限時內打完全部尖塔＝過關，限時到沒打完＝失敗但不 GameOver、直接進下關。參數在「事件編輯器」魔尖塔子分頁編。'
+    : isFire
+      ? '🔥 純火雨波：全場自動撒火柱。參數在「事件編輯器」火雨子分頁編。'
+      : '🛡 守護事件（撐過時限勝）。下方可為此守護選擇附加火雨（覆蓋 preset 預設）+ 附加地雷 + 自訂補怪。';
+  inspectorEl.appendChild(typeHint);
+
+  // 附加地雷（用戶：地雷=附加類，任何事件都可附加）。
+  renderAttachMineTrap(node);
+
+  // 守護 preset 才顯附加火雨 + 補怪 drip（火雨/魔尖塔 preset 不適用）。
+  if (!isTower && !isFire) renderGuardExtras(node);
+}
+
+/** 附加地雷下拉（無 / 地雷 preset 名）。任何 Event 節點皆可附加。 */
+function renderAttachMineTrap(node: EventNodeData): void {
+  const NONE = '__none__';
+  const opts: [string, string][] = [
+    [NONE, '（無地雷）'],
+    ...Object.keys(MINE_PRESETS).map((k): [string, string] => [k, `💣 ${k}`]),
+  ];
+  if (node.attachMineTrap && !opts.some(([v]) => v === node.attachMineTrap)) {
+    opts.push([node.attachMineTrap, `（自訂）${node.attachMineTrap}`]);
+  }
+  inspectorEl.appendChild(
+    fieldRow('附加地雷', selectInput(node.attachMineTrap ?? NONE, opts, (v) => {
+      if (v === NONE) delete node.attachMineTrap;
+      else node.attachMineTrap = v;
+      renderInspector();
+    })),
+  );
+}
+
+/** 守護 preset 專屬：附加火雨（三態覆蓋）+ 補怪 drip 覆蓋。 */
+function renderGuardExtras(node: EventNodeData): void {
+  const guard = GUARD_PRESETS[node.eventPresetName ?? ''];
   // 附加火雨（用戶第六輪 #1）：per-node 覆蓋守護 preset 的火雨。三態下拉：
   //   沿用預設(INHERIT=delete 欄位/undefined) / 無火雨('none' 明確蓋掉) / 三種火雨 preset。
   const fireTitle = document.createElement('div');

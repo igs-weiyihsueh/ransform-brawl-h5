@@ -44,17 +44,6 @@ export type NodeType = 'Spawn' | 'Reward' | 'Event';
 /** 執行期用的合法 NodeType 清單。 */
 export const NODE_TYPES: readonly NodeType[] = ['Spawn', 'Reward', 'Event'] as const;
 
-/**
- * 事件節點（Event）的事件類型（用戶：地雷/魔尖塔併進「事件」底下，跟守護波/火雨並列，非獨立頂層 NodeType）。
- * - 'guard'    ：守護波（eventPresetName=Guard preset，如 Guard60）。
- * - 'fireRain' ：純火雨波（eventPresetName=火雨 preset）。
- * - 'mineTrap' ：地雷陷阱（mineTrap 撒佈參數；比照火雨全場自動撒，不用手動座標）。
- * - 'towerWave'：魔尖塔（towerWave 參數；比照守護波，限時打塔勝敗）。
- * 省略＝'guard'（向後相容：舊 Event 節點無 eventType＝守護/火雨，靠 eventPresetName 判）。
- */
-export type EventType = 'guard' | 'fireRain' | 'mineTrap' | 'towerWave';
-export const EVENT_TYPES: readonly EventType[] = ['guard', 'fireRain', 'mineTrap', 'towerWave'] as const;
-
 // ---------------------------------------------------------------------------
 // 以下為【驗證訊息】內部用的中文標籤（private，不 export）。
 // 供 validateLevels 組錯誤字串用；不是對外的 UI 顯示 API——
@@ -136,6 +125,12 @@ export interface SpawnNodeData {
    * 跟 eventPresetName 不在此檔交叉驗 GUARD_PRESETS 同慣例。
    */
   attachFireRain?: string;
+  /**
+   * 附加地雷（用戶：地雷=附加類，比照 attachFireRain）：地雷 preset 名（MINE_PRESETS 的 key，如 'Mine'/'MineHeavy'）。
+   * 省略=無地雷。WaveSystem getActiveMinePreset 讀此欄，該波次進行時 game-side MineSystem 全場自動撒地雷。
+   * 註：零遊戲依賴，只驗「非空字串」；preset 名合法性由編輯器下拉 + game-side getResolvedMinePreset(fallback) 把關。
+   */
+  attachMineTrap?: string;
 }
 
 /** Reward 節點：發獎（本階段流程未實作，schema 先定型）。 */
@@ -145,84 +140,29 @@ export interface RewardNodeData {
   rewardPresetName?: string;
 }
 
-/** Event 節點：守護波/火雨/地雷陷阱/魔尖塔，靠 eventType 分派（用戶：4 種事件並列在「事件」底下）。 */
+/**
+ * Event 節點：靠 eventPresetName 分派（用戶單一架構）——
+ * - 守護 preset（如 Guard60）→ 守護波（建 GuardEvent）。
+ * - 火雨 preset（如 FireRain）→ 純火雨波。
+ * - 魔尖塔 preset（如 Tower4，towerConfig TOWER_PRESETS）→ 魔尖塔波（限時打塔勝敗，比照守護波）。
+ * 可額外附加火雨（attachFireRain）/ 地雷（attachMineTrap）。
+ */
 export interface EventNodeData {
   nodeType: 'Event';
+  /** 事件預設名：Guard preset（守護波）/ 火雨 preset / 魔尖塔 preset。WaveSystem 依此分派。 */
+  eventPresetName: string;
   /**
-   * 事件類型（用戶：地雷/魔尖塔併進事件）。省略＝'guard'（向後相容：舊 Event 節點無此欄＝守護/火雨，靠 eventPresetName 判）。
-   * - 'guard'/'fireRain'：用 eventPresetName（Guard/火雨 preset 名）。
-   * - 'mineTrap'：用 mineTrap 撒佈參數（比照火雨自動撒，不用座標）。
-   * - 'towerWave'：用 towerWave 參數（比照守護波，限時打塔勝敗）。
-   */
-  eventType?: EventType;
-  /** 事件預設名（eventType=guard/fireRain 用；如 'Guard60'/'FireRain'）。mineTrap/towerWave 不需此欄。 */
-  eventPresetName?: string;
-  /**
-   * 守護事件附加火雨（用戶第六輪 #1，additive optional）：per-node 覆蓋守護 preset 的火雨。三態：
-   *   省略→沿用 preset；'none'→明確無；火雨 preset 名→用該火雨。（僅 guard 用）
+   * 附加火雨（additive optional）：per-node 覆蓋守護 preset 的火雨。三態：
+   *   省略→沿用 preset（守護波用）；'none'→明確無；火雨 preset 名→用該火雨。
    */
   attachFireRain?: string;
-  /** 守護補怪 drip per-node 覆蓋（僅 guard 用；省略＝沿用 preset）。 */
+  /** 附加地雷（用戶：地雷=附加類）：地雷 preset 名（MINE_PRESETS key）。省略=無。守護/魔尖塔波可額外附加。 */
+  attachMineTrap?: string;
+  /** 守護補怪 drip per-node 覆蓋（僅守護波用；省略＝沿用 preset）。 */
   maxAlive?: number;
   spawnThreshold?: number;
   spawnInterval?: number;
   spawns?: SpawnEntry[];
-  /** 地雷陷阱參數（eventType='mineTrap' 用）。 */
-  mineTrap?: MineTrapParams;
-  /** 魔尖塔參數（eventType='towerWave' 用）。 */
-  towerWave?: TowerWaveParams;
-}
-
-/**
- * 地雷陷阱參數（用戶：比照火雨全場自動撒，★不用手動座標）。
- * 落點重用 fireRainMath.pickFireRainPoint（全場 MAP_BOUNDS 隨機 + 縮邊 + 不重疊）撒 count 顆。
- * 用戶只設「幾顆 + 半徑 + 延遲 + 麻痺」，位置系統自動。實體/爆炸/麻痺（翼騎 applyStun）＝遊戲端。
- */
-export interface MineTrapParams {
-  /** 撒幾顆地雷（>=1；全場自動撒，不用座標）。 */
-  count: number;
-  /** 爆炸半徑（像素；>=0）。 */
-  radiusPx: number;
-  /** 延遲爆炸秒數（鋪下到爆炸；預設 3；>=0）。 */
-  delaySec: number;
-  /** 命中麻痺秒數（預設 3；>=0）。 */
-  paralyzeSec: number;
-  /** 縮邊額外距離（像素，撒點內縮避免貼邊；選填，省略＝0）。 */
-  edgeMarginPx?: number;
-}
-
-/**
- * 魔尖塔參數（用戶：比照守護波，限時內打完全部尖塔＝過關、限時到＝失敗但不 GameOver 進下關）。
- * 尖塔怪 entity/環狀技執行期＝征騎；勝敗判定＝波騎（走既有 advance）；本 schema 定參數讓可設。
- */
-export interface TowerWaveParams {
-  /** 尖塔數（預設 4；>=1 整數）。 */
-  towerCount: number;
-  /** 限時秒數（限時內打完全部尖塔過關；>0）。 */
-  timeLimitSec: number;
-  /** 每座尖塔血量（>0）。 */
-  towerHp: number;
-  /** 環狀技參數（尖塔週期放的環狀攻擊；征騎執行期照吃）。 */
-  ringSkill: RingSkillParams;
-}
-
-/**
- * 魔尖塔環狀技參數（對接征騎環狀技執行期算法）。尖塔週期放同心環往外擴、命中扣玩家能量+麻痺。
- * 欄位名為波騎↔征騎共用契約（已知會征騎）。
- */
-export interface RingSkillParams {
-  /** 一次放幾層同心環（預設 3；>=1 整數）。 */
-  ringCount: number;
-  /** 最內環半徑（像素；>=0）。 */
-  baseRadiusPx: number;
-  /** 每層環往外遞增半徑（像素/層；>=0）。第 i 環半徑 = baseRadiusPx + i*radiusStepPx。 */
-  radiusStepPx: number;
-  /** 每層環出現間隔秒（層與層之間；預設 0.6；>0）。 */
-  ringIntervalSec: number;
-  /** 環厚度（像素，判定帶寬；>0）。 */
-  ringThicknessPx: number;
-  /** 命中扣玩家能量段數（預設 2；>=0）。 */
-  energyCost: number;
 }
 
 /** 節點聯集。 */
@@ -408,90 +348,24 @@ function validateNode(
 }
 
 /**
- * Event 節點驗證：依 eventType 分派（省略＝'guard'，向後相容）。
- * - guard/fireRain：需 eventPresetName 非空字串（+ guard 的 attachFireRain/drip 覆蓋選填）。
- * - mineTrap：需 mineTrap 撒佈參數（count>=1/radius>=0/delay>=0/paralyze>=0/edgeMargin? >=0）。
- * - towerWave：需 towerWave 參數（towerCount>=1/limit>0/hp>0/ringSkill 欄位）。
+ * Event 節點驗證（單一架構）：eventPresetName 非空字串（守護/火雨/魔尖塔 preset 名，遊戲端分派）。
+ * 附加火雨 attachFireRain / 附加地雷 attachMineTrap 選填；守護補怪 drip 覆蓋選填。
  */
 function validateEventNode(node: Record<string, unknown>, at: string, errors: string[]): void {
-  const et = node.eventType;
-  if (et !== undefined && (typeof et !== 'string' || !EVENT_TYPES.includes(et as EventType))) {
-    errors.push(`${at} 的「事件類型 eventType」="${String(et)}" 不合法（預期 ${EVENT_TYPES.join(' / ')} 或省略=guard）。`);
-    return;
+  // 單一架構：純 eventPresetName 分派（守護/火雨/魔尖塔 preset 都填此欄，遊戲端 isResolvedX 判）。
+  if (!isNonEmptyString(node.eventPresetName)) {
+    errors.push(`${at} 的「事件預設名 eventPresetName」缺少或非非空字串（如 "Guard60"/"FireRain"/"Tower4"）。`);
   }
-  const eventType = (et as EventType) ?? 'guard';
-  if (eventType === 'guard' || eventType === 'fireRain') {
-    if (!isNonEmptyString(node.eventPresetName)) {
-      errors.push(`${at} 的「事件預設名 eventPresetName」缺少或非非空字串（如 "Guard60"）。`);
-    }
-    if (node.attachFireRain !== undefined && !isNonEmptyString(node.attachFireRain)) {
-      errors.push(`${at} 的「附加火雨 attachFireRain」若提供必須是非空字串（'none' 或火雨 preset 名）。`);
-    }
-    validateEventDrip(node, at, errors);
-  } else if (eventType === 'mineTrap') {
-    validateMineTrapParams(node.mineTrap, at, errors);
-  } else if (eventType === 'towerWave') {
-    validateTowerWaveParams(node.towerWave, at, errors);
+  // 附加火雨（optional 三態）：省略/'none'/火雨 preset 名皆非空字串即過。
+  if (node.attachFireRain !== undefined && !isNonEmptyString(node.attachFireRain)) {
+    errors.push(`${at} 的「附加火雨 attachFireRain」若提供必須是非空字串（'none' 或火雨 preset 名）。`);
   }
-}
-
-/** 地雷陷阱參數驗證（用戶：火雨式自動撒，count/radius/delay/paralyze + edgeMargin?）。 */
-function validateMineTrapParams(raw: unknown, at: string, errors: string[]): void {
-  const m = raw as Record<string, unknown> | undefined;
-  if (typeof m !== 'object' || m === null) {
-    errors.push(`${at} 的「地雷參數 mineTrap」缺少或不是物件。`);
-    return;
+  // 附加地雷（optional）：省略或地雷 preset 名。
+  if (node.attachMineTrap !== undefined && !isNonEmptyString(node.attachMineTrap)) {
+    errors.push(`${at} 的「附加地雷 attachMineTrap」若提供必須是非空字串（地雷 preset 名）。`);
   }
-  if (!isFiniteNumber(m.count) || (m.count as number) < 1 || !Number.isInteger(m.count)) {
-    errors.push(`${at} mineTrap「地雷數 count」缺少或非正整數（>=1）。`);
-  }
-  const nonNeg = (key: string, label: string): void => {
-    const v = m[key];
-    if (!isFiniteNumber(v)) errors.push(`${at} mineTrap「${label} ${key}」缺少或非數字。`);
-    else if ((v as number) < 0) errors.push(`${at} mineTrap「${label} ${key}」=${v} 不可為負。`);
-  };
-  nonNeg('radiusPx', '爆炸半徑');
-  nonNeg('delaySec', '延遲爆炸秒數');
-  nonNeg('paralyzeSec', '麻痺秒數');
-  if (m.edgeMarginPx !== undefined && (!isFiniteNumber(m.edgeMarginPx) || (m.edgeMarginPx as number) < 0)) {
-    errors.push(`${at} mineTrap「縮邊 edgeMarginPx」若提供必須是非負數。`);
-  }
-}
-
-/** 魔尖塔參數驗證（towerCount>=1/limit>0/hp>0/ringSkill 欄位）。 */
-function validateTowerWaveParams(raw: unknown, at: string, errors: string[]): void {
-  const t = raw as Record<string, unknown> | undefined;
-  if (typeof t !== 'object' || t === null) {
-    errors.push(`${at} 的「魔尖塔參數 towerWave」缺少或不是物件。`);
-    return;
-  }
-  if (!isFiniteNumber(t.towerCount) || (t.towerCount as number) < 1 || !Number.isInteger(t.towerCount)) {
-    errors.push(`${at} towerWave「尖塔數 towerCount」缺少或非正整數（>=1）。`);
-  }
-  if (!isFiniteNumber(t.timeLimitSec) || (t.timeLimitSec as number) <= 0) {
-    errors.push(`${at} towerWave「限時 timeLimitSec」缺少或非正數。`);
-  }
-  if (!isFiniteNumber(t.towerHp) || (t.towerHp as number) <= 0) {
-    errors.push(`${at} towerWave「尖塔血量 towerHp」缺少或非正數。`);
-  }
-  const ring = t.ringSkill as Record<string, unknown> | undefined;
-  if (typeof ring !== 'object' || ring === null) {
-    errors.push(`${at} towerWave「環狀技 ringSkill」缺少或不是物件。`);
-    return;
-  }
-  const check = (key: string, label: string, positive: boolean, int = false): void => {
-    const v = ring[key];
-    if (!isFiniteNumber(v)) errors.push(`${at} ringSkill「${label} ${key}」缺少或非數字。`);
-    else if (positive && (v as number) <= 0) errors.push(`${at} ringSkill「${label} ${key}」=${v} 必須 > 0。`);
-    else if (!positive && (v as number) < 0) errors.push(`${at} ringSkill「${label} ${key}」=${v} 不可為負。`);
-    else if (int && !Number.isInteger(v)) errors.push(`${at} ringSkill「${label} ${key}」=${v} 必須是整數。`);
-  };
-  check('ringCount', '環數', true, true);
-  check('baseRadiusPx', '最內環半徑', false);
-  check('radiusStepPx', '每層遞增半徑', false);
-  check('ringIntervalSec', '每層間隔', true);
-  check('ringThicknessPx', '環厚', true);
-  check('energyCost', '扣能量段數', false);
+  // 守護補怪 drip per-node 覆蓋（optional，僅守護波用；省略＝沿用 preset）。
+  validateEventDrip(node, at, errors);
 }
 
 /**
@@ -587,6 +461,10 @@ function validateSpawnNode(
   // attachFireRain（optional）：若提供必須是非空字串（火雨 preset 名）。省略=無火雨。
   if (node.attachFireRain !== undefined && !isNonEmptyString(node.attachFireRain)) {
     errors.push(`${at} 的「附加火雨 attachFireRain」若提供必須是非空字串（火雨 preset 名）。`);
+  }
+  // attachMineTrap（optional）：若提供必須是非空字串（地雷 preset 名）。省略=無地雷。
+  if (node.attachMineTrap !== undefined && !isNonEmptyString(node.attachMineTrap)) {
+    errors.push(`${at} 的「附加地雷 attachMineTrap」若提供必須是非空字串（地雷 preset 名）。`);
   }
 
   // groups（用戶：group 分層，optional additive）：若提供，每 group 各自 spawns/spawnInterval/maxConcurrent(+minConcurrent?)。

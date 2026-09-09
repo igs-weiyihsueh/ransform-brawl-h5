@@ -26,6 +26,22 @@ import {
 } from '@/config/guardSchema';
 import { GUARD_STATUE_UI_DEFAULTS, GUARD_MESSAGE_DEFAULTS, type GuardPreset } from '@/config/guardConfig';
 import {
+  MINE_SCHEMA_VERSION,
+  defaultMineFile,
+  validateMine,
+  assertValidMine,
+  type MineFile,
+} from '@/config/mineSchema';
+import type { MinePreset } from '@/config/mineConfig';
+import {
+  TOWER_SCHEMA_VERSION,
+  defaultTowerFile,
+  validateTower,
+  assertValidTower,
+  type TowerFile,
+} from '@/config/towerSchema';
+import type { TowerPreset } from '@/config/towerConfig';
+import {
   EDITOR_STORE_KEYS,
   applyToGame,
   clearOverride,
@@ -297,24 +313,112 @@ function gdApply(): boolean {
   return applyToGame(EDITOR_STORE_KEYS.guard, res.data);
 }
 
+// ═══════════════════════════════════════ 地雷 tab（附加類，全域 preset）═══════════════════════════════════════
+let mnFile: MineFile = defaultMineFile();
+let mnCurrent: string = Object.keys(mnFile.presets)[0] ?? 'Mine';
+function mnPreset(): MinePreset { return mnFile.presets[mnCurrent]; }
+function mnBuildSelect(): void {
+  const sel = $<HTMLSelectElement>('mn-preset-select');
+  sel.innerHTML = '';
+  for (const name of Object.keys(mnFile.presets)) {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    if (name === mnCurrent) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+function mnBuildInspector(): void {
+  const insp = $('mn-inspector'); insp.innerHTML = '';
+  const p = mnPreset(); if (!p) return;
+  const on = () => { /* 純數值，無預覽 */ };
+  insp.appendChild(numberRow('地雷數量 count', p.count, (v) => { p.count = Math.max(1, Math.round(v)); }, { min: 1, max: 40, step: 1, int: true }, on));
+  insp.appendChild(numberRow('爆炸半徑 radius (px)', p.radiusPx, (v) => { p.radiusPx = v; }, { min: 0, max: 300, step: 5 }, on));
+  insp.appendChild(numberRow('延遲爆炸 delay (s)', p.delaySec, (v) => { p.delaySec = v; }, { min: 0, max: 10, step: 0.5 }, on));
+  insp.appendChild(numberRow('麻痺秒數 paralyze (s)', p.paralyzeSec, (v) => { p.paralyzeSec = v; }, { min: 0, max: 10, step: 0.5 }, on));
+  insp.appendChild(numberRow('縮邊 edgeMargin (px)', p.edgeMarginPx ?? 0, (v) => { p.edgeMarginPx = v; }, { min: 0, max: 200, step: 5 }, on));
+}
+function mnRefreshAll(): void { mnBuildSelect(); mnBuildInspector(); }
+function mnInitLoad(): void {
+  const raw = loadOverride(EDITOR_STORE_KEYS.mine);
+  if (raw !== null) {
+    const r = validateMine(raw);
+    if (r.ok) { mnFile = r.data; mnCurrent = Object.keys(mnFile.presets)[0] ?? 'Mine'; mnRefreshAll(); return; }
+  }
+  mnFile = defaultMineFile(); mnCurrent = Object.keys(mnFile.presets)[0] ?? 'Mine'; mnRefreshAll();
+}
+/** 套用地雷到遊戲。回傳是否成功。 */
+function mnApply(): boolean {
+  const res = validateMine(mnFile);
+  if (!res.ok) { setStatus(`地雷套用失敗（驗證未過）：\n${res.errors.join('\n')}`, 'err'); return false; }
+  return applyToGame(EDITOR_STORE_KEYS.mine, res.data);
+}
+
+// ═══════════════════════════════════════ 魔尖塔 tab（單獨波次，全域 preset）═══════════════════════════════════════
+let twFile: TowerFile = defaultTowerFile();
+let twCurrent: string = Object.keys(twFile.presets)[0] ?? 'Tower4';
+function twPreset(): TowerPreset { return twFile.presets[twCurrent]; }
+function twBuildSelect(): void {
+  const sel = $<HTMLSelectElement>('tw-preset-select');
+  sel.innerHTML = '';
+  for (const name of Object.keys(twFile.presets)) {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    if (name === twCurrent) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+function twBuildInspector(): void {
+  const insp = $('tw-inspector'); insp.innerHTML = '';
+  const p = twPreset(); if (!p) return;
+  const on = () => { /* 純數值，無預覽 */ };
+  insp.appendChild(numberRow('尖塔數 towerCount', p.towerCount, (v) => { p.towerCount = Math.max(1, Math.round(v)); }, { min: 1, max: 12, step: 1, int: true }, on));
+  insp.appendChild(numberRow('限時 timeLimit (s)', p.timeLimitSec, (v) => { p.timeLimitSec = v; }, { min: 1, max: 300, step: 5 }, on));
+  insp.appendChild(numberRow('尖塔血量 towerHp', p.towerHp, (v) => { p.towerHp = v; }, { min: 1, max: 1000, step: 10 }, on));
+  const r = p.ringSkill;
+  insp.appendChild(numberRow('環數 ringCount', r.ringCount, (v) => { r.ringCount = Math.max(1, Math.round(v)); }, { min: 1, max: 8, step: 1, int: true }, on));
+  insp.appendChild(numberRow('最內環半徑 baseRadius (px)', r.baseRadiusPx, (v) => { r.baseRadiusPx = v; }, { min: 0, max: 400, step: 5 }, on));
+  insp.appendChild(numberRow('每層遞增 radiusStep (px)', r.radiusStepPx, (v) => { r.radiusStepPx = v; }, { min: 0, max: 200, step: 5 }, on));
+  insp.appendChild(numberRow('每層間隔 ringInterval (s)', r.ringIntervalSec, (v) => { r.ringIntervalSec = v; }, { min: 0.05, max: 5, step: 0.05 }, on));
+  insp.appendChild(numberRow('環厚 ringThickness (px)', r.ringThicknessPx, (v) => { r.ringThicknessPx = v; }, { min: 1, max: 100, step: 1 }, on));
+  insp.appendChild(numberRow('扣能量段數 energyCost', r.energyCost, (v) => { r.energyCost = Math.round(v); }, { min: 0, max: 6, step: 1, int: true }, on));
+}
+function twRefreshAll(): void { twBuildSelect(); twBuildInspector(); }
+function twInitLoad(): void {
+  const raw = loadOverride(EDITOR_STORE_KEYS.tower);
+  if (raw !== null) {
+    const r = validateTower(raw);
+    if (r.ok) { twFile = r.data; twCurrent = Object.keys(twFile.presets)[0] ?? 'Tower4'; twRefreshAll(); return; }
+  }
+  twFile = defaultTowerFile(); twCurrent = Object.keys(twFile.presets)[0] ?? 'Tower4'; twRefreshAll();
+}
+/** 套用魔尖塔到遊戲。回傳是否成功。 */
+function twApply(): boolean {
+  const res = validateTower(twFile);
+  if (!res.ok) { setStatus(`魔尖塔套用失敗（驗證未過）：\n${res.errors.join('\n')}`, 'err'); return false; }
+  return applyToGame(EDITOR_STORE_KEYS.tower, res.data);
+}
+
 // ═══════════════════════════════════════ 分頁 + 共用按鈕 ═══════════════════════════════════════
-type Tab = 'firerain' | 'guard';
+type Tab = 'firerain' | 'guard' | 'mine' | 'tower';
 let activeTab: Tab = 'firerain';
 
 function switchTab(tab: Tab): void {
   activeTab = tab;
-  for (const t of ['firerain', 'guard'] as Tab[]) {
+  for (const t of ['firerain', 'guard', 'mine', 'tower'] as Tab[]) {
     $(`tab-${t}`).classList.toggle('active', t === tab);
     $(`pane-${t}`).classList.toggle('active', t === tab);
   }
 }
 
-/** 兩份都套用（火雨 + 守護分存兩 key）。回傳是否兩者都成功。 */
+/** 四份都套用（火雨/守護/地雷/魔尖塔分存四 key）。回傳是否全成功。 */
 function applyBoth(): boolean {
-  const fr = frApply(); const gd = gdApply();
-  if (fr && gd) { setStatus('✅ 火雨 + 守護都已套用到遊戲（各存一份，重開仍在）。', 'ok'); return true; }
-  if (!fr || !gd) setStatus(`套用結果：火雨 ${fr ? '✓' : '✗'}、守護 ${gd ? '✓' : '✗'}。`, fr && gd ? 'ok' : 'err');
-  return fr && gd;
+  const fr = frApply(); const gd = gdApply(); const mn = mnApply(); const tw = twApply();
+  const all = fr && gd && mn && tw;
+  setStatus(all
+    ? '✅ 火雨/守護/地雷/魔尖塔都已套用到遊戲（各存一份，重開仍在）。'
+    : `套用結果：火雨 ${fr ? '✓' : '✗'}、守護 ${gd ? '✓' : '✗'}、地雷 ${mn ? '✓' : '✗'}、魔尖塔 ${tw ? '✓' : '✗'}。`,
+    all ? 'ok' : 'err');
+  return all;
 }
 
 function downloadJson(name: string, data: unknown): void {
@@ -325,12 +429,14 @@ function downloadJson(name: string, data: unknown): void {
 }
 
 function main(): void {
-  $('schema-version').textContent = `火雨 v${FIRE_RAIN_SCHEMA_VERSION} · 守護 v${GUARD_SCHEMA_VERSION}`;
+  $('schema-version').textContent = `火雨 v${FIRE_RAIN_SCHEMA_VERSION} · 守護 v${GUARD_SCHEMA_VERSION} · 地雷 v${MINE_SCHEMA_VERSION} · 魔尖塔 v${TOWER_SCHEMA_VERSION}`;
   frInitLoad();
   gdInitLoad();
+  mnInitLoad();
+  twInitLoad();
 
   // 分頁切換。
-  for (const t of ['firerain', 'guard'] as Tab[]) {
+  for (const t of ['firerain', 'guard', 'mine', 'tower'] as Tab[]) {
     $(`tab-${t}`).addEventListener('click', () => switchTab(t));
   }
 
@@ -339,17 +445,23 @@ function main(): void {
   $('fr-zoom').addEventListener('input', (e) => { frZoom = parseFloat((e.target as HTMLInputElement).value); $('fr-zoom-val').textContent = `${frZoom}×`; frRender(); });
   $<HTMLSelectElement>('gd-preset-select').addEventListener('change', (e) => { gdCurrent = (e.target as HTMLSelectElement).value; gdBuildInspector(); gdRender(); });
   $('gd-zoom').addEventListener('input', (e) => { gdZoom = parseFloat((e.target as HTMLInputElement).value); $('gd-zoom-val').textContent = `${gdZoom}×`; gdRender(); });
+  $<HTMLSelectElement>('mn-preset-select').addEventListener('change', (e) => { mnCurrent = (e.target as HTMLSelectElement).value; mnBuildInspector(); });
+  $<HTMLSelectElement>('tw-preset-select').addEventListener('change', (e) => { twCurrent = (e.target as HTMLSelectElement).value; twBuildInspector(); });
 
   // 共用按鈕：對「當前分頁」載入/下載；套用/清除則兩者都動（分存兩 key）。
   $('btn-load-default').addEventListener('click', () => {
     frFile = defaultFireRainFile(); frCurrent = Object.keys(frFile.presets)[0]; frRefreshAll();
     gdFile = defaultGuardFile(); gdCurrent = Object.keys(gdFile.presets)[0]; gdRefreshAll();
-    setStatus('已載入火雨 + 守護打包預設。', 'info');
+    mnFile = defaultMineFile(); mnCurrent = Object.keys(mnFile.presets)[0]; mnRefreshAll();
+    twFile = defaultTowerFile(); twCurrent = Object.keys(twFile.presets)[0]; twRefreshAll();
+    setStatus('已載入火雨/守護/地雷/魔尖塔打包預設。', 'info');
   });
   $('btn-reset').addEventListener('click', () => {
     frFile = defaultFireRainFile(); frCurrent = Object.keys(frFile.presets)[0]; frRefreshAll();
     gdFile = defaultGuardFile(); gdCurrent = Object.keys(gdFile.presets)[0]; gdRefreshAll();
-    setStatus('已重設火雨 + 守護為預設值。', 'info');
+    mnFile = defaultMineFile(); mnCurrent = Object.keys(mnFile.presets)[0]; mnRefreshAll();
+    twFile = defaultTowerFile(); twCurrent = Object.keys(twFile.presets)[0]; twRefreshAll();
+    setStatus('已重設火雨/守護/地雷/魔尖塔為預設值。', 'info');
   });
 
   $('btn-load-file').addEventListener('click', () => $('file-input').click());
@@ -368,12 +480,24 @@ function main(): void {
           const ok = applyToGame(EDITOR_STORE_KEYS.firerain, frFile);
           setStatus(ok ? '已載入火雨 JSON 並套用（重開仍在）。' : '已載入火雨 JSON（套用失敗：localStorage 不可用）。', ok ? 'ok' : 'err');
         } catch (err) { setStatus(`火雨載入失敗：${(err as Error).message}`, 'err'); }
-      } else {
+      } else if (activeTab === 'guard') {
         try {
           gdFile = assertValidGuard(json); gdCurrent = Object.keys(gdFile.presets)[0]; gdRefreshAll();
           const ok = applyToGame(EDITOR_STORE_KEYS.guard, gdFile);
           setStatus(ok ? '已載入守護 JSON 並套用（重開仍在）。' : '已載入守護 JSON（套用失敗：localStorage 不可用）。', ok ? 'ok' : 'err');
         } catch (err) { setStatus(`守護載入失敗：${(err as Error).message}`, 'err'); }
+      } else if (activeTab === 'mine') {
+        try {
+          mnFile = assertValidMine(json); mnCurrent = Object.keys(mnFile.presets)[0]; mnRefreshAll();
+          const ok = applyToGame(EDITOR_STORE_KEYS.mine, mnFile);
+          setStatus(ok ? '已載入地雷 JSON 並套用（重開仍在）。' : '已載入地雷 JSON（套用失敗：localStorage 不可用）。', ok ? 'ok' : 'err');
+        } catch (err) { setStatus(`地雷載入失敗：${(err as Error).message}`, 'err'); }
+      } else {
+        try {
+          twFile = assertValidTower(json); twCurrent = Object.keys(twFile.presets)[0]; twRefreshAll();
+          const ok = applyToGame(EDITOR_STORE_KEYS.tower, twFile);
+          setStatus(ok ? '已載入魔尖塔 JSON 並套用（重開仍在）。' : '已載入魔尖塔 JSON（套用失敗：localStorage 不可用）。', ok ? 'ok' : 'err');
+        } catch (err) { setStatus(`魔尖塔載入失敗：${(err as Error).message}`, 'err'); }
       }
     };
     reader.readAsText(f);
@@ -385,25 +509,35 @@ function main(): void {
       const res = validateFireRain(frFile);
       if (!res.ok) { setStatus(`火雨驗證失敗：\n${res.errors.join('\n')}`, 'err'); return; }
       downloadJson('firerain.json', res.data); setStatus('已下載 firerain.json。', 'ok');
-    } else {
+    } else if (activeTab === 'guard') {
       const res = validateGuard(gdFile);
       if (!res.ok) { setStatus(`守護驗證失敗：\n${res.errors.join('\n')}`, 'err'); return; }
       downloadJson('guard.json', res.data); setStatus('已下載 guard.json。', 'ok');
+    } else if (activeTab === 'mine') {
+      const res = validateMine(mnFile);
+      if (!res.ok) { setStatus(`地雷驗證失敗：\n${res.errors.join('\n')}`, 'err'); return; }
+      downloadJson('mine.json', res.data); setStatus('已下載 mine.json。', 'ok');
+    } else {
+      const res = validateTower(twFile);
+      if (!res.ok) { setStatus(`魔尖塔驗證失敗：\n${res.errors.join('\n')}`, 'err'); return; }
+      downloadJson('tower.json', res.data); setStatus('已下載 tower.json。', 'ok');
     }
   });
 
-  // 套用（兩份都存）。
+  // 套用（四份都存）。
   $('btn-apply').addEventListener('click', () => void applyBoth());
   $('btn-apply-return').addEventListener('click', () => {
     if (!applyBoth()) return;
     setStatus('✅ 已套用，返回遊戲中…', 'ok');
     window.location.href = '../';
   });
-  // 清除（兩 key 都清）。
+  // 清除（四 key 都清）。
   $('btn-clear-apply').addEventListener('click', () => {
     clearOverride(EDITOR_STORE_KEYS.firerain);
     clearOverride(EDITOR_STORE_KEYS.guard);
-    setStatus('已清除火雨 + 守護套用，遊戲回打包預設。', 'info');
+    clearOverride(EDITOR_STORE_KEYS.mine);
+    clearOverride(EDITOR_STORE_KEYS.tower);
+    setStatus('已清除火雨/守護/地雷/魔尖塔套用，遊戲回打包預設。', 'info');
   });
 }
 
@@ -427,6 +561,8 @@ const EDITOR_BODY_HTML = `
 <div class="tabs">
   <div class="tab active" data-tab="firerain" id="tab-firerain">🔥 火雨</div>
   <div class="tab" data-tab="guard" id="tab-guard">🛡 守護波</div>
+  <div class="tab" data-tab="mine" id="tab-mine">💣 地雷</div>
+  <div class="tab" data-tab="tower" id="tab-tower">🗼 魔尖塔</div>
 </div>
 <div class="tabpane active" id="pane-firerain">
   <div class="layout">
@@ -474,7 +610,33 @@ const EDITOR_BODY_HTML = `
     </div>
   </div>
 </div>
-<div id="status">就緒。上方切換火雨／守護波分頁，各自調參數。套用時分別存兩份 override（火雨、守護），遊戲端各自讀取。</div>
+<div class="tabpane" id="pane-mine">
+  <div class="layout">
+    <div class="col-inspector">
+      <div class="preset-row">
+        <label for="mn-preset-select">地雷 Preset</label>
+        <select id="mn-preset-select"></select>
+      </div>
+      <div class="section-title">地雷參數（Mine，附加類）</div>
+      <div id="mn-inspector"></div>
+      <div class="hint">地雷=附加類：關卡「刷怪波／守護／魔尖塔」節點可勾選「附加地雷」引用此 preset。count＝全場自動撒幾顆（火雨式隨機落點）、delay＝延遲爆炸、paralyze＝命中麻痺秒數。</div>
+    </div>
+  </div>
+</div>
+<div class="tabpane" id="pane-tower">
+  <div class="layout">
+    <div class="col-inspector">
+      <div class="preset-row">
+        <label for="tw-preset-select">魔尖塔 Preset</label>
+        <select id="tw-preset-select"></select>
+      </div>
+      <div class="section-title">魔尖塔參數（Tower，單獨波次）</div>
+      <div id="tw-inspector"></div>
+      <div class="hint">魔尖塔=單獨波次：關卡「事件」節點 preset 選此即為魔尖塔波（限時內打完全部尖塔＝過關，限時到沒打完＝失敗但不 GameOver、直接進下關）。環狀技＝尖塔週期放的同心環攻擊（依序往外擴、命中扣能量）。</div>
+    </div>
+  </div>
+</div>
+<div id="status">就緒。上方切換火雨／守護波／地雷／魔尖塔分頁，各自調 preset 參數。套用時分別存四份 override，遊戲端各自讀取。</div>
 `;
 
 /** 編輯器樣式（命名空間 .tb-editor-root）；原 100vh 併頁改吃容器高。 */

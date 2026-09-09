@@ -3,6 +3,8 @@
  * 依節點類型回過場訊息；純視覺，不涉及波次邏輯/數值。可測。
  */
 import type { LevelNodeData } from '@/config/levelSchema';
+import { isTowerPreset } from '@/config/towerConfig';
+import { isFireRainPreset } from '@/config/fireRainConfig';
 
 /** 過場提示表演參數（螢幕中央文字：淡入放大→停留→淡出）。 */
 export const WAVE_MESSAGE_FX = {
@@ -24,13 +26,11 @@ export function waveMessageFor(node: LevelNodeData, waveNumber: number): string 
     case 'Spawn':
       return `第 ${waveNumber} 波`;
     case 'Event': {
-      // 依 eventType 給提示（地雷/魔尖塔併進事件）；guard 系列 preset→守護波，其餘通用。
-      const et = node.eventType ?? 'guard';
-      if (et === 'mineTrap') return '地雷陷阱！';
-      if (et === 'towerWave') return '魔尖塔！打掉尖塔！';
-      return (node.eventPresetName ?? '').toLowerCase().startsWith('guard')
-        ? '守護波！保護雕像！'
-        : '事件！';
+      // 單一架構：純 eventPresetName 判提示（火雨 preset→火雨、tower preset→魔尖塔、否則守護波）。
+      const en = node.eventPresetName ?? '';
+      if (isTowerPreset(en)) return '魔尖塔！打掉尖塔！';
+      if (isFireRainPreset(en)) return '天降火雨！';
+      return '守護波！保護雕像！';
     }
     case 'Reward':
       return '過關！';

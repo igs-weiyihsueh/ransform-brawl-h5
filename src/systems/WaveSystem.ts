@@ -10,40 +10,25 @@ import {
   isResolvedFireRainPreset,
 } from '@/config/fireRainSchema';
 import { getResolvedGuardPreset } from '@/config/guardSchema';
+import { getResolvedMinePreset, isResolvedMinePreset } from '@/config/mineSchema';
+import { getResolvedTowerPreset, isResolvedTowerPreset } from '@/config/towerSchema';
+import type { MinePreset } from '@/config/mineConfig';
+import type { TowerPreset } from '@/config/towerConfig';
 import { shouldSpawnMore, shouldAdvanceSpawn, pickSpawnPoint } from '@/systems/waveMath';
-import { pickFireRainPoint } from '@/systems/fireRainMath';
 import type {
   EnemyType,
   EventNodeData,
-  EventType,
   LevelData,
   LevelNodeData,
-  MineTrapParams,
   SpawnEntry,
   SpawnGroup,
   SpawnNodeData,
-  TowerWaveParams,
 } from '@/config/levelSchema';
 import type { Enemy } from '@/entities/Enemy';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
 import { GuardEvent } from '@/systems/GuardEvent';
 import { waveMessageFor, WAVE_MESSAGE_FX } from '@/systems/waveMessage';
-
-/**
- * 地雷陷阱觸發回呼帶的「已解析」資料（用戶：火雨式自動撒）。
- * WaveSystem 用 pickFireRainPoint 全場撒好 points（遊戲端不用自己算落點），連同 delay/paralyze/radius 一起給。
- */
-export interface ResolvedMineTrap {
-  /** 已全場自動撒好的地雷座標（count 顆；遊戲端逐點鋪雷）。 */
-  points: { x: number; y: number }[];
-  /** 延遲爆炸秒數。 */
-  delaySec: number;
-  /** 命中麻痺秒數。 */
-  paralyzeSec: number;
-  /** 爆炸半徑（像素）。 */
-  radiusPx: number;
-}
 
 /** 獎勵節點報獎演出保持時間（秒，用戶 #3：banner 浮現 0.35 + 停 3s + 退出/飛光 ≈ 0.35+3+0.3+0.7）。 */
 const REWARD_HOLD_SEC = 4.4;
@@ -127,17 +112,12 @@ export class WaveSystem implements GameSystem {
   private rewardHold = 0;
 
   /**
-   * 地雷陷阱觸發回呼（用戶：地雷併進事件、火雨式自動撒）：走到 mineTrap 事件時觸發一次。
-   * ★WaveSystem 已用 pickFireRainPoint 全場自動撒好 count 顆座標，回呼帶「已解析 points + delaySec/paralyzeSec/radiusPx」
-   *   給遊戲端 MineTrapSystem 鋪雷（遊戲端不用自己算落點；比照火雨全場撒，用戶不打座標）。
-   */
-  onMineTrap: ((resolved: ResolvedMineTrap) => void) | null = null;
-  /**
-   * 魔尖塔觸發回呼（用戶：魔尖塔併進事件、比照守護波）：走到 towerWave 事件時觸發一次，帶 towerWave 參數。
+   * 魔尖塔觸發回呼（用戶：魔尖塔=單獨波次，比照守護波）：走到魔尖塔事件時觸發一次，帶 tower preset。
    * 遊戲端（征騎）生成 towerCount 座尖塔（各 towerHp + ringSkill 環狀技）；勝敗判定＝本系統（走既有 advance）。
+   * ★地雷=附加類（讀取式，比照火雨）：game-side MineSystem 每幀讀 getActiveMinePreset()，無 onMineTrap 回呼。
    */
-  onTowerWave: ((params: TowerWaveParams) => void) | null = null;
-  /** 事件節點（MineTrap/TowerWave）保持計時 + 是否已觸發（進節點時設，倒數完前進）。 */
+  onTowerWave: ((preset: TowerPreset) => void) | null = null;
+  /** 事件節點（魔尖塔）保持計時 + 是否已觸發（進節點時設，倒數完前進）。 */
   private eventHold = 0;
   private eventTriggered = false;
   /**
@@ -222,6 +202,20 @@ export class WaveSystem implements GameSystem {
     return null;
   }
 
+  /**
+   * 目前該不該撒地雷 + 用哪組參數（用戶：地雷=附加類，讀取式，比照 getActiveFireRainPreset）。
+   * game-side MineSystem 每幀讀此：有 preset → 全場自動撒地雷（自己 pickFireRainPoint 撒 count 顆）、無則不撒。
+   * - 任何節點（Spawn / Event 守護·魔尖塔）帶 attachMineTrap（地雷 preset 名）→ 該波次/事件進行時撒該地雷。
+   * - 否則 → null（不撒地雷）。
+   */
+  getActiveMinePreset(): MinePreset | null {
+    const node = this.currentNode();
+    if (!node) return null;
+    const attach = (node as { attachMineTrap?: string }).attachMineTrap;
+    if (attach && isResolvedMinePreset(attach)) return getResolvedMinePreset(attach);
+    return null;
+  }
+
   /** 目前關卡節點索引（0-based，進度條用：已完成節點數）。 */
   getNodeIndex(): number {
     return this.nodeIndex;
@@ -259,21 +253,14 @@ export class WaveSystem implements GameSystem {
       return Math.min(1, Math.max(0, this.kills / quota));
     }
     if (node.nodeType === 'Event') {
-      const eventType: EventType = node.eventType ?? 'guard';
-      if (eventType === 'mineTrap') {
-        // 進度＝已過時間 / 總保持（delaySec+paralyzeSec+緩衝）；未觸發→0。
-        if (!this.eventTriggered || !node.mineTrap) return 0;
-        const total = node.mineTrap.delaySec + node.mineTrap.paralyzeSec + 0.5;
-        if (total <= 0) return 0;
-        return Math.min(1, Math.max(0, 1 - this.eventHold / total));
-      }
-      if (eventType === 'towerWave') {
-        // 進度＝已摧毀尖塔數 / 目標塔數（對齊用戶「打掉幾/N 塔」）。未觸發或無塔→0。
-        const tc = node.towerWave?.towerCount ?? 0;
+      const presetName = (node as EventNodeData).eventPresetName;
+      // 魔尖塔波：進度＝已摧毀尖塔數 / 目標塔數（對齊用戶「打掉幾/N 塔」）。未觸發或無塔→0。
+      if (isResolvedTowerPreset(presetName)) {
+        const tc = getResolvedTowerPreset(presetName).towerCount;
         if (!this.eventTriggered || tc <= 0) return 0;
         return Math.min(1, Math.max(0, this.towersDestroyed / tc));
       }
-      // guard/fireRain：守護波 → 已過時間/限時。
+      // 守護波/火雨波：已過時間 / 限時。
       const g = this.guardEvent;
       if (!g) return 0;
       const limit = g.getTimeLimit();
@@ -364,46 +351,7 @@ export class WaveSystem implements GameSystem {
   }
 
   /**
-   * 地雷陷阱節點（用戶 2 新事件 階段 A：框架+觸發鉤子）。走到此節點→觸發 onMineTrap 入口一次，
-   * 保持 delaySec + 短緩衝（讓爆炸演出/麻痺跑完）後前進。
-   * ★階段 A：實際地雷實體/爆炸範圍判定/麻痺套用＝階段 B（麻痺 applyStun 是翼騎的、實體是征騎的，波騎不碰）。
-   *   本階段只鋪節點流程 + 觸發點 + 參數傳遞（onMineTrap 帶 node 參數給遊戲端接）。
-   */
-  private updateMineTrapNode(node: EventNodeData, dt: number): void {
-    const m = node.mineTrap;
-    if (!this.eventTriggered) {
-      this.eventTriggered = true;
-      const delaySec = m ? m.delaySec : 3;
-      const paralyzeSec = m ? m.paralyzeSec : 3;
-      // 保持＝延遲爆炸 + 麻痺時長 + 小緩衝，讓遊戲端爆炸/麻痺演出跑完再前進。
-      this.eventHold = delaySec + paralyzeSec + 0.5;
-      if (m) {
-        // ★火雨式全場自動撒：用 pickFireRainPoint 撒 count 顆（全場隨機+縮邊+不重疊），遊戲端不用算落點。
-        const points = this.scatterMinePoints(m);
-        this.onMineTrap?.({ points, delaySec: m.delaySec, paralyzeSec: m.paralyzeSec, radiusPx: m.radiusPx });
-      }
-    }
-    this.eventHold -= dt;
-    if (this.eventHold <= 0) {
-      this.eventHold = 0;
-      this.advanceNode();
-    }
-  }
-
-  /** 火雨式撒地雷落點：重用 pickFireRainPoint（全場 MAP_BOUNDS 隨機 + 縮邊 + 不重疊）撒 count 顆。 */
-  private scatterMinePoints(m: MineTrapParams): { x: number; y: number }[] {
-    const points: { x: number; y: number }[] = [];
-    const edge = m.edgeMarginPx ?? 0;
-    for (let i = 0; i < m.count; i += 1) {
-      // maxConcurrent 給 count（允許同時 count 顆），落點彼此不重疊（radius 為間隔基準）。
-      const p = pickFireRainPoint(points, Math.random, m.radiusPx, edge, m.count);
-      if (p) points.push(p);
-    }
-    return points;
-  }
-
-  /**
-   * 魔尖塔事件（守護波勝敗判定；比照守護波，接 onTowerWave）。
+   * 魔尖塔事件（守護波勝敗判定；用戶：魔尖塔=單獨波次，比照守護波，Event eventPresetName=tower preset）。
    * ★勝敗雙結束條件（decision f45c7d08，變身-leader 把關）：
    *   - 限時內打完全部尖塔（towersDestroyed >= towerCount）＝過關 → 提前 advance。
    *   - 限時到還沒打完＝失敗 → ★不 GameOver、一樣 advance 下一節點。
@@ -411,8 +359,7 @@ export class WaveSystem implements GameSystem {
    * 尖塔擊破數由征騎 TowerSystem 呼 notifyTowerDestroyed() 累計；onTowerWaveResult(won) 供收尾清尖塔/播演出。
    */
   private updateTowerWaveNode(node: EventNodeData, dt: number): void {
-    const t = node.towerWave;
-    if (!t) { this.advanceNode(); return; } // 無參數（不該發生，validate 擋）→ 不卡住
+    const t: TowerPreset = getResolvedTowerPreset(node.eventPresetName);
     if (!this.eventTriggered) {
       this.eventTriggered = true;
       this.eventHold = t.timeLimitSec; // 限時倒數
@@ -436,16 +383,13 @@ export class WaveSystem implements GameSystem {
   }
 
   /**
-   * Event 節點分派（用戶：地雷/魔尖塔併進事件）：依 eventType 走對應邏輯。
-   * - mineTrap：火雨式撒地雷。
-   * - towerWave：守護波勝敗判定。
-   * - guard/fireRain（含省略＝guard 向後相容）：eventPresetName 驅動（火雨 preset→純火雨波；否則守護波）。
+   * Event 節點分派（用戶：單一架構，純 eventPresetName 分派）：
+   * - 火雨 preset（isResolvedFireRainPreset）→ 純火雨波（計時跑完前進）。
+   * - 魔尖塔 preset（isResolvedTowerPreset）→ 魔尖塔波（勝敗判定，updateTowerWaveNode）。
+   * - 否則 → 守護波（建 GuardEvent，吃 guard preset + per-node drip 覆蓋）。
+   * 地雷=附加類（attachMineTrap），非 Event 節點型別；game-side 讀 getActiveMinePreset 撒（不在此分派）。
    */
   private updateEventNode(node: EventNodeData, dt: number): void {
-    const eventType: EventType = node.eventType ?? 'guard';
-    if (eventType === 'mineTrap') { this.updateMineTrapNode(node, dt); return; }
-    if (eventType === 'towerWave') { this.updateTowerWaveNode(node, dt); return; }
-
     const presetName = node.eventPresetName ?? '';
     // 純火雨 Event 節點（eventPresetName 是火雨 preset）：計時跑完前進，不建守護/雕像。
     if (isResolvedFireRainPreset(presetName)) {
@@ -459,6 +403,11 @@ export class WaveSystem implements GameSystem {
         this.fireRainActive = false;
         this.advanceNode();
       }
+      return;
+    }
+    // 魔尖塔 preset → 魔尖塔波（勝敗判定）。
+    if (isResolvedTowerPreset(presetName)) {
+      this.updateTowerWaveNode(node, dt);
       return;
     }
     // 守護波（含可選 attachFireRain）。
