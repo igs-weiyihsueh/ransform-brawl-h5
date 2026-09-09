@@ -19,9 +19,11 @@ import {
   type LevelData,
   type LevelNodeData,
   type LevelsFile,
+  type MineTrapNodeData,
   type RewardNodeData,
   type SpawnEntry,
   type SpawnNodeData,
+  type TowerWaveNodeData,
   validateLevels,
 } from '@/config/levelSchema';
 import {
@@ -102,10 +104,23 @@ function defaultRewardNode(): RewardNodeData {
 function defaultEventNode(): EventNodeData {
   return { nodeType: 'Event', eventPresetName: 'Guard60' };
 }
+/** 地雷陷阱預設（用戶 2 新事件 階段 A；decision dfa9a033 預設值）。 */
+function defaultMineTrapNode(): MineTrapNodeData {
+  return { nodeType: 'MineTrap', points: [{ x: 0, y: 0 }], delaySec: 3, paralyzeSec: 3, radiusPx: 120 };
+}
+/** 魔尖塔預設（用戶 2 新事件 階段 A；decision dfa9a033 預設值 尖塔數 4/環狀技扣 2 能量）。 */
+function defaultTowerWaveNode(): TowerWaveNodeData {
+  return {
+    nodeType: 'TowerWave', towerCount: 4, timeLimitSec: 60, towerHp: 100,
+    ringSkill: { intervalSec: 3, expandPxPerRing: 40, energyCost: 2 },
+  };
+}
 
 function makeNode(type: LevelNodeData['nodeType']): LevelNodeData {
   if (type === 'Spawn') return defaultSpawnNode();
   if (type === 'Reward') return defaultRewardNode();
+  if (type === 'MineTrap') return defaultMineTrapNode();
+  if (type === 'TowerWave') return defaultTowerWaveNode();
   return defaultEventNode();
 }
 
@@ -232,6 +247,12 @@ function nodeSummary(node: LevelNodeData): string {
   }
   if (node.nodeType === 'Reward') {
     return `${nodeTypeLabel('Reward')}${node.rewardPresetName ? `（${node.rewardPresetName}）` : ''}`;
+  }
+  if (node.nodeType === 'MineTrap') {
+    return `${nodeTypeLabel('MineTrap')}（${node.points.length} 雷）`;
+  }
+  if (node.nodeType === 'TowerWave') {
+    return `${nodeTypeLabel('TowerWave')}（${node.towerCount} 塔／${node.timeLimitSec}s）`;
   }
   return `${nodeTypeLabel('Event')}（${node.eventPresetName}）`;
 }
@@ -363,7 +384,67 @@ function renderInspector(): void {
 
   if (node.nodeType === 'Spawn') renderSpawnInspector(node);
   else if (node.nodeType === 'Reward') renderRewardInspector(node);
+  else if (node.nodeType === 'MineTrap') renderMineTrapInspector(node);
+  else if (node.nodeType === 'TowerWave') renderTowerWaveInspector(node);
   else renderEventInspector(node);
+}
+
+/** 地雷陷阱節點編輯（用戶 2 新事件 階段 A）：定點座標(多點增刪)/延遲/麻痺/半徑。 */
+function renderMineTrapInspector(node: MineTrapNodeData): void {
+  inspectorEl.appendChild(fieldRow('延遲爆炸（秒）', numberInput(node.delaySec, (v) => { node.delaySec = v; })));
+  inspectorEl.appendChild(fieldRow('麻痺秒數', numberInput(node.paralyzeSec, (v) => { node.paralyzeSec = v; })));
+  inspectorEl.appendChild(fieldRow('爆炸半徑（px）', numberInput(node.radiusPx, (v) => { node.radiusPx = v; })));
+
+  const title = document.createElement('div');
+  title.className = 'section-title';
+  title.style.marginTop = '12px';
+  title.textContent = `地雷定點（${node.points.length} 顆）`;
+  inspectorEl.appendChild(title);
+
+  node.points.forEach((pt, pi) => {
+    const row = document.createElement('div');
+    row.className = 'spawn-entry';
+    row.appendChild(numberInput(pt.x, (v) => { pt.x = v; }));
+    row.appendChild(numberInput(pt.y, (v) => { pt.y = v; }));
+    const del = document.createElement('button');
+    del.className = 'danger';
+    del.textContent = '✕';
+    del.addEventListener('click', () => { node.points.splice(pi, 1); renderInspector(); });
+    row.appendChild(del);
+    inspectorEl.appendChild(row);
+  });
+  const add = document.createElement('button');
+  add.textContent = '+ 新增地雷點';
+  add.addEventListener('click', () => { node.points.push({ x: 0, y: 0 }); renderInspector(); });
+  inspectorEl.appendChild(add);
+
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  hint.style.marginTop = '6px';
+  hint.textContent = '走到此節點→定點鋪地雷→延遲後爆炸範圍麻痺玩家。（地雷實體/麻痺狀態＝階段 B）';
+  inspectorEl.appendChild(hint);
+}
+
+/** 魔尖塔節點編輯（用戶 2 新事件 階段 A）：尖塔數/限時/血量/環狀技參數。 */
+function renderTowerWaveInspector(node: TowerWaveNodeData): void {
+  inspectorEl.appendChild(fieldRow('尖塔數', numberInput(node.towerCount, (v) => { node.towerCount = Math.max(1, Math.round(v)); })));
+  inspectorEl.appendChild(fieldRow('限時（秒）', numberInput(node.timeLimitSec, (v) => { node.timeLimitSec = v; })));
+  inspectorEl.appendChild(fieldRow('尖塔血量', numberInput(node.towerHp, (v) => { node.towerHp = v; })));
+
+  const title = document.createElement('div');
+  title.className = 'section-title';
+  title.style.marginTop = '12px';
+  title.textContent = '環狀技參數';
+  inspectorEl.appendChild(title);
+  inspectorEl.appendChild(fieldRow('每環間隔（秒）', numberInput(node.ringSkill.intervalSec, (v) => { node.ringSkill.intervalSec = v; })));
+  inspectorEl.appendChild(fieldRow('每環擴大量（px）', numberInput(node.ringSkill.expandPxPerRing, (v) => { node.ringSkill.expandPxPerRing = v; })));
+  inspectorEl.appendChild(fieldRow('扣能量段數', numberInput(node.ringSkill.energyCost, (v) => { node.ringSkill.energyCost = v; })));
+
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  hint.style.marginTop = '6px';
+  hint.textContent = '走到此節點→生成 N 座尖塔（限時內打完過關，守護波類）；尖塔週期放環狀技。（尖塔實體/失敗判定/傷害＝階段 B，變身-leader 把關）';
+  inspectorEl.appendChild(hint);
 }
 
 /**
@@ -1154,6 +1235,8 @@ const EDITOR_BODY_HTML = `
       <button data-add-node="Spawn">+ 刷怪</button>
       <button data-add-node="Reward">+ 獎勵</button>
       <button data-add-node="Event">+ 事件</button>
+      <button data-add-node="MineTrap">+ 地雷陷阱</button>
+      <button data-add-node="TowerWave">+ 魔尖塔</button>
     </div>
   </div>
   <div class="col col-inspector">

@@ -39,10 +39,10 @@ export const ENEMY_TYPES: readonly EnemyType[] = [
 ] as const;
 
 /** 節點種類。對應 Unity nodeType。 */
-export type NodeType = 'Spawn' | 'Reward' | 'Event';
+export type NodeType = 'Spawn' | 'Reward' | 'Event' | 'MineTrap' | 'TowerWave';
 
 /** 執行期用的合法 NodeType 清單。 */
-export const NODE_TYPES: readonly NodeType[] = ['Spawn', 'Reward', 'Event'] as const;
+export const NODE_TYPES: readonly NodeType[] = ['Spawn', 'Reward', 'Event', 'MineTrap', 'TowerWave'] as const;
 
 // ---------------------------------------------------------------------------
 // 以下為【驗證訊息】內部用的中文標籤（private，不 export）。
@@ -55,6 +55,8 @@ const NODE_TYPE_MSG_LABELS: Readonly<Record<NodeType, string>> = {
   Spawn: '刷怪',
   Reward: '獎勵',
   Event: '事件',
+  MineTrap: '地雷陷阱',
+  TowerWave: '魔尖塔',
 };
 
 /** 訊息用：節點類型「中文（英文enum）」，找不到退回原值。 */
@@ -167,8 +169,58 @@ export interface EventNodeData {
   spawns?: SpawnEntry[];
 }
 
+/** 定點座標（像素，遊戲座標系）。地雷陷阱的爆炸點。 */
+export interface PointXY {
+  x: number;
+  y: number;
+}
+
+/**
+ * 地雷陷阱節點（用戶 2 新事件之一，decision dfa9a033；天降火雨類）。
+ * 走到此節點→在指定定點鋪地雷→延遲後爆炸（範圍麻痺玩家）。
+ * ★階段 A 只定義節點框架 + 參數 schema + 觸發鉤子；實際地雷實體/爆炸判定/麻痺狀態＝階段 B（麻痺是翼騎的、實體是征騎的，波騎不碰）。
+ */
+export interface MineTrapNodeData {
+  nodeType: 'MineTrap';
+  /** 地雷定點座標（可多點；每點一顆地雷）。空陣列＝無地雷（合法，框架階段可先空）。 */
+  points: PointXY[];
+  /** 延遲爆炸秒數（鋪下到爆炸；預設 3、可設；>=0）。 */
+  delaySec: number;
+  /** 命中後麻痺秒數（爆炸範圍內玩家麻痺時長；預設 3、可設；>=0）。麻痺狀態實作＝翼騎（階段 B）。 */
+  paralyzeSec: number;
+  /** 爆炸半徑（像素；>=0）。 */
+  radiusPx: number;
+}
+
+/**
+ * 魔尖塔節點（用戶 2 新事件之一，decision dfa9a033；守護波類）。
+ * 走到此節點→生成 N 座尖塔（限時內全打完過關，否則失敗）；尖塔週期性放環狀技（擴大、扣玩家能量）。
+ * ★階段 A 只定義節點框架 + 參數 schema + 觸發鉤子；★守護波失敗判定/尖塔怪 entity/環狀技傷害＝階段 B（高風險，走變身-leader 把關，先跟異靈確認設計再動）。
+ */
+export interface TowerWaveNodeData {
+  nodeType: 'TowerWave';
+  /** 尖塔數（預設 4、可設；>=1）。 */
+  towerCount: number;
+  /** 限時秒數（限時內打完全部尖塔過關；>0）。 */
+  timeLimitSec: number;
+  /** 每座尖塔血量（>0）。 */
+  towerHp: number;
+  /** 環狀技參數（尖塔週期性放的環狀攻擊）。 */
+  ringSkill: RingSkillParams;
+}
+
+/** 魔尖塔環狀技參數（每環出現間隔、每環擴大量、扣玩家能量段數）。 */
+export interface RingSkillParams {
+  /** 每環出現間隔秒（>0）。 */
+  intervalSec: number;
+  /** 每環擴大量（像素/環，環半徑隨時間擴大；>=0）。 */
+  expandPxPerRing: number;
+  /** 命中扣玩家能量段數（預設 2、可設；>=0）。能量系統整合＝階段 B。 */
+  energyCost: number;
+}
+
 /** 節點聯集。 */
-export type LevelNodeData = SpawnNodeData | RewardNodeData | EventNodeData;
+export type LevelNodeData = SpawnNodeData | RewardNodeData | EventNodeData | MineTrapNodeData | TowerWaveNodeData;
 
 /** 一關 = id + 有序節點。 */
 export interface LevelData {
@@ -357,8 +409,63 @@ function validateNode(
       // 七輪 守護補怪 drip per-node 覆蓋（optional）：省略=沿用 preset；有給才驗型別/範圍。
       validateEventDrip(node, `${at}（${typeLabel}）`, errors);
       break;
+    case 'MineTrap':
+      validateMineTrapNode(node, `${at}（${typeLabel}）`, errors);
+      break;
+    case 'TowerWave':
+      validateTowerWaveNode(node, `${at}（${typeLabel}）`, errors);
+      break;
     default:
       break;
+  }
+}
+
+/** 地雷陷阱節點驗證（用戶 2 新事件 階段 A）：points 座標陣列 + delaySec/paralyzeSec>=0 + radiusPx>=0。 */
+function validateMineTrapNode(node: Record<string, unknown>, at: string, errors: string[]): void {
+  if (!Array.isArray(node.points)) {
+    errors.push(`${at} 的「地雷定點 points」缺少或不是陣列。`);
+  } else {
+    node.points.forEach((pRaw, pi) => {
+      const p = pRaw as Record<string, unknown> | null;
+      if (typeof p !== 'object' || p === null || !isFiniteNumber(p.x) || !isFiniteNumber(p.y)) {
+        errors.push(`${at} 的第 ${pi + 1} 個定點必須是 { x:數字, y:數字 }。`);
+      }
+    });
+  }
+  const nonNeg = (key: string, label: string): void => {
+    const v = node[key];
+    if (!isFiniteNumber(v)) errors.push(`${at} 的「${label} ${key}」缺少或非數字。`);
+    else if (v < 0) errors.push(`${at} 的「${label} ${key}」=${v} 不可為負。`);
+  };
+  nonNeg('delaySec', '延遲爆炸秒數');
+  nonNeg('paralyzeSec', '麻痺秒數');
+  nonNeg('radiusPx', '爆炸半徑');
+}
+
+/** 魔尖塔節點驗證（用戶 2 新事件 階段 A）：towerCount>=1 / timeLimitSec>0 / towerHp>0 / ringSkill 參數。 */
+function validateTowerWaveNode(node: Record<string, unknown>, at: string, errors: string[]): void {
+  if (!isFiniteNumber(node.towerCount) || (node.towerCount as number) < 1 || !Number.isInteger(node.towerCount)) {
+    errors.push(`${at} 的「尖塔數 towerCount」缺少或非正整數（>=1）。`);
+  }
+  if (!isFiniteNumber(node.timeLimitSec) || (node.timeLimitSec as number) <= 0) {
+    errors.push(`${at} 的「限時 timeLimitSec」缺少或非正數。`);
+  }
+  if (!isFiniteNumber(node.towerHp) || (node.towerHp as number) <= 0) {
+    errors.push(`${at} 的「尖塔血量 towerHp」缺少或非正數。`);
+  }
+  const ring = node.ringSkill as Record<string, unknown> | undefined;
+  if (typeof ring !== 'object' || ring === null) {
+    errors.push(`${at} 的「環狀技 ringSkill」缺少或不是物件。`);
+  } else {
+    if (!isFiniteNumber(ring.intervalSec) || (ring.intervalSec as number) <= 0) {
+      errors.push(`${at} 的 ringSkill「每環間隔 intervalSec」缺少或非正數。`);
+    }
+    if (!isFiniteNumber(ring.expandPxPerRing) || (ring.expandPxPerRing as number) < 0) {
+      errors.push(`${at} 的 ringSkill「每環擴大量 expandPxPerRing」缺少或為負。`);
+    }
+    if (!isFiniteNumber(ring.energyCost) || (ring.energyCost as number) < 0) {
+      errors.push(`${at} 的 ringSkill「扣能量段數 energyCost」缺少或為負。`);
+    }
   }
 }
 

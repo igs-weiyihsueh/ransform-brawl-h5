@@ -15,9 +15,11 @@ import type {
   EnemyType,
   LevelData,
   LevelNodeData,
+  MineTrapNodeData,
   SpawnEntry,
   SpawnGroup,
   SpawnNodeData,
+  TowerWaveNodeData,
 } from '@/config/levelSchema';
 import type { Enemy } from '@/entities/Enemy';
 import type { GameContext } from '@/systems/GameContext';
@@ -105,6 +107,20 @@ export class WaveSystem implements GameSystem {
   onReward: (() => void) | null = null;
   /** 獎勵演出保持計時（進 Reward 節點時設，倒數完才前進，讓報獎演出播完）。 */
   private rewardHold = 0;
+
+  /**
+   * 地雷陷阱節點觸發回呼（用戶 2 新事件 階段 A）：走到 MineTrap 節點時觸發一次，帶節點參數。
+   * 階段 B 遊戲端接：依 node.points 鋪雷、node.delaySec 後爆炸、node.radiusPx 範圍內玩家麻痺 node.paralyzeSec（用翼騎 applyStun）。
+   */
+  onMineTrap: ((node: MineTrapNodeData) => void) | null = null;
+  /**
+   * 魔尖塔節點觸發回呼（用戶 2 新事件 階段 A）：走到 TowerWave 節點時觸發一次，帶節點參數。
+   * 階段 B 遊戲端接：生成 node.towerCount 座尖塔（各 node.towerHp）、環狀技、限時 node.timeLimitSec 勝敗判定（★守護波失敗判定高風險，變身-leader 把關）。
+   */
+  onTowerWave: ((node: TowerWaveNodeData) => void) | null = null;
+  /** 事件節點（MineTrap/TowerWave）保持計時 + 是否已觸發（進節點時設，倒數完前進）。 */
+  private eventHold = 0;
+  private eventTriggered = false;
 
   /** 進行中的守護波（Event 節點）；null 表示非守護波。 */
   private guardEvent: GuardEvent | null = null;
@@ -217,6 +233,19 @@ export class WaveSystem implements GameSystem {
       if (this.rewardHold > REWARD_FILL_DURATION) return 0; // 報獎流程階段，尚未開始填滿
       return Math.min(1, Math.max(0, 1 - this.rewardHold / REWARD_FILL_DURATION)); // 末段 lerp 0→1
     }
+    if (node.nodeType === 'MineTrap') {
+      // 進度＝已過時間 / 總保持（delaySec+paralyzeSec+緩衝）；未觸發→0。
+      if (!this.eventTriggered) return 0;
+      const total = node.delaySec + node.paralyzeSec + 0.5;
+      if (total <= 0) return 0;
+      return Math.min(1, Math.max(0, 1 - this.eventHold / total));
+    }
+    if (node.nodeType === 'TowerWave') {
+      // 進度＝已過時間 / 限時（階段 A；階段 B 改以尖塔擊破數為主）。未觸發→0。
+      if (!this.eventTriggered) return 0;
+      if (node.timeLimitSec <= 0) return 0;
+      return Math.min(1, Math.max(0, 1 - this.eventHold / node.timeLimitSec));
+    }
     return 0;
   }
 
@@ -280,6 +309,10 @@ export class WaveSystem implements GameSystem {
       this.updateSpawnNode(node, dt);
     } else if (node.nodeType === 'Event') {
       this.updateEventNode(node, dt);
+    } else if (node.nodeType === 'MineTrap') {
+      this.updateMineTrapNode(node, dt);
+    } else if (node.nodeType === 'TowerWave') {
+      this.updateTowerWaveNode(node, dt);
     } else {
       // Reward（用戶 #3）：進節點時觸發一次報獎演出（onReward），保持一段時間讓演出播完再前進。
       if (this.rewardHold <= 0) {
@@ -291,6 +324,45 @@ export class WaveSystem implements GameSystem {
         this.rewardHold = 0;
         this.advanceNode();
       }
+    }
+  }
+
+  /**
+   * 地雷陷阱節點（用戶 2 新事件 階段 A：框架+觸發鉤子）。走到此節點→觸發 onMineTrap 入口一次，
+   * 保持 delaySec + 短緩衝（讓爆炸演出/麻痺跑完）後前進。
+   * ★階段 A：實際地雷實體/爆炸範圍判定/麻痺套用＝階段 B（麻痺 applyStun 是翼騎的、實體是征騎的，波騎不碰）。
+   *   本階段只鋪節點流程 + 觸發點 + 參數傳遞（onMineTrap 帶 node 參數給遊戲端接）。
+   */
+  private updateMineTrapNode(node: MineTrapNodeData, dt: number): void {
+    if (this.eventHold <= 0 && !this.eventTriggered) {
+      this.eventTriggered = true;
+      // 保持＝延遲爆炸 + 麻痺時長 + 小緩衝，讓階段 B 的爆炸/麻痺演出跑完再前進。
+      this.eventHold = node.delaySec + node.paralyzeSec + 0.5;
+      this.onMineTrap?.(node); // 觸發入口（階段 B 遊戲端接：定點鋪雷→延遲爆炸→範圍麻痺）
+    }
+    this.eventHold -= dt;
+    if (this.eventHold <= 0) {
+      this.eventHold = 0;
+      this.advanceNode();
+    }
+  }
+
+  /**
+   * 魔尖塔節點（用戶 2 新事件 階段 A：框架+觸發鉤子）。走到此節點→觸發 onTowerWave 入口一次，
+   * 保持 timeLimitSec（限時）後前進。
+   * ★階段 A：實際尖塔怪 entity/環狀技傷害/★守護波失敗判定（限時內打不完＝失敗）＝階段 B（高風險，走變身-leader 把關，
+   *   先跟異靈確認生命週期設計再動）。本階段只鋪節點流程 + 觸發點 + 參數傳遞。
+   */
+  private updateTowerWaveNode(node: TowerWaveNodeData, dt: number): void {
+    if (this.eventHold <= 0 && !this.eventTriggered) {
+      this.eventTriggered = true;
+      this.eventHold = node.timeLimitSec; // 限時；階段 B 會改成「打完 or 限時到」雙結束條件 + 勝敗判定
+      this.onTowerWave?.(node); // 觸發入口（階段 B 遊戲端接：生成 N 座尖塔→環狀技→限時勝敗）
+    }
+    this.eventHold -= dt;
+    if (this.eventHold <= 0) {
+      this.eventHold = 0;
+      this.advanceNode();
     }
   }
 
@@ -364,6 +436,8 @@ export class WaveSystem implements GameSystem {
     this.fireRainActive = false; // 換節點清火雨狀態
     this.fireRainRemaining = 0;
     this.rewardHold = 0; // 換節點清獎勵演出計時（用戶 #3）
+    this.eventHold = 0; // 換節點清事件（MineTrap/TowerWave）計時
+    this.eventTriggered = false;
     // group 分層：進 Spawn 節點時依 node.groups 重建 per-group 狀態；無 groups → 空陣列（走扁平單流）。
     const enteredNode = this.currentLevel()?.nodes[index];
     const groups = enteredNode?.nodeType === 'Spawn' ? (enteredNode as SpawnNodeData).groups : undefined;
