@@ -1069,6 +1069,18 @@ export class Enemy implements Hittable {
       x: this.anim.sprite.x,
       y: this.anim.sprite.y,
     }); // 擊殺事件 + 傷害歸屬 + 死亡位置(能量飛光起點)
+    // ★靜態貼圖（尖塔）：anim.play() 是 no-op → death 動畫的 onComplete 不會觸發、dead 永遠不會設 true
+    //   （＝塔打死不消失、還放招、進度不動的根因）。★立刻設 dead=true（下一幀即從 enemies filter 掉→停放招+
+    //   onTowerDestroyed 通知進度++），sprite 淡出後銷毀（純視覺，與 dead 判定解耦）。
+    if (this.anim.isStaticTexture?.()) {
+      this.dead = true;
+      const sp = this.anim.sprite;
+      sp.scene.tweens.add({
+        targets: sp, alpha: 0, duration: 220, ease: 'Sine.easeIn',
+        onComplete: () => this.anim.destroy(),
+      });
+      return;
+    }
     this.anim.play('death', {
       force: true,
       onComplete: () => {

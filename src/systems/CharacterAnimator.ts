@@ -56,6 +56,11 @@ export class CharacterAnimator {
     this.sprite.setFlipX(false);
   }
 
+  /** 是否為靜態貼圖模式（尖塔）：play() 為 no-op，故死亡等靠 onComplete 的流程不會觸發（呼叫端需自行處理）。 */
+  isStaticTexture(): boolean {
+    return this.staticTexture !== null;
+  }
+
   constructor(scene: Phaser.Scene, charKey: string, x: number, y: number) {
     this.charKey = charKey;
     // 用該角色第一張 idle 幀當初始貼圖。

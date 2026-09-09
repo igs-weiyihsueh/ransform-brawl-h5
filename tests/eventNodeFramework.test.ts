@@ -31,6 +31,21 @@ function makeWave(nodes: unknown[]): WaveSystem {
   return ws;
 }
 
+/** 變體：捕捉 waveMessage 呼叫（測塔波/守護波開頭訊息）。 */
+function makeWaveCapturingMsgs(nodes: unknown[]): { ws: WaveSystem; msgs: string[] } {
+  const msgs: string[] = [];
+  const ws = new WaveSystem(wrap(nodes).levels);
+  const ctx = {
+    effects: { waveMessage: (t: string) => { msgs.push(t); }, fireRainAnnounce: () => {} },
+    spawner: { spawn: () => ({}), clear: () => {} },
+    players: [],
+    player: { getPosition: () => ({ x: 0, y: 0 }) },
+    getEnemies: () => [],
+  } as unknown as Parameters<WaveSystem['init']>[0];
+  ws.init(ctx); // init 進節點 0 → announceNode
+  return { ws, msgs };
+}
+
 beforeEach(() => {
   clearResolvedMineCache();
   clearResolvedTowerCache();
@@ -133,6 +148,18 @@ describe('魔尖塔波狀態 accessor（B5/B6 進度條+倒數）+ towerGate', (
     expect(ws.getTowerWaveDestroyed()).toBe(2);
     ws.update(1); // 倒數遞減
     expect(ws.getTowerWaveRemaining()).toBeLessThan(rem0);
+  });
+});
+
+describe('塔波登場開頭訊息（announceNode 對 tower 節點發 waveMessage，用戶爆氣修）', () => {
+  it('進 Tower4 節點 → 發「魔尖塔！打掉尖塔！」開頭訊息（之前被 announceNode gate 掉）', () => {
+    const { msgs } = makeWaveCapturingMsgs([{ nodeType: 'Event', eventPresetName: 'Tower4' }]);
+    expect(msgs.some((m) => m.includes('魔尖塔'))).toBe(true);
+  });
+
+  it('進 Guard60 守護波 → 不發節點 waveMessage（有自己開場序列，避免重疊）', () => {
+    const { msgs } = makeWaveCapturingMsgs([{ nodeType: 'Event', eventPresetName: 'Guard60' }]);
+    expect(msgs.length).toBe(0);
   });
 });
 
