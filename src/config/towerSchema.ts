@@ -22,7 +22,13 @@ export const TOWER_SCHEMA_VERSION = 1 as const;
 /** 從打包預設深拷貝一份 preset 表當初值（editor 初值 / resolve fallback）。 */
 export function defaultTowerPresets(): Record<string, TowerPreset> {
   const out: Record<string, TowerPreset> = {};
-  for (const [name, p] of Object.entries(TOWER_PRESETS)) out[name] = { ...p, ringSkill: { ...p.ringSkill } };
+  for (const [name, p] of Object.entries(TOWER_PRESETS)) {
+    out[name] = {
+      ...p,
+      ringSkill: { ...p.ringSkill },
+      ...(p.positions ? { positions: p.positions.map((q) => ({ ...q })) } : {}),
+    };
+  }
   return out;
 }
 export function defaultTowerFile(): TowerFile {
@@ -60,6 +66,15 @@ function checkNum(
     if (opts.int && !Number.isInteger(v)) errors.push(`${label}「${key}」=${v} 必須是整數。`);
   }
 }
+function checkNumOptional(
+  obj: Record<string, unknown>, key: string, label: string, errors: string[], opts: { min?: number; gt?: number } = {},
+): void {
+  if (obj[key] === undefined) return;
+  const v = obj[key];
+  if (!isFiniteNumber(v)) { errors.push(`${label}「${key}」若提供必須是數字。`); return; }
+  if (opts.min !== undefined && v < opts.min) errors.push(`${label}「${key}」=${v} 不可小於 ${opts.min}。`);
+  if (opts.gt !== undefined && v <= opts.gt) errors.push(`${label}「${key}」=${v} 必須大於 ${opts.gt}。`);
+}
 
 export function validateTower(json: unknown): ValidateTowerResult {
   const errors: string[] = [];
@@ -90,6 +105,20 @@ export function validateTower(json: unknown): ValidateTowerResult {
     checkNum(p, 'towerCount', label, errors, { min: 1, int: true });
     checkNum(p, 'timeLimitSec', label, errors, { min: 1 });
     checkNum(p, 'towerHp', label, errors, { min: 1 });
+    checkNumOptional(p, 'towerScale', label, errors, { gt: 0 }); // A3：塔縮放，若提供須 >0
+    // A2：塔位置（選填陣列 of {x,y}）；長度可 != towerCount（game-side 補預設）。
+    if (p.positions !== undefined) {
+      if (!Array.isArray(p.positions)) {
+        errors.push(`${label} 的「塔位置 positions」若提供必須是陣列。`);
+      } else {
+        p.positions.forEach((pos, i) => {
+          const po = asObject(pos);
+          if (!po) { errors.push(`${label} positions[${i}] 不是物件。`); return; }
+          checkNum(po, 'x', `${label} positions[${i}]`, errors);
+          checkNum(po, 'y', `${label} positions[${i}]`, errors);
+        });
+      }
+    }
     const ring = asObject(p.ringSkill);
     if (!ring) {
       errors.push(`${label} 的「環狀技 ringSkill」缺少或不是物件。`);
@@ -101,6 +130,7 @@ export function validateTower(json: unknown): ValidateTowerResult {
       checkNum(ring, 'ringIntervalSec', rl, errors, { min: 0 });
       checkNum(ring, 'ringThicknessPx', rl, errors, { min: 0 });
       checkNum(ring, 'energyCost', rl, errors, { min: 0 });
+      checkNum(ring, 'warningSec', rl, errors, { min: 0 }); // C9：環預警秒數
     }
   }
 

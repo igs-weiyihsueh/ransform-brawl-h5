@@ -21,6 +21,17 @@ export interface RingSkillParams {
   ringThicknessPx: number;
   /** 命中扣玩家能量段數（>=0）。 */
   energyCost: number;
+  /**
+   * C9：環真正炸出前先顯示紅色預警圈這麼久（秒；>=0）。節奏（執行期征騎做）：
+   * 預警紅圈倒數 warningSec → 完才判定命中+炸特效 → 炸完才開下一環紅圈。省略/0＝無預警立即判定。
+   */
+  warningSec: number;
+}
+
+/** 一座塔的位置（場景座標，1920×1080 基準；editor 可拖曳編輯）。 */
+export interface TowerPosition {
+  x: number;
+  y: number;
 }
 
 /** 一組魔尖塔參數。 */
@@ -31,6 +42,15 @@ export interface TowerPreset {
   timeLimitSec: number;
   /** 每座尖塔血量（>0）。 */
   towerHp: number;
+  /**
+   * A3：塔 sprite 縮放倍率（>0，1＝原尺寸）。game-side 征騎照吃設塔 sprite scale。省略＝1（原尺寸）。
+   */
+  towerScale?: number;
+  /**
+   * A2：每座塔的位置（場景座標，1920×1080 基準；editor 可滑鼠拖曳編輯疊在場景底圖上）。
+   * 省略／長度不足 towerCount → game-side 用預設環形/散佈補足。長度可 != towerCount（前 N 座用設定、其餘預設）。
+   */
+  positions?: TowerPosition[];
   /** 環狀技參數（尖塔週期放的環狀攻擊；征騎執行期照吃）。 */
   ringSkill: RingSkillParams;
 }
@@ -41,13 +61,13 @@ export const TOWER_PRESETS: Record<string, TowerPreset> = {
     towerCount: 4,
     timeLimitSec: 60,
     towerHp: 100,
-    ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2 },
+    ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2, warningSec: 0.5 },
   },
   Tower6: {
     towerCount: 6,
     timeLimitSec: 75,
     towerHp: 100,
-    ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2 },
+    ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2, warningSec: 0.5 },
   },
 };
 

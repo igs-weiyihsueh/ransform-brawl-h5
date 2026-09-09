@@ -376,12 +376,14 @@ function twBuildInspector(): void {
   insp.appendChild(numberRow('尖塔數 towerCount', p.towerCount, (v) => { p.towerCount = Math.max(1, Math.round(v)); }, { min: 1, max: 12, step: 1, int: true }, on));
   insp.appendChild(numberRow('限時 timeLimit (s)', p.timeLimitSec, (v) => { p.timeLimitSec = v; }, { min: 1, max: 300, step: 5 }, on));
   insp.appendChild(numberRow('尖塔血量 towerHp', p.towerHp, (v) => { p.towerHp = v; }, { min: 1, max: 1000, step: 10 }, on));
+  insp.appendChild(numberRow('塔大小 towerScale (×)', p.towerScale ?? 1, (v) => { p.towerScale = v; }, { min: 0.2, max: 4, step: 0.1 }, on));
   const r = p.ringSkill;
   insp.appendChild(numberRow('環數 ringCount', r.ringCount, (v) => { r.ringCount = Math.max(1, Math.round(v)); }, { min: 1, max: 8, step: 1, int: true }, on));
   insp.appendChild(numberRow('最內環半徑 baseRadius (px)', r.baseRadiusPx, (v) => { r.baseRadiusPx = v; }, { min: 0, max: 400, step: 5 }, on));
   insp.appendChild(numberRow('每層遞增 radiusStep (px)', r.radiusStepPx, (v) => { r.radiusStepPx = v; }, { min: 0, max: 200, step: 5 }, on));
   insp.appendChild(numberRow('每層間隔 ringInterval (s)', r.ringIntervalSec, (v) => { r.ringIntervalSec = v; }, { min: 0.05, max: 5, step: 0.05 }, on));
   insp.appendChild(numberRow('環厚 ringThickness (px)', r.ringThicknessPx, (v) => { r.ringThicknessPx = v; }, { min: 1, max: 100, step: 1 }, on));
+  insp.appendChild(numberRow('環預警秒數 warning (s)', r.warningSec, (v) => { r.warningSec = v; }, { min: 0, max: 3, step: 0.1 }, on));
   insp.appendChild(numberRow('扣能量段數 energyCost', r.energyCost, (v) => { r.energyCost = Math.round(v); }, { min: 0, max: 6, step: 1, int: true }, on));
 }
 function twRefreshAll(): void { twBuildSelect(); twBuildInspector(); }
