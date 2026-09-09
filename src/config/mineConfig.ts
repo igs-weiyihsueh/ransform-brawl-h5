@@ -15,6 +15,12 @@ export interface MinePreset {
    * 用戶：地雷少了要補撒、維持場上一定密度。通常 >= count（初始撒 count、之後維持 maintainCount）。
    */
   maintainCount: number;
+  /**
+   * per-mine 再生時間（秒；>=0）。用戶：每爆掉一顆地雷，隔此秒數補一顆回來（per-mine 再生節奏，
+   * 非立即補、非批次）。game-side：一顆爆掉 → 起算此延遲 → 到期且場上存活數 < maintainCount 才補一顆。
+   * 與 maintainCount 並存：respawnDelaySec=補的節奏、maintainCount=補到的目標上限。可在 preset 調。
+   */
+  respawnDelaySec: number;
   /** 爆炸半徑（像素；>=0）。 */
   radiusPx: number;
   /**
@@ -33,6 +39,7 @@ export const MINE_PRESETS: Record<string, MinePreset> = {
   Mine: {
     count: 8,
     maintainCount: 8,
+    respawnDelaySec: 4,
     radiusPx: 120,
     delaySec: 3,
     paralyzeSec: 3,
@@ -41,6 +48,7 @@ export const MINE_PRESETS: Record<string, MinePreset> = {
   MineHeavy: {
     count: 14,
     maintainCount: 14,
+    respawnDelaySec: 3,
     radiusPx: 130,
     delaySec: 2.5,
     paralyzeSec: 3,

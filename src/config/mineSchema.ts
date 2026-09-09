@@ -95,6 +95,7 @@ export function validateMine(json: unknown): ValidateMineResult {
     }
     checkNum(p, 'count', label, errors, { min: 1, int: true });
     checkNum(p, 'maintainCount', label, errors, { min: 1, int: true });
+    checkNum(p, 'respawnDelaySec', label, errors, { min: 0 });
     checkNum(p, 'radiusPx', label, errors, { min: 0 });
     checkNum(p, 'delaySec', label, errors, { min: 0 });
     checkNum(p, 'paralyzeSec', label, errors, { min: 0 });

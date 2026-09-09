@@ -19,8 +19,8 @@ interface ActiveMine {
   triggered: boolean;
   /** 觸發後的剩餘倒數秒（<=0 爆）；未觸發時不動。 */
   remaining: number;
-  /** 撒下時的靜置標記 handle（未觸發時顯，觸發時收）。 */
-  marker: Phaser.GameObjects.Image | null;
+  /** 撒下時的靜置本體 handle（未觸發時顯，觸發時收）。 */
+  marker: Phaser.GameObjects.GameObject | null;
   /** 觸發後的閃爍預警圈 handle（觸發時起、爆炸時收）。 */
   warning: Phaser.GameObjects.Image | null;
 }
@@ -30,12 +30,13 @@ interface ActiveMine {
  *
  * 觸發＝讀取式（非回呼）：每幀讀 WaveSystem.getActiveMinePreset()（波騎 mineGateSec：波次宣告顯示中回 null）：
  *  - null → non-null（波次宣告顯完、開放撒雷）：發「小心地雷！」宣告 + 用 pickFireRainPoint 全場撒 count 顆
- *    （★撒下不倒數、只顯靜置標記，等玩家踩）。
- *  - non-null 期間：場上存活地雷 < maintainCount → 補撒到 maintainCount（踩爆少了補回）。
+ *    （★撒下不倒數、只顯靜置地雷本體，等玩家踩）。
+ *  - non-null 期間：★per-mine 再生——每爆掉一顆起算 respawnDelaySec，到期且場上存活 < maintainCount 才補一顆
+ *    （非立即、非批次補到滿）。
  *  - non-null → null（離開節點）：清乾淨、重置旗標，下個地雷節點再撒。
  *
  * 踩雷行為（每幀）：
- *  1) 未觸發的地雷：檢查任一在場非待機玩家 footPosition 進入 radiusPx → 觸發該顆（起閃爍預警圈 + 啟動 delaySec 倒數）。
+ *  1) 未觸發的地雷：檢查任一在場非待機玩家 footPosition 進入 radiusPx → 觸發該顆（收靜置本體、起閃爍預警圈 + 啟動 delaySec 倒數）。
  *     ★只玩家踩觸發，怪走過不觸發。
  *  2) 已觸發的地雷：倒數 remaining，<=0 → explode（mineExplosion VFX + radiusPx 內「玩家+怪」applyStun(paralyzeSec)）。
  * ★爆炸不分敵我（怪也麻痺）、★不扣血（麻痺＝定住，角色無血量）。撒點責任在 game-side（比照火雨自撒）。
@@ -50,6 +51,13 @@ export class MineTrapSystem implements GameSystem {
   private active = false;
   /** 本節點是否已發過「小心地雷！」宣告（一節點只宣告一次）。 */
   private announced = false;
+  /**
+   * ★per-mine 再生佇列（用戶#3）：每爆掉一顆 → push 一個 respawnDelaySec 倒數；
+   * 每幀扣 dt，到期（<=0）且場上存活數 < maintainCount 才補一顆（per-mine 節奏、非立即、非批次補到滿）。
+   */
+  private respawnTimers: number[] = [];
+  /** 本節點 preset 的 per-mine 再生延遲秒（scatterMines 時記下，explode 排再生用）。 */
+  private respawnDelaySec = 0;
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
@@ -64,6 +72,7 @@ export class MineTrapSystem implements GameSystem {
     const paralyze = preset.paralyzeSec > 0 ? preset.paralyzeSec : STUN_DEFAULT_SEC;
     const radius = Math.max(0, preset.radiusPx);
     const edge = preset.edgeMarginPx ?? 0;
+    this.respawnDelaySec = Math.max(0, preset.respawnDelaySec ?? 0); // 記下本節點再生延遲
     // 已在場地雷的位置也納入佔位，避免補撒時跟現有地雷重疊。
     const placed: Vec2[] = this.mines.map((m) => ({ x: m.x, y: m.y }));
     const targetTotal = placed.length + Math.max(0, n);
@@ -96,20 +105,21 @@ export class MineTrapSystem implements GameSystem {
       if (!this.active) {
         // null → non-null：波次宣告顯完、開放撒雷 → 發「小心地雷！」宣告 + 撒初始 count 顆。
         this.active = true;
+        this.respawnTimers = [];
         if (!this.announced) {
           this.announced = true;
           this.ctx.effects?.mineAnnounce?.();
         }
         this.scatterMines(preset, Math.max(1, preset.count));
       } else {
-        // 開放期間：維持場上數量（存活地雷 < maintainCount → 補撒到 maintainCount）。
-        const target = Math.max(preset.count, preset.maintainCount);
-        const missing = target - this.mines.length;
-        if (missing > 0) this.scatterMines(preset, missing);
+        // ★per-mine 再生（用戶#3）：推進每個 respawn 倒數；到期的 → 若場上存活 < maintainCount 才補一顆
+        //   （非立即補、非批次補到滿；每顆爆掉隔 respawnDelaySec 補一顆的節奏）。
+        this.tickRespawns(dt, preset);
       }
     } else if (this.active) {
       // non-null → null：離開地雷節點 → 清乾淨、重置旗標供下個地雷節點再撒+再宣告。
       this.clearAll();
+      this.respawnTimers = [];
       this.active = false;
       this.announced = false;
     }
@@ -155,7 +165,7 @@ export class MineTrapSystem implements GameSystem {
     m.warning = this.ctx.effects?.mineWarningStart?.(m.x, m.y, m.radiusPx) ?? null;
   }
 
-  /** 爆炸：收預警圈 + 播爆炸 VFX + 範圍內玩家/怪麻痺（不分敵我、不扣血）。 */
+  /** 爆炸：收預警圈 + 播爆炸 VFX + 範圍內玩家/怪麻痺（不分敵我、不扣血）。★爆掉 → 起算一個 per-mine 再生倒數。 */
   private explode(m: ActiveMine): void {
     this.ctx.effects?.mineWarningEnd?.(m.warning);
     this.ctx.effects?.mineExplosion?.(m.x, m.y, m.radiusPx);
@@ -172,6 +182,31 @@ export class MineTrapSystem implements GameSystem {
       const c = e.getHitCenter?.();
       if (c && isInBlastRange(c, center, m.radiusPx)) e.applyStun?.(m.paralyzeSec);
     }
+    // ★per-mine 再生：這顆爆掉 → 排一個 respawnDelaySec 倒數（tickRespawns 到期時補）。
+    this.respawnTimers.push(this.respawnDelaySec);
+  }
+
+  /**
+   * per-mine 再生（用戶#3）：推進每個 respawn 倒數；到期（<=0）的移出佇列 →
+   * 若場上存活地雷 < maintainCount 才補撒一顆（否則捨棄該再生額度，維持不超過 maintainCount）。
+   * ★節奏＝每顆爆掉隔 respawnDelaySec 補一顆；非立即、非批次一次補到滿。
+   */
+  private tickRespawns(dt: number, preset: MinePreset): void {
+    if (this.respawnTimers.length === 0) return;
+    const remainingTimers: number[] = [];
+    for (const t of this.respawnTimers) {
+      const nt = t - dt;
+      if (nt > 0) {
+        remainingTimers.push(nt);
+        continue;
+      }
+      // 到期：存活 < maintainCount 才補一顆（補撒 1 顆，避開既有地雷位置）。
+      if (this.mines.length < Math.max(1, preset.maintainCount)) {
+        this.scatterMines(preset, 1);
+      }
+      // 否則丟棄此再生額度（場上已達上限）。
+    }
+    this.respawnTimers = remainingTimers;
   }
 
   /** 清掉場上所有地雷的視覺（標記/預警圈）並清空清單（離開節點/銷毀時）。 */

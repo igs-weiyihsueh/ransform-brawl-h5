@@ -1572,24 +1572,30 @@ export class EffectSystem {
   }
 
   /**
-   * 地雷靜置標記（★踩雷式：撒下時顯，未觸發時常駐；不脈動、暗淡小圈，表示「這裡有雷、踩到會觸發」）。
-   * 貼地（origin 0.5,0.5、depth 地面層，比觸發預警圈稍低）；直徑=爆炸半徑（讓玩家看得出範圍）。
-   * 玩家踩到 → MineTrapSystem 呼 mineMarkerEnd 收、改起 mineWarningStart 閃爍預警圈。
-   * @returns handle（Image）或 null（素材未載）。
+   * 地雷靜置本體（★踩雷式修正：撒下＝一個「靜止的地雷物件」，**不閃、不脈動、不帶爆炸半徑預警圈**）。
+   * 用戶#1#2：撒下不該預先帶閃爍預警圈——之前重用 fx_mine_warning 貼圖 @爆炸半徑直徑=看起來就是預警圈。
+   * 改用程式畫「小顆地雷本體」（固定小尺寸，與 radiusPx 爆炸範圍脫鉤）：深色圓身 + 亮邊 + 小高光點，
+   * 貼地、depth 地面層、完全靜態（無 tween）。玩家踩到 → mineMarkerEnd 收、改起 mineWarningStart 閃爍預警圈。
+   * @returns handle（Graphics）或 null。
    */
-  mineMarkerStart(x: number, y: number, radiusPx: number): Phaser.GameObjects.Image | null {
-    const key = ENEMY_ATTACK_VFX.mineWarning.key;
-    if (!this.scene.textures.exists(key)) return null;
-    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
-    img.setDepth(PANEL_DEPTH + 9); // 地面層（比觸發預警圈 +10 稍低）
-    img.setBlendMode(Phaser.BlendModes.ADD);
-    const d = Math.max(16, radiusPx * 2);
-    img.setDisplaySize(d, d).setAlpha(0.28); // ★靜置：暗淡、不脈動
-    return img;
+  mineMarkerStart(x: number, y: number, _radiusPx: number): Phaser.GameObjects.GameObject | null {
+    const g = this.scene.add.graphics();
+    g.setPosition(x, y).setDepth(PANEL_DEPTH + 9); // 地面層（比觸發預警圈 +10 稍低）
+    const bodyR = 13; // ★固定小尺寸的地雷本體（不隨爆炸半徑放大、不像預警圈）
+    // 深色圓身。
+    g.fillStyle(0x2a2a30, 0.95);
+    g.fillCircle(0, 0, bodyR);
+    // 亮邊（讓地雷本體在地面上看得出、但非發光大圈）。
+    g.lineStyle(2, 0xff5533, 0.9);
+    g.strokeCircle(0, 0, bodyR);
+    // 中心小高光點（讀作「一顆地雷」而非「一個圈」）。
+    g.fillStyle(0xff8866, 1);
+    g.fillCircle(0, 0, 3);
+    return g;
   }
 
-  /** 地雷靜置標記收（玩家踩到觸發時 / 離開節點清場時）→ 立即移除。 */
-  mineMarkerEnd(handle: Phaser.GameObjects.Image | null): void {
+  /** 地雷靜置本體收（玩家踩到觸發時 / 離開節點清場時）→ 立即移除。 */
+  mineMarkerEnd(handle: Phaser.GameObjects.GameObject | null): void {
     if (!handle) return;
     this.scene.tweens.killTweensOf(handle);
     handle.destroy();

@@ -19,6 +19,7 @@ import type { GameContext } from '@/systems/GameContext';
 const PRESET: MinePreset = {
   count: 6,
   maintainCount: 6,
+  respawnDelaySec: 1,
   radiusPx: 100,
   delaySec: 2,
   paralyzeSec: 3,
@@ -168,7 +169,7 @@ describe('MineTrapSystem 踩雷式', () => {
     expect(e.stunned).toBe(0);
   });
 
-  it('④ 維持數量補撒：踩爆幾顆後，場上補回到 maintainCount', () => {
+  it('④ per-mine 再生：踩爆一顆後，隔 respawnDelaySec 才補回（非立即），補到 maintainCount 上限', () => {
     const { sys, players, mineCount, mineAt } = makeSys(() => PRESET);
     const p = makePlayer(0);
     players.push(p);
@@ -178,9 +179,26 @@ describe('MineTrapSystem 踩雷式', () => {
     const target = mineAt(0);
     p.x = target.x; p.y = target.y;
     sys.update(0.016); // 觸發
-    p.x = 99999; p.y = 99999; // 玩家離開避免連鎖觸發補撒的雷
+    p.x = 99999; p.y = 99999; // 玩家離開避免連鎖觸發
     for (let i = 0; i < Math.ceil(PRESET.delaySec / 0.016) + 2; i += 1) sys.update(0.016);
-    // 爆掉後補撒 → 場上維持 maintainCount。
+    // 爆掉後 → 場上少一顆，且★不立即補（respawnDelaySec 未到）。
+    const afterBoom = mineCount();
+    expect(afterBoom).toBe(PRESET.count - 1);
+    // 還沒到 respawnDelaySec：仍不補。
+    sys.update(PRESET.respawnDelaySec * 0.5);
+    expect(mineCount()).toBe(PRESET.count - 1);
+    // 過了 respawnDelaySec：補回一顆到 maintainCount。
+    for (let i = 0; i < Math.ceil((PRESET.respawnDelaySec * 0.6) / 0.016) + 2; i += 1) sys.update(0.016);
+    expect(mineCount()).toBe(PRESET.maintainCount);
+  });
+
+  it('④ 再生不超過 maintainCount：場上已滿時再生額度到期不補（存活恆 <= maintainCount）', () => {
+    const { sys, players, mineCount } = makeSys(() => PRESET);
+    players.push(makePlayer(0)); // 玩家遠離、無人踩
+    sys.update(0.016); // 撒滿 count = maintainCount
+    expect(mineCount()).toBe(PRESET.maintainCount);
+    // 沒人踩 → 沒爆 → 無 respawn 佇列；推進很久場上恆 = maintainCount（不超補）。
+    for (let i = 0; i < 300; i += 1) sys.update(0.016);
     expect(mineCount()).toBe(PRESET.maintainCount);
   });
 

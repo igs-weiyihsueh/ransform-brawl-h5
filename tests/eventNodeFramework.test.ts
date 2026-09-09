@@ -49,6 +49,7 @@ describe('地雷=附加類 attachMineTrap → getActiveMinePreset', () => {
     expect(p).not.toBeNull();
     expect(p!.count).toBeGreaterThan(0);
     expect(p!.maintainCount).toBeGreaterThan(0);
+    expect(p!.respawnDelaySec).toBeGreaterThanOrEqual(0);
   });
 
   it('無 attachMineTrap → getActiveMinePreset 回 null（gate 前後皆 null）', () => {

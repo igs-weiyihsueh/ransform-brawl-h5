@@ -331,9 +331,11 @@ function mnBuildInspector(): void {
   const insp = $('mn-inspector'); insp.innerHTML = '';
   const p = mnPreset(); if (!p) return;
   const on = () => { /* 純數值，無預覽 */ };
-  insp.appendChild(numberRow('地雷數量 count', p.count, (v) => { p.count = Math.max(1, Math.round(v)); }, { min: 1, max: 40, step: 1, int: true }, on));
+  insp.appendChild(numberRow('初始撒雷數 count', p.count, (v) => { p.count = Math.max(1, Math.round(v)); }, { min: 1, max: 40, step: 1, int: true }, on));
+  insp.appendChild(numberRow('維持數量 maintainCount', p.maintainCount, (v) => { p.maintainCount = Math.max(1, Math.round(v)); }, { min: 1, max: 60, step: 1, int: true }, on));
+  insp.appendChild(numberRow('再生時間 respawnDelay (s)', p.respawnDelaySec, (v) => { p.respawnDelaySec = v; }, { min: 0, max: 20, step: 0.5 }, on));
+  insp.appendChild(numberRow('觸發倒數 delay (s)', p.delaySec, (v) => { p.delaySec = v; }, { min: 0, max: 10, step: 0.5 }, on));
   insp.appendChild(numberRow('爆炸半徑 radius (px)', p.radiusPx, (v) => { p.radiusPx = v; }, { min: 0, max: 300, step: 5 }, on));
-  insp.appendChild(numberRow('延遲爆炸 delay (s)', p.delaySec, (v) => { p.delaySec = v; }, { min: 0, max: 10, step: 0.5 }, on));
   insp.appendChild(numberRow('麻痺秒數 paralyze (s)', p.paralyzeSec, (v) => { p.paralyzeSec = v; }, { min: 0, max: 10, step: 0.5 }, on));
   insp.appendChild(numberRow('縮邊 edgeMargin (px)', p.edgeMarginPx ?? 0, (v) => { p.edgeMarginPx = v; }, { min: 0, max: 200, step: 5 }, on));
 }
@@ -619,7 +621,7 @@ const EDITOR_BODY_HTML = `
       </div>
       <div class="section-title">地雷參數（Mine，附加類）</div>
       <div id="mn-inspector"></div>
-      <div class="hint">地雷=附加類：關卡「刷怪波／守護／魔尖塔」節點可勾選「附加地雷」引用此 preset。count＝全場自動撒幾顆（火雨式隨機落點）、delay＝延遲爆炸、paralyze＝命中麻痺秒數。</div>
+      <div class="hint">地雷=附加類（踩雷式）：關卡「刷怪波／守護／魔尖塔」節點可選「附加地雷」引用此 preset。撒在場上靜置不閃→玩家踩到（進半徑）才出現閃爍預警圈+觸發倒數→倒數完爆、範圍內玩家+怪麻痺。count＝初始撒幾顆、maintainCount＝場上維持上限、respawnDelay＝每爆一顆隔多久補一顆、delay＝踩到後倒數秒數。（比照火雨：波次文字顯完才開始撒）</div>
     </div>
   </div>
 </div>
