@@ -176,7 +176,9 @@ export function resolveSkills(
 ): Record<string, CharacterCombatProfile> {
   if (override === null || override === undefined) return packaged;
   const result = validateSkills(override);
-  return result.ok ? result.data.characters : packaged;
+  // ★merge 非整個 replace（同 resolveEnemies）：打包預設打底，override 有的角色覆蓋；
+  //   override 沒有的新角色（舊設定檔沒的新英雄）保留打包預設，不被蓋掉。
+  return result.ok ? { ...packaged, ...result.data.characters } : packaged;
 }
 
 /** 已解析的角色戰鬥表 cache（遊戲啟動讀一次；重開換，符合「套用→重開生效」）。 */
