@@ -9,6 +9,7 @@ import { validateLevels } from '@/config/levelSchema';
 import { WaveSystem, type TowerPreset } from '@/systems/WaveSystem';
 import { clearResolvedMineCache } from '@/config/mineSchema';
 import { clearResolvedTowerCache } from '@/config/towerSchema';
+import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 import type { LevelData, LevelsFile } from '@/config/levelSchema';
 import type { MinePreset } from '@/config/mineConfig';
 
@@ -23,6 +24,7 @@ function makeWave(nodes: unknown[]): WaveSystem {
     effects: { waveMessage: () => {}, fireRainAnnounce: () => {} },
     spawner: { spawn: () => ({}), clear: () => {} },
     players: [],
+    player: { getPosition: () => ({ x: 0, y: 0 }) },
     getEnemies: () => [],
   } as unknown as Parameters<WaveSystem['init']>[0];
   ws.init(ctx);
@@ -35,19 +37,26 @@ beforeEach(() => {
 });
 
 describe('地雷=附加類 attachMineTrap → getActiveMinePreset', () => {
-  it('Spawn 節點帶 attachMineTrap=Mine → getActiveMinePreset 回該 preset', () => {
+  it('Spawn 節點帶 attachMineTrap=Mine → gate 窗內回 null、gate 跑完回該 preset（訊息時機比照火雨）', () => {
     const ws = makeWave([
       { nodeType: 'Spawn', killQuota: 1, maxAlive: 1, spawnThreshold: 1, spawnInterval: 1, spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }], attachMineTrap: 'Mine' },
     ]);
+    // 進節點後 mineGate 窗內：地雷先按住（讓「第 N 波」波次宣告先顯示）→ null。
+    expect(ws.getActiveMinePreset()).toBeNull();
+    // gate 跑完（>= WAVE_MESSAGE_FX.durationSec）→ 開放撒地雷，回該 preset。
+    ws.update(WAVE_MESSAGE_FX.durationSec + 0.05);
     const p: MinePreset | null = ws.getActiveMinePreset();
     expect(p).not.toBeNull();
     expect(p!.count).toBeGreaterThan(0);
+    expect(p!.maintainCount).toBeGreaterThan(0);
   });
 
-  it('無 attachMineTrap → getActiveMinePreset 回 null', () => {
+  it('無 attachMineTrap → getActiveMinePreset 回 null（gate 前後皆 null）', () => {
     const ws = makeWave([
       { nodeType: 'Spawn', killQuota: 1, maxAlive: 1, spawnThreshold: 1, spawnInterval: 1, spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }] },
     ]);
+    expect(ws.getActiveMinePreset()).toBeNull();
+    ws.update(WAVE_MESSAGE_FX.durationSec + 0.05);
     expect(ws.getActiveMinePreset()).toBeNull();
   });
 });

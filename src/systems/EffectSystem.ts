@@ -1572,6 +1572,80 @@ export class EffectSystem {
   }
 
   /**
+   * 地雷靜置標記（★踩雷式：撒下時顯，未觸發時常駐；不脈動、暗淡小圈，表示「這裡有雷、踩到會觸發」）。
+   * 貼地（origin 0.5,0.5、depth 地面層，比觸發預警圈稍低）；直徑=爆炸半徑（讓玩家看得出範圍）。
+   * 玩家踩到 → MineTrapSystem 呼 mineMarkerEnd 收、改起 mineWarningStart 閃爍預警圈。
+   * @returns handle（Image）或 null（素材未載）。
+   */
+  mineMarkerStart(x: number, y: number, radiusPx: number): Phaser.GameObjects.Image | null {
+    const key = ENEMY_ATTACK_VFX.mineWarning.key;
+    if (!this.scene.textures.exists(key)) return null;
+    const img = this.scene.add.image(x, y, key).setOrigin(0.5, 0.5);
+    img.setDepth(PANEL_DEPTH + 9); // 地面層（比觸發預警圈 +10 稍低）
+    img.setBlendMode(Phaser.BlendModes.ADD);
+    const d = Math.max(16, radiusPx * 2);
+    img.setDisplaySize(d, d).setAlpha(0.28); // ★靜置：暗淡、不脈動
+    return img;
+  }
+
+  /** 地雷靜置標記收（玩家踩到觸發時 / 離開節點清場時）→ 立即移除。 */
+  mineMarkerEnd(handle: Phaser.GameObjects.Image | null): void {
+    if (!handle) return;
+    this.scene.tweens.killTweensOf(handle);
+    handle.destroy();
+  }
+
+  /**
+   * 「小心地雷！」宣告（★踩雷式：開放撒雷時發，比照 fireRainAnnounce 左滑進→停留→右滑出→銷毀）。
+   * 定位讀 layout.screen.mineMessage；無則 fallback fireRainMessage 定位；再無則內建置中。
+   * 純視覺提示（不 gate 撒雷；波次宣告時機已由波騎 mineGateSec 處理）。
+   */
+  mineAnnounce(): void {
+    const el = this.screenElement('fireRainMessage', {
+      x: 0,
+      y: GAME_HEIGHT / 2 - 60 - 46,
+      width: GAME_WIDTH,
+      height: 92,
+      align: 'center',
+    });
+    if (!isVisible(el)) return; // 勾掉訊息 → 不顯宣告字（純視覺、無 onDone 需求）
+    const cy = el.y + el.height / 2;
+    const align = el.align ?? 'center';
+    const cx = align === 'left' ? el.x : align === 'right' ? el.x + el.width : el.x + el.width / 2;
+    const originX = align === 'left' ? 0 : align === 'right' ? 1 : 0.5;
+    const txt = this.scene.add.text(cx, cy, '小心地雷！', {
+      fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+      fontSize: '96px',
+      color: '#ff6644',
+      fontStyle: 'bold',
+      stroke: '#4a0a00',
+      strokeThickness: 10,
+    });
+    txt.setOrigin(originX, 0.5).setScrollFactor(0).setDepth(ENERGY_FLY_DEPTH + 20);
+    const startX = cx - GAME_WIDTH;
+    const endX = cx + GAME_WIDTH;
+    txt.x = startX;
+    const slideMs = 400;
+    const holdMs = 2000;
+    this.scene.tweens.add({
+      targets: txt,
+      x: cx,
+      duration: slideMs,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: txt,
+          x: endX,
+          delay: holdMs,
+          duration: slideMs,
+          ease: 'Cubic.easeIn',
+          onComplete: () => txt.destroy(),
+        });
+      },
+    });
+  }
+
+  /**
    * 魔尖塔環狀技（2 新事件階段 B，征騎，★依序固定環）：在**固定半徑**顯示一個環，快速淡入 → 該環期間顯示 →
    * 下環出現前淡出（不擴大！每環固定 diameter）。表現「一環接一環、由內往外、同時只一個環」。
    * @param x,y 尖塔中心。@param diameterPx 這一環的固定直徑（=2×該環半徑）。@param durationMs 該環顯示時長（=ringInterval）。

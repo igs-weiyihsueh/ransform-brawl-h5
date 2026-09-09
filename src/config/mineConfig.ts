@@ -6,15 +6,23 @@
  * 撒點/佈雷/延遲爆/麻痺＝game-side MineSystem（讀取式，比照 FireRainSystem 自撒 pickFireRainPoint）。
  */
 
-/** 一組地雷參數（火雨式全場自動撒，★不用手動座標）。 */
+/** 一組地雷參數（踩雷式：撒在場上不倒數，玩家踩到才觸發倒數→爆；場上維持一定數量）。 */
 export interface MinePreset {
-  /** 撒幾顆地雷（>=1；game-side 用 pickFireRainPoint 全場隨機撒 count 顆）。 */
+  /** 初始撒幾顆地雷（>=1；game-side 用 pickFireRainPoint 全場隨機撒 count 顆）。 */
   count: number;
+  /**
+   * 場上維持的目標地雷數（>=1）。game-side 每幀檢查：場上存活地雷 < maintainCount → 補撒到此數。
+   * 用戶：地雷少了要補撒、維持場上一定密度。通常 >= count（初始撒 count、之後維持 maintainCount）。
+   */
+  maintainCount: number;
   /** 爆炸半徑（像素；>=0）。 */
   radiusPx: number;
-  /** 延遲爆炸秒數（鋪下到爆炸；>=0）。 */
+  /**
+   * 觸發後倒數爆炸秒數（>=0）。踩雷式：地雷撒下不倒數，玩家進半徑「踩到」才啟動此倒數，
+   * 期間顯閃爍預警圈（不顯數字），倒數完爆。可在 preset 調。
+   */
   delaySec: number;
-  /** 命中麻痺秒數（爆炸範圍內玩家麻痺時長；>=0）。game-side applyStun。 */
+  /** 命中麻痺秒數（爆炸範圍內玩家+怪麻痺時長，不分敵我；>=0）。game-side applyStun。 */
   paralyzeSec: number;
   /** 縮邊額外距離（像素，撒點內縮避免貼邊；選填，省略＝0）。 */
   edgeMarginPx?: number;
@@ -24,6 +32,7 @@ export interface MinePreset {
 export const MINE_PRESETS: Record<string, MinePreset> = {
   Mine: {
     count: 8,
+    maintainCount: 8,
     radiusPx: 120,
     delaySec: 3,
     paralyzeSec: 3,
@@ -31,6 +40,7 @@ export const MINE_PRESETS: Record<string, MinePreset> = {
   },
   MineHeavy: {
     count: 14,
+    maintainCount: 14,
     radiusPx: 130,
     delaySec: 2.5,
     paralyzeSec: 3,

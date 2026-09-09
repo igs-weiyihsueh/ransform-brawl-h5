@@ -148,6 +148,13 @@ export class WaveSystem implements GameSystem {
    */
   private fireRainGateSec = 0;
 
+  /**
+   * 用戶：地雷訊息/撒雷要晚於「第 N 波」波次宣告（比照火雨）。進節點時若帶 attachMineTrap，設此延遲秒數，
+   * 期間 getActiveMinePreset() 回 null（game-side MineSystem 因此延後撒地雷+「小心地雷！」宣告），
+   * 讓波次宣告先顯示、地雷訊息接在其後。倒數在 update() 遞減；<=0 才開放撒地雷。
+   */
+  private mineGateSec = 0;
+
   /** debug/UI：目前守護波（若有）。 */
   getGuardEvent(): GuardEvent | null {
     return this.guardEvent;
@@ -204,13 +211,16 @@ export class WaveSystem implements GameSystem {
 
   /**
    * 目前該不該撒地雷 + 用哪組參數（用戶：地雷=附加類，讀取式，比照 getActiveFireRainPreset）。
-   * game-side MineSystem 每幀讀此：有 preset → 全場自動撒地雷（自己 pickFireRainPoint 撒 count 顆）、無則不撒。
+   * game-side MineSystem 每幀讀此：有 preset → 全場自動撒地雷（初始 count 顆、之後維持 maintainCount）、無則不撒。
    * - 任何節點（Spawn / Event 守護·魔尖塔）帶 attachMineTrap（地雷 preset 名）→ 該波次/事件進行時撒該地雷。
+   * - 用戶：地雷訊息/撒雷晚於波次宣告 → 進節點後有 mineGateSec 延遲窗，期間回 null，
+   *   讓「第 N 波」先顯示；延遲跑完（gate<=0）才開放撒地雷（MineSystem 隨即撒+「小心地雷！」宣告，比照火雨）。
    * - 否則 → null（不撒地雷）。
    */
   getActiveMinePreset(): MinePreset | null {
     const node = this.currentNode();
     if (!node) return null;
+    if (this.mineGateSec > 0) return null; // 波次宣告尚在顯示中 → 地雷先按住（比照火雨 gate）
     const attach = (node as { attachMineTrap?: string }).attachMineTrap;
     if (attach && isResolvedMinePreset(attach)) return getResolvedMinePreset(attach);
     return null;
@@ -313,6 +323,8 @@ export class WaveSystem implements GameSystem {
 
     // 用戶：火雨訊息晚於波次宣告 → 進節點後 gate 倒數，期間 getActiveFireRainPreset 對 Spawn 回 null。
     if (this.fireRainGateSec > 0) this.fireRainGateSec = Math.max(0, this.fireRainGateSec - dt);
+    // 用戶：地雷訊息/撒雷晚於波次宣告（比照火雨）→ gate 倒數，期間 getActiveMinePreset 回 null。
+    if (this.mineGateSec > 0) this.mineGateSec = Math.max(0, this.mineGateSec - dt);
 
     // Debug（N 熱鍵）：強制完成當前節點、跳下一個（搬自 Unity skipCurrentNode）。
     //   守護波→forceFinish 乾淨結束(cleanup 雕像/清怪/解鎖/spotlight)；火雨→清 active；Spawn/Reward→直接 advance。
@@ -478,6 +490,10 @@ export class WaveSystem implements GameSystem {
     const entered = this.currentNode();
     const hasFireRain = entered?.nodeType === 'Spawn' && !!(entered as { attachFireRain?: string }).attachFireRain;
     this.fireRainGateSec = hasFireRain ? WAVE_MESSAGE_FX.durationSec : 0;
+    // 用戶：地雷同樣晚於波次宣告（比照火雨）。任何節點（Spawn/Event）帶 attachMineTrap → 按住一個波次宣告時長，
+    //   讓「第 N 波」先出、地雷（含「小心地雷！」宣告 game-side 發）接其後。無地雷 gate=0（不影響）。
+    const hasMine = !!(entered as { attachMineTrap?: string })?.attachMineTrap;
+    this.mineGateSec = hasMine ? WAVE_MESSAGE_FX.durationSec : 0;
   }
 
   /** 過場提示（#9，純視覺）：進節點時依類型顯示螢幕中央提示文字。 */
