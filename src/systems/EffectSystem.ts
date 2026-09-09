@@ -83,6 +83,8 @@ const ENEMY_ATTACK_VFX = {
   mineExplosion: { key: 'vfx-mine-explosion', path: `${BASE_PATH}/fx_mine_explosion.png` },
   /** 魔尖塔環狀擴散技（2 新事件階段 B）：單張環 sprite，程式 scale 小→大 + alpha 淡出做漣漪/衝擊波擴散。 */
   towerRing: { key: 'vfx-tower-ring', path: `${BASE_PATH}/fx_tower_ring.png` },
+  /** 魔尖塔尖塔怪靜態立繪（2 新事件；Enemy_Tower characterKey 換皮用，非 VFX 但同單張 PNG 載法）。 */
+  towerSpire: { key: 'fx_tower_spire', path: `${BASE_PATH}/fx_tower_spire.png` },
 } as const;
 
 /** 敵人攻擊特效 depth（畫在角色上層，跟命中火花同層級）。 */

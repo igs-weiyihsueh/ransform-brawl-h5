@@ -40,6 +40,21 @@ export class CharacterAnimator {
   private currentState: AnimState | null = null;
   /** 敵人慣例的最近面向（setFacingEnemy 設）；非 null 表示此 animator 走敵人 flipX 慣例，play() 換動畫時重算 flipX。 */
   private enemyFacing: number | null = null;
+  /** 靜態貼圖模式（如魔尖塔尖塔怪）：設了就固定顯示此 texture、play() 變 no-op（不被 idle 動畫覆蓋）。 */
+  private staticTexture: string | null = null;
+
+  /**
+   * 切成靜態單張貼圖（固定物件如尖塔用）：停動畫、設 texture + origin，之後 play() 不再覆蓋。
+   * texture 不存在 → 保持原樣（不炸）。origin 預設底部中心 (0.5,1.0)＝站地固定物。
+   */
+  setStaticTexture(textureKey: string, originX = 0.5, originY = 1.0): void {
+    if (!this.sprite.scene.textures.exists(textureKey)) return;
+    this.staticTexture = textureKey;
+    this.sprite.anims?.stop();
+    this.sprite.setTexture(textureKey);
+    this.sprite.setOrigin(originX, originY);
+    this.sprite.setFlipX(false);
+  }
 
   constructor(scene: Phaser.Scene, charKey: string, x: number, y: number) {
     this.charKey = charKey;
@@ -104,6 +119,7 @@ export class CharacterAnimator {
     state: AnimState,
     opts?: { onComplete?: () => void; force?: boolean; timeScale?: number },
   ): void {
+    if (this.staticTexture !== null) return; // 靜態貼圖模式（尖塔）：不播動畫、固定顯示
     const force = opts?.force ?? false;
     if (this.currentState === state && !force) {
       // 已在此狀態且非強制 → 不打斷（避免循環動畫每幀重置）。

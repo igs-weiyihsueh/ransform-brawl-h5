@@ -185,7 +185,7 @@ export const ENEMY_AI: Record<string, EnemyAIConfig> = {
   //   moveSpeed 0 + detectRange 0（永不追擊/近戰，只站著）+ immovable（玩家推不動）+ ringSkill（環狀技標記）。
   //   一般近戰/射彈欄位保留但不生效（detectRange 0 → 恆 idle，不進 chase/charge/attack）。
   Enemy_Tower: {
-    characterKey: 'Enemy_Elite', // 視覺沿用菁英 sprite（大體型像塔）；AI key 'Enemy_Tower' 帶 ringSkill（未另做塔專屬素材）
+    characterKey: 'Enemy_Elite', // animator 骨架沿用菁英 atlas（避免 CharacterAnimator 未知 key 崩）；實際視覺在 Enemy 建構時 setStaticTexture('fx_tower_spire') 換成塔立繪（塔靜止、play no-op）
     hp: 12, // 尖塔血量（towerHp 可由 TowerWave 節點覆蓋）
     moveSpeed: 0, // 固定不動
     detectRange: 0, // 永不偵測玩家 → 恆 idle（不追擊/不近戰），攻擊全靠 ringSkill

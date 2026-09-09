@@ -399,6 +399,12 @@ export class Enemy implements Hittable {
     this.hp = this.cfg.hp;
     this.maxHp = this.cfg.hp;
     this.radiusPx = ENEMY_BODY_RADIUS_PX * this.scaleFactor; // 可視 body 半徑(用戶#1#2a根治), 取代 256 frame 半徑
+    // 魔尖塔尖塔怪：換成塔靜態立繪（換皮，行為零改；塔本靜止）。texture 'fx_tower_spire' 由 EffectSystem 載。
+    //   origin 底部中心(0.5,1.0) 站地固定物、scale≈1.0（圖已含塔感放大）；靜態模式 play() no-op 不被 idle 覆蓋。
+    if (this.isTower()) {
+      this.anim.setStaticTexture('fx_tower_spire', 0.5, 1.0);
+      this.anim.sprite.setScale(1.0);
+    }
   }
 
   isDead(): boolean {
