@@ -382,7 +382,10 @@ function renderGlobalInspector(): void {
   insp.appendChild(numberRow('消退速度（每秒）', secondFile.decayPerSec, (v) => { secondFile.decayPerSec = v; }, { min: 0.02, max: 1.0, step: 0.005, slider: true }));
   insp.appendChild(numberRow('放大倍率', secondFile.scaleMult, (v) => { secondFile.scaleMult = v; }, { min: 1.1, max: 3.0, step: 0.05, slider: true }));
   insp.appendChild(numberRow('攻擊範圍倍率', secondFile.attackRangeMult, (v) => { secondFile.attackRangeMult = v; }, { min: 1.0, max: 4.0, step: 0.05, slider: true }));
-  insp.appendChild(numberRow('集滿門檻 fillThreshold', secondFile.fillThreshold, (v) => { secondFile.fillThreshold = v; }, { min: 0.02, max: 1.0, step: 0.05, slider: true }));
+  // ★用戶：集滿門檻上限卡 0.97 修——原 min:0.02+step:0.05 → 可達值 0.02,0.07,…,0.97（0.02+0.05×19），
+  //   0.05 step 從 0.02 起跳永遠對不到 1.0 → 卡在 0.97「調不上去」。改 min:0.05 對齊 step → 0.05,0.10,…,1.00 可達 1.0。
+  //   ★上限 1.0 是真實約束（schema 守衛 (0,1]：energy cap=1，fillThreshold>1 永不觸發二段 → 不放行 >1）。
+  insp.appendChild(numberRow('集滿門檻 fillThreshold', secondFile.fillThreshold, (v) => { secondFile.fillThreshold = v; }, { min: 0.05, max: 1.0, step: 0.05, slider: true }));
 
   // 被抓觸發：閒置秒數。
   const grabTitle = document.createElement('div');
