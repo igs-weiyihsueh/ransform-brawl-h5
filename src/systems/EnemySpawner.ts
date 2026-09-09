@@ -17,7 +17,7 @@ import {
   type TowerRingState,
   resolveTowerRingParams,
   createTowerRingState,
-  advanceTowerRing,
+  tickTowerRingPhase,
   ringRadiusForIndex,
   ringHitsPlayer,
 } from '@/systems/towerRingSkill';
@@ -423,15 +423,18 @@ export class EnemySpawner {
   }
 
   /**
-   * 魔尖塔環狀技每幀更新（2 新事件階段 B，★依序固定環）：
-   *  每座存活尖塔持一份 TowerRingState（第幾環 + 換環計時 + 本環命中去重）。
-   *  1) advanceTowerRing：計時達 ringIntervalSec → 前環消失、換下一環（固定半徑、循環回內圈）；換環時播新環 VFX。
-   *  2) 當前環（固定半徑 baseRadius+ringIndex×radiusStep）環帶（annulus，中心空）命中玩家 →
-   *     扣 energyCost 段能量（onPlayerRingHit，本環對同玩家只扣一次，換環時去重重置）。
-   * ★同時畫面只有一個環（前環消失下環才出）；環不連續擴大（每環固定半徑）。
+   * 魔尖塔環狀技每幀更新（★C9 兩階段節奏：warning 預警 → active 炸+判定）：
+   *  每座存活尖塔持一份 TowerRingState（第幾環 + phase + phaseTimer + 本環命中去重）。
+   *  tickTowerRingPhase：
+   *   - enterWarning → 播該環**紅色空心環預警**（★零判定，不扣能量）。
+   *   - enterActive → 播該環**攻擊色空心環**（炸）。
+   *   命中判定（annulus，中心空）★**只在 phase==='active' 跑**（不變量①）；本環對同玩家只扣一次（進 active 清去重，不變量②）。
+   * ★環狀技只呼叫既有 onPlayerRingHit→loseSecondTransformEnergy（沿用非改契約，不變量③）。
    * ★環狀技碰攻擊判定＝高風險共用契約（decision a655c53d，走變身-leader review）。
    */
   private updateTowerRings(dt: number): void {
+    const WARNING_COLOR = 0xff3322; // C9 預警紅
+    const ATTACK_COLOR = 0x9b5cff; // active 攻擊紫
     for (const e of this.enemies) {
       if (!e.isTower() || e.isDead()) continue;
       const ring = e.getRingSkill();
@@ -442,25 +445,30 @@ export class EnemySpawner {
         state = createTowerRingState();
         this.towerRingStates.set(e.id, state);
       }
-      const c = e.getTowerRingCenter(); // C7：環 VFX 圓心 + 命中判定圓心都用塔視覺中心（對準塔本體正中央）
-      // 1) 換環時序：達間隔 → 換下一環（固定半徑，循環）+ 播新環 VFX。
-      const { advanced } = advanceTowerRing(state, dt, params);
-      if (advanced) {
-        const radius = ringRadiusForIndex(state.ringIndex, params);
-        // VFX：依序單環顯示——在該固定半徑畫一個★空心環（C8），環帶厚度=2×halfThickness（與 annulus 判定一致）。★圓心=塔視覺中心（C7）。
-        this.hitFeelFx?.towerRing?.(c.x, c.y, radius * 2, params.halfThicknessPx * 2, params.ringIntervalSec * 1000);
+      const c = e.getTowerRingCenter(); // C7：環 VFX 圓心 + 命中判定圓心都用塔視覺中心
+      const { enterWarning, enterActive, phase } = tickTowerRingPhase(state, dt, params);
+      const radius = ringRadiusForIndex(state.ringIndex, params);
+      const thickness = params.halfThicknessPx * 2; // 環帶厚度（與 annulus 判定一致）
+
+      // VFX：進 warning → 紅色預警空心環（顯 warningSec）；進 active → 攻擊色空心環（顯 ringIntervalSec）。
+      if (enterWarning && params.warningSec > 0) {
+        this.hitFeelFx?.towerRing?.(c.x, c.y, radius * 2, thickness, params.warningSec * 1000, WARNING_COLOR);
       }
-      // 2) 當前環固定半徑，環帶命中玩家（本環對同玩家只扣一次）。
-      const curRadius = ringRadiusForIndex(state.ringIndex, params);
+      if (enterActive) {
+        this.hitFeelFx?.towerRing?.(c.x, c.y, radius * 2, thickness, params.ringIntervalSec * 1000, ATTACK_COLOR);
+      }
+
+      // ★命中判定只在 active phase（warning 零判定，不變量①）。本環對同玩家只扣一次（不變量②）。
+      if (phase !== 'active') continue;
       for (const p of this.getAllPlayers()) {
         const pid = p.playerId;
         if (state.hitPlayersThisRing.has(pid)) continue;
         const pc = p.getVacuumCenter?.() ?? p.getHitCenter();
         const pr = p.getVacuumRadius?.() ?? p.getHitRadius();
-        if (ringHitsPlayer(c, curRadius, params.halfThicknessPx, pc, pr)) {
+        if (ringHitsPlayer(c, radius, params.halfThicknessPx, pc, pr)) {
           state.hitPlayersThisRing.add(pid);
           const energyRatio = params.energyCost * SECOND_TRANSFORM_CONFIG.energyLossOnHit;
-          this.onPlayerRingHit?.(pid, energyRatio);
+          this.onPlayerRingHit?.(pid, energyRatio); // 沿用非改契約（不變量③）
         }
       }
     }

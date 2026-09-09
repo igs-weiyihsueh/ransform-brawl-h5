@@ -31,6 +31,8 @@ export interface TowerRingRuntimeParams {
   halfThicknessPx: number;
   /** 命中扣能量段數。 */
   energyCost: number;
+  /** C9：每環進入 active（判定+炸）前的紅圈預警秒數（>=0；0＝無預警立即 active）。 */
+  warningSec: number;
 }
 
 export const DEFAULT_TOWER_RING_PARAMS: TowerRingRuntimeParams = {
@@ -40,6 +42,7 @@ export const DEFAULT_TOWER_RING_PARAMS: TowerRingRuntimeParams = {
   ringIntervalSec: 0.6,
   halfThicknessPx: 20,
   energyCost: 2,
+  warningSec: 0.5,
 };
 
 /**
@@ -56,6 +59,7 @@ export function resolveTowerRingParams(
         ringIntervalSec?: number;
         ringThicknessPx?: number;
         energyCost?: number;
+        warningSec?: number;
       }
     | null
     | undefined,
@@ -68,6 +72,7 @@ export function resolveTowerRingParams(
     ringIntervalSec: ring?.ringIntervalSec != null && ring.ringIntervalSec > 0 ? ring.ringIntervalSec : d.ringIntervalSec,
     halfThicknessPx: ring?.ringThicknessPx != null && ring.ringThicknessPx > 0 ? ring.ringThicknessPx / 2 : d.halfThicknessPx,
     energyCost: ring?.energyCost != null && ring.energyCost >= 0 ? ring.energyCost : d.energyCost,
+    warningSec: ring?.warningSec != null && ring.warningSec >= 0 ? ring.warningSec : d.warningSec,
   };
 }
 
@@ -77,37 +82,76 @@ export function ringRadiusForIndex(index: number, params: TowerRingRuntimeParams
 }
 
 /**
- * 一座塔的環狀技狀態（呼叫端每座塔持一份）。
- *  - ringIndex：目前顯示的是第幾環（0..ringCount-1）。
- *  - timer：距離換下一環的計時。
- *  - hitPlayersThisRing：當前這一環已扣過的玩家（換環時清空 → 每環對同玩家只扣一次）。
+ * 一座塔的環狀技狀態（呼叫端每座塔持一份）。★C9 兩階段：
+ *  - ringIndex：目前第幾環（0..ringCount-1）。
+ *  - phase：'warning'（顯紅圈預警、★零判定）| 'active'（炸+命中判定）。
+ *  - phaseTimer：目前 phase 已經過秒數。
+ *  - hitPlayersThisRing：本環 active 已扣過的玩家（進 active 時清 → 每環對同玩家只扣一次）。
  */
+export type TowerRingPhase = 'warning' | 'active';
 export interface TowerRingState {
   ringIndex: number;
-  timer: number;
+  phase: TowerRingPhase;
+  phaseTimer: number;
   hitPlayersThisRing: Set<number>;
 }
 
-/** 建立一座塔的初始環狀技狀態（從第 0 環開始）。 */
+/** 建立一座塔的初始環狀技狀態（從第 0 環的 warning 預警開始）。 */
 export function createTowerRingState(): TowerRingState {
-  return { ringIndex: 0, timer: 0, hitPlayersThisRing: new Set() };
+  return { ringIndex: 0, phase: 'warning', phaseTimer: 0, hitPlayersThisRing: new Set() };
 }
 
 /**
- * 推進一座塔的環狀技一幀：累計 timer，達 ringIntervalSec → 前環消失、換下一環（循環回 0），清該環命中去重。
- * 回傳 { advanced }：本幀是否換了環（呼叫端可據此播新環 VFX）。
+ * ★C9 環狀節奏 phase machine（純邏輯，變身-leader 3 不變量）：每環兩階段
+ *   warning（顯紅圈預警 warningSec、**零判定**）→ active（炸+命中判定，持續 ringIntervalSec）→ 換下一環的 warning。
+ *
+ * 回傳本幀事件（呼叫端據此播 VFX / 跑命中判定）：
+ *   - enterWarning：本幀「剛進入某環的 warning」→ 呼叫端播該環紅色預警空心環（不判定）。
+ *   - enterActive：本幀「剛進入某環的 active」→ 呼叫端播該環攻擊色空心環 + ★**只有此 phase 才跑命中判定**。
+ *   - ringIndex：當前環（供半徑）。phase：當前 phase。
+ *
+ * ★不變量①：warning phase 零判定——呼叫端只在 phase==='active' 才跑 ringHitsPlayer+applyStun。
+ * ★不變量②：每環單次判定、轉換無洩漏——enterActive 那幀只回一次（呼叫端命中判定該幀起跑、per-ring 去重）；
+ *   warning→active / active→下環 warning 轉換各自只發一次事件（不雙擊）。
+ * ★warningSec=0 → 該環無預警，直接進 active（enterWarning 與 enterActive 可同幀，但仍各只一次）。
  */
-export function advanceTowerRing(
+export function tickTowerRingPhase(
   state: TowerRingState,
   dt: number,
   params: TowerRingRuntimeParams,
-): { advanced: boolean } {
-  state.timer += dt;
-  if (state.timer < params.ringIntervalSec) return { advanced: false };
-  state.timer -= params.ringIntervalSec;
-  state.ringIndex = (state.ringIndex + 1) % Math.max(1, params.ringCount); // 循環回內圈
-  state.hitPlayersThisRing.clear(); // 新環 → 重置命中去重
-  return { advanced: true };
+): { enterWarning: boolean; enterActive: boolean; ringIndex: number; phase: TowerRingPhase } {
+  const warnSec = Math.max(0, params.warningSec);
+  const activeSec = Math.max(0.001, params.ringIntervalSec);
+  let enterWarning = false;
+  let enterActive = false;
+
+  state.phaseTimer += dt;
+
+  // warning phase：跑滿 warningSec → 進 active（清本環命中去重、發 enterActive）。
+  if (state.phase === 'warning') {
+    if (state.phaseTimer >= warnSec) {
+      state.phase = 'active';
+      state.phaseTimer -= warnSec; // 溢出時間帶入 active（不吞幀）
+      state.hitPlayersThisRing.clear();
+      enterActive = true;
+    }
+    return { enterWarning, enterActive, ringIndex: state.ringIndex, phase: state.phase };
+  }
+
+  // active phase：跑滿 ringIntervalSec → 換下一環（循環）、回到 warning（發 enterWarning）。
+  if (state.phaseTimer >= activeSec) {
+    state.phaseTimer -= activeSec;
+    state.ringIndex = (state.ringIndex + 1) % Math.max(1, params.ringCount);
+    state.phase = 'warning';
+    enterWarning = true;
+    // warningSec=0：本幀立刻再進 active（無預警環），仍各只發一次事件。
+    if (warnSec <= 0 && state.phaseTimer >= 0) {
+      state.phase = 'active';
+      state.hitPlayersThisRing.clear();
+      enterActive = true;
+    }
+  }
+  return { enterWarning, enterActive, ringIndex: state.ringIndex, phase: state.phase };
 }
 
 /**

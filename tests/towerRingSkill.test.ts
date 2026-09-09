@@ -4,8 +4,10 @@ import {
   resolveTowerRingParams,
   ringRadiusForIndex,
   createTowerRingState,
-  advanceTowerRing,
+  tickTowerRingPhase,
   ringHitsPlayer,
+  resolveTowerPositions,
+  defaultTowerPositions,
   DEFAULT_TOWER_RING_PARAMS,
 } from '@/systems/towerRingSkill';
 
@@ -40,36 +42,76 @@ describe('towerRingSkill — 魔尖塔依序固定環（★重做：一環接一
     it('第 3 環＝base+3×step（由內往外遞增）', () => expect(ringRadiusForIndex(3, p)).toBe(90 + 360));
   });
 
-  describe('★advanceTowerRing（依序換環：達間隔→換下一環固定半徑→循環→清命中去重）', () => {
-    const p = resolveTowerRingParams({ ringCount: 3, baseRadius: 90, radiusStepPx: 120, ringIntervalSec: 0.6 });
-    it('未達間隔 → 不換環', () => {
+  describe('★C9 tickTowerRingPhase（兩階段節奏：warning 零判定 → active 炸+判定 → 下一環 warning）', () => {
+    // warningSec 0.5、ringInterval(active) 0.6、ringCount 3。
+    const p = resolveTowerRingParams({ ringCount: 3, baseRadiusPx: 90, radiusStepPx: 120, ringIntervalSec: 0.6, warningSec: 0.5 });
+
+    it('初始＝第 0 環 warning phase', () => {
       const s = createTowerRingState();
-      expect(advanceTowerRing(s, 0.3, p).advanced).toBe(false);
-      expect(s.ringIndex).toBe(0); // 仍第 0 環
-    });
-    it('達間隔 → 換到下一環（index+1）+ advanced=true', () => {
-      const s = createTowerRingState();
-      const r = advanceTowerRing(s, 0.6, p);
-      expect(r.advanced).toBe(true);
-      expect(s.ringIndex).toBe(1);
-    });
-    it('★生到第 ringCount 環後循環回第 0 環（週而復始）', () => {
-      const s = createTowerRingState(); // index 0
-      advanceTowerRing(s, 0.6, p); // →1
-      advanceTowerRing(s, 0.6, p); // →2
-      advanceTowerRing(s, 0.6, p); // →0（循環，ringCount=3：0,1,2,0）
       expect(s.ringIndex).toBe(0);
+      expect(s.phase).toBe('warning');
     });
-    it('★換環時清空 hitPlayersThisRing（新環對同玩家可再扣一次）', () => {
+
+    it('★warning 期間 phase 恆 warning（不變量①：呼叫端據此不判定）', () => {
       const s = createTowerRingState();
-      s.hitPlayersThisRing.add(0);
-      advanceTowerRing(s, 0.6, p);
-      expect(s.hitPlayersThisRing.size).toBe(0);
+      const r = tickTowerRingPhase(s, 0.3, p); // < warningSec 0.5
+      expect(r.phase).toBe('warning');
+      expect(r.enterActive).toBe(false);
     });
-    it('餘數保留（timer 累積不丟）', () => {
+
+    it('★warning 跑滿 warningSec → 進 active（enterActive 只一次、清命中去重）', () => {
       const s = createTowerRingState();
-      advanceTowerRing(s, 0.9, p); // 0.9 → 換環，timer 餘 0.3
-      expect(s.timer).toBeCloseTo(0.3);
+      s.hitPlayersThisRing.add(9); // 前殘留
+      const r = tickTowerRingPhase(s, 0.5, p); // 達 warningSec
+      expect(r.enterActive).toBe(true);
+      expect(s.phase).toBe('active');
+      expect(s.hitPlayersThisRing.size).toBe(0); // 進 active 清去重
+      // 再 tick 一小步：不該再發 enterActive（不變量②：不雙擊）
+      const r2 = tickTowerRingPhase(s, 0.05, p);
+      expect(r2.enterActive).toBe(false);
+      expect(r2.phase).toBe('active');
+    });
+
+    it('★active 跑滿 ringIntervalSec → 換下一環 + 回 warning（enterWarning 一次）', () => {
+      const s = createTowerRingState();
+      tickTowerRingPhase(s, 0.5, p); // →active（環 0）
+      const r = tickTowerRingPhase(s, 0.6, p); // active 跑滿 →換環回 warning
+      expect(r.enterWarning).toBe(true);
+      expect(s.phase).toBe('warning');
+      expect(s.ringIndex).toBe(1); // 換到下一環
+    });
+
+    it('★一環 active 結束才開下環 warning（不會 active→直接下環 active 跳過預警）', () => {
+      const s = createTowerRingState();
+      tickTowerRingPhase(s, 0.5, p); // 環0 →active
+      tickTowerRingPhase(s, 0.6, p); // 環0 active 完 →環1 warning
+      expect(s.phase).toBe('warning');
+      expect(s.ringIndex).toBe(1);
+      // 環1 warning 未滿 → 仍 warning（不判定）
+      expect(tickTowerRingPhase(s, 0.3, p).phase).toBe('warning');
+    });
+
+    it('★環循環：0→1→2→0（ringCount=3，每環走完 warning+active）', () => {
+      const s = createTowerRingState();
+      const cycle = () => { tickTowerRingPhase(s, 0.5, p); tickTowerRingPhase(s, 0.6, p); }; // 一環 warning+active
+      cycle(); expect(s.ringIndex).toBe(1);
+      cycle(); expect(s.ringIndex).toBe(2);
+      cycle(); expect(s.ringIndex).toBe(0); // 循環回內圈
+    });
+
+    it('★warningSec=0 → 無預警，換環同幀直接進 active（enterWarning+enterActive 同幀各一次）', () => {
+      const p0 = resolveTowerRingParams({ ringCount: 3, ringIntervalSec: 0.6, warningSec: 0 });
+      const s = createTowerRingState();
+      // warningSec=0：初始 warning phaseTimer 0 >= 0 → 第一 tick 就進 active
+      const r0 = tickTowerRingPhase(s, 0.016, p0);
+      expect(r0.enterActive).toBe(true);
+      expect(s.phase).toBe('active');
+      // active 跑滿 → 換環，同幀 enterWarning+enterActive（無預警環）
+      const r1 = tickTowerRingPhase(s, 0.6, p0);
+      expect(r1.enterWarning).toBe(true);
+      expect(r1.enterActive).toBe(true);
+      expect(s.phase).toBe('active');
+      expect(s.ringIndex).toBe(1);
     });
   });
 
@@ -91,6 +133,36 @@ describe('towerRingSkill — 魔尖塔依序固定環（★重做：一環接一
     });
     it('斜向距離（3-4-5）', () => {
       expect(ringHitsPlayer(tower, 100, half, { x: 60, y: 80 }, 5)).toBe(true); // d=100
+    });
+  });
+
+  describe('★A2 resolveTowerPositions（前 N 用設定、不足/省略用預設環形補到 towerCount）', () => {
+    it('positions 省略 → 全用預設環形，數量=towerCount', () => {
+      const out = resolveTowerPositions(undefined, 4, 1920, 1080);
+      expect(out.length).toBe(4);
+      for (const p of out) { expect(Number.isFinite(p.x)).toBe(true); expect(Number.isFinite(p.y)).toBe(true); }
+    });
+    it('positions 前 2 座用設定，其餘用預設補（長度<towerCount）', () => {
+      const given = [{ x: 100, y: 200 }, { x: 300, y: 400 }];
+      const out = resolveTowerPositions(given, 4, 1920, 1080);
+      expect(out.length).toBe(4);
+      expect(out[0]).toEqual({ x: 100, y: 200 }); // 前 2 座用設定
+      expect(out[1]).toEqual({ x: 300, y: 400 });
+      // 後 2 座預設（有限值、非設定的兩點）
+      expect(Number.isFinite(out[2].x)).toBe(true);
+      expect(Number.isFinite(out[3].y)).toBe(true);
+    });
+    it('positions 比 towerCount 多 → 只取前 towerCount 座', () => {
+      const given = [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }];
+      const out = resolveTowerPositions(given, 2, 1920, 1080);
+      expect(out.length).toBe(2);
+      expect(out[0]).toEqual({ x: 1, y: 1 });
+      expect(out[1]).toEqual({ x: 2, y: 2 });
+    });
+    it('defaultTowerPositions n=1 → 放場中心附近（單座）', () => {
+      const out = defaultTowerPositions(1, 1920, 1080);
+      expect(out.length).toBe(1);
+      expect(out[0].x).toBeCloseTo(960); // 場中心 X
     });
   });
 });
