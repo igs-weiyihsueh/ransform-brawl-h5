@@ -3,7 +3,7 @@ import { getPerCharScale } from '@/config/animationConfig';
 import { PLAYER_HIT_RADIUS } from '@/config/combatConfig';
 import { ENEMY_AI, ENEMY_BODY_RADIUS_PX, ENEMY_BODY_CENTER_OFFSET_Y, type EnemyAIConfig } from '@/config/enemyConfig';
 import { getResolvedEnemy } from '@/config/enemySchema';
-import { PPU } from '@/config/gameConfig';
+import { PPU, GROUND_SQUASH_Y } from '@/config/gameConfig';
 import { ENEMY_PLAY_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import {
@@ -128,6 +128,8 @@ export class Enemy implements Hittable {
    * 碰撞/環圓心用此才貼「塔真正站的地面」。null＝未算（fallback 走 getTowerRingGroundCenter 腳底）。
    */
   private towerVisualBaseY: number | null = null;
+  /** ★塔碰撞範圍可視圈（貼地壓扁橢圓，半徑=towerCollisionRadiusPx）：用戶要遊戲裡一眼看到塔碰撞範圍。 */
+  private towerCollisionRing: Phaser.GameObjects.Graphics | null = null;
 
   private state: EnemyState = 'chase';
   private timer = 0; // 當前狀態的計時（charge/cooldown/damaged 用）
@@ -418,13 +420,54 @@ export class Enemy implements Hittable {
     this.hp = this.cfg.hp;
     this.maxHp = this.cfg.hp;
     this.radiusPx = ENEMY_BODY_RADIUS_PX * this.scaleFactor; // 可視 body 半徑(用戶#1#2a根治), 取代 256 frame 半徑
-    // 魔尖塔尖塔怪：換成塔靜態立繪（換皮，行為零改；塔本靜止）。texture 'fx_tower_spire' 由 EffectSystem 載。
-    //   origin 底部中心(0.5,1.0) 站地固定物、scale≈1.0（圖已含塔感放大）；靜態模式 play() no-op 不被 idle 覆蓋。
+    // 魔尖塔尖塔怪：★用戶定案——不用美術圖 fx_tower_spire（碰撞圈對不上頭重腳輕/透明 padding），
+    //   改畫「錐狀色塊」（Graphics 生成 texture，無透明 padding→視覺塔基＝色塊底＝腳底錨點，碰撞圈對得上所見即所得）。
+    //   origin 底部中心(0.5,1.0) 站地固定物；靜態模式 play() no-op。碰撞判定不變（getBodyRadius/getTowerCollisionCenter 照舊）。
     if (this.isTower()) {
-      this.anim.setStaticTexture('fx_tower_spire', 0.5, 1.0);
+      const coneKey = Enemy.ensureTowerConeTexture(this.anim.sprite.scene);
+      this.anim.setStaticTexture(coneKey, 0.5, 1.0);
       this.anim.sprite.setScale(1.0);
-      this.computeTowerVisualBaseY(); // ★spawn 一次算「視覺塔基底」cache（讀 alpha bounds），供碰撞/環圓心貼視覺塔基
+      this.computeTowerVisualBaseY(); // 色塊無 padding → 視覺塔基底≈腳底（alpha 讀到色塊底），碰撞圈對得上
+      this.drawTowerCollisionRing(); // ★初畫碰撞範圍圈（GameScene 隨後 setTowerCollisionRadius/Offset 會再重畫更新）
     }
+  }
+
+  /**
+   * ★塔「錐狀色塊」texture 生成（用戶定案：換掉美術圖，色塊是我們畫的、碰撞圈能對上）：
+   * 梯形/錐狀（上窄下寬）色塊代表塔身，★底邊貼滿 frame 底（無透明 padding）→ 視覺塔基＝色塊底＝腳底錨點。
+   * 一張共用 texture（key 固定），已存在則直接回 key（不重生）。純視覺示意，尺寸沿用原塔 frame 感（192×320）。
+   */
+  private static ensureTowerConeTexture(scene: Phaser.Scene): string {
+    const key = 'tower-cone-block';
+    if (scene.textures.exists(key)) return key;
+    const W = 192;
+    const H = 320;
+    const g = scene.make.graphics({ x: 0, y: 0 }, false);
+    const cxp = W / 2;
+    const topW = W * 0.34; // 塔身頂寬
+    const bodyTopY = 40; // 塔身梯形頂 y（上方留給尖頂）
+    // 塔身梯形（上窄下寬，底邊貼 frame 底 y=H＝無透明 padding）
+    g.fillStyle(0x6b6f8c, 1);
+    g.fillPoints([
+      { x: cxp - topW / 2, y: bodyTopY },
+      { x: cxp + topW / 2, y: bodyTopY },
+      { x: W, y: H },
+      { x: 0, y: H },
+    ], true);
+    // 塔頂魔能尖（三角，紫）
+    g.fillStyle(0x9b5cff, 1);
+    g.fillTriangle(cxp - topW / 2, bodyTopY, cxp + topW / 2, bodyTopY, cxp, 0);
+    // 亮邊描塔身輪廓
+    g.lineStyle(4, 0xb9bee0, 1);
+    g.strokePoints([
+      { x: cxp - topW / 2, y: bodyTopY },
+      { x: cxp + topW / 2, y: bodyTopY },
+      { x: W, y: H },
+      { x: 0, y: H },
+    ], true, true);
+    g.generateTexture(key, W, H);
+    g.destroy();
+    return key;
   }
 
   /**
@@ -512,6 +555,8 @@ export class Enemy implements Hittable {
     this.dead = true;
     this.state = 'death';
     this.clearChargeFx();
+    this.towerCollisionRing?.destroy(); // ★清塔碰撞範圍可視圈
+    this.towerCollisionRing = null;
     this.anim.destroy();
   }
 
@@ -731,6 +776,7 @@ export class Enemy implements Hittable {
   setTowerCollisionRadius(px: number): void {
     if (!Number.isFinite(px) || px < 0) return;
     this.radiusPx = px;
+    this.drawTowerCollisionRing(); // ★半徑變→重畫碰撞範圍可視圈
   }
 
   /**
@@ -742,6 +788,7 @@ export class Enemy implements Hittable {
       x: Number.isFinite(offsetXPx) ? offsetXPx : 0,
       y: Number.isFinite(offsetYPx) ? offsetYPx : 0,
     };
+    this.drawTowerCollisionRing(); // ★offset 變→重畫碰撞範圍可視圈
   }
 
   /**
@@ -757,6 +804,31 @@ export class Enemy implements Hittable {
   getTowerCollisionCenter(): Vec2 {
     const c = this.getTowerVisualBaseCenter(); // ★視覺塔基底（碰撞專用；環維持腳底 getTowerRingGroundCenter、刻意不同源見上）
     return { x: c.x + this.towerCollisionOffset.x, y: c.y + this.towerCollisionOffset.y };
+  }
+
+  /**
+   * ★塔碰撞範圍可視圈（用戶定案：遊戲裡一眼看到塔碰撞範圍）：貼地壓扁橢圓，
+   * 圓心＝getTowerCollisionCenter（色塊底＝碰撞圓心）、水平半徑＝getBodyRadius（=towerCollisionRadiusPx）、
+   * 垂直半徑＝半徑×GROUND_SQUASH_Y（(乙)貼地圓盤，跟實際碰撞縱深擋距一致）。調 towerCollisionRadiusPx→圈跟著變。
+   * 每次半徑/offset 變（setTowerCollisionRadius/Offset）重畫。純視覺、不動判定。
+   */
+  drawTowerCollisionRing(): void {
+    if (!this.isTower()) return;
+    const sp = this.anim.sprite;
+    const c = this.getTowerCollisionCenter();
+    const r = this.getBodyRadius();
+    if (!this.towerCollisionRing) {
+      this.towerCollisionRing = sp.scene.add.graphics();
+      this.towerCollisionRing.setDepth((sp.depth ?? 15) - 1); // 在塔色塊下方（貼地）
+    }
+    const g = this.towerCollisionRing;
+    g.clear();
+    g.setPosition(c.x, c.y);
+    // 貼地壓扁橢圓：填半透明 + 亮邊描線（像角色腳下圈）。
+    g.fillStyle(0x33ccff, 0.18);
+    g.fillEllipse(0, 0, r * 2, r * 2 * GROUND_SQUASH_Y);
+    g.lineStyle(3, 0x66ddff, 0.85);
+    g.strokeEllipse(0, 0, r * 2, r * 2 * GROUND_SQUASH_Y);
   }
 
   /**
@@ -1202,6 +1274,8 @@ export class Enemy implements Hittable {
     if (this.anim.isStaticTexture?.()) {
       this.dead = true;
       const sp = this.anim.sprite;
+      this.towerCollisionRing?.destroy(); // ★清塔碰撞範圍可視圈（不殘留）
+      this.towerCollisionRing = null;
       sp.scene.tweens.add({
         targets: sp, alpha: 0, duration: 220, ease: 'Sine.easeIn',
         onComplete: () => this.anim.destroy(),
