@@ -41,6 +41,8 @@
  * ============================================================================
  */
 
+import { GROUND_SQUASH_Y } from '@/config/gameConfig';
+
 /** 接觸體（對應 Unity IContactBody；H5 2D）。 */
 export interface ContactBody {
   /**
@@ -107,14 +109,18 @@ export function solveContacts(
       const minDist = a.radius + b.radius;
       if (minDist <= 0) continue; // early-out 1
       const dx = a.x - b.x;
+      // ★(乙) 貼地圓盤判定（照瓢蟲藍本）：螢幕 dy 還原地面縱深 dy/squash 算距離＝貼地橢圓（縱深方向更近才接觸，
+      //   跟視覺貼地圓盤一致，全遊戲統一）。★一石二鳥：dist 用地面 dy，但 ux/uy 仍用「螢幕 dy/dist」＝推力位移寫回
+      //   螢幕座標自動含 squash（groundUnitY×corrected×squash = dy/dist×corrected），距離+推力方向一次對。
       const dy = a.y - b.y;
-      const sqr = dx * dx + dy * dy;
+      const dyG = dy / GROUND_SQUASH_Y; // 地面縱深（螢幕 y 壓扁還原）
+      const sqr = dx * dx + dyG * dyG;
       if (sqr < EPS) continue; // early-out 2（幾乎完全重疊，方向不定 → 跳過，交下一幀微擾解）
       const dist = Math.sqrt(sqr);
       const corrected = minDist - dist - params.contactSlop; // 扣 slop
       if (corrected <= 0) continue; // early-out 3（未重疊或在容忍內）
       const ux = dx / dist;
-      const uy = dy / dist;
+      const uy = dy / dist; // ★螢幕 dy/地面 dist：位移寫回螢幕座標自動含 squash（見上注一石二鳥）
       const aCan = a.canBePushed;
       const bCan = b.canBePushed;
       if (aCan && bCan) {
@@ -193,12 +199,15 @@ export function paceMove(
     const body = bodies[i];
     if (body.id === self.id) continue;
     const dx = body.x - self.x;
+    // ★(乙) 貼地圓盤：螢幕 dy 還原地面縱深 dy/squash 算距離＝貼地橢圓（跟 solveContacts 同套一石二鳥：
+    //   dist 用地面 dy，ux/uy 用螢幕 dy/dist→夾限套回螢幕 move 自動含 squash）。全遊戲推擠統一貼地。
     const dy = body.y - self.y;
-    const sqr = dx * dx + dy * dy;
+    const dyG = dy / GROUND_SQUASH_Y;
+    const sqr = dx * dx + dyG * dyG;
     if (sqr < EPS) continue;
     const dist = Math.sqrt(sqr);
     const ux = dx / dist;
-    const uy = dy / dist;
+    const uy = dy / dist; // 螢幕 dy/地面 dist（見上注）
     const approach = mx * ux + my * uy; // 朝該 body 前進的分量（dot）
     if (approach <= 0) continue; // 遠離 → 切向不夾
     const contactDist = self.radius + body.radius - params.contactSlop;

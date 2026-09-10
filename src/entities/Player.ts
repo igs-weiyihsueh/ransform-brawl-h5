@@ -440,6 +440,15 @@ export class Player implements Hittable {
   }
 
   /**
+   * ★(乙) 地面基準 Y（貼地圓盤碰撞用）：變身浮起時 sprite.y 疊了浮空高度（transformFloatBaseY+offsetY），
+   * 碰撞算縱深要用「地面」y 不含浮空高度→浮起時回 transformFloatBaseY（浮起前記的地面 y），否則回 sprite.y（純地面）。
+   * contactSolver/enemySeparation 建 body 時玩家 y 用此＝浮空玩家仍當障礙擋人、但用地面基準算距離不因浮空高度混入而錯。
+   */
+  getGroundY(): number {
+    return this.transformFloating ? this.transformFloatBaseY : this.anim.sprite.y;
+  }
+
+  /**
    * 視覺搜索圈（腳底識別光圈）中心（像素）。＝ syncFootGlow 用的 footGlowCenter（sprite 中心往下偏 foot.offsetY 到腳部）。
    * 用戶第九輪#5：牽引線要牽到「玩家看到的貼地搜索圈」邊緣＝此中心的圈，而非 getVacuumCenter（身體中心，#7#8 為 surround/推怪對稱改成 body 中心、比視覺圈高 ~75.6px）。
    * 與 getVacuumRadius（同 foot.radiusPx）搭配＝所見即所得的搜索圈幾何。

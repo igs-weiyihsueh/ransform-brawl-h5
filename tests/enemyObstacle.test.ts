@@ -81,16 +81,19 @@ describe('Enemy.pushOutOfObstacle — 雕像 immovable 防穿透', () => {
     e.forceDestroy();
   });
 
-  it('沿實際方向頂出(斜向)：3-4-5 → 推到外緣單位方向×minDist', () => {
-    // 敵人在雕像的 (30,40) 方向、距 50；minDist = 60 + r。
+  it('沿實際方向頂出(斜向)：3-4-5 → ★(乙)貼地圓盤：縱深還原地面(/squash)算距離+推到地面橢圓外緣', () => {
+    // ★(乙) 貼地圓盤：dy 還原地面 dy/0.5。敵人 (30,40)→dyG=80, groundDist=hypot(30,80)≈85.44。
+    //   minDist=60+r；推到地面外緣：x=(30/groundDist)×minDist, y=(40/groundDist)×minDist（螢幕座標、縱深壓扁在橢圓上）。
     const e = makeEnemy(30, 40);
     const r = e.getBodyRadius();
     e.pushOutOfObstacle({ x: 0, y: 0 }, 60);
     const c = e.getHitCenter();
     const minDist = 60 + r;
-    // 單位方向 (0.6,0.8) × minDist。
-    expect(c.x).toBeCloseTo(0.6 * minDist);
-    expect(c.y).toBeCloseTo(0.8 * minDist);
+    const groundDist = Math.hypot(30, 40 / 0.5);
+    expect(c.x).toBeCloseTo((30 / groundDist) * minDist, 1);
+    expect(c.y).toBeCloseTo((40 / groundDist) * minDist, 1);
+    // 地面距離（縱深還原）恰 minDist＝貼地橢圓外緣。
+    expect(Math.hypot(c.x, c.y / 0.5)).toBeCloseTo(minDist, 1);
     e.forceDestroy();
   });
 

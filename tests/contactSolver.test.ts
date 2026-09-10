@@ -27,6 +27,17 @@ describe('solveContacts — Compute+Apply', () => {
     expect(positions[1].x).toBeCloseTo(35);
   });
 
+  it('★(乙)貼地圓盤：縱深(垂直)方向要更近才接觸（dy/squash）＝橢圓判定，垂直重疊比水平淺', () => {
+    // 水平：i(0,0) j(30,0) r20 → dist30 < minDist40 → 重疊推開（同上：各推 5）。
+    const horiz = solveContacts([body(0, 0, 20, 1), body(30, 0, 20, 1)], new Set(), P);
+    expect(Math.abs(horiz.positions[0].x)).toBeGreaterThan(0); // 水平 30px 有推
+    // 垂直：i(0,0) j(0,30) r20——螢幕 dy=30 但地面 dyG=30/0.5=60 → groundDist=60 > minDist40 → ★不接觸、不推。
+    const vert = solveContacts([body(0, 0, 20, 1), body(0, 30, 20, 1)], new Set(), P);
+    expect(vert.positions[0].y).toBeCloseTo(0); // 垂直 30px 貼地還原後夠遠→不推
+    expect(vert.positions[1].y).toBeCloseTo(30);
+    // ＝同樣螢幕 30px，水平推、垂直不推＝貼地橢圓（縱深要更近才接觸），跟視覺貼地圓盤一致。
+  });
+
   it('★質量分攤：重的推得少（i 重 3、j 輕 1 → i 分 mB/sum=1/4、j 分 mA/sum=3/4）', () => {
     const { positions } = solveContacts([body(0, 0, 20, 3), body(30, 0, 20, 1)], new Set(), P);
     // corrected=10；i 位移 10×(1/4)=2.5(往-x)、j 10×(3/4)=7.5(往+x)。

@@ -487,13 +487,14 @@ export class PlayerControlSystem implements GameSystem {
     const center = player.getVacuumCenter?.() ?? player.getHitCenter();
     const selfRadius = player.getBodyRadius?.() ?? player.getVacuumRadius?.() ?? player.getHitRadius();
     const selfId = `player${player.playerId}`;
-    const self: ContactBody = { id: selfId, x: center.x, y: center.y, radius: selfRadius, mass: selfRadius, canBePushed: true };
+    // ★(乙) 貼地圓盤：碰撞 y 用地面基準 getGroundY（浮空玩家用 baseY 不含浮空高度，避免縱深距離錯）。
+    const self: ContactBody = { id: selfId, x: center.x, y: player.getGroundY?.() ?? center.y, radius: selfRadius, mass: selfRadius, canBePushed: true };
     // 障礙：可推的敵人（菁英immovable/grabber/dead → canBePushed=false 或跳過）+ 其他玩家。
     const bodies: ContactBody[] = [self];
     for (const e of this.ctx.getEnemies()) {
       if (e.isDead() || e.isGrabber()) continue;
       // ★塔碰撞圓圓心用「塔視覺中心+offset」（修下方特別大：塔 origin 腳底，圓心對塔身中央才上下對稱，比照雕像）；
-      //   非塔仍用 getHitCenter（不動其他怪）。
+      //   非塔仍用 getHitCenter（不動其他怪）。怪 y 純地面（無浮空）直接用。
       const ec = e.isTower() ? e.getTowerCollisionCenter() : e.getHitCenter();
       const r = e.getBodyRadius();
       bodies.push({ id: `enemy${e.id}`, x: ec.x, y: ec.y, radius: r, mass: r, canBePushed: !e.isImmovable() });
@@ -502,7 +503,8 @@ export class PlayerControlSystem implements GameSystem {
       if (other === player) continue;
       const oc = other.getVacuumCenter?.() ?? other.getHitCenter();
       const or = other.getBodyRadius?.() ?? other.getVacuumRadius?.() ?? other.getHitRadius();
-      bodies.push({ id: `player${other.playerId}`, x: oc.x, y: oc.y, radius: or, mass: or, canBePushed: true });
+      // ★其他玩家也用地面基準 y（浮空玩家當障礙用 baseY）。
+      bodies.push({ id: `player${other.playerId}`, x: oc.x, y: other.getGroundY?.() ?? oc.y, radius: or, mass: or, canBePushed: true });
     }
     // 想走的世界位移 = 方向 × 本幀步長。
     const desired = { x: mv.x * step, y: mv.y * step };

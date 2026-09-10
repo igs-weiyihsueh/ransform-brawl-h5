@@ -1,4 +1,4 @@
-import { PPU } from '@/config/gameConfig';
+import { PPU, GROUND_SQUASH_Y } from '@/config/gameConfig';
 import type { Vec2 } from '@/systems/hitDetection';
 
 /**
@@ -55,7 +55,7 @@ export function calculateSeparation(
   for (const o of others) {
     const dx = selfPos.x - o.x;
     const dy = selfPos.y - o.y;
-    const dist = Math.hypot(dx, dy);
+    const dist = Math.hypot(dx, dy / GROUND_SQUASH_Y); // ★(乙) 貼地圓盤：縱深 dy 還原地面算距離
     if (dist < radiusPx && dist > 0.01) {
       const t = (radiusPx - dist) / radiusPx; // 1=貼身、0=邊緣
       const w = t * t; // 平方加權
@@ -101,7 +101,7 @@ export function pushOutOfPlayer(
 ): Vec2 {
   const dx = enemyPos.x - playerPos.x;
   const dy = enemyPos.y - playerPos.y;
-  const dist = Math.hypot(dx, dy);
+  const dist = Math.hypot(dx, dy / GROUND_SQUASH_Y); // ★(乙) 貼地圓盤：縱深還原地面算距離
   if (dist >= minDistPx) return enemyPos; // 沒穿透
   if (dist <= 0.0001) {
     return { x: playerPos.x + minDistPx, y: playerPos.y }; // 完全重疊 → 往右推
@@ -138,7 +138,7 @@ export function pushOutOfPlayerSmoothed(
 ): Vec2 {
   const dx = enemyPos.x - playerPos.x;
   const dy = enemyPos.y - playerPos.y;
-  const dist = Math.hypot(dx, dy);
+  const dist = Math.hypot(dx, dy / GROUND_SQUASH_Y); // ★(乙) 貼地圓盤：縱深還原地面算距離
   if (dist >= minDistPx) return enemyPos; // 沒穿透
   // 方向：遠離玩家（完全重疊 → 往右，與硬頂版一致）。
   const ux = dist <= 0.0001 ? 1 : dx / dist;
@@ -231,11 +231,11 @@ export function blockEliteAdvance(
 ): Vec2 {
   const dx = elitePos.x - playerPos.x;
   const dy = elitePos.y - playerPos.y;
-  const dist = Math.hypot(dx, dy);
+  const dist = Math.hypot(dx, dy / GROUND_SQUASH_Y); // ★(乙) 貼地圓盤：縱深還原地面算距離
   if (dist >= minDistPx) return elitePos; // 沒重疊、菁英照走
 
   // 菁英移動前與玩家的距離：菁英最多退回這個距離（不被玩家推得比原本更遠）。
-  const prevDist = Math.hypot(prevPos.x - playerPos.x, prevPos.y - playerPos.y);
+  const prevDist = Math.hypot(prevPos.x - playerPos.x, (prevPos.y - playerPos.y) / GROUND_SQUASH_Y); // 同貼地
   // 目標距離 = 頂到 minDist 邊緣，但不超過移動前距離（擋前進、不被推）。
   const targetDist = Math.min(minDistPx, Math.max(prevDist, 0));
 
@@ -243,7 +243,7 @@ export function blockEliteAdvance(
     // 完全重疊：沿「移動前→玩家」的反方向退回（沒有方向就往右）。
     const pdx = prevPos.x - playerPos.x;
     const pdy = prevPos.y - playerPos.y;
-    const pl = Math.hypot(pdx, pdy);
+    const pl = Math.hypot(pdx, pdy / GROUND_SQUASH_Y);
     if (pl <= 0.0001) return { x: playerPos.x + targetDist, y: playerPos.y };
     return { x: playerPos.x + (pdx / pl) * targetDist, y: playerPos.y + (pdy / pl) * targetDist };
   }

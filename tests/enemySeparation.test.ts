@@ -106,12 +106,15 @@ describe('pushOutOfPlayer — 防穿透', () => {
   });
 
   // 補強：非軸對齊的精確邊緣座標（3-4-5 方向 → 推到 minDist 邊緣，比例精確）。
-  it('斜向穿透（3-4-5）→ 推到 minDist 邊緣、方向精確（保持單位方向 ×minDist）', () => {
-    // enemy 在 player 的 (30,40) 方向、dist=50 < minDist=100 → 推到 (60,80)（方向 (0.6,0.8)×100）。
+  it('斜向穿透（3-4-5）→ ★(乙)貼地圓盤：縱深 dy 還原地面(/squash)算距離+推到地面橢圓邊緣', () => {
+    // ★(乙) 貼地圓盤：dy 還原地面 dy/0.5。enemy (30,40)→dx=30, dyG=40/0.5=80, groundDist=hypot(30,80)≈85.44 < minDist 100 → 推。
+    //   推到地面邊緣：x=0+(30/85.44)×100≈35.11, y=0+(40/85.44)×100≈46.82（螢幕座標，縱深壓扁後在橢圓上）。
     const fixed = pushOutOfPlayer({ x: 30, y: 40 }, { x: 0, y: 0 }, 100);
-    expect(fixed.x).toBeCloseTo(60); // 0.6×100
-    expect(fixed.y).toBeCloseTo(80); // 0.8×100
-    expect(Math.hypot(fixed.x, fixed.y)).toBeCloseTo(100); // 剛好在邊緣
+    const groundDist = Math.hypot(30, 40 / 0.5);
+    expect(fixed.x).toBeCloseTo((30 / groundDist) * 100, 2);
+    expect(fixed.y).toBeCloseTo((40 / groundDist) * 100, 2);
+    // 地面距離（縱深還原）恰 minDist；螢幕正圓距離則 < minDist（縱深被壓扁＝貼地橢圓）。
+    expect(Math.hypot(fixed.x, fixed.y / 0.5)).toBeCloseTo(100, 2);
   });
 
   it('非原點 player 的穿透 → 修正後與 player 距離恰 minDist、方向不變', () => {
