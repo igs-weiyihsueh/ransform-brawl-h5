@@ -275,7 +275,7 @@ export class EnemySpawner {
   }
 
   /** 每幀：更新敵人 AI、射彈；處理射彈命中目標（玩家或守護雕像）；清除死亡/失效。 */
-  update(dt: number): void {
+  update(dt: number, skipTowerRings = false): void {
     if (this.meleeCircleFlash > 0) this.meleeCircleFlash -= dt;
 
     // 七輪 待機隔離：無守護雕像目標且玩家待機（未參戰）→ 敵人無有效目標，本幀不追擊/不攻擊（原地待命）。
@@ -295,7 +295,9 @@ export class EnemySpawner {
     }
 
     // 魔尖塔環狀技（2 新事件階段 B）：尖塔週期放環 + 環擴散 + 環圈命中玩家扣能量 + 播 VFX。
-    this.updateTowerRings(dt);
+    // ★聚焦壓黑期間（skipTowerRings＝guardFocusPause）整個 skip：塔環完全靜默（不 tick/不畫首環預警/不攻擊），
+    //   塔壓黑出生只顯現，combat（聚焦結束解凍）才開始環狀技（首環預警紅圈→炸）。
+    if (!skipTowerRings) this.updateTowerRings(dt);
 
     // 防穿透：敵人移動後，對所有 player 頂開（不穿透）。
     // pushOut：immovable 菁英頂不動時，改把玩家本身移到菁英外（玩家被擋、不穿進菁英）。

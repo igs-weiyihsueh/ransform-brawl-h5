@@ -17,6 +17,8 @@ export class EnemySystem implements GameSystem {
   }
 
   update(dt: number): void {
-    this.ctx.spawner.update(dt);
+    // ★聚焦壓黑期間（guardFocusPause）塔環完全靜默：不 tick、不畫首環預警 VFX、不攻擊——
+    //   塔壓黑出生只顯現，combat（聚焦結束）才開始環狀技。傳給 spawner gate updateTowerRings。
+    this.ctx.spawner.update(dt, this.ctx.guardFocusPause === true);
   }
 }
