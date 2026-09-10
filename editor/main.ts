@@ -687,47 +687,15 @@ function renderTowerDrip(node: EventNodeData): void {
     return;
   }
 
-  inspectorEl.appendChild(fieldRow('場上上限 maxAlive', numberInput(node.maxAlive ?? 6, (v) => { node.maxAlive = v; })));
-  inspectorEl.appendChild(fieldRow('補怪門檻 spawnThreshold', numberInput(node.spawnThreshold ?? 4, (v) => { node.spawnThreshold = v; })));
-  inspectorEl.appendChild(fieldRow('生怪間隔 spawnInterval (s)', numberInput(node.spawnInterval ?? 1, (v) => { node.spawnInterval = v; })));
-  renderTowerDripSpawns(node);
-}
-
-/** 塔波雜兵權重列（敵種+權重，比照守護波 spawns 編法）。 */
-function renderTowerDripSpawns(node: EventNodeData): void {
-  const spawns = node.spawns ?? (node.spawns = []);
-  const keys = getEnemyTypeKeys();
-  const title = document.createElement('div');
-  title.className = 'hint';
-  title.textContent = '雜兵敵種權重：';
-  inspectorEl.appendChild(title);
-  spawns.forEach((s, i) => {
-    const row = document.createElement('div');
-    row.className = 'row';
-    const sel = document.createElement('select');
-    for (const k of (keys.length > 0 ? keys : ENEMY_TYPES)) {
-      const opt = document.createElement('option');
-      opt.value = k; opt.textContent = k;
-      if (k === s.enemyType) opt.selected = true;
-      sel.appendChild(opt);
-    }
-    sel.addEventListener('change', () => { s.enemyType = sel.value as EnemyType; });
-    const w = document.createElement('input');
-    w.type = 'number'; w.min = '0'; w.step = 'any'; w.value = String(s.weight); w.style.width = '70px';
-    w.addEventListener('input', () => { s.weight = parseFloat(w.value) || 0; });
-    const del = document.createElement('button');
-    del.textContent = '✕';
-    del.addEventListener('click', () => { spawns.splice(i, 1); renderInspector(); });
-    row.appendChild(sel); row.appendChild(w); row.appendChild(del);
-    inspectorEl.appendChild(row);
-  });
-  const add = document.createElement('button');
-  add.textContent = '＋ 加雜兵';
-  add.addEventListener('click', () => {
-    spawns.push({ enemyType: (keys[0] ?? ENEMY_TYPES[0]) as EnemyType, weight: 1 });
-    renderInspector();
-  });
-  inspectorEl.appendChild(add);
+  // ④生怪設定 UI 統一：用跟 Spawn 節點同一組欄位（場上上限/補怪門檻/生怪間隔 + 共用 renderSpawnEntriesEditor）。
+  inspectorEl.appendChild(fieldRow('場上上限', numberInput(node.maxAlive ?? 6, (v) => { node.maxAlive = v; })));
+  inspectorEl.appendChild(fieldRow('補怪門檻', numberInput(node.spawnThreshold ?? 4, (v) => { node.spawnThreshold = v; })));
+  inspectorEl.appendChild(fieldRow('生怪間隔（秒）', numberInput(node.spawnInterval ?? 1, (v) => { node.spawnInterval = v; })));
+  const spawnsTitle = document.createElement('div');
+  spawnsTitle.className = 'section-title'; spawnsTitle.style.marginTop = '12px';
+  spawnsTitle.textContent = '敵人配置（敵種 + 權重）';
+  inspectorEl.appendChild(spawnsTitle);
+  renderSpawnEntriesEditor(inspectorEl, node.spawns ?? (node.spawns = []), renderInspector);
 }
 
 /** A1：魔尖塔波節點附加火雨（比照 Spawn 的簡單下拉：（無火雨）/ 火雨 preset 名 → node.attachFireRain）。 */
@@ -914,58 +882,11 @@ function renderGuardExtras(node: EventNodeData): void {
   const dripSpawnsTitle = document.createElement('div');
   dripSpawnsTitle.className = 'section-title';
   dripSpawnsTitle.style.marginTop = '12px';
-  dripSpawnsTitle.textContent = '補怪敵種 + 權重';
+  dripSpawnsTitle.textContent = '敵人配置（敵種 + 權重）';
   inspectorEl.appendChild(dripSpawnsTitle);
 
-  const spawns: SpawnEntry[] = node.spawns ?? (node.spawns = []);
-  spawns.forEach((entry, si) => {
-    const row = document.createElement('div');
-    row.className = 'spawn-entry';
-
-    const sel = document.createElement('select');
-    // 敵種動態讀 getEnemyTypeKeys()（單一來源）∪ 當前值（避免自訂/未知值遺失）。
-    const dyn = getEnemyTypeKeys();
-    const typeList = dyn.includes(entry.enemyType) ? dyn : [...dyn, entry.enemyType];
-    for (const t of typeList) {
-      const opt = document.createElement('option');
-      opt.value = t;
-      opt.textContent = enemyTypeLabel(t);
-      if (t === entry.enemyType) opt.selected = true;
-      sel.appendChild(opt);
-    }
-    sel.addEventListener('change', () => { entry.enemyType = sel.value as EnemyType; });
-    row.appendChild(sel);
-
-    const w = document.createElement('input');
-    w.type = 'number';
-    w.step = 'any';
-    w.value = String(entry.weight);
-    w.title = '權重';
-    w.addEventListener('input', () => {
-      const v = Number(w.value);
-      entry.weight = Number.isFinite(v) ? v : 0;
-    });
-    row.appendChild(w);
-
-    const del = document.createElement('button');
-    del.className = 'danger';
-    del.textContent = '✕';
-    del.addEventListener('click', () => {
-      spawns.splice(si, 1);
-      renderInspector();
-    });
-    row.appendChild(del);
-    inspectorEl.appendChild(row);
-  });
-
-  const addBtn = document.createElement('button');
-  addBtn.textContent = '+ 新增敵種';
-  addBtn.addEventListener('click', () => {
-    const keys = getEnemyTypeKeys();
-    spawns.push({ enemyType: (keys[0] ?? ENEMY_TYPES[0]) as EnemyType, weight: 1 });
-    renderInspector();
-  });
-  inspectorEl.appendChild(addBtn);
+  // ④統一：守護波補怪敵種列用跟 Spawn 節點同一組共用 render（renderSpawnEntriesEditor），不各自搞一套。
+  renderSpawnEntriesEditor(inspectorEl, node.spawns ?? (node.spawns = []), renderInspector);
 }
 
 // ---- 統一重繪 -------------------------------------------------------------

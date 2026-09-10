@@ -419,6 +419,7 @@ function twBuildInspector(): void {
   insp.appendChild(numberRow('每層間隔 ringInterval (s)', r.ringIntervalSec, (v) => { r.ringIntervalSec = v; }, { min: 0.05, max: 5, step: 0.05 }, on));
   insp.appendChild(numberRow('環厚 ringThickness (px)', r.ringThicknessPx, (v) => { r.ringThicknessPx = v; }, { min: 1, max: 100, step: 1 }, on));
   insp.appendChild(numberRow('環預警秒數 warning (s)', r.warningSec, (v) => { r.warningSec = v; }, { min: 0, max: 3, step: 0.1 }, on));
+  insp.appendChild(numberRow('真空帶半徑 vacuumRadius (px)', r.vacuumRadiusPx ?? r.baseRadiusPx, (v) => { r.vacuumRadiusPx = v; }, { min: 0, max: 400, step: 5 }, on));
   insp.appendChild(numberRow('扣能量段數 energyCost', r.energyCost, (v) => { r.energyCost = Math.round(v); }, { min: 0, max: 6, step: 1, int: true }, on));
   // A2：塔位置區塊——按鈕清除自訂位置（回預設環形）。拖曳在 tw-preview canvas。
   const posTitle = document.createElement('div');
@@ -487,6 +488,12 @@ function twRender(): void {
       ctx.lineWidth = Math.max(1, (r.ringThicknessPx * m.s) || 1);
       ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
     }
+    // ②真空帶（最內圈安全區）：綠色虛線圈，讓用戶看到真空帶半徑。
+    const vac = (r.vacuumRadiusPx ?? r.baseRadiusPx) * m.s;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(89,217,142,0.8)'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, vac, vac * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
   });
   positions.forEach((pos, i) => {
     const c = m.toCv(pos.x, pos.y);

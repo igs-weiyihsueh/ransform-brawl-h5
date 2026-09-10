@@ -293,17 +293,31 @@ export class WaveSystem implements GameSystem {
    * 目前該不該撒地雷 + 用哪組參數（用戶：地雷=附加類，讀取式，比照 getActiveFireRainPreset）。
    * game-side MineSystem 每幀讀此：有 preset → 全場自動撒地雷（初始 count 顆、之後維持 maintainCount）、無則不撒。
    * - 任何節點（Spawn / Event 守護·魔尖塔）帶 attachMineTrap（地雷 preset 名）→ 該波次/事件進行時撒該地雷。
-   * - 用戶：地雷訊息/撒雷晚於波次宣告 → 進節點後有 mineGateSec 延遲窗，期間回 null，
-   *   讓「第 N 波」先顯示；延遲跑完（gate<=0）才開放撒地雷（MineSystem 隨即撒+「小心地雷！」宣告，比照火雨）。
+   * - ★①撒雷 gate（比照火雨 combat-phase gate，非只等 1.6s）：
+   *   · Spawn 節點：等 mineGateSec（波次宣告時長；Spawn 無壓黑登場）。
+   *   · 守護波節點：等 guardEvent.isCombatPhase()（解暗後才撒，同 FireRainSystem 守護波邏輯）。
+   *   · 塔波節點：等 towerCombatStarted（endFocus 聚焦結束後才撒）。
+   *   → 事件節點登場序列（大字/走位/聚焦壓黑）期間不撒，避免「第一段訊息就撒」。
    * - 否則 → null（不撒地雷）。
    */
   getActiveMinePreset(): MinePreset | null {
     const node = this.currentNode();
     if (!node) return null;
-    if (this.mineGateSec > 0) return null; // 波次宣告尚在顯示中 → 地雷先按住（比照火雨 gate）
     const attach = (node as { attachMineTrap?: string }).attachMineTrap;
-    if (attach && isResolvedMinePreset(attach)) return getResolvedMinePreset(attach);
-    return null;
+    if (!attach || !isResolvedMinePreset(attach)) return null;
+    // ①combat-phase gate（事件節點登場壓黑期間不撒，比照火雨）：
+    if (node.nodeType === 'Event') {
+      const en = (node as EventNodeData).eventPresetName;
+      if (isResolvedTowerPreset(en)) {
+        if (!this.towerCombatStarted) return null; // 塔波：endFocus（開打）後才撒
+      } else if (this.guardEvent && !this.guardEvent.isCombatPhase()) {
+        return null; // 守護波：解暗進 combat 後才撒（同 FireRainSystem）
+      }
+    } else {
+      // Spawn（或其他非壓黑登場）：維持 mineGateSec（波次宣告時長）。
+      if (this.mineGateSec > 0) return null;
+    }
+    return getResolvedMinePreset(attach);
   }
 
   /** 目前關卡節點索引（0-based，進度條用：已完成節點數）。 */

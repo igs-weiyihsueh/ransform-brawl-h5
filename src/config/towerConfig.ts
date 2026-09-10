@@ -26,6 +26,11 @@ export interface RingSkillParams {
    * 預警紅圈倒數 warningSec → 完才判定命中+炸特效 → 炸完才開下一環紅圈。省略/0＝無預警立即判定。
    */
   warningSec: number;
+  /**
+   * ②真空帶半徑（像素，>=0；選填，省略＝沿用 baseRadiusPx）。魂力環最內圈安全區＝真空帶，敵人/環不進此半徑。
+   * 用戶要能直接調真空帶大小；征騎 EnemySpawner effectiveBase 拿掉 ×1.25 下限、直接讀此值（省略時退 baseRadiusPx）。
+   */
+  vacuumRadiusPx?: number;
 }
 
 /** 一座塔的位置（場景座標，1920×1080 基準；editor 可拖曳編輯）。 */
@@ -192,19 +197,34 @@ export function resolveTowerMessages(preset: {
   };
 }
 
+/** 真空帶半徑預設（省略 vacuumRadiusPx 時的 fallback 之一；異靈定案 90）。 */
+export const TOWER_VACUUM_RADIUS_DEFAULT = 90;
+
+/**
+ * 解析環狀技參數（②真空帶：帶出 vacuumRadiusPx；純函式，抽給測騎）。
+ * ★vacuumRadiusPx 省略 → 沿用 baseRadiusPx（再無則 TOWER_VACUUM_RADIUS_DEFAULT）；用 ?? 保留 0 語意。
+ * 征騎 EnemySpawner effectiveBase 讀此帶出的 vacuumRadiusPx（拿掉 ×1.25、加 42px 防退化地板 by 征騎）。
+ */
+export function resolveTowerRingParams(ring: RingSkillParams): RingSkillParams & { vacuumRadiusPx: number } {
+  return {
+    ...ring,
+    vacuumRadiusPx: ring.vacuumRadiusPx ?? ring.baseRadiusPx ?? TOWER_VACUUM_RADIUS_DEFAULT,
+  };
+}
+
 /** 魔尖塔 preset 表（名稱 key；用戶可在事件編輯器選/編）。Tower4=四塔預設、Tower6=六塔。 */
 export const TOWER_PRESETS: Record<string, TowerPreset> = {
   Tower4: {
     towerCount: 4,
     timeLimitSec: 60,
     towerHp: 100,
-    ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2, warningSec: 0.5 },
+    ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2, warningSec: 0.5, vacuumRadiusPx: 90 },
   },
   Tower6: {
     towerCount: 6,
     timeLimitSec: 75,
     towerHp: 100,
-    ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2, warningSec: 0.5 },
+    ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2, warningSec: 0.5, vacuumRadiusPx: 90 },
   },
 };
 

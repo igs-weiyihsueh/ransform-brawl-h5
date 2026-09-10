@@ -20,6 +20,7 @@ import {
   createTowerRingState,
   tickTowerRingPhase,
   ringHitsPlayer,
+  effectiveInnerRadius,
 } from '@/systems/towerRingSkill';
 import { SECOND_TRANSFORM_CONFIG } from '@/config/combatConfig';
 
@@ -262,6 +263,7 @@ export class EnemySpawner {
       ringThicknessPx?: number;
       energyCost?: number;
       warningSec?: number;
+      vacuumRadiusPx?: number;
     },
     scale?: number,
   ): Enemy {
@@ -448,11 +450,18 @@ export class EnemySpawner {
       //   視覺 + 判定圓心都用塔腳底地面點 getTowerRingGroundCenter → 環貼地面不浮空、塔立在貼地環正中央。
       const c = e.getTowerRingGroundCenter(); // 視覺+判定同圓心＝塔腳底地面
       const { enterWarning, enterActive, phase } = tickTowerRingPhase(state, dt, params);
-      // ★最內環 baseRadius 放大到「框住整座塔的水平投影」：max(preset baseRadius, 塔物件半徑×1.25)
-      //   → 塔站貼地環正中央、環從塔腳往外貼地擴、最內環框住整座塔（不穿塔身）。baseRadiusPx 可在🗼編輯器調（A2/A3 欄位）。
-      const effectiveBase = Math.max(params.baseRadiusPx, e.getTowerObjectRadius() * 1.25);
+      // ★②真空帶可調（用戶爆氣修）：effectiveBase＝真空帶半徑＝魂力環最內圈安全區，直接讀 params.vacuumRadiusPx
+      //   （波騎新增欄，省略時 resolveTowerRingParams 已退回 baseRadiusPx）。★拿掉舊 max(..., 塔物件半徑×1.25) 下限
+      //   ——原本 ×1.25 下限蓋過 baseRadiusPx=60 讓用戶調不動；改直接讀 vacuumRadiusPx＝用戶可自由調真空帶大小。
+      // ★中空防退化下限（變身-leader review 把關①，動 a655c53d 命中幾何）：effectiveInnerRadius 純函式
+      //   = max(vacuumRadiusPx, halfThickness + MIN_HOLLOW_PX)。若 vacuumRadiusPx 太小(<= halfThickness+玩家半徑)，
+      //   annulus 判定帶會蓋住中心 d≈0→中空(真空帶)消失；下限保證內緣留 MIN_HOLLOW_PX 中空。只在極小值介入、不蓋過正常調值。
+      const effectiveBase = effectiveInnerRadius(params.vacuumRadiusPx, params.halfThicknessPx);
       const radius = effectiveBase + state.ringIndex * params.radiusStepPx;
       const thickness = params.halfThicknessPx * 2; // 環帶厚度（與 annulus 判定一致）
+
+      // ★VFX 半徑 = 判定半徑（變身-leader review 把關②）：VFX 畫的直徑(radius*2) 跟 ringHitsPlayer 判定的 radius
+      //   用★同一個 radius（同 effectiveBase），視覺環=判定環、不會半徑不一致（別重蹈上輪判定 vs 視覺混淆）。
 
       // VFX（用腳底圓心 c，環貼地、塔立環中央）：warning → towerRingWarning、active → towerRingActive。
       // ★Bug3：首建 state 時第 0 環一開始就在 warning phase，但 tickTowerRingPhase 只在 active→warning 轉換才發 enterWarning

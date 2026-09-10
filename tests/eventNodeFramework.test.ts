@@ -88,6 +88,14 @@ describe('地雷=附加類 attachMineTrap → getActiveMinePreset', () => {
     ws.update(WAVE_MESSAGE_FX.durationSec + 0.05);
     expect(ws.getActiveMinePreset()).toBeNull();
   });
+
+  it('①塔波節點帶 attachMineTrap → 聚焦壓黑期間不撒（towerCombatStarted=false→null）、endFocus 後才撒（照火雨 combat gate）', () => {
+    const ws = makeWave([{ nodeType: 'Event', eventPresetName: 'Tower4', attachMineTrap: 'Mine' }]);
+    ws.update(TOWER_GATE_ADVANCE); // 觸發生塔（聚焦壓黑，towerCombatStarted 仍 false）
+    expect(ws.getActiveMinePreset()).toBeNull(); // ★登場/聚焦期間不撒地雷（上批只等 1.6s 的 bug 已修）
+    ws.notifyTowerCombatStart(); // 征騎 endFocus 通知開打
+    expect(ws.getActiveMinePreset()).not.toBeNull(); // combat 後才撒
+  });
 });
 
 describe('魔尖塔=單獨波次 Event eventPresetName=tower preset', () => {

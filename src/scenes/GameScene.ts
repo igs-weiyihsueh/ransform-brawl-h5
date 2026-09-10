@@ -271,6 +271,7 @@ export class GameScene extends Phaser.Scene {
         ringThicknessPx: preset.ringSkill.ringThicknessPx,
         energyCost: preset.ringSkill.energyCost,
         warningSec: preset.ringSkill.warningSec, // C9：環炸前紅圈預警秒數（波騎 schema 5b6d17d）
+        vacuumRadiusPx: preset.ringSkill.vacuumRadiusPx, // ②真空帶半徑（用戶可調，波騎新增欄）
       };
       // A2：塔位＝preset.positions 前 N 座（有則用），不足/省略用預設環形補到 towerCount（1920×1080 場景座標）。
       const positions = resolveTowerPositions(preset.positions, n, GAME_WIDTH, GAME_HEIGHT);
@@ -281,16 +282,13 @@ export class GameScene extends Phaser.Scene {
       const msgs = resolveTowerMessages(preset);
       this.towerRewardTickets = ui.rewardTickets; // E：過關發獎用（onTowerWaveResult 讀）
       // ★Bug2：生塔動作改在聚焦「之前」執行（beginFocus 呼叫），回傳生成的塔 entities 供聚焦提 depth 照亮。
-      //   生 towerCount 座塔 + 血條（發亮/提 depth 由 TowerIntroSequence 在聚焦時做）。ringSkill 判定靠 guardFocusPause 凍結、combat 才開。
+      //   生 towerCount 座塔（發亮/提 depth 由 TowerIntroSequence 在聚焦時做）。ringSkill 判定靠 guardFocusPause 凍結、combat 才開。
+      //   ★③：塔不生血條/「尖塔」標籤——用戶：塔沒血量（麻痺=定住由環狀技 applyStun 處理）不該有血條。
+      //   （守護波雕像血條走 GuardTarget、完全獨立，不受此影響。）
       const spawnTowers = () => {
         const towers = [];
         for (let i = 0; i < n; i += 1) {
           const t = spawner.spawnTower(positions[i].x, positions[i].y, preset.towerHp, ring, scale);
-          t.setTowerHpBarUi?.({
-            barWidthPx: ui.barWidthPx, barHeightPx: ui.barHeightPx,
-            barOffsetYPx: ui.barOffsetYPx, labelOffsetYPx: ui.labelOffsetYPx,
-          });
-          t.createTowerHpBar?.(); // D：每座塔血條（比照守護波雕像血條）
           towers.push(t);
         }
         return towers;

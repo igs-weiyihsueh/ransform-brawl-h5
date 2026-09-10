@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveTowerMessages, TOWER_MESSAGE_DEFAULTS } from '@/config/towerConfig';
 import { resolveTowerUi, TOWER_UI_DEFAULTS } from '@/config/towerConfig';
 import { resolveTowerIntro, TOWER_INTRO_DEFAULTS } from '@/config/towerConfig';
+import { resolveTowerRingParams } from '@/config/towerConfig';
 import { validateTower, TOWER_SCHEMA_VERSION } from '@/config/towerSchema';
 
 /**
@@ -87,6 +88,11 @@ describe('validateTower — 訊息欄（文字非字串擋、秒數負擋、\'\'
     expect(validateTower(withMsg({ eventTextDurationSec: -1 })).ok).toBe(false);
   });
 
+  it('★ ②vacuumRadiusPx（環真空帶半徑，選填 min0）：合法過 / 負擋', () => {
+    expect(validateTower(withMsg({ ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2, warningSec: 0.5, vacuumRadiusPx: 80 } })).ok).toBe(true);
+    expect(validateTower(withMsg({ ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2, warningSec: 0.5, vacuumRadiusPx: -5 } })).ok).toBe(false);
+  });
+
   it('★ D 塔血條 UI + E 獎勵：合法值過 / rewardTickets 負擋', () => {
     expect(validateTower(withMsg({ barWidthPx: 200, barHeightPx: 20, barOffsetYPx: -50, labelOffsetYPx: 0, rewardTickets: 0 })).ok).toBe(true);
     expect(validateTower(withMsg({ rewardTickets: -1 })).ok).toBe(false);
@@ -143,5 +149,28 @@ describe('resolveTowerIntro — B 開場演出逐欄 ??（中央聚集，0-nulli
     expect(r.spotlightRadiusPx).toBe(300);
     expect(r.maxWalkSec).toBe(5);
     expect(r.introFocusSec).toBe(TOWER_INTRO_DEFAULTS.introFocusSec);
+  });
+});
+
+describe('resolveTowerRingParams — ②真空帶 vacuumRadiusPx 帶出（?? baseRadiusPx，0 保留）', () => {
+  const baseRing = { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2, warningSec: 0.5 };
+
+  it('省略 vacuumRadiusPx → 沿用 baseRadiusPx', () => {
+    expect(resolveTowerRingParams({ ...baseRing }).vacuumRadiusPx).toBe(60);
+  });
+
+  it('有設 vacuumRadiusPx → 生效', () => {
+    expect(resolveTowerRingParams({ ...baseRing, vacuumRadiusPx: 120 }).vacuumRadiusPx).toBe(120);
+  });
+
+  it('★ vacuumRadiusPx=0 保留（?? 非 ||）', () => {
+    expect(resolveTowerRingParams({ ...baseRing, vacuumRadiusPx: 0 }).vacuumRadiusPx).toBe(0);
+  });
+
+  it('其餘環參數原樣帶出', () => {
+    const r = resolveTowerRingParams({ ...baseRing, vacuumRadiusPx: 90 });
+    expect(r.ringCount).toBe(3);
+    expect(r.baseRadiusPx).toBe(60);
+    expect(r.warningSec).toBe(0.5);
   });
 });

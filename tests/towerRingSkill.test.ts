@@ -9,6 +9,8 @@ import {
   resolveTowerPositions,
   defaultTowerPositions,
   DEFAULT_TOWER_RING_PARAMS,
+  effectiveInnerRadius,
+  MIN_HOLLOW_PX,
 } from '@/systems/towerRingSkill';
 
 describe('towerRingSkill — 魔尖塔依序固定環（★重做：一環接一環、非漣漪擴散）', () => {
@@ -32,6 +34,44 @@ describe('towerRingSkill — 魔尖塔依序固定環（★重做：一環接一
       const p = resolveTowerRingParams({ ringCount: 0, baseRadiusPx: 0 });
       expect(p.ringCount).toBe(DEFAULT_TOWER_RING_PARAMS.ringCount);
       expect(p.baseRadiusPx).toBe(0);
+    });
+    describe('②真空帶 vacuumRadiusPx（用戶可調；省略＝沿用 baseRadiusPx）', () => {
+      it('有給 vacuumRadiusPx → 採用（跟 baseRadiusPx 獨立）', () => {
+        const p = resolveTowerRingParams({ baseRadiusPx: 60, vacuumRadiusPx: 200 });
+        expect(p.vacuumRadiusPx).toBe(200);
+        expect(p.baseRadiusPx).toBe(60);
+      });
+      it('省略 vacuumRadiusPx → 沿用 baseRadiusPx', () => {
+        const p = resolveTowerRingParams({ baseRadiusPx: 75 });
+        expect(p.vacuumRadiusPx).toBe(75);
+      });
+      it('vacuumRadiusPx 0 合法（0-nullish，環從塔中心起）', () => {
+        const p = resolveTowerRingParams({ baseRadiusPx: 60, vacuumRadiusPx: 0 });
+        expect(p.vacuumRadiusPx).toBe(0);
+      });
+      it('vacuumRadiusPx 負 → 退回 baseRadiusPx', () => {
+        const p = resolveTowerRingParams({ baseRadiusPx: 90, vacuumRadiusPx: -10 });
+        expect(p.vacuumRadiusPx).toBe(90);
+      });
+    });
+    describe('★effectiveInnerRadius（變身-leader review 把關①：中空防退化下限）', () => {
+      it('正常 vacuumRadiusPx（大於下限）→ 直接採用（用戶調值生效）', () => {
+        // halfThickness 12 → 下限 12+30=42；vacuum 200 > 42 → 用 200
+        expect(effectiveInnerRadius(200, 12)).toBe(200);
+      });
+      it('vacuumRadiusPx 太小（<= 下限）→ 撐到下限（中空不退化）', () => {
+        // halfThickness 12 → 下限 42；vacuum 10 太小 → 撐到 42（內緣 42-12=30=MIN_HOLLOW_PX）
+        expect(effectiveInnerRadius(10, 12)).toBe(42);
+      });
+      it('vacuumRadiusPx=0（用戶設 0）→ 不退化到 0，撐到下限保留中空', () => {
+        expect(effectiveInnerRadius(0, 20)).toBe(20 + MIN_HOLLOW_PX);
+      });
+      it('內緣（effectiveBase - halfThickness）恆 >= MIN_HOLLOW_PX（中空保證）', () => {
+        for (const [v, h] of [[0, 5], [5, 40], [30, 30], [1000, 50]] as const) {
+          const eb = effectiveInnerRadius(v, h);
+          expect(eb - h).toBeGreaterThanOrEqual(MIN_HOLLOW_PX);
+        }
+      });
     });
   });
 

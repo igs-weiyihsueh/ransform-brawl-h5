@@ -158,6 +158,7 @@ export function validateTower(json: unknown): ValidateTowerResult {
       checkNum(ring, 'ringThicknessPx', rl, errors, { min: 0 });
       checkNum(ring, 'energyCost', rl, errors, { min: 0 });
       checkNum(ring, 'warningSec', rl, errors, { min: 0 }); // C9：環預警秒數
+      checkNumOptional(ring, 'vacuumRadiusPx', rl, errors, { min: 0 }); // ②真空帶半徑（選填）
     }
   }
 

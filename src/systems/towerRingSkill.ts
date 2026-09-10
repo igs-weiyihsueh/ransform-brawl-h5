@@ -33,6 +33,8 @@ export interface TowerRingRuntimeParams {
   energyCost: number;
   /** C9：每環進入 active（判定+炸）前的紅圈預警秒數（>=0；0＝無預警立即 active）。 */
   warningSec: number;
+  /** ②真空帶半徑（px，>=0）：魂力環最內圈安全區＝effectiveBase 基準（用戶可調）；省略＝沿用 baseRadiusPx。 */
+  vacuumRadiusPx: number;
 }
 
 export const DEFAULT_TOWER_RING_PARAMS: TowerRingRuntimeParams = {
@@ -43,6 +45,7 @@ export const DEFAULT_TOWER_RING_PARAMS: TowerRingRuntimeParams = {
   halfThicknessPx: 20,
   energyCost: 2,
   warningSec: 0.5,
+  vacuumRadiusPx: 90, // 省略＝沿用 baseRadiusPx（此預設同 baseRadiusPx）
 };
 
 /**
@@ -60,25 +63,43 @@ export function resolveTowerRingParams(
         ringThicknessPx?: number;
         energyCost?: number;
         warningSec?: number;
+        vacuumRadiusPx?: number;
       }
     | null
     | undefined,
 ): TowerRingRuntimeParams {
   const d = DEFAULT_TOWER_RING_PARAMS;
+  const baseRadiusPx = ring?.baseRadiusPx != null && ring.baseRadiusPx >= 0 ? ring.baseRadiusPx : d.baseRadiusPx;
   return {
     ringCount: ring?.ringCount != null && ring.ringCount >= 1 ? Math.floor(ring.ringCount) : d.ringCount,
-    baseRadiusPx: ring?.baseRadiusPx != null && ring.baseRadiusPx >= 0 ? ring.baseRadiusPx : d.baseRadiusPx,
+    baseRadiusPx,
     radiusStepPx: ring?.radiusStepPx != null && ring.radiusStepPx >= 0 ? ring.radiusStepPx : d.radiusStepPx,
     ringIntervalSec: ring?.ringIntervalSec != null && ring.ringIntervalSec > 0 ? ring.ringIntervalSec : d.ringIntervalSec,
     halfThicknessPx: ring?.ringThicknessPx != null && ring.ringThicknessPx > 0 ? ring.ringThicknessPx / 2 : d.halfThicknessPx,
     energyCost: ring?.energyCost != null && ring.energyCost >= 0 ? ring.energyCost : d.energyCost,
     warningSec: ring?.warningSec != null && ring.warningSec >= 0 ? ring.warningSec : d.warningSec,
+    // ②真空帶：用戶可調；省略＝沿用 baseRadiusPx（波騎欄位約定）。0-nullish 安全（可 0＝環從塔中心起）。
+    vacuumRadiusPx: ring?.vacuumRadiusPx != null && ring.vacuumRadiusPx >= 0 ? ring.vacuumRadiusPx : baseRadiusPx,
   };
 }
 
 /** 第 N 環（N 從 0 起）的固定半徑（px）。 */
 export function ringRadiusForIndex(index: number, params: TowerRingRuntimeParams): number {
   return params.baseRadiusPx + index * params.radiusStepPx;
+}
+
+/** 中空防退化最小半徑（真空帶內緣至少留這麼大，別被 vacuumRadiusPx 設太小導致中心變判定區、中空消失）。 */
+export const MIN_HOLLOW_PX = 30;
+
+/**
+ * ★真空帶有效內圈半徑（最內環 index 0 半徑；變身-leader review 把關①：中空別退化）。
+ * effectiveBase = max(vacuumRadiusPx, halfThicknessPx + MIN_HOLLOW_PX)。
+ * 若 vacuumRadiusPx 太小(<= halfThickness+玩家半徑)，annulus 判定帶會蓋住中心 d≈0→中空消失；
+ * 下限保證內緣(effectiveBase - halfThickness) >= MIN_HOLLOW_PX 的中空。此下限只在極小值時介入，不蓋過正常調值。
+ * VFX 半徑與判定半徑都用此回傳（同一個 effectiveBase）＝視覺環=判定環，不會不一致。
+ */
+export function effectiveInnerRadius(vacuumRadiusPx: number, halfThicknessPx: number): number {
+  return Math.max(vacuumRadiusPx, halfThicknessPx + MIN_HOLLOW_PX);
 }
 
 /**
