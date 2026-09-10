@@ -31,6 +31,14 @@ import { getResolvedHitFeel } from '@/config/hitFeelSchema';
 import { ENTRANCE_TRANSFORM } from '@/systems/entranceTransformMath';
 
 /**
+ * ★塔專屬「碰撞半徑」預設（省略 preset.towerCollisionRadiusPx 時 game-side 走此，非沿用怪 ENEMY_BODY_RADIUS_PX×scale）。
+ * 變身-leader 定案：塔是「立地結構」語意 ≠ 怪，該有塔自己的預設；且 (乙) 全遊戲貼地圓盤後縱深有效擋距 = 半徑×GROUND_SQUASH_Y(0.5)，
+ * 塔若沿用怪半徑 67.5 → 縱深僅 ~34px「扁扁一條、不像塔基實擋」＝沒填欄位就微妙壞掉的 footgun。
+ * 110 為 headed 實測值（縱深 ~55px 才像塔基有感實擋，量出來非拍腦袋）。仍完全可被 preset/用戶 towerCollisionRadiusPx 覆寫。
+ */
+export const TOWER_DEFAULT_COLLISION_RADIUS_PX = 110;
+
+/**
  * hitFeel 表演介面（Enemy 只依賴這幾個方法，避免對 EffectSystem 的循環相依）。
  * 由 EnemySpawner 注入 ctx.effects（實作在 EffectSystem）。
  */
@@ -676,12 +684,15 @@ export class Enemy implements Hittable {
   }
 
   /**
-   * ★塔碰撞圓圓心（修「下方特別大」）：塔 origin(0.5,1.0) 腳底→sprite.y 是腳底，碰撞正圓若以腳底為心、塔往上長
-   * →圓下半露腳底下空地＝下方特別大。改用「塔視覺中心」（getTowerRingCenter，腳底往上半高到塔身中央，比照雕像
-   * origin 0.5,0.5 圓心在中心）＝上下對稱。再加 towerCollisionOffset（用戶微調）。非塔不用此、走 getHitCenter。
+   * ★塔碰撞圓圓心（變身-leader 定案 A：圓心基準改「腳底貼地點」getTowerRingGroundCenter，Y=腳底）：
+   * 原用 getTowerRingCenter（塔身中央 Y=frame 幾何正中）＝素材頭重腳輕時圓心浮在塔身中上、跟玩家腳底判定
+   * + (乙) 貼地圓盤對不上（塔身可穿、塔基下方路被卡）。改腳底後——★塔的 C7 環狀技(EnemySpawner 用
+   * getTowerRingGroundCenter)、碰撞圈、(乙) 全遊戲貼地圓盤三者統一到同一「腳底貼地點」，語意一致：
+   * 塔＝腳底一圈貼地擋、上方塔身可穿（貼地圓盤俯視無高度、塔身上半視覺重疊為正確不可避）。
+   * 再加 towerCollisionOffset（用戶微調，如需把圈往塔基視覺上移）。非塔不用此、走 getHitCenter。
    */
   getTowerCollisionCenter(): Vec2 {
-    const c = this.getTowerRingCenter(); // 塔視覺中心（塔身中央）
+    const c = this.getTowerRingGroundCenter(); // ★腳底貼地點（跟 C7 環同源、跟 (乙) 全場貼地一致）
     return { x: c.x + this.towerCollisionOffset.x, y: c.y + this.towerCollisionOffset.y };
   }
 

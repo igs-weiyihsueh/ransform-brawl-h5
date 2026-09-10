@@ -200,11 +200,14 @@ export class UISystem implements GameSystem {
         this.bottomPanel.setDash(i, charges, max, cd);
       }
       // 進場 gate（用戶指定）：衝刺圖示要角色登場動畫完成後才顯示。
-      // 進場完成 = 非待機 且 非進場中（isEntering 落地當幀轉 false）。與頭上 UI 待機隔離同範式。
+      // 進場完成 = 非待機 且 非進場中 且 非變身浮起（isEntering 落地當幀轉 false）。與頭上 UI 待機隔離同範式。
+      // ★bug 修：漏了變身浮起態 isTransformFloating——按 C 浮起(離待機、未進場)時衝刺圖示誤顯、進場中隱、落地又現。
+      //   加排除 floatingP→浮起全程隱藏，真正上場（落地）才顯，跟待機/進場一致。純顯示邏輯只讀不回寫。
       const p = players[i];
       const waitingP = typeof p.isWaiting === 'function' && p.isWaiting();
       const enteringP = typeof p.isEntering === 'function' && p.isEntering();
-      this.bottomPanel.setDashVisible(i, !waitingP && !enteringP);
+      const floatingP = typeof p.isTransformFloating === 'function' && p.isTransformFloating();
+      this.bottomPanel.setDashVisible(i, !waitingP && !enteringP && !floatingP);
     }
   }
 

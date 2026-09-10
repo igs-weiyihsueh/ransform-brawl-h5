@@ -3,6 +3,7 @@ import { CHARACTERS } from '@/config/animationConfig';
 import { chestChargeForResolved, getResolvedChest } from '@/config/chestSchema';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
 import { resolveTowerPositions } from '@/systems/towerRingSkill';
+import { TOWER_DEFAULT_COLLISION_RADIUS_PX } from '@/entities/Enemy';
 import { resolveTowerIntro, resolveTowerUi, resolveTowerMessages } from '@/config/towerConfig';
 import { TowerIntroSequence } from '@/systems/TowerIntroSequence';
 import { HERO_ROSTER, pickHero } from '@/config/heroRoster';
@@ -294,6 +295,10 @@ export class GameScene extends Phaser.Scene {
           const t = spawner.spawnTower(positions[i].x, positions[i].y, preset.towerHp, ring, scale);
           if (towerCollisionRadiusPx != null && towerCollisionRadiusPx >= 0) {
             t.setTowerCollisionRadius(towerCollisionRadiusPx); // ★真空帶：覆寫塔碰撞半徑，讓角色能貼近+可調（正式型別）
+          } else {
+            // ★省略 towerCollisionRadiusPx → 走塔專屬預設 110（非沿用怪 67.5，見 TOWER_DEFAULT_COLLISION_RADIUS_PX 註）。
+            //   (乙) 貼地圓盤後縱深擋距=半徑×0.5，塔沿用怪 67.5 縱深僅~34 太薄不像塔基實擋＝footgun；塔立地結構該有自己預設。
+            t.setTowerCollisionRadius(TOWER_DEFAULT_COLLISION_RADIUS_PX);
           }
           // ★碰撞圓圓心偏移（用戶微調圓心位置）：省略＝0（正對塔視覺中心）。
           if (preset.towerCollisionOffsetXPx != null || preset.towerCollisionOffsetYPx != null) {

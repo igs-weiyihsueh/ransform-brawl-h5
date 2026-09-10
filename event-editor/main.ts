@@ -530,13 +530,15 @@ function twRender(): void {
     const natH = twSpireLoaded ? twSpireRef.naturalHeight : 180;
     const towerH = natH * scale; // 顯示高（場景 px）
     const towerW = natW * scale;
-    // 放大比例 sc：讓 max(塔高, 碰撞圓直徑) 約佔畫布 70%。
-    const extent = Math.max(towerH, colR * 2 + Math.abs(p.towerCollisionOffsetYPx ?? 0) * 2, towerW);
+    // 放大比例 sc：讓整體內容（塔高 + 腳底貼地圓盤下緣，圓盤在腳底往下探 colR×squash）約佔畫布 70%。
+    const diskHalfY = colR * GROUND_SQUASH + Math.abs(p.towerCollisionOffsetYPx ?? 0) * GROUND_SQUASH;
+    const contentH = towerH + diskHalfY; // 塔頂→腳底 + 圓盤下半（腳底以下）
+    const extent = Math.max(contentH, colR * 2 + Math.abs(p.towerCollisionOffsetXPx ?? 0) * 2, towerW);
     const sc = (Math.min(W, H) * 0.7) / Math.max(1, extent);
-    // 版面：塔視覺中心置於畫布中央；腳底 = 中心 + 半個塔高。
+    // 版面：把「塔頂→圓盤下緣」整體垂直置中。腳底 footY 使內容置中：footY = 畫布中央 + (內容中心到腳底的距離)。
     const centerX = W / 2;
-    const centerY = H / 2;
-    const footY = centerY + (towerH / 2) * sc; // origin 1.0 → sprite 底邊在腳底
+    // 內容垂直範圍：top = footY - towerH*sc，bottom = footY + diskHalfY*sc；令其中點 = H/2。
+    const footY = H / 2 + (towerH * sc - diskHalfY * sc) / 2;
     // 畫真實塔立繪（底部錨點：x 置中、底邊在 footY）。
     if (twSpireLoaded) {
       const dw = towerW * sc, dh = towerH * sc;
@@ -546,10 +548,11 @@ function twRender(): void {
       ctx.fillStyle = '#3a3a5c';
       ctx.fillRect(centerX - (towerW * sc) / 2, footY - towerH * sc, towerW * sc, towerH * sc);
     }
-    // ★碰撞圈（貼地橢圓，跟遊戲貼地圓盤 1:1）：圓心＝塔視覺中心(centerX,centerY) + offset，半徑 colR。
-    //   (乙) 後全遊戲碰撞改貼地圓盤（判定圓對圓、視覺 GROUND_SQUASH_Y=0.5 壓扁橢圓）→預覽同步壓扁畫。
+    // ★碰撞圈（貼地橢圓，跟遊戲腳底貼地圓盤 1:1）：圓心＝**塔腳底貼地點**(centerX, footY) + offset，半徑 colR。
+    //   定案（用戶+變身-leader review）：game getTowerCollisionCenter 圓心從塔身正中改 getTowerRingGroundCenter 腳底貼地
+    //   （跟(乙)貼地圓盤+C7 環狀技統一）→預覽圓心 Y 同步用腳底 footY（非塔身中央 centerY），否則所見非所得。
     const ccx = centerX + (p.towerCollisionOffsetXPx ?? 0) * sc;
-    const ccy = centerY + (p.towerCollisionOffsetYPx ?? 0) * sc * GROUND_SQUASH; // offset Y 同步貼地壓扁
+    const ccy = footY + (p.towerCollisionOffsetYPx ?? 0) * sc * GROUND_SQUASH; // 圓心 Y 基準＝腳底貼地；offset Y 同步貼地壓扁
     ctx.save();
     ctx.strokeStyle = 'rgba(255,170,60,0.95)'; ctx.setLineDash([5, 4]); ctx.lineWidth = 2;
     ctx.beginPath(); ctx.ellipse(ccx, ccy, colR * sc, colR * sc * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
@@ -561,7 +564,7 @@ function twRender(): void {
     ctx.moveTo(ccx, ccy - 6); ctx.lineTo(ccx, ccy + 6); ctx.stroke();
     ctx.restore();
     ctx.fillStyle = '#9a9ab5'; ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(`單塔放大校對（1:1 對遊戲）｜塔 ${idx + 1}/${p.towerCount}｜碰撞圈 ${colR}px（貼地橢圓，圓心＝塔視覺中心＋偏移 ${p.towerCollisionOffsetXPx ?? 0},${p.towerCollisionOffsetYPx ?? 0}）｜塔 ×${scale.toFixed(1)}`, 8, H - 8);
+    ctx.fillText(`單塔放大校對（1:1 對遊戲）｜塔 ${idx + 1}/${p.towerCount}｜碰撞圈 ${colR}px（貼地橢圓，圓心＝塔腳底貼地＋偏移 ${p.towerCollisionOffsetXPx ?? 0},${p.towerCollisionOffsetYPx ?? 0}）｜塔 ×${scale.toFixed(1)}`, 8, H - 8);
     return;
   }
 
