@@ -492,7 +492,9 @@ export class PlayerControlSystem implements GameSystem {
     const bodies: ContactBody[] = [self];
     for (const e of this.ctx.getEnemies()) {
       if (e.isDead() || e.isGrabber()) continue;
-      const ec = e.getHitCenter();
+      // ★塔碰撞圓圓心用「塔視覺中心+offset」（修下方特別大：塔 origin 腳底，圓心對塔身中央才上下對稱，比照雕像）；
+      //   非塔仍用 getHitCenter（不動其他怪）。
+      const ec = e.isTower() ? e.getTowerCollisionCenter() : e.getHitCenter();
       const r = e.getBodyRadius();
       bodies.push({ id: `enemy${e.id}`, x: ec.x, y: ec.y, radius: r, mass: r, canBePushed: !e.isImmovable() });
     }

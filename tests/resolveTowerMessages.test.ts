@@ -99,6 +99,12 @@ describe('validateTower — 訊息欄（文字非字串擋、秒數負擋、\'\'
     expect(validateTower(withMsg({ towerCollisionRadiusPx: -1 })).ok).toBe(false);
   });
 
+  it('★ towerCollisionOffsetX/YPx（碰撞圓圓心偏移，選填可負）：正/負/0 皆合法', () => {
+    expect(validateTower(withMsg({ towerCollisionOffsetXPx: 30, towerCollisionOffsetYPx: -20 })).ok).toBe(true);
+    expect(validateTower(withMsg({ towerCollisionOffsetXPx: 0, towerCollisionOffsetYPx: 0 })).ok).toBe(true);
+    expect(validateTower(withMsg({ towerCollisionOffsetXPx: -100 })).ok).toBe(true);
+  });
+
   it('★ D 塔血條 UI + E 獎勵：合法值過 / rewardTickets 負擋', () => {
     expect(validateTower(withMsg({ barWidthPx: 200, barHeightPx: 20, barOffsetYPx: -50, labelOffsetYPx: 0, rewardTickets: 0 })).ok).toBe(true);
     expect(validateTower(withMsg({ rewardTickets: -1 })).ok).toBe(false);

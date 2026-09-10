@@ -107,6 +107,8 @@ export function validateTower(json: unknown): ValidateTowerResult {
     checkNum(p, 'towerHp', label, errors, { min: 1 });
     checkNumOptional(p, 'towerScale', label, errors, { gt: 0 }); // A3：塔縮放，若提供須 >0
     checkNumOptional(p, 'towerCollisionRadiusPx', label, errors, { min: 0 }); // ★真空帶＝塔 body 碰撞半徑（選填 >=0）
+    checkNumOptional(p, 'towerCollisionOffsetXPx', label, errors); // ★碰撞圓圓心偏移 X（可負）
+    checkNumOptional(p, 'towerCollisionOffsetYPx', label, errors); // ★碰撞圓圓心偏移 Y（可負）
     // A2：塔位置（選填陣列 of {x,y}）；長度可 != towerCount（game-side 補預設）。
     if (p.positions !== undefined) {
       if (!Array.isArray(p.positions)) {

@@ -383,6 +383,8 @@ function twBuildInspector(): void {
   insp.appendChild(numberRow('塔大小 towerScale (×)', p.towerScale ?? 1, (v) => { p.towerScale = v; }, { min: 0.2, max: 4, step: 0.1 }, on));
   // ★真空帶＝塔 body 碰撞半徑（角色/怪能貼多近塔）；≠魂力環內圈半徑（那是環狀攻擊、下方 ringSkill）。省略＝現行預設(~45×scale)。
   insp.appendChild(numberRow('真空帶半徑（碰撞距離）towerCollisionRadiusPx (px)', p.towerCollisionRadiusPx ?? 45, (v) => { p.towerCollisionRadiusPx = v; }, { min: 0, max: 400, step: 5 }, on));
+  insp.appendChild(numberRow('　碰撞圓偏移 X towerCollisionOffsetXPx (px)', p.towerCollisionOffsetXPx ?? 0, (v) => { p.towerCollisionOffsetXPx = v; }, { min: -300, max: 300, step: 2 }, on));
+  insp.appendChild(numberRow('　碰撞圓偏移 Y towerCollisionOffsetYPx (px)', p.towerCollisionOffsetYPx ?? 0, (v) => { p.towerCollisionOffsetYPx = v; }, { min: -300, max: 300, step: 2 }, on));
   // 登場訊息（照搬守護波兩段：事件宣告大字 + 提示 + 顯示時間）。
   const msgTitle = document.createElement('div');
   msgTitle.className = 'section-title'; msgTitle.style.marginTop = '12px';
@@ -429,6 +431,21 @@ function twBuildInspector(): void {
   posBtn.disabled = !(p.positions && p.positions.length > 0);
   posBtn.addEventListener('click', () => { delete p.positions; twBuildInspector(); twRender(); });
   insp.appendChild(posBtn);
+
+  // ①預覽切換：多塔佈局 ↔ 單塔放大校對（塞太多/多塔時每座太小→放大單塔看清碰撞圓/魂力環）。
+  const soloRow = document.createElement('div');
+  soloRow.className = 'row'; soloRow.style.marginTop = '8px';
+  const soloBtn = document.createElement('button');
+  soloBtn.textContent = twSoloView ? '預覽：單塔放大校對（點回多塔佈局）' : '預覽：多塔佈局（點切單塔放大校對）';
+  soloBtn.addEventListener('click', () => { twSoloView = !twSoloView; twBuildInspector(); twRender(); });
+  soloRow.appendChild(soloBtn);
+  if (twSoloView && p.towerCount > 1) {
+    const nextBtn = document.createElement('button');
+    nextBtn.textContent = `校對第 ${Math.min(twSoloIndex, p.towerCount - 1) + 1}/${p.towerCount} 座（點下一座）`;
+    nextBtn.addEventListener('click', () => { twSoloIndex = (twSoloIndex + 1) % p.towerCount; twBuildInspector(); twRender(); });
+    soloRow.appendChild(nextBtn);
+  }
+  insp.appendChild(soloRow);
 }
 function twRefreshAll(): void { twBuildSelect(); twBuildInspector(); twRender(); }
 
@@ -459,46 +476,68 @@ function twMapping(cv: HTMLCanvasElement) {
 }
 
 let twDragIndex = -1; // 目前拖曳的塔索引（-1=無）
+let twSoloView = false; // ①單塔放大校對：true=只顯一座塔放大置中（校對碰撞圓/魂力環）；false=多塔佈局（現況）
+let twSoloIndex = 0; // 單塔校對模式顯示第幾座（0-based）
 
 function twRender(): void {
   const cv = $<HTMLCanvasElement>('tw-preview'); const ctx = cv.getContext('2d'); if (!ctx) return;
   const W = cv.width, H = cv.height; ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#10101c'; ctx.fillRect(0, 0, W, H);
   const p = twPreset(); if (!p) return;
-  const m = twMapping(cv);
-  // 場景參考框（1920×1080 完整場景）。
-  ctx.strokeStyle = '#3a3a5c'; ctx.lineWidth = 1;
-  ctx.strokeRect(m.ox, m.oy, SCENE_W * m.s, SCENE_H * m.s);
-  // 塔位標記。
-  const positions = twEffectivePositions(p);
-  const scale = p.towerScale ?? 1;
-  // Bug5：魂力環同心圓預覽——每座塔位疊畫 ringCount 圈，各圈半徑 = baseRadiusPx + N*radiusStepPx（貼地扁圓）。
-  //   純編輯器視覺（runtime 環定位已對），讓用戶調 baseRadius/step/count 看得到環離塔多遠+幾圈。
   const r = p.ringSkill;
+  const scale = p.towerScale ?? 1;
   const GROUND_SQUASH = 0.5; // 貼地觀感：Y 壓扁（同 runtime 貼地橢圓感）
-  positions.forEach((pos) => {
-    const c = m.toCv(pos.x, pos.y);
+
+  // 一座塔的裝飾圈（魂力環同心圓紫 + 魂力環內圈綠虛線 + 碰撞圓橘虛線含 offset）。sc＝場景 px→canvas px 比例。
+  const drawTowerDecorations = (c: { x: number; y: number }, sc: number): void => {
     for (let n = 0; n < Math.max(1, r.ringCount); n += 1) {
-      const radiusScene = r.baseRadiusPx + n * r.radiusStepPx;
-      const rx = radiusScene * m.s;
-      const ry = rx * GROUND_SQUASH;
+      const rx = (r.baseRadiusPx + n * r.radiusStepPx) * sc;
       ctx.strokeStyle = 'rgba(140,120,255,0.65)'; // 魂力環紫
-      ctx.lineWidth = Math.max(1, (r.ringThicknessPx * m.s) || 1);
-      ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = Math.max(1, (r.ringThicknessPx * sc) || 1);
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, rx * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
     }
     // 魂力環內圈（ring.vacuumRadiusPx，環狀攻擊安全區）：綠色虛線圈。
-    const vac = (r.vacuumRadiusPx ?? r.baseRadiusPx) * m.s;
+    const vac = (r.vacuumRadiusPx ?? r.baseRadiusPx) * sc;
     ctx.save();
     ctx.strokeStyle = 'rgba(89,217,142,0.8)'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.ellipse(c.x, c.y, vac, vac * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
-    // ★真空帶＝塔 body 碰撞半徑（towerCollisionRadiusPx，角色/怪貼不進此半徑）：橘色虛線圈，跟環內圈分色。
-    const col = (p.towerCollisionRadiusPx ?? 45) * m.s;
+    // ★真空帶＝塔 body 碰撞半徑（towerCollisionRadiusPx，角色/怪貼不進此半徑）：橘色虛線圈，圓心含 offset。
+    const col = (p.towerCollisionRadiusPx ?? 45) * sc;
+    const offX = (p.towerCollisionOffsetXPx ?? 0) * sc;
+    const offY = (p.towerCollisionOffsetYPx ?? 0) * sc * GROUND_SQUASH;
     ctx.save();
     ctx.strokeStyle = 'rgba(255,170,60,0.9)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.ellipse(c.x, c.y, col, col * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(c.x + offX, c.y + offY, col, col * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
-  });
+  };
+
+  if (twSoloView) {
+    // ①單塔放大校對：只顯一座塔、放大置中，畫其碰撞圓+魂力環，方便校對相對塔身位置/大小。
+    const idx = Math.min(twSoloIndex, Math.max(0, p.towerCount - 1));
+    // 放大比例：讓最外圈（魂力環最外 or 碰撞圓，取大者）約佔畫布 40%。
+    const outer = Math.max(r.baseRadiusPx + Math.max(0, r.ringCount - 1) * r.radiusStepPx, (p.towerCollisionRadiusPx ?? 45));
+    const sc = (Math.min(W, H) * 0.4) / Math.max(1, outer);
+    const c = { x: W / 2, y: H / 2 };
+    drawTowerDecorations(c, sc);
+    // 塔身標記（放大）。
+    const mk = 10 * scale;
+    ctx.fillStyle = '#59d98e';
+    ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(6, mk), 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#e6e6f0'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = '#e6e6f0'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(`塔 ${idx + 1}`, c.x, c.y - Math.max(6, mk) - 4);
+    ctx.fillStyle = '#9a9ab5'; ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(`單塔放大校對｜塔 ${idx + 1}/${p.towerCount}｜碰撞圓橘 ${(p.towerCollisionRadiusPx ?? 45)}px(偏移 ${p.towerCollisionOffsetXPx ?? 0},${p.towerCollisionOffsetYPx ?? 0})｜魂力環紫/內圈綠`, 8, H - 8);
+    return;
+  }
+
+  const m = twMapping(cv);
+  // 場景參考框（1920×1080 完整場景）。
+  ctx.strokeStyle = '#3a3a5c'; ctx.lineWidth = 1;
+  ctx.strokeRect(m.ox, m.oy, SCENE_W * m.s, SCENE_H * m.s);
+  const positions = twEffectivePositions(p);
+  positions.forEach((pos) => drawTowerDecorations(m.toCv(pos.x, pos.y), m.s));
   positions.forEach((pos, i) => {
     const c = m.toCv(pos.x, pos.y);
     const isCustom = !!p.positions?.[i];
@@ -517,6 +556,7 @@ function twRender(): void {
 function twBindDrag(): void {
   const cv = $<HTMLCanvasElement>('tw-preview');
   const pick = (ev: PointerEvent): number => {
+    if (twSoloView) return -1; // 單塔放大校對模式不拖曳位置（回多塔佈局才拖）
     const rect = cv.getBoundingClientRect();
     const px = (ev.clientX - rect.left) * (cv.width / rect.width);
     const py = (ev.clientY - rect.top) * (cv.height / rect.height);

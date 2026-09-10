@@ -58,6 +58,12 @@ export interface TowerPreset {
    */
   towerCollisionRadiusPx?: number;
   /**
+   * ★碰撞圓圓心相對塔中心的偏移（像素；選填，省略＝0＝正對塔中心）。用戶微調碰撞圓位置用。
+   * 征騎 game-side 碰撞圓圓心＝塔視覺中心 + (towerCollisionOffsetXPx, towerCollisionOffsetYPx)。魂力環那套不受影響。
+   */
+  towerCollisionOffsetXPx?: number;
+  towerCollisionOffsetYPx?: number;
+  /**
    * A2：每座塔的位置（場景座標，1920×1080 基準；editor 可滑鼠拖曳編輯疊在場景底圖上）。
    * 省略／長度不足 towerCount → game-side 用預設環形/散佈補足。長度可 != towerCount（前 N 座用設定、其餘預設）。
    */

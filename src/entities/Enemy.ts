@@ -112,6 +112,8 @@ export class Enemy implements Hittable {
     vacuumRadiusPx?: number;
   } | null = null;
   private radiusPx: number; // body 碰撞/推擠半徑（真空帶）；塔可由 setTowerCollisionRadius 覆寫（故非 readonly）
+  /** ★塔碰撞圓圓心偏移（towerCollisionOffsetXPx/YPx，用戶微調）；碰撞圓心＝塔視覺中心 + 此 offset。 */
+  private towerCollisionOffset: Vec2 = { x: 0, y: 0 };
 
   private state: EnemyState = 'chase';
   private timer = 0; // 當前狀態的計時（charge/cooldown/damaged 用）
@@ -660,6 +662,27 @@ export class Enemy implements Hittable {
   setTowerCollisionRadius(px: number): void {
     if (!Number.isFinite(px) || px < 0) return;
     this.radiusPx = px;
+  }
+
+  /**
+   * ★塔碰撞圓圓心偏移（towerCollisionOffsetXPx/YPx，用戶微調圓心位置）：碰撞圓圓心＝塔視覺中心 + (offsetX, offsetY)。
+   * 省略＝0（正對塔視覺中心）。spawnTower 傳入。
+   */
+  setTowerCollisionOffset(offsetXPx: number, offsetYPx: number): void {
+    this.towerCollisionOffset = {
+      x: Number.isFinite(offsetXPx) ? offsetXPx : 0,
+      y: Number.isFinite(offsetYPx) ? offsetYPx : 0,
+    };
+  }
+
+  /**
+   * ★塔碰撞圓圓心（修「下方特別大」）：塔 origin(0.5,1.0) 腳底→sprite.y 是腳底，碰撞正圓若以腳底為心、塔往上長
+   * →圓下半露腳底下空地＝下方特別大。改用「塔視覺中心」（getTowerRingCenter，腳底往上半高到塔身中央，比照雕像
+   * origin 0.5,0.5 圓心在中心）＝上下對稱。再加 towerCollisionOffset（用戶微調）。非塔不用此、走 getHitCenter。
+   */
+  getTowerCollisionCenter(): Vec2 {
+    const c = this.getTowerRingCenter(); // 塔視覺中心（塔身中央）
+    return { x: c.x + this.towerCollisionOffset.x, y: c.y + this.towerCollisionOffset.y };
   }
 
   /**
