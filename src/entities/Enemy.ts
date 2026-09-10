@@ -120,8 +120,14 @@ export class Enemy implements Hittable {
     vacuumRadiusPx?: number;
   } | null = null;
   private radiusPx: number; // body 碰撞/推擠半徑（真空帶）；塔可由 setTowerCollisionRadius 覆寫（故非 readonly）
-  /** ★塔碰撞圓圓心偏移（towerCollisionOffsetXPx/YPx，用戶微調）；碰撞圓心＝塔視覺中心 + 此 offset。 */
+  /** ★塔碰撞圓圓心偏移（towerCollisionOffsetXPx/YPx，用戶微調）；碰撞圓心＝塔視覺塔基底 + 此 offset。 */
   private towerCollisionOffset: Vec2 = { x: 0, y: 0 };
+  /**
+   * ★塔「視覺塔基底」screen Y（不透明素材底邊，非 frame 腳底錨點）——spawn 時讀 alpha bounds 算一次 cache（非每幀）。
+   * 塔素材底部常有透明 padding，frame 腳底錨點(sp.y)落在 padding 底＝比視覺塔基低 bottomPad×scale；
+   * 碰撞/環圓心用此才貼「塔真正站的地面」。null＝未算（fallback 走 getTowerRingGroundCenter 腳底）。
+   */
+  private towerVisualBaseY: number | null = null;
 
   private state: EnemyState = 'chase';
   private timer = 0; // 當前狀態的計時（charge/cooldown/damaged 用）
@@ -417,6 +423,49 @@ export class Enemy implements Hittable {
     if (this.isTower()) {
       this.anim.setStaticTexture('fx_tower_spire', 0.5, 1.0);
       this.anim.sprite.setScale(1.0);
+      this.computeTowerVisualBaseY(); // ★spawn 一次算「視覺塔基底」cache（讀 alpha bounds），供碰撞/環圓心貼視覺塔基
+    }
+  }
+
+  /**
+   * ★算「視覺塔基底」screen Y 並 cache 進 towerVisualBaseY（spawn 一次、非每幀 getImageData）：
+   * 讀塔素材不透明 alpha bounds 的底邊（opaqueMaxY），換算 = frameTop + opaqueMaxY/texH × displayHeight
+   * = 腳底錨點 − bottomPad×(displayHeight/texH)。塔素材底常有透明 padding，用此圓心才貼塔真正站的地面。
+   * ★fallback：texture 未載/讀不到/canvas 失敗/算出 NaN → towerVisualBaseY 留 null，getter 退回腳底 getTowerRingGroundCenter（不 NaN/不爆）。
+   */
+  private computeTowerVisualBaseY(): void {
+    this.towerVisualBaseY = null; // 預設 null＝fallback 腳底
+    try {
+      const sp = this.anim.sprite;
+      const scene = sp.scene;
+      const texKey = sp.texture?.key;
+      if (!texKey || !scene?.textures?.exists(texKey)) return; // texture 未載 → fallback
+      const src = scene.textures.get(texKey).getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+      const texW = (src as { width?: number }).width ?? 0;
+      const texH = (src as { height?: number }).height ?? 0;
+      if (texW <= 0 || texH <= 0) return;
+      const cv = document.createElement('canvas');
+      cv.width = texW; cv.height = texH;
+      const cx = cv.getContext('2d', { willReadFrequently: true });
+      if (!cx) return;
+      cx.drawImage(src as CanvasImageSource, 0, 0);
+      const data = cx.getImageData(0, 0, texW, texH).data;
+      const ALPHA = 16; // 視為不透明的 alpha 門檻
+      let opaqueMaxY = -1;
+      for (let y = texH - 1; y >= 0 && opaqueMaxY < 0; y -= 1) {
+        for (let x = 0; x < texW; x += 1) {
+          if (data[(y * texW + x) * 4 + 3] > ALPHA) { opaqueMaxY = y; break; }
+        }
+      }
+      if (opaqueMaxY < 0) return; // 全透明 → fallback
+      const originY = sp.originY ?? 1.0;
+      const dh = sp.displayHeight || 0;
+      if (dh <= 0) return;
+      const frameTop = sp.y - originY * dh; // origin 1.0→sp.y-dh；一般 origin 亦成立
+      const baseY = frameTop + (opaqueMaxY + 1) / texH * dh; // 不透明底邊對應 screen Y
+      if (Number.isFinite(baseY)) this.towerVisualBaseY = baseY;
+    } catch {
+      this.towerVisualBaseY = null; // 任何例外 → fallback 腳底，不爆
     }
   }
 
@@ -500,6 +549,18 @@ export class Enemy implements Hittable {
     const originY = sp.originY ?? 1.0;
     const h = sp.displayHeight || 0;
     return { x: sp.x, y: sp.y + (1 - originY) * h }; // origin 1.0 → sp.y（腳底）
+  }
+
+  /**
+   * ★塔「視覺塔基底」圓心（碰撞 + C7 環共用同源，變身-leader 定案修法 A）：
+   * = { x: sprite.x, y: towerVisualBaseY }（spawn 算好的不透明素材底邊 screen Y）。
+   * towerVisualBaseY 未算/fallback（texture 未載等）→ 退回 getTowerRingGroundCenter（腳底），不 NaN。
+   * ★語意：塔真正站的地面點（非 frame 腳底錨點在透明 padding 底、比視覺塔基低 bottomPad）。
+   */
+  getTowerVisualBaseCenter(): Vec2 {
+    const sp = this.anim.sprite;
+    if (this.towerVisualBaseY == null) return this.getTowerRingGroundCenter(); // fallback 腳底
+    return { x: sp.x, y: this.towerVisualBaseY };
   }
 
   /**
@@ -684,15 +745,17 @@ export class Enemy implements Hittable {
   }
 
   /**
-   * ★塔碰撞圓圓心（變身-leader 定案 A：圓心基準改「腳底貼地點」getTowerRingGroundCenter，Y=腳底）：
-   * 原用 getTowerRingCenter（塔身中央 Y=frame 幾何正中）＝素材頭重腳輕時圓心浮在塔身中上、跟玩家腳底判定
-   * + (乙) 貼地圓盤對不上（塔身可穿、塔基下方路被卡）。改腳底後——★塔的 C7 環狀技(EnemySpawner 用
-   * getTowerRingGroundCenter)、碰撞圈、(乙) 全遊戲貼地圓盤三者統一到同一「腳底貼地點」，語意一致：
-   * 塔＝腳底一圈貼地擋、上方塔身可穿（貼地圓盤俯視無高度、塔身上半視覺重疊為正確不可避）。
-   * 再加 towerCollisionOffset（用戶微調，如需把圈往塔基視覺上移）。非塔不用此、走 getHitCenter。
+   * ★塔碰撞圓圓心（變身-leader 定案修法 A：圓心基準改「視覺塔基底」getTowerVisualBaseCenter）：
+   * 前兩版（塔身中央 getTowerRingCenter→frame 腳底 getTowerRingGroundCenter）都對不上：塔素材底部有透明 padding、
+   * frame 腳底錨點落在 padding 底＝比視覺塔基低 ~bottomPad×scale→(乙)壓扁橢圓大半掉到塔下方路面（塔身穿得過、塔下方路擋）。
+   * 改讀 alpha 算的視覺塔基底＝塔真正站的地面→碰撞橢圓貼塔基、塔身佔位擋、塔下方路大幅改善。
+   * ★碰撞用視覺塔基底、C7 環維持腳底（EnemySpawner:453 仍 getTowerRingGroundCenter）——兩者刻意不同源：
+   *   大環(r60~150+)視覺基 vs 腳底差~22px＝<2% 肉眼無差、環貼地觀感不變，且環判定屬 a655c53d 契約、為 <2% 動它要重跑環 review 不划算；
+   *   碰撞小 footprint(r110) 22px 佔比大、是錯位主因故必須精準到視覺基底。（變身-leader ③定案認可此可辯護差異。）
+   * 再加 towerCollisionOffset（用戶微調）。非塔走 getHitCenter。
    */
   getTowerCollisionCenter(): Vec2 {
-    const c = this.getTowerRingGroundCenter(); // ★腳底貼地點（跟 C7 環同源、跟 (乙) 全場貼地一致）
+    const c = this.getTowerVisualBaseCenter(); // ★視覺塔基底（碰撞專用；環維持腳底 getTowerRingGroundCenter、刻意不同源見上）
     return { x: c.x + this.towerCollisionOffset.x, y: c.y + this.towerCollisionOffset.y };
   }
 

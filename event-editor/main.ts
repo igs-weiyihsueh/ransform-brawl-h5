@@ -382,7 +382,7 @@ function twBuildInspector(): void {
   insp.appendChild(numberRow('尖塔血量 towerHp', p.towerHp, (v) => { p.towerHp = v; }, { min: 1, max: 1000, step: 10 }, on));
   insp.appendChild(numberRow('塔大小 towerScale (×)', p.towerScale ?? 1, (v) => { p.towerScale = v; }, { min: 0.2, max: 4, step: 0.1 }, on));
   // ★真空帶＝塔 body 碰撞半徑（角色/怪能貼多近塔）；≠魂力環內圈半徑（那是環狀攻擊、下方 ringSkill）。省略＝現行預設(~45×scale)。
-  insp.appendChild(numberRow('真空帶半徑（碰撞距離）towerCollisionRadiusPx (px)', p.towerCollisionRadiusPx ?? 67.5, (v) => { p.towerCollisionRadiusPx = v; }, { min: 0, max: 400, step: 5 }, on));
+  insp.appendChild(numberRow('真空帶半徑（碰撞距離）towerCollisionRadiusPx (px)', p.towerCollisionRadiusPx ?? 110, (v) => { p.towerCollisionRadiusPx = v; }, { min: 0, max: 400, step: 5 }, on));
   insp.appendChild(numberRow('　碰撞圓偏移 X towerCollisionOffsetXPx (px)', p.towerCollisionOffsetXPx ?? 0, (v) => { p.towerCollisionOffsetXPx = v; }, { min: -300, max: 300, step: 2 }, on));
   insp.appendChild(numberRow('　碰撞圓偏移 Y towerCollisionOffsetYPx (px)', p.towerCollisionOffsetYPx ?? 0, (v) => { p.towerCollisionOffsetYPx = v; }, { min: -300, max: 300, step: 2 }, on));
   // 登場訊息（照搬守護波兩段：事件宣告大字 + 提示 + 顯示時間）。
@@ -478,13 +478,32 @@ function twMapping(cv: HTMLCanvasElement) {
 let twDragIndex = -1; // 目前拖曳的塔索引（-1=無）
 let twSoloView = false; // ①單塔放大校對：true=只顯一座塔放大置中（1:1 校對碰撞圓）；false=多塔佈局（現況）
 let twSoloIndex = 0; // 單塔校對模式顯示第幾座（0-based）
-// ★真實塔立繪（game-side setStaticTexture('fx_tower_spire', 0.5, 1.0)＝origin 底部錨點）：單塔校對畫真圖，碰撞圓 1:1 疊塔身中央。
+// ★真實塔立繪（game-side setStaticTexture('fx_tower_spire', 0.5, 1.0)＝origin 底部錨點）：單塔校對畫真圖，碰撞圈 1:1 疊塔視覺塔基。
 const twSpireRef = new Image();
 let twSpireLoaded = false;
-twSpireRef.addEventListener('load', () => { twSpireLoaded = true; twRender(); });
+// ★塔素材不透明底邊（opaqueMaxY，原生像素 0-based）：由底往上第一列有 alpha>16 的 y。跟 game-side getTowerVisualBaseCenter 同源。
+//   視覺塔基 Y = frameTop + (opaqueMaxY+1)/texH × displayHeight（直用 opaqueMaxY 少一次湊整誤差，照征騎 58fc024）。
+let twSpireOpaqueMaxY = -1; // -1＝未算/全透明 → fallback 腳底
+function twComputeSpireOpaqueMaxY(): void {
+  try {
+    const nw = twSpireRef.naturalWidth, nh = twSpireRef.naturalHeight;
+    if (!nw || !nh) { twSpireOpaqueMaxY = -1; return; }
+    const oc = document.createElement('canvas'); oc.width = nw; oc.height = nh;
+    const octx = oc.getContext('2d'); if (!octx) { twSpireOpaqueMaxY = -1; return; }
+    octx.drawImage(twSpireRef, 0, 0);
+    const data = octx.getImageData(0, 0, nw, nh).data;
+    twSpireOpaqueMaxY = -1;
+    outer: for (let y = nh - 1; y >= 0; y -= 1) {
+      for (let x = 0; x < nw; x += 1) {
+        if (data[(y * nw + x) * 4 + 3] > 16) { twSpireOpaqueMaxY = y; break outer; } // ★alpha>16（嚴格）同 game
+      }
+    }
+  } catch { twSpireOpaqueMaxY = -1; /* 讀不到 → fallback 腳底 */ }
+}
+twSpireRef.addEventListener('load', () => { twSpireLoaded = true; twComputeSpireOpaqueMaxY(); twRender(); });
 twSpireRef.src = '../assets/images/vfx/fx_tower_spire.png';
-// game-side 塔碰撞半徑省略時的預設＝ENEMY_BODY_RADIUS_PX(45) × PER_CHAR_SCALE['Enemy_Elite'](1.5)＝67.5（Enemy_Tower 沿用 elite scale）。
-const TOWER_DEFAULT_COLLISION_RADIUS_PX = 67.5;
+// game-side 塔碰撞半徑省略時的塔專屬預設＝110（TOWER_DEFAULT_COLLISION_RADIUS_PX，征騎 58fc024 確認）。
+const TOWER_DEFAULT_COLLISION_RADIUS_PX = 110;
 
 function twRender(): void {
   const cv = $<HTMLCanvasElement>('tw-preview'); const ctx = cv.getContext('2d'); if (!ctx) return;
@@ -509,7 +528,7 @@ function twRender(): void {
     ctx.strokeStyle = 'rgba(89,217,142,0.8)'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.ellipse(c.x, c.y, vac, vac * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
-    // ★真空帶＝塔 body 碰撞半徑（towerCollisionRadiusPx，省略＝67.5＝45×1.5 elite scale）：橘色虛線圈，圓心含 offset。
+    // ★真空帶＝塔 body 碰撞半徑（towerCollisionRadiusPx，省略＝110 塔專屬預設）：橘色虛線圈，圓心含 offset。
     const col = (p.towerCollisionRadiusPx ?? TOWER_DEFAULT_COLLISION_RADIUS_PX) * sc;
     const offX = (p.towerCollisionOffsetXPx ?? 0) * sc;
     const offY = (p.towerCollisionOffsetYPx ?? 0) * sc * GROUND_SQUASH;
@@ -520,9 +539,9 @@ function twRender(): void {
   };
 
   if (twSoloView) {
-    // ①單塔放大校對（1:1 對遊戲）：只畫真實塔立繪 + 碰撞圓（正圓，圓心對塔視覺中心+offset）；★不畫魂力環。
-    //   全照 game-side 真實值：圓心＝getTowerCollisionCenter（塔視覺中心+offset）、半徑＝towerCollisionRadiusPx??67.5、
-    //   塔立繪 fx_tower_spire origin(0.5,1.0) 底部錨點 × towerScale。編輯器看到的＝進遊戲看到的。
+    // ①單塔放大校對（1:1 對遊戲）：只畫真實塔立繪 + 碰撞圈（貼地橢圓，圓心對視覺塔基底+offset）；★不畫魂力環。
+    //   全照 game-side 58fc024 真實值：圓心＝getTowerVisualBaseCenter（塔素材 alpha 不透明底+offset）、
+    //   半徑＝towerCollisionRadiusPx??110、貼地壓扁 GROUND_SQUASH_Y、塔立繪 fx_tower_spire origin(0.5,1.0)×towerScale。
     const idx = Math.min(twSoloIndex, Math.max(0, p.towerCount - 1));
     const colR = p.towerCollisionRadiusPx ?? TOWER_DEFAULT_COLLISION_RADIUS_PX; // 場景 px
     // 塔立繪自然尺寸（載入後才有）→ 顯示尺寸 = 自然 × towerScale（場景 px，比照 game finalScale 觀感）。
@@ -548,11 +567,22 @@ function twRender(): void {
       ctx.fillStyle = '#3a3a5c';
       ctx.fillRect(centerX - (towerW * sc) / 2, footY - towerH * sc, towerW * sc, towerH * sc);
     }
-    // ★碰撞圈（貼地橢圓，跟遊戲腳底貼地圓盤 1:1）：圓心＝**塔腳底貼地點**(centerX, footY) + offset，半徑 colR。
-    //   定案（用戶+變身-leader review）：game getTowerCollisionCenter 圓心從塔身正中改 getTowerRingGroundCenter 腳底貼地
-    //   （跟(乙)貼地圓盤+C7 環狀技統一）→預覽圓心 Y 同步用腳底 footY（非塔身中央 centerY），否則所見非所得。
+    // ★碰撞圈（貼地橢圓，跟遊戲視覺塔基底貼地圓盤 1:1）：圓心＝**視覺塔基底**(centerX, visualBaseY) + offset，半徑 colR。
+    //   第三次精修定案（d910b8ef，用戶+變身-leader，game 58fc024）：圓心讀塔素材 alpha 不透明底（腳底錨點在
+    //   視覺塔基下方 ~22px 透明區，圈放腳底會掉塔下方路）。★同源公式（照征騎，直用 opaqueMaxY 少湊整誤差）：
+    //   frameTop = footY − displayHeight；visualBaseY = frameTop + (opaqueMaxY+1)/texH × displayHeight。
+    //   讀不到 alpha（opaqueMaxY<0/圖沒載）→ 退腳底 footY（同 game fallback getTowerRingGroundCenter）。
+    const displayH = towerH * sc; // 顯示高（canvas px）
+    const frameTop = footY - displayH;
+    const visualBaseY = (twSpireLoaded && twSpireOpaqueMaxY >= 0 && natH > 0)
+      ? frameTop + ((twSpireOpaqueMaxY + 1) / natH) * displayH
+      : footY; // fallback 腳底
     const ccx = centerX + (p.towerCollisionOffsetXPx ?? 0) * sc;
-    const ccy = footY + (p.towerCollisionOffsetYPx ?? 0) * sc * GROUND_SQUASH; // 圓心 Y 基準＝腳底貼地；offset Y 同步貼地壓扁
+    const ccy = visualBaseY + (p.towerCollisionOffsetYPx ?? 0) * sc * GROUND_SQUASH; // 圓心 Y 基準＝視覺塔基底；offset Y 同步貼地壓扁
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,170,60,0.95)'; ctx.setLineDash([5, 4]); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(ccx, ccy, colR * sc, colR * sc * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
     ctx.save();
     ctx.strokeStyle = 'rgba(255,170,60,0.95)'; ctx.setLineDash([5, 4]); ctx.lineWidth = 2;
     ctx.beginPath(); ctx.ellipse(ccx, ccy, colR * sc, colR * sc * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
@@ -564,7 +594,7 @@ function twRender(): void {
     ctx.moveTo(ccx, ccy - 6); ctx.lineTo(ccx, ccy + 6); ctx.stroke();
     ctx.restore();
     ctx.fillStyle = '#9a9ab5'; ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(`單塔放大校對（1:1 對遊戲）｜塔 ${idx + 1}/${p.towerCount}｜碰撞圈 ${colR}px（貼地橢圓，圓心＝塔腳底貼地＋偏移 ${p.towerCollisionOffsetXPx ?? 0},${p.towerCollisionOffsetYPx ?? 0}）｜塔 ×${scale.toFixed(1)}`, 8, H - 8);
+    ctx.fillText(`單塔放大校對（1:1 對遊戲）｜塔 ${idx + 1}/${p.towerCount}｜碰撞圈 ${colR}px（貼地橢圓，圓心＝視覺塔基底＋偏移 ${p.towerCollisionOffsetXPx ?? 0},${p.towerCollisionOffsetYPx ?? 0}）｜塔 ×${scale.toFixed(1)}`, 8, H - 8);
     return;
   }
 
