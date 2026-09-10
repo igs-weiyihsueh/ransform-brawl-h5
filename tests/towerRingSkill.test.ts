@@ -134,6 +134,30 @@ describe('towerRingSkill — 魔尖塔依序固定環（★重做：一環接一
     it('斜向距離（3-4-5）', () => {
       expect(ringHitsPlayer(tower, 100, half, { x: 60, y: 80 }, 5)).toBe(true); // d=100
     });
+    describe('★Bug4 橢圓化判定（squashY 對齊視覺貼地壓扁，上下對稱）', () => {
+      const sq = 0.5;
+      it('水平方向不受 squash 影響（dy=0）：環半徑 200 → x=200 命中', () => {
+        expect(ringHitsPlayer(tower, 200, half, { x: 200, y: 0 }, 20, sq)).toBe(true);
+      });
+      it('★垂直方向：正圓會誤判、橢圓化才對——玩家在塔正下方 y=200，環半徑 200', () => {
+        // 正圓(squashY=1)：d=200==ringRadius → 命中（但視覺橢圓下緣只到 200×0.5=100，看似安全＝上下不對稱 bug）
+        expect(ringHitsPlayer(tower, 200, half, { x: 0, y: 200 }, 20, 1)).toBe(true);
+        // 橢圓化(squashY=0.5)：dy'=200/0.5=400 → d=400 遠大於環 200 → 不命中（跟視覺一致：站遠了不該被打）
+        expect(ringHitsPlayer(tower, 200, half, { x: 0, y: 200 }, 20, sq)).toBe(false);
+      });
+      it('★上下對稱：塔正上/正下同距離判定一致', () => {
+        const up = ringHitsPlayer(tower, 200, half, { x: 0, y: -100 }, 20, sq);
+        const down = ringHitsPlayer(tower, 200, half, { x: 0, y: 100 }, 20, sq);
+        expect(up).toBe(down); // 對稱
+      });
+      it('橢圓下緣命中：玩家在正下方 y=100（視覺橢圓下緣=200×0.5=100）→ 命中', () => {
+        // dy'=100/0.5=200 → d=200==ringRadius → 命中（＝視覺環下緣位置，判定跟視覺一致）
+        expect(ringHitsPlayer(tower, 200, half, { x: 0, y: 100 }, 20, sq)).toBe(true);
+      });
+      it('squashY 省略＝正圓（向後相容）', () => {
+        expect(ringHitsPlayer(tower, 200, half, { x: 0, y: 200 }, 20)).toBe(true); // 正圓
+      });
+    });
   });
 
   describe('★A2 resolveTowerPositions（前 N 用設定、不足/省略用預設環形補到 towerCount）', () => {

@@ -13,8 +13,8 @@ import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 import { TOWER_MESSAGE_DEFAULTS } from '@/config/towerConfig';
 import type { LevelData, LevelsFile } from '@/config/levelSchema';
 
-/** 塔波 gate 時長＝Tower4 preset eventTextDurationSec（未設→預設）；測試推過此值才觸發生塔。 */
-const TOWER_GATE_ADVANCE = TOWER_MESSAGE_DEFAULTS.eventTextDurationSec + 0.05;
+/** 塔波 gate 時長＝eventTextDurationSec + timedEventText 滑進+滑出 0.75s（Bug1：等大字全程結束）；測試推過此值才觸發生塔。 */
+const TOWER_GATE_ADVANCE = TOWER_MESSAGE_DEFAULTS.eventTextDurationSec + 0.75 + 0.05;
 import type { MinePreset } from '@/config/mineConfig';
 
 function wrap(nodes: unknown[]): LevelsFile {
@@ -104,6 +104,18 @@ describe('魔尖塔=單獨波次 Event eventPresetName=tower preset', () => {
     expect(got!.ringSkill.ringCount).toBeGreaterThan(0);
   });
 
+  it('Bug1 gate 時序：等第一段大字全程結束（eventTextDurationSec+0.75）才觸發，只等 eventTextDurationSec 還不觸發', () => {
+    const ws = makeWave([{ nodeType: 'Event', eventPresetName: 'Tower4' }]); // eventTextDurationSec=3
+    let got: TowerPreset | null = null;
+    ws.onTowerWave = (p) => { got = p; };
+    ws.update(3 + 0.05); // 只到 eventTextDurationSec → 大字還在滑出（+0.75 未到）→ 仍不觸發
+    expect(got).toBeNull();
+    expect(ws.isTowerWaveActive()).toBe(false);
+    ws.update(0.75); // 補到全程結束 → 觸發
+    expect(got).not.toBeNull();
+    expect(ws.isTowerWaveActive()).toBe(true);
+  });
+
   it('打完全部尖塔 → onTowerWaveResult(true) + 前進', () => {
     const ws = makeWave([
       { nodeType: 'Event', eventPresetName: 'Tower4' },
@@ -126,8 +138,8 @@ describe('魔尖塔=單獨波次 Event eventPresetName=tower preset', () => {
     let won: boolean | null = null;
     ws.onTowerWaveResult = (w) => { won = w; };
     ws.update(TOWER_GATE_ADVANCE); // gate 跑完，生塔
-    // 不打塔，硬推超過限時（Tower4=60s）
-    for (let i = 0; i < 61 * 60; i += 1) ws.update(1 / 60);
+    // 不打塔，推進到剛超過限時（Tower4=60s）觸發失敗前進；一到 Reward(idx1) 就停（避免 Reward 自身 hold 再前進）。
+    for (let i = 0; i < 61 * 60 && ws.getNodeIndex() === 0; i += 1) ws.update(1 / 60);
     expect(won).toBe(false);
     expect(ws.getNodeIndex()).toBe(1); // 仍前進（不卡、不 GameOver）
   });

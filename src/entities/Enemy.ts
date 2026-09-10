@@ -670,9 +670,21 @@ export class Enemy implements Hittable {
   }
 
   /**
-   * 塔血條 UI 尺寸（波騎 preset：barWidthPx/barHeightPx/barOffsetYPx[塔頭上偏移]/labelOffsetYPx）。
-   * 須在 createTowerHpBar 前呼叫（GameScene spawnTower 時傳）。省略欄位用預設（比照雕像血條）。
+   * ★Bug2：塔聚焦顯現——把塔 sprite（+血條）depth 提到 spotlight overlay(960) 之上（比照守護波雕像 setDepth 972），
+   * 聚焦壓黑時塔在亮圈中被照亮看得見（塔在聚焦前就已生成，不再是空亮圈）。
    */
+  setTowerFocusDepth(focusDepth = 972): void {
+    this.anim.sprite.setDepth(focusDepth);
+    this.towerHpBar?.container.setDepth(focusDepth + 1);
+  }
+
+  /** ★Bug2：聚焦結束還原塔一般遊玩 depth（比照守護波雕像還原 15）。 */
+  restoreTowerDepth(normalDepth = 15): void {
+    this.anim.sprite.setDepth(normalDepth);
+    this.towerHpBar?.container.setDepth(normalDepth + 1);
+  }
+
+
   setTowerHpBarUi(ui: Partial<{ barWidthPx: number; barHeightPx: number; barOffsetYPx: number; labelOffsetYPx: number }>): void {
     this.towerBarUi = {
       barWidthPx: ui.barWidthPx ?? this.towerBarUi.barWidthPx,

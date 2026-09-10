@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { VFX_EFFECTS, VFX_FRAME_PAD, type VFXEffectDef } from '@/config/vfxConfig';
-import { GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
+import { GAME_HEIGHT, GAME_WIDTH, GROUND_SQUASH_Y as SHARED_GROUND_SQUASH_Y } from '@/config/gameConfig';
 import { UI_ICONS, UI_LAYOUT_ASSET, PANEL_DEPTH } from '@/config/uiConfig';
 import { validateUiLayout, isVisible, type ScreenElement } from '@/config/uiLayoutSchema';
 import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
@@ -1688,8 +1688,9 @@ export class EffectSystem {
     });
   }
 
-  /** 貼地圓盤 Y 軸壓扁比例（俯視橢圓；魔尖塔環 Graphics 版 + 火雨預警/落點共用；判定另處維持正圓，此僅視覺）。 */
-  private static readonly GROUND_SQUASH_Y = 0.5;
+  /** 貼地圓盤 Y 軸壓扁比例（俯視橢圓；魔尖塔環 + 火雨預警/落點共用）。★單一真源＝gameConfig.GROUND_SQUASH_Y，
+   *  塔環判定 ringHitsPlayer 也讀同值橢圓化（判定跟視覺一致上下對稱，Bug4）。 */
+  private static readonly GROUND_SQUASH_Y = SHARED_GROUND_SQUASH_Y;
 
   /**
    * ★魔尖塔「預警」環（C9 warning phase）：專屬貼圖 fx_tower_ring_warning（紅危險環帶+符文，★俯視壓扁 Y0.5 已內建）。

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { GROUND_SQUASH_Y } from '@/config/gameConfig';
 import { Enemy, type EnemyAttackEvent } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import { circleIntersectsCircle, type Vec2 } from '@/systems/hitDetection';
@@ -438,6 +439,7 @@ export class EnemySpawner {
       if (!ring) continue;
       const params = resolveTowerRingParams(ring);
       let state = this.towerRingStates.get(e.id);
+      const justCreated = !state; // ★Bug3：本幀首建 state → 需主動補發初始環 warning VFX（第 0 環）
       if (!state) {
         state = createTowerRingState();
         this.towerRingStates.set(e.id, state);
@@ -453,7 +455,9 @@ export class EnemySpawner {
       const thickness = params.halfThicknessPx * 2; // 環帶厚度（與 annulus 判定一致）
 
       // VFX（用腳底圓心 c，環貼地、塔立環中央）：warning → towerRingWarning、active → towerRingActive。
-      if (enterWarning && params.warningSec > 0) {
+      // ★Bug3：首建 state 時第 0 環一開始就在 warning phase，但 tickTowerRingPhase 只在 active→warning 轉換才發 enterWarning
+      //   → 第 0 環從不畫紅圈預警、靜等 warningSec 直接炸。改：首幀主動補發一次初始 warning VFX（不動純函式契約）。
+      if ((enterWarning || (justCreated && phase === 'warning')) && params.warningSec > 0) {
         this.hitFeelFx?.towerRingWarning?.(c.x, c.y, radius * 2, thickness, params.warningSec * 1000);
       }
       if (enterActive) {
@@ -468,7 +472,7 @@ export class EnemySpawner {
         if (state.hitPlayersThisRing.has(pid)) continue;
         const pc = p.getVacuumCenter?.() ?? p.getHitCenter();
         const pr = p.getVacuumRadius?.() ?? p.getHitRadius();
-        if (ringHitsPlayer(c, radius, params.halfThicknessPx, pc, pr)) {
+        if (ringHitsPlayer(c, radius, params.halfThicknessPx, pc, pr, GROUND_SQUASH_Y)) {
           state.hitPlayersThisRing.add(pid);
           const energyRatio = params.energyCost * SECOND_TRANSFORM_CONFIG.energyLossOnHit;
           this.onPlayerRingHit?.(pid, energyRatio); // 沿用非改契約（不變量③）

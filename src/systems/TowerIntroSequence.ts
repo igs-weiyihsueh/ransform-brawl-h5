@@ -3,8 +3,9 @@ import { PLAYER_CONFIG } from '@/config/combatConfig';
 import { scriptedMoveStep, allScriptedArrived, type Vec2 } from '@/systems/guardIntro';
 import { towerGatherTargets, towerSpotlightTarget } from '@/systems/towerIntro';
 import type { GameContext } from '@/systems/GameContext';
+import type { Enemy } from '@/entities/Enemy';
 
-/** 塔波開場階段：玩家聚集中央走位 → 聚焦壓黑+定格 → 生塔 → 完成（交給 combat）。 */
+/** 塔波開場階段：玩家聚集中央走位 → 聚焦壓黑+定格（塔已生+聚焦顯現） → 完成（交給 combat）。 */
 type TowerIntroPhase = 'gather' | 'focus' | 'done';
 
 /**
@@ -38,8 +39,9 @@ export class TowerIntroSequence {
   private spotlight: { fadeOut: () => void } | null = null;
   private guardTextHandle: { fadeOut: () => void } | null = null;
 
-  // 生塔（聚焦結束一次性觸發）
-  private readonly onCombatStart: () => void;
+  // 生塔（★Bug2：提前到 beginFocus 生，聚焦時塔已在亮圈中被照亮；ringSkill 判定靠 guardFocusPause 凍結、combat 才開）
+  private readonly spawnTowers: () => Enemy[];
+  private spawnedTowers: Enemy[] = [];
   private finished = false;
 
   constructor(
@@ -63,8 +65,8 @@ export class TowerIntroSequence {
       towerMessageText?: string;
       /** Bug2：塔位（場景座標）——聚焦聚光燈打在塔上（包圍盒中心+框整組），非玩家聚集點。 */
       towerPositions?: readonly Vec2[];
-      /** 聚焦結束 → 生塔+發亮（GameScene 提供）。 */
-      onCombatStart: () => void;
+      /** ★Bug2：生塔+發亮（GameScene 提供，回傳生成的塔 entities 供聚焦提 depth）。beginFocus 前呼叫→聚焦時塔已在亮圈中。 */
+      spawnTowers: () => Enemy[];
     },
   ) {
     this.ctx = ctx;
@@ -74,17 +76,15 @@ export class TowerIntroSequence {
     this.spotlightRadiusPx = opts.spotlightRadiusPx ?? 260;
     this.towerMessageText = opts.towerMessageText ?? '打掉所有尖塔！';
     this.towerPositions = opts.towerPositions ?? [];
-    this.onCombatStart = opts.onCombatStart;
+    this.spawnTowers = opts.spawnTowers;
 
-    // ①鎖操作 + 導引走位到中央聚集 + 開場大字（比照 GuardEvent constructor）。
+    // ①鎖操作 + 導引走位到中央聚集（比照 GuardEvent constructor）。
     this.ctx.scriptedControl = true;
     const players = this.ctx.players ?? [];
     this.moveTargets = towerGatherTargets(this.center.x, this.center.y, players.length, opts.gatherOffsetPx ?? 120);
     this.moveArrived = players.map(() => false);
-    const introText = opts.introEventText ?? '';
-    if (introText !== '') {
-      this.ctx.effects?.timedEventText?.(opts.eventTextDurationSec ?? 3, introText);
-    }
+    // ★Bug1：第一段大字（introEventText）由 WaveSystem.enterNode 發送就好，constructor 不再重複發
+    //   （上批只清了第二段 guardText 重複、漏了第一段 timedEventText 也在此被重發＝大字刷兩次）。
     // 走位（自動移動）期間暫關搜索圈（footGlow），聚焦時恢復（比照守護波）。
     players.forEach((p) => p.setFootGlowVisible?.(false));
   }
@@ -153,27 +153,34 @@ export class TowerIntroSequence {
     }
   }
 
-  /** ②聚焦壓黑 spotlight（★打在塔上：塔位包圍盒中心+框整組半徑，Bug2 修）+ 第二段提示滑進 + 定格凍結（比照 GuardEvent.beginFocus 用雕像位置）。 */
+  /** ②★Bug2：先生塔+提 depth 到 spotlight 之上（塔在亮圈中被照亮）→ 聚焦壓黑 spotlight（打在塔上）+ 第二段提示 + 定格凍結。 */
   private beginFocus(): void {
-    // Bug2：聚光燈中心＝塔位（非玩家聚集點 this.center）。塔波該聚焦「塔」。
-    //   有塔位→包圍盒中心+框整組半徑（max(半對角線+邊距, preset spotlightRadiusPx)）；無塔位保底用 this.center。
+    // ★Bug2 真因修：塔在聚焦「之前」就生成+提 depth 到 spotlight overlay(960) 之上（比照守護波雕像 constructor 就建、
+    //   focus 時 setDepth 972 被照亮）。原本塔在 endFocus 才生→聚焦壓黑整段亮圈中心是空的、玩家點又≈塔中心→亮圈裡只看到玩家。
+    //   ringSkill 判定不會在聚焦時跑（guardFocusPause 凍結 EnemySpawner），combat（endFocus 解凍）才開判定。
+    this.spawnedTowers = this.spawnTowers();
+    this.spawnedTowers.forEach((t) => {
+      t.setTowerFocusDepth?.(); // depth 提到 spotlight 之上→聚焦時塔可見
+      t.playTowerAppear?.();    // 聚焦當下塔發亮顯現
+    });
+    // 聚光燈中心＝塔位（towerSpotlightTarget 包圍盒中心+框整組半徑）；無塔位保底用玩家聚集中心。
     const spot = this.towerPositions.length > 0
       ? towerSpotlightTarget(this.towerPositions, this.spotlightRadiusPx)
       : { center: this.center, radiusPx: this.spotlightRadiusPx };
     this.spotlight = this.ctx.effects?.guardSpotlight?.(spot.center.x, spot.center.y, spot.radiusPx) ?? null;
     this.guardTextHandle = this.ctx.effects?.guardText?.(this.towerMessageText) ?? null;
-    this.ctx.guardFocusPause = true; // 定格：玩法系統凍結（dt=0），聚焦 UI tween 照播
+    this.ctx.guardFocusPause = true; // 定格：玩法系統凍結（dt=0，含 EnemySpawner ringSkill），聚焦 UI tween 照播
     this.phase = 'focus';
     this.focusElapsed = 0;
   }
 
-  /** ③聚焦結束 → 淡出 + 解除定格/鎖操作 → 生塔+發亮（combat 開始）。 */
+  /** ③聚焦結束 → 淡出 + 還原塔 depth + 解除定格/鎖操作 → combat 開始（塔已生、guardFocusPause 解除後 ringSkill 開跑）。 */
   private endFocus(): void {
     this.cleanupFocus();
+    this.spawnedTowers.forEach((t) => t.restoreTowerDepth?.()); // 還原塔一般遊玩 depth（比照守護波雕像還原 15）
     this.ctx.scriptedControl = false;
     this.phase = 'done';
     this.finished = true;
-    this.onCombatStart(); // GameScene 生 towerCount 座塔 + playTowerAppear
   }
 
   private cleanupFocus(): void {

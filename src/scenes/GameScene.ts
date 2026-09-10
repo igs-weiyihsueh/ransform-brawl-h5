@@ -280,8 +280,10 @@ export class GameScene extends Phaser.Scene {
       const ui = resolveTowerUi(preset);
       const msgs = resolveTowerMessages(preset);
       this.towerRewardTickets = ui.rewardTickets; // E：過關發獎用（onTowerWaveResult 讀）
-      // 生塔動作（聚焦結束後才執行）：生 towerCount 座塔 + 血條 + 發亮。
+      // ★Bug2：生塔動作改在聚焦「之前」執行（beginFocus 呼叫），回傳生成的塔 entities 供聚焦提 depth 照亮。
+      //   生 towerCount 座塔 + 血條（發亮/提 depth 由 TowerIntroSequence 在聚焦時做）。ringSkill 判定靠 guardFocusPause 凍結、combat 才開。
       const spawnTowers = () => {
+        const towers = [];
         for (let i = 0; i < n; i += 1) {
           const t = spawner.spawnTower(positions[i].x, positions[i].y, preset.towerHp, ring, scale);
           t.setTowerHpBarUi?.({
@@ -289,8 +291,9 @@ export class GameScene extends Phaser.Scene {
             barOffsetYPx: ui.barOffsetYPx, labelOffsetYPx: ui.labelOffsetYPx,
           });
           t.createTowerHpBar?.(); // D：每座塔血條（比照守護波雕像血條）
-          t.playTowerAppear?.(); // B4：塔登場發亮
+          towers.push(t);
         }
+        return towers;
       };
       // ★塔波照搬守護波 GuardEvent 開場：玩家聚集中央 → 聚焦壓黑+定格 → 生塔+發亮 → combat。
       //   中心＝波騎 gatherPointPx（可編、預設畫面中央 960,540）；聚集半徑用預設（波騎未給 gatherOffsetPx）。
@@ -304,7 +307,7 @@ export class GameScene extends Phaser.Scene {
         eventTextDurationSec: msgs.eventTextDurationSec,
         towerMessageText: msgs.towerMessageText,
         towerPositions: positions, // Bug2：聚焦聚光燈打在塔位上（非玩家聚集點）
-        onCombatStart: spawnTowers,
+        spawnTowers, // ★Bug2：beginFocus 前生塔+回傳 entities（聚焦時提 depth 照亮）
       });
     };
     // 每摧毀一座尖塔 → 通知守護波累計（波騎判 towersDestroyed>=towerCount 過關提前 advance）。

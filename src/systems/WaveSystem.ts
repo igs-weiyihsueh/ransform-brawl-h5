@@ -42,6 +42,13 @@ const REWARD_HOLD_SEC = 4.4;
 const REWARD_FILL_DURATION = 0.6;
 
 /**
+ * timedEventText（EffectSystem 事件大字）滑進+滑出總額外秒數：滑進 400ms + 滑出 350ms = 0.75s。
+ * 塔波 towerGate 用「eventTextDurationSec + 此值」＝等大字全程（滑進+顯滿+滑出）結束才觸發第二段，避免重疊（Bug1）。
+ * 對齊 EffectSystem.timedEventText 的 duration:400 + delayedCall(400+dur) + duration:350。
+ */
+const TIMED_EVENT_TEXT_SLIDE_SEC = 0.75;
+
+/**
  * WaveSystem — 波次/關卡系統（Spawn 節點核心，資料由 JSON 驅動）。
  *
  * 關卡資料來自 public/assets/data/levels.json（schema 見 config/levelSchema.ts，對照 Unity）。
@@ -579,11 +586,18 @@ export class WaveSystem implements GameSystem {
     const isTowerNode = entered?.nodeType === 'Event' && isResolvedTowerPreset((entered as EventNodeData).eventPresetName);
     if (isTowerNode) {
       // 塔波登場第一段大字（照守護波：enterNode 只發 introEventText 大字 timedEventText）。
-      //   ★第二段提示（towerMessageText）由征騎 TowerIntroSequence.beginFocus 發（跟守護波「聚焦時才滑進提示」一致，
-      //   避免 enterNode 預發 + beginFocus 再發＝兩段疊在一起，Bug1）。towerGate 對齊 eventTextDurationSec。
+      //   ★第二段提示（towerMessageText）由征騎 TowerIntroSequence.beginFocus 發（跟守護波「聚焦時才滑進提示」一致）。
+      //   ★Bug1 gate 時序（對齊守護波 reveal gate「等 introText 全程結束」精神）：timedEventText 實際週期＝
+      //   滑進 0.4s + 顯滿 eventTextDurationSec + 滑出 0.35s（EffectSystem:699）。towerGate 必須等這整段結束才觸發
+      //   onTowerWave→beginFocus 發第二段，否則第一段大字還在滑出就出第二段＝重疊/未關就出下段。
+      //   introEventText='' → timedEventText 不發（無大字）→ gate 只需 0（無需等文字）。
       const tmsg = resolveTowerMessages(getResolvedTowerPreset((entered as EventNodeData).eventPresetName));
-      if (tmsg.introEventText !== '') this.ctx.effects?.timedEventText?.(tmsg.eventTextDurationSec, tmsg.introEventText);
-      this.towerGateSec = tmsg.eventTextDurationSec;
+      if (tmsg.introEventText !== '') {
+        this.ctx.effects?.timedEventText?.(tmsg.eventTextDurationSec, tmsg.introEventText);
+        this.towerGateSec = tmsg.eventTextDurationSec + TIMED_EVENT_TEXT_SLIDE_SEC; // 等大字全程結束（滑進+顯滿+滑出）
+      } else {
+        this.towerGateSec = 0; // 無第一段大字 → 不需等
+      }
     } else {
       this.towerGateSec = 0;
     }

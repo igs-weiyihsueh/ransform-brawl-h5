@@ -155,9 +155,13 @@ export function tickTowerRingPhase(
 }
 
 /**
- * ★環圈命中判定（annulus，中心空）：玩家圓是否碰到「當前環那一圈厚度帶」（固定半徑）。
- * 玩家中心到塔心距離 d、玩家半徑 r：碰到環帶 ⇔ |d - ringRadius| <= halfThickness + r。
- * d < ringRadius-half-r（環內側空心）→ 不命中；d > ringRadius+half+r（環外）→ 不命中。
+ * ★環圈命中判定（annulus，中心空；★Bug4 橢圓化＝跟視覺貼地壓扁橢圓一致，上下對稱）。
+ * VFX towerRingWarning/Active 貼地沿 Y 壓扁 squashY（俯視橢圓），若判定仍用正圓 hypot(dx,dy)，
+ * 玩家站塔上/下方時視覺環緣只到 R×squashY 看似安全、判定正圓卻延伸到 full R → 被打（上下不對稱）。
+ * 修：垂直距離先「還原」dy'=dy/squashY 再 hypot(dx,dy')，讓判定環＝視覺壓扁橢圓（同一顆橢圓 annulus）。
+ * squashY=1（預設）＝正圓（向後相容既有測/呼叫端）。
+ *
+ * 玩家中心到塔心橢圓距離 d、玩家半徑 r：碰到環帶 ⇔ |d - ringRadius| <= halfThickness + r。
  */
 export function ringHitsPlayer(
   towerCenter: Vec2,
@@ -165,9 +169,11 @@ export function ringHitsPlayer(
   halfThicknessPx: number,
   playerCenter: Vec2,
   playerRadius: number,
+  squashY = 1,
 ): boolean {
   const dx = playerCenter.x - towerCenter.x;
-  const dy = playerCenter.y - towerCenter.y;
+  const sq = squashY > 0 ? squashY : 1; // 0-safe
+  const dy = (playerCenter.y - towerCenter.y) / sq; // ★還原壓扁 → 橢圓距離（判定圈=視覺橢圓）
   const d = Math.hypot(dx, dy);
   return Math.abs(d - ringRadius) <= halfThicknessPx + playerRadius;
 }

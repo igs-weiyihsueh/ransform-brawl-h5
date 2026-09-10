@@ -16,6 +16,12 @@ export const BACKGROUND_COLOR = '#1a1a2e';
  */
 export const PPU = 100;
 
+/**
+ * 貼地圓盤俯視壓扁 Y 係數（魔尖塔環/火雨預警共用）：貼圖/Graphics 沿 Y 壓扁成俯視橢圓（0.5＝高度對半）。
+ * ★單一真源：EffectSystem 視覺 + towerRingSkill 判定都讀此值，讓「判定橢圓」跟「視覺橢圓」一致（上下對稱，Bug4）。
+ */
+export const GROUND_SQUASH_Y = 0.5;
+
 /** 將 Unity unit 轉成像素。 */
 export function toPixels(units: number): number {
   return units * PPU;
