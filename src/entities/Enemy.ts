@@ -4,6 +4,7 @@ import { PLAYER_HIT_RADIUS } from '@/config/combatConfig';
 import { ENEMY_AI, ENEMY_BODY_RADIUS_PX, ENEMY_BODY_CENTER_OFFSET_Y, type EnemyAIConfig } from '@/config/enemyConfig';
 import { getResolvedEnemy } from '@/config/enemySchema';
 import { PPU, GROUND_SQUASH_Y } from '@/config/gameConfig';
+import { FOOT_GLOW } from '@/config/playerConfig';
 import { ENEMY_PLAY_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import {
@@ -808,15 +809,19 @@ export class Enemy implements Hittable {
 
   /**
    * ★塔碰撞範圍可視圈（用戶定案：遊戲裡一眼看到塔碰撞範圍）：貼地壓扁橢圓，
-   * 圓心＝getTowerCollisionCenter（色塊底＝碰撞圓心）、水平半徑＝getBodyRadius（=towerCollisionRadiusPx）、
-   * 垂直半徑＝半徑×GROUND_SQUASH_Y（(乙)貼地圓盤，跟實際碰撞縱深擋距一致）。調 towerCollisionRadiusPx→圈跟著變。
-   * 每次半徑/offset 變（setTowerCollisionRadius/Offset）重畫。純視覺、不動判定。
+   * 圓心＝getTowerCollisionCenter（色塊底＝碰撞圓心）、
+   * ★水平半徑＝塔 getBodyRadius + 玩家半徑（＝實際接觸距離 contactDist = self.radius + body.radius，
+   *   角色「中心貼到就停」的真實邊界；只畫塔半徑會讓角色離圈邊還一個玩家半徑就被擋＝用戶「離很遠就擋」）、
+   * 垂直半徑＝×GROUND_SQUASH_Y 貼地壓扁。玩家半徑取 FOOT_GLOW.radiusPx 基準常數（拿不到玩家實例；變身放大時略小估，
+   * 但為安全視覺基準夠用）。調 towerCollisionRadiusPx→圈跟著變。每次半徑/offset 變重畫。純視覺、不動判定。
    */
   drawTowerCollisionRing(): void {
     if (!this.isTower()) return;
     const sp = this.anim.sprite;
     const c = this.getTowerCollisionCenter();
-    const r = this.getBodyRadius();
+    // ★實際接觸邊界 = 塔半徑 + 玩家半徑（contactSolver contactDist = self.radius + body.radius）
+    const playerRadius = FOOT_GLOW.radiusPx; // 玩家基準推擠半徑（=getVacuumRadius 預設）
+    const r = this.getBodyRadius() + playerRadius;
     if (!this.towerCollisionRing) {
       this.towerCollisionRing = sp.scene.add.graphics();
       this.towerCollisionRing.setDepth((sp.depth ?? 15) - 1); // 在塔色塊下方（貼地）
