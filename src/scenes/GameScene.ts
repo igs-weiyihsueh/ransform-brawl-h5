@@ -303,6 +303,7 @@ export class GameScene extends Phaser.Scene {
         introEventText: msgs.introEventText,
         eventTextDurationSec: msgs.eventTextDurationSec,
         towerMessageText: msgs.towerMessageText,
+        towerPositions: positions, // Bug2：聚焦聚光燈打在塔位上（非玩家聚集點）
         onCombatStart: spawnTowers,
       });
     };

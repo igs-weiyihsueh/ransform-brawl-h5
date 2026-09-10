@@ -80,10 +80,12 @@ function makeSys(getPreset: () => MinePreset | null) {
   const players: FakePlayer[] = [];
   const enemies: FakeEnemy[] = [];
   let announceCount = 0;
+  let curLevel = 0; // Bug3：地雷宣告整關一次，可變 level 供測換關重播
+  const levelIndex = () => curLevel;
   const ctx = {
     players,
     getEnemies: () => enemies,
-    wave: { getActiveMinePreset: getPreset },
+    wave: { getActiveMinePreset: getPreset, getLevelIndex: () => levelIndex() },
     effects: {
       // 位置無關的 stub，回可辨識 handle。
       mineMarkerStart: () => ({}) as unknown,
@@ -101,7 +103,7 @@ function makeSys(getPreset: () => MinePreset | null) {
   const triggeredCount = () =>
     (sys as unknown as { mines: { triggered: boolean }[] }).mines.filter((m) => m.triggered).length;
   const mineAt = (i: number) => (sys as unknown as { mines: { x: number; y: number }[] }).mines[i];
-  return { sys, players, enemies, mineCount, triggeredCount, mineAt, getAnnounce: () => announceCount };
+  return { sys, players, enemies, mineCount, triggeredCount, mineAt, getAnnounce: () => announceCount, setLevel: (l: number) => { curLevel = l; } };
 }
 
 describe('MineTrapSystem 踩雷式', () => {
@@ -125,6 +127,29 @@ describe('MineTrapSystem 踩雷式', () => {
     // 宣告一節點只發一次。
     sys.update(0.016);
     expect(getAnnounce()).toBe(1);
+  });
+
+  it('Bug3 地雷警示整關一次（照火雨）：同關多個地雷節點只宣告一次，換關才重播', () => {
+    let preset: MinePreset | null = null;
+    const { sys, getAnnounce, setLevel } = makeSys(() => preset);
+    // 第一個地雷節點（level 0）：宣告一次。
+    preset = PRESET;
+    sys.update(0.016);
+    expect(getAnnounce()).toBe(1);
+    // 離開節點（preset→null）：清乾淨，但不重置宣告旗標。
+    preset = null;
+    sys.update(0.016);
+    // 同關第二個地雷節點：★不再宣告（整關一次）。
+    preset = PRESET;
+    sys.update(0.016);
+    expect(getAnnounce()).toBe(1);
+    // 換關（level 1）→ 同關內第一個地雷節點：自然重播宣告。
+    preset = null;
+    sys.update(0.016);
+    setLevel(1);
+    preset = PRESET;
+    sys.update(0.016);
+    expect(getAnnounce()).toBe(2);
   });
 
   it('① 撒下不倒數不爆：沒人踩，過很久也不爆、不麻痺', () => {
@@ -239,20 +264,20 @@ describe('MineTrapSystem 踩雷式', () => {
     expect(mineCount()).toBe(PRESET.maintainCount);
   });
 
-  it('⑤ non-null→null（離開節點）→ 清乾淨、旗標重置（再進可再撒+再宣告）', () => {
+  it('⑤ non-null→null（離開節點）→ 清乾淨；同關再進再撒但★不再宣告（Bug3 整關一次）', () => {
     let preset: MinePreset | null = PRESET;
     const { sys, players, mineCount, getAnnounce } = makeSys(() => preset);
     players.push(makePlayer(0));
     sys.update(0.016); // 撒 + 宣告 1
     expect(mineCount()).toBe(PRESET.count);
     expect(getAnnounce()).toBe(1);
-    preset = null; // 離開節點
+    preset = null; // 離開節點 → 清乾淨（不重置宣告旗標）
     sys.update(0.016);
     expect(mineCount()).toBe(0);
-    // 再進地雷節點 → 再撒 + 再宣告。
+    // 同關再進地雷節點 → 再撒雷，但★不再宣告（整關一次，照火雨）。
     preset = PRESET;
     sys.update(0.016);
     expect(mineCount()).toBe(PRESET.count);
-    expect(getAnnounce()).toBe(2);
+    expect(getAnnounce()).toBe(1);
   });
 });

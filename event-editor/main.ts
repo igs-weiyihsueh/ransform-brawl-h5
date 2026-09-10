@@ -473,18 +473,33 @@ function twRender(): void {
   // 塔位標記。
   const positions = twEffectivePositions(p);
   const scale = p.towerScale ?? 1;
+  // Bug5：魂力環同心圓預覽——每座塔位疊畫 ringCount 圈，各圈半徑 = baseRadiusPx + N*radiusStepPx（貼地扁圓）。
+  //   純編輯器視覺（runtime 環定位已對），讓用戶調 baseRadius/step/count 看得到環離塔多遠+幾圈。
+  const r = p.ringSkill;
+  const GROUND_SQUASH = 0.5; // 貼地觀感：Y 壓扁（同 runtime 貼地橢圓感）
+  positions.forEach((pos) => {
+    const c = m.toCv(pos.x, pos.y);
+    for (let n = 0; n < Math.max(1, r.ringCount); n += 1) {
+      const radiusScene = r.baseRadiusPx + n * r.radiusStepPx;
+      const rx = radiusScene * m.s;
+      const ry = rx * GROUND_SQUASH;
+      ctx.strokeStyle = 'rgba(140,120,255,0.65)'; // 魂力環紫
+      ctx.lineWidth = Math.max(1, (r.ringThicknessPx * m.s) || 1);
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+  });
   positions.forEach((pos, i) => {
     const c = m.toCv(pos.x, pos.y);
     const isCustom = !!p.positions?.[i];
-    const r = 8 * scale;
+    const mk = 8 * scale;
     ctx.fillStyle = i === twDragIndex ? '#ffd45c' : (isCustom ? '#6c8cff' : '#59d98e');
-    ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(4, r), 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(4, mk), 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#e6e6f0'; ctx.lineWidth = 1; ctx.stroke();
     ctx.fillStyle = '#e6e6f0'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(String(i + 1), c.x, c.y - Math.max(4, r) - 3);
+    ctx.fillText(String(i + 1), c.x, c.y - Math.max(4, mk) - 3);
   });
   ctx.fillStyle = '#9a9ab5'; ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText(`${p.towerCount} 座塔（綠＝預設環形／藍＝自訂位置）｜塔大小 ×${scale.toFixed(1)}｜拖曳圓點設位置`, 8, H - 8);
+  ctx.fillText(`${p.towerCount} 塔｜魂力環 ${r.ringCount} 圈（紫，最內 ${r.baseRadiusPx}px＋每層 ${r.radiusStepPx}px）｜塔 ×${scale.toFixed(1)}｜拖曳設位置`, 8, H - 8);
 }
 
 /** 綁定 tw-preview 的拖曳（在 main() 呼叫一次）。 */

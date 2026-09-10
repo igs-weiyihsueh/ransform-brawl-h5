@@ -633,9 +633,101 @@ function renderEventInspector(node: EventNodeData): void {
   // 附加地雷（用戶：地雷=附加類，任何事件都可附加）。
   renderAttachMineTrap(node);
 
-  // 守護 preset：附加火雨（三態）+ 補怪 drip。魔尖塔波（A1）：也顯附加火雨（比照 Spawn 的簡單下拉）。
+  // 守護 preset：附加火雨（三態）+ 補怪 drip。魔尖塔波（A1）：附加火雨 +（Bug4）附加雜兵 drip。
   if (!isTower && !isFire) renderGuardExtras(node);
-  else if (isTower) renderTowerAttachFireRain(node);
+  else if (isTower) { renderTowerAttachFireRain(node); renderTowerDrip(node); }
+}
+
+/** Bug4：魔尖塔波節點附加雜兵 drip（比照守護波 drip 編法；全 optional，勾選才存 node）。 */
+function renderTowerDrip(node: EventNodeData): void {
+  const dripTitle = document.createElement('div');
+  dripTitle.className = 'section-title';
+  dripTitle.style.marginTop = '12px';
+  dripTitle.textContent = '附加雜兵 drip（可選，附加壓力，不計過關）';
+  inspectorEl.appendChild(dripTitle);
+
+  const hasDrip =
+    node.maxAlive !== undefined ||
+    node.spawnThreshold !== undefined ||
+    node.spawnInterval !== undefined ||
+    (node.spawns !== undefined && node.spawns.length > 0);
+
+  const toggleRow = document.createElement('div');
+  toggleRow.className = 'row';
+  const toggleLab = document.createElement('label');
+  toggleLab.textContent = '附加雜兵';
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  toggle.checked = hasDrip;
+  toggle.addEventListener('change', () => {
+    if (toggle.checked) {
+      node.maxAlive = node.maxAlive ?? 6;
+      node.spawnThreshold = node.spawnThreshold ?? 4;
+      node.spawnInterval = node.spawnInterval ?? 1.0;
+      if (!node.spawns || node.spawns.length === 0) {
+        const keys = getEnemyTypeKeys();
+        node.spawns = [{ enemyType: (keys[0] ?? ENEMY_TYPES[0]) as EnemyType, weight: 1 }];
+      }
+    } else {
+      delete node.maxAlive;
+      delete node.spawnThreshold;
+      delete node.spawnInterval;
+      delete node.spawns;
+    }
+    renderInspector();
+  });
+  toggleRow.appendChild(toggleLab); toggleRow.appendChild(toggle);
+  inspectorEl.appendChild(toggleRow);
+
+  if (!hasDrip) {
+    const hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.textContent = '不勾＝塔波不生雜兵（只有塔）；勾選＝combat 期間維持場上雜兵壓力（純 drip，過關仍只看打掉塔數）。';
+    inspectorEl.appendChild(hint);
+    return;
+  }
+
+  inspectorEl.appendChild(fieldRow('場上上限 maxAlive', numberInput(node.maxAlive ?? 6, (v) => { node.maxAlive = v; })));
+  inspectorEl.appendChild(fieldRow('補怪門檻 spawnThreshold', numberInput(node.spawnThreshold ?? 4, (v) => { node.spawnThreshold = v; })));
+  inspectorEl.appendChild(fieldRow('生怪間隔 spawnInterval (s)', numberInput(node.spawnInterval ?? 1, (v) => { node.spawnInterval = v; })));
+  renderTowerDripSpawns(node);
+}
+
+/** 塔波雜兵權重列（敵種+權重，比照守護波 spawns 編法）。 */
+function renderTowerDripSpawns(node: EventNodeData): void {
+  const spawns = node.spawns ?? (node.spawns = []);
+  const keys = getEnemyTypeKeys();
+  const title = document.createElement('div');
+  title.className = 'hint';
+  title.textContent = '雜兵敵種權重：';
+  inspectorEl.appendChild(title);
+  spawns.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const sel = document.createElement('select');
+    for (const k of (keys.length > 0 ? keys : ENEMY_TYPES)) {
+      const opt = document.createElement('option');
+      opt.value = k; opt.textContent = k;
+      if (k === s.enemyType) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    sel.addEventListener('change', () => { s.enemyType = sel.value as EnemyType; });
+    const w = document.createElement('input');
+    w.type = 'number'; w.min = '0'; w.step = 'any'; w.value = String(s.weight); w.style.width = '70px';
+    w.addEventListener('input', () => { s.weight = parseFloat(w.value) || 0; });
+    const del = document.createElement('button');
+    del.textContent = '✕';
+    del.addEventListener('click', () => { spawns.splice(i, 1); renderInspector(); });
+    row.appendChild(sel); row.appendChild(w); row.appendChild(del);
+    inspectorEl.appendChild(row);
+  });
+  const add = document.createElement('button');
+  add.textContent = '＋ 加雜兵';
+  add.addEventListener('click', () => {
+    spawns.push({ enemyType: (keys[0] ?? ENEMY_TYPES[0]) as EnemyType, weight: 1 });
+    renderInspector();
+  });
+  inspectorEl.appendChild(add);
 }
 
 /** A1：魔尖塔波節點附加火雨（比照 Spawn 的簡單下拉：（無火雨）/ 火雨 preset 名 → node.attachFireRain）。 */

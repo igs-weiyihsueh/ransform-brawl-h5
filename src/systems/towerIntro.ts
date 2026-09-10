@@ -29,3 +29,35 @@ export function towerGatherTargets(cx: number, cy: number, count: number, gather
   }
   return out;
 }
+
+/**
+ * 聚焦聚光燈打在「塔」上（Bug2 修：不再打玩家聚集點）：算塔位包圍盒中心 + 框住整組塔的半徑。
+ * - 中心＝(minX+maxX)/2, (minY+maxY)/2（單塔＝該塔位）。
+ * - 半徑＝max(半對角線 + marginPx, minRadiusPx)：半對角線框住整組塔外接圓、加邊距、且不小於 preset spotlight 半徑。
+ *
+ * @param towers 塔位（場景座標；至少 1 座）。
+ * @param minRadiusPx preset spotlightRadiusPx（半徑下限）。
+ * @param marginPx 塔外圈到亮圈邊的邊距（預設 120，讓塔完整落在亮圈內不貼邊）。
+ * @returns { center, radiusPx }；towers 空 → center 原點、radius=minRadiusPx（保底不炸）。
+ */
+export function towerSpotlightTarget(
+  towers: readonly Vec2[],
+  minRadiusPx: number,
+  marginPx = 120,
+): { center: Vec2; radiusPx: number } {
+  if (towers.length === 0) return { center: { x: 0, y: 0 }, radiusPx: Math.max(0, minRadiusPx) };
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const t of towers) {
+    if (t.x < minX) minX = t.x;
+    if (t.y < minY) minY = t.y;
+    if (t.x > maxX) maxX = t.x;
+    if (t.y > maxY) maxY = t.y;
+  }
+  const center = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+  const halfDiagonal = Math.hypot(maxX - minX, maxY - minY) / 2; // 包圍盒半對角線＝外接圓半徑
+  const radiusPx = Math.max(halfDiagonal + Math.max(0, marginPx), Math.max(0, minRadiusPx));
+  return { center, radiusPx };
+}

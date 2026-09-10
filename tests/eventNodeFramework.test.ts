@@ -164,17 +164,55 @@ describe('魔尖塔波狀態 accessor（B5/B6 進度條+倒數）+ towerGate', (
   });
 });
 
-describe('塔波登場兩段訊息（照搬守護波 timedEventText+guardText，用戶爆氣修）', () => {
-  it('進 Tower4 節點 → timedEventText 大字「魔尖塔！」+ guardText 提示「打掉所有尖塔！」（兩段，不發單段 waveMessage）', () => {
+describe('塔波登場訊息（Bug1：enterNode 只發第一段大字，第二段交征騎 beginFocus 不疊）', () => {
+  it('進 Tower4 節點 → 只發 timedEventText 大字（introEventText）、★不發 guardText（避免與 beginFocus 疊）、不發單段 waveMessage', () => {
     const { msgs, eventTexts, guardTexts } = makeWaveCapturingMsgs([{ nodeType: 'Event', eventPresetName: 'Tower4' }]);
-    expect(eventTexts.some((m) => m.includes('魔尖塔'))).toBe(true); // 大字
-    expect(guardTexts.some((m) => m.includes('尖塔'))).toBe(true); // 提示
-    expect(msgs.length).toBe(0); // 不再走單段 waveMessage（避免與兩段重疊）
+    expect(eventTexts.some((m) => m.includes('魔尖塔'))).toBe(true); // 第一段大字有發
+    expect(guardTexts.length).toBe(0); // ★Bug1：enterNode 不預發第二段（征騎 TowerIntroSequence.beginFocus 才發）
+    expect(msgs.length).toBe(0); // 不走單段 waveMessage
   });
 
   it('進 Guard60 守護波 → WaveSystem 不發節點 waveMessage（GuardEvent 自己開場）', () => {
     const { msgs } = makeWaveCapturingMsgs([{ nodeType: 'Event', eventPresetName: 'Guard60' }]);
     expect(msgs.length).toBe(0);
+  });
+});
+
+describe('塔波附加雜兵 drip（Bug4：塔波帶 spawns → combat 期間生雜兵，過關仍只看塔數）', () => {
+  function makeWaveCountingSpawn(nodes: unknown[]): { ws: WaveSystem; spawnCount: () => number } {
+    let count = 0;
+    const ws = new WaveSystem(wrap(nodes).levels);
+    const ctx = {
+      effects: { waveMessage: () => {}, fireRainAnnounce: () => {}, timedEventText: () => {}, guardText: () => ({ fadeOut: () => {} }) },
+      spawner: { spawn: () => { count += 1; return {}; }, clear: () => {} },
+      players: [],
+      player: { getPosition: () => ({ x: 0, y: 0 }) },
+      getEnemies: () => [],
+    } as unknown as Parameters<WaveSystem['init']>[0];
+    ws.init(ctx);
+    return { ws, spawnCount: () => count };
+  }
+
+  it('Tower4 帶 spawns/maxAlive → gate 跑完(觸發)後 drip 生雜兵；帶 spawns 但過關只看塔數', () => {
+    const { ws, spawnCount } = makeWaveCountingSpawn([
+      { nodeType: 'Event', eventPresetName: 'Tower4', maxAlive: 3, spawnThreshold: 3, spawnInterval: 0, spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }] },
+      { nodeType: 'Reward' },
+    ]);
+    ws.update(TOWER_GATE_ADVANCE); // gate 跑完、觸發生塔 + 首次 drip
+    // getEnemies 回 [] → occupancy 0 < maxAlive → 每次 update 補雜兵（spawnInterval 0）。
+    for (let i = 0; i < 5; i += 1) ws.update(0.1);
+    expect(spawnCount()).toBeGreaterThan(0); // ★塔波有生雜兵
+    // 過關仍只看塔數：打掉 4 塔 → 過關前進（雜兵不影響）。
+    for (let i = 0; i < 4; i += 1) ws.notifyTowerDestroyed();
+    ws.update(0.016);
+    expect(ws.getNodeIndex()).toBe(1);
+  });
+
+  it('Tower4 無 spawns → 不生雜兵（只有塔）', () => {
+    const { ws, spawnCount } = makeWaveCountingSpawn([{ nodeType: 'Event', eventPresetName: 'Tower4' }]);
+    ws.update(TOWER_GATE_ADVANCE);
+    for (let i = 0; i < 5; i += 1) ws.update(0.1);
+    expect(spawnCount()).toBe(0);
   });
 });
 

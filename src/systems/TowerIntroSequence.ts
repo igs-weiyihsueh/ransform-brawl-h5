@@ -1,7 +1,7 @@
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_CONFIG } from '@/config/combatConfig';
 import { scriptedMoveStep, allScriptedArrived, type Vec2 } from '@/systems/guardIntro';
-import { towerGatherTargets } from '@/systems/towerIntro';
+import { towerGatherTargets, towerSpotlightTarget } from '@/systems/towerIntro';
 import type { GameContext } from '@/systems/GameContext';
 
 /** 塔波開場階段：玩家聚集中央走位 → 聚焦壓黑+定格 → 生塔 → 完成（交給 combat）。 */
@@ -33,6 +33,8 @@ export class TowerIntroSequence {
   private readonly introFocusSec: number;
   private readonly spotlightRadiusPx: number;
   private readonly towerMessageText: string;
+  /** Bug2：聚焦聚光燈打在「塔」上（塔位包圍盒中心+框整組半徑），非玩家聚集點 this.center。 */
+  private readonly towerPositions: readonly Vec2[];
   private spotlight: { fadeOut: () => void } | null = null;
   private guardTextHandle: { fadeOut: () => void } | null = null;
 
@@ -59,6 +61,8 @@ export class TowerIntroSequence {
       eventTextDurationSec?: number;
       /** 第二段聚焦提示文字（滑進，比照守護波 guardText）。 */
       towerMessageText?: string;
+      /** Bug2：塔位（場景座標）——聚焦聚光燈打在塔上（包圍盒中心+框整組），非玩家聚集點。 */
+      towerPositions?: readonly Vec2[];
       /** 聚焦結束 → 生塔+發亮（GameScene 提供）。 */
       onCombatStart: () => void;
     },
@@ -69,6 +73,7 @@ export class TowerIntroSequence {
     this.introFocusSec = opts.introFocusSec ?? 1.2;
     this.spotlightRadiusPx = opts.spotlightRadiusPx ?? 260;
     this.towerMessageText = opts.towerMessageText ?? '打掉所有尖塔！';
+    this.towerPositions = opts.towerPositions ?? [];
     this.onCombatStart = opts.onCombatStart;
 
     // ①鎖操作 + 導引走位到中央聚集 + 開場大字（比照 GuardEvent constructor）。
@@ -148,9 +153,14 @@ export class TowerIntroSequence {
     }
   }
 
-  /** ②聚焦壓黑 spotlight（中央亮圈）+ 第二段提示滑進 + 定格凍結（比照 GuardEvent.beginFocus）。 */
+  /** ②聚焦壓黑 spotlight（★打在塔上：塔位包圍盒中心+框整組半徑，Bug2 修）+ 第二段提示滑進 + 定格凍結（比照 GuardEvent.beginFocus 用雕像位置）。 */
   private beginFocus(): void {
-    this.spotlight = this.ctx.effects?.guardSpotlight?.(this.center.x, this.center.y, this.spotlightRadiusPx) ?? null;
+    // Bug2：聚光燈中心＝塔位（非玩家聚集點 this.center）。塔波該聚焦「塔」。
+    //   有塔位→包圍盒中心+框整組半徑（max(半對角線+邊距, preset spotlightRadiusPx)）；無塔位保底用 this.center。
+    const spot = this.towerPositions.length > 0
+      ? towerSpotlightTarget(this.towerPositions, this.spotlightRadiusPx)
+      : { center: this.center, radiusPx: this.spotlightRadiusPx };
+    this.spotlight = this.ctx.effects?.guardSpotlight?.(spot.center.x, spot.center.y, spot.radiusPx) ?? null;
     this.guardTextHandle = this.ctx.effects?.guardText?.(this.towerMessageText) ?? null;
     this.ctx.guardFocusPause = true; // 定格：玩法系統凍結（dt=0），聚焦 UI tween 照播
     this.phase = 'focus';

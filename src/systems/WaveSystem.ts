@@ -163,8 +163,6 @@ export class WaveSystem implements GameSystem {
    * gate 跑完（<=0）才觸發 onTowerWave（征騎收到即跑壓黑+生塔+發亮）。倒數在 update() 遞減。
    */
   private towerGateSec = 0;
-  /** 塔波提示大字（towerMessageText，guardText 顯示元件）的淡出 handle；塔波結束/換節點時 fadeOut。 */
-  private towerGuardTextHandle: { fadeOut: () => void } | null = null;
 
   /** debug/UI：目前守護波（若有）。 */
   getGuardEvent(): GuardEvent | null {
@@ -445,10 +443,25 @@ export class WaveSystem implements GameSystem {
     }
     this.eventHold -= dt;
 
+    // Bug4：塔波附加雜兵 drip（照守護波/一般波純 drip 平移）。node 有 spawns → combat 期間維持場上雜兵壓力。
+    //   ★雜兵是「附加壓力」純 drip、不計過關（過關只看 towersDestroyed）；換節點 enterNode 清雜兵/pending。
+    //   維持邏輯同扁平 drip：占用<spawnThreshold 開補、達 maxAlive 關（refill latch），受 spawnInterval 節流。
+    if (node.spawns && node.spawns.length > 0 && (node.maxAlive ?? 0) > 0) {
+      const scale = this.playerCountScale();
+      const maxAlive = Math.max(1, Math.round((node.maxAlive ?? 0) * scale));
+      const spawnThreshold = Math.max(1, Math.round((node.spawnThreshold ?? node.maxAlive ?? 1) * scale));
+      const occupancy = this.ctx.getEnemies().length + this.pendingSpawns;
+      if (occupancy < spawnThreshold) this.spawnRefilling = true;
+      else if (occupancy >= maxAlive) this.spawnRefilling = false;
+      if (this.spawnCooldown > 0) this.spawnCooldown -= dt;
+      if (this.spawnCooldown <= 0 && this.spawnRefilling && occupancy < maxAlive) {
+        this.spawnOne(node.spawns);
+        this.spawnCooldown = node.spawnInterval ?? 1;
+      }
+    }
+
     // 過關：限時內打完全部尖塔 → 提前結束。
     if (this.towersDestroyed >= t.towerCount) {
-      this.towerGuardTextHandle?.fadeOut(); // 收尾淡出塔波提示大字
-      this.towerGuardTextHandle = null;
       this.onTowerWaveResult?.(true);
       this.advanceNode();
       return;
@@ -456,8 +469,6 @@ export class WaveSystem implements GameSystem {
     // 失敗：限時到還沒打完 → 不 GameOver，一樣前進下一節點。
     if (this.eventHold <= 0) {
       this.eventHold = 0;
-      this.towerGuardTextHandle?.fadeOut();
-      this.towerGuardTextHandle = null;
       this.onTowerWaveResult?.(false);
       this.advanceNode();
     }
@@ -567,18 +578,14 @@ export class WaveSystem implements GameSystem {
     //   gate 內 eventTriggered 維持 false → isTowerWaveActive() 回 false（征騎進度條先不顯塔條）。非塔波 gate=0。
     const isTowerNode = entered?.nodeType === 'Event' && isResolvedTowerPreset((entered as EventNodeData).eventPresetName);
     if (isTowerNode) {
-      // 塔波登場照搬守護波兩段訊息（用戶：塔=守護波同類型）：introEventText 大字（timedEventText，顯 eventTextDurationSec）
-      //   + towerMessageText 提示（guardText，同守護波顯示元件，別另造）。towerGate 對齊 eventTextDurationSec，
-      //   訊息顯完那刻才發 onTowerWave（征騎壓黑+生塔）。
+      // 塔波登場第一段大字（照守護波：enterNode 只發 introEventText 大字 timedEventText）。
+      //   ★第二段提示（towerMessageText）由征騎 TowerIntroSequence.beginFocus 發（跟守護波「聚焦時才滑進提示」一致，
+      //   避免 enterNode 預發 + beginFocus 再發＝兩段疊在一起，Bug1）。towerGate 對齊 eventTextDurationSec。
       const tmsg = resolveTowerMessages(getResolvedTowerPreset((entered as EventNodeData).eventPresetName));
       if (tmsg.introEventText !== '') this.ctx.effects?.timedEventText?.(tmsg.eventTextDurationSec, tmsg.introEventText);
-      if (tmsg.towerMessageText !== '') this.towerGuardTextHandle = this.ctx.effects?.guardText?.(tmsg.towerMessageText) ?? null;
       this.towerGateSec = tmsg.eventTextDurationSec;
     } else {
       this.towerGateSec = 0;
-      // 換節點若殘留塔波提示大字 → 淡出（保險，避免跨節點殘留）。
-      this.towerGuardTextHandle?.fadeOut();
-      this.towerGuardTextHandle = null;
     }
   }
 

@@ -29,11 +29,11 @@ interface ActiveMine {
  * MineTrapSystem — 地雷陷阱（★踩雷式重設計；附加類、讀取式，比照 FireRainSystem 自撒/自宣告）。
  *
  * 觸發＝讀取式（非回呼）：每幀讀 WaveSystem.getActiveMinePreset()（波騎 mineGateSec：波次宣告顯示中回 null）：
- *  - null → non-null（波次宣告顯完、開放撒雷）：發「小心地雷！」宣告 + 用 pickFireRainPoint 全場撒 count 顆
- *    （★撒下不倒數、只顯靜置地雷本體，等玩家踩）。
+ *  - null → non-null（波次宣告顯完、開放撒雷）：發「小心地雷！」宣告（★整關一次，照火雨 announcedLevelIndex）
+ *    + 用 pickFireRainPoint 全場撒 count 顆（★撒下不倒數、只顯靜置地雷本體，等玩家踩）。
  *  - non-null 期間：★per-mine 再生——每爆掉一顆起算 respawnDelaySec，到期且場上存活 < maintainCount 才補一顆
  *    （非立即、非批次補到滿）。
- *  - non-null → null（離開節點）：清乾淨、重置旗標，下個地雷節點再撒。
+ *  - non-null → null（離開節點）：清乾淨（★不重置宣告旗標——整關一次；同關下個地雷節點不再宣告，換關才重播）。
  *
  * 踩雷行為（每幀）：
  *  1) 未觸發的地雷：檢查任一在場非待機玩家 footPosition 進入「地雷本體半徑 MINE_BODY_RADIUS_PX」（★貼合看到的地雷大小、非爆炸半徑）→ 觸發該顆（收靜置本體、起閃爍預警圈 + 啟動 delaySec 倒數）。
@@ -50,7 +50,8 @@ export class MineTrapSystem implements GameSystem {
   /** 目前是否在地雷節點的「開放撒雷」狀態（preset non-null）。用來偵測 null→non-null 起始撒+宣告。 */
   private active = false;
   /** 本節點是否已發過「小心地雷！」宣告（一節點只宣告一次）。 */
-  private announced = false;
+  /** Bug3：地雷警示整關只顯示一次（照火雨 announcedLevelIndex；-1＝尚未宣告；換關 getLevelIndex 變自然重播）。 */
+  private announcedLevelIndex = -1;
   /**
    * ★per-mine 再生佇列（用戶#3）：每爆掉一顆 → push 一個 respawnDelaySec 倒數；
    * 每幀扣 dt，到期（<=0）且場上存活數 < maintainCount 才補一顆（per-mine 節奏、非立即、非批次補到滿）。
@@ -106,8 +107,10 @@ export class MineTrapSystem implements GameSystem {
         // null → non-null：波次宣告顯完、開放撒雷 → 發「小心地雷！」宣告 + 撒初始 count 顆。
         this.active = true;
         this.respawnTimers = [];
-        if (!this.announced) {
-          this.announced = true;
+        // Bug3：地雷警示整關一次（照火雨 announcedLevelIndex）——同一關的多個地雷節點只宣告一次；換關才重播。
+        const level = this.ctx.wave.getLevelIndex();
+        if (level !== this.announcedLevelIndex) {
+          this.announcedLevelIndex = level;
           this.ctx.effects?.mineAnnounce?.();
         }
         this.scatterMines(preset, Math.max(1, preset.count));
@@ -117,11 +120,11 @@ export class MineTrapSystem implements GameSystem {
         this.tickRespawns(dt, preset);
       }
     } else if (this.active) {
-      // non-null → null：離開地雷節點 → 清乾淨、重置旗標供下個地雷節點再撒+再宣告。
+      // non-null → null：離開地雷節點 → 清乾淨。★Bug3：不重置 announcedLevelIndex（整關一次，照火雨）——
+      //   離開節點只清雷/停撒，宣告旗標留著；同關下個地雷節點不再宣告，換關 getLevelIndex 變才自然重播。
       this.clearAll();
       this.respawnTimers = [];
       this.active = false;
-      this.announced = false;
     }
 
     if (this.mines.length === 0) return;
