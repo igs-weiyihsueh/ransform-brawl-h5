@@ -476,32 +476,8 @@ function twMapping(cv: HTMLCanvasElement) {
 }
 
 let twDragIndex = -1; // 目前拖曳的塔索引（-1=無）
-let twSoloView = false; // ①單塔放大校對：true=只顯一座塔放大置中（1:1 校對碰撞圓）；false=多塔佈局（現況）
+let twSoloView = false; // ①單塔校對：true=錐狀色塊+底部碰撞圈（校對碰撞圈相對塔基）；false=多塔佈局（現況）
 let twSoloIndex = 0; // 單塔校對模式顯示第幾座（0-based）
-// ★真實塔立繪（game-side setStaticTexture('fx_tower_spire', 0.5, 1.0)＝origin 底部錨點）：單塔校對畫真圖，碰撞圈 1:1 疊塔視覺塔基。
-const twSpireRef = new Image();
-let twSpireLoaded = false;
-// ★塔素材不透明底邊（opaqueMaxY，原生像素 0-based）：由底往上第一列有 alpha>16 的 y。跟 game-side getTowerVisualBaseCenter 同源。
-//   視覺塔基 Y = frameTop + (opaqueMaxY+1)/texH × displayHeight（直用 opaqueMaxY 少一次湊整誤差，照征騎 58fc024）。
-let twSpireOpaqueMaxY = -1; // -1＝未算/全透明 → fallback 腳底
-function twComputeSpireOpaqueMaxY(): void {
-  try {
-    const nw = twSpireRef.naturalWidth, nh = twSpireRef.naturalHeight;
-    if (!nw || !nh) { twSpireOpaqueMaxY = -1; return; }
-    const oc = document.createElement('canvas'); oc.width = nw; oc.height = nh;
-    const octx = oc.getContext('2d'); if (!octx) { twSpireOpaqueMaxY = -1; return; }
-    octx.drawImage(twSpireRef, 0, 0);
-    const data = octx.getImageData(0, 0, nw, nh).data;
-    twSpireOpaqueMaxY = -1;
-    outer: for (let y = nh - 1; y >= 0; y -= 1) {
-      for (let x = 0; x < nw; x += 1) {
-        if (data[(y * nw + x) * 4 + 3] > 16) { twSpireOpaqueMaxY = y; break outer; } // ★alpha>16（嚴格）同 game
-      }
-    }
-  } catch { twSpireOpaqueMaxY = -1; /* 讀不到 → fallback 腳底 */ }
-}
-twSpireRef.addEventListener('load', () => { twSpireLoaded = true; twComputeSpireOpaqueMaxY(); twRender(); });
-twSpireRef.src = '../assets/images/vfx/fx_tower_spire.png';
 // game-side 塔碰撞半徑省略時的塔專屬預設＝110（TOWER_DEFAULT_COLLISION_RADIUS_PX，征騎 58fc024 確認）。
 const TOWER_DEFAULT_COLLISION_RADIUS_PX = 110;
 
@@ -539,62 +515,51 @@ function twRender(): void {
   };
 
   if (twSoloView) {
-    // ①單塔放大校對（1:1 對遊戲）：只畫真實塔立繪 + 碰撞圈（貼地橢圓，圓心對視覺塔基底+offset）；★不畫魂力環。
-    //   全照 game-side 58fc024 真實值：圓心＝getTowerVisualBaseCenter（塔素材 alpha 不透明底+offset）、
-    //   半徑＝towerCollisionRadiusPx??110、貼地壓扁 GROUND_SQUASH_Y、塔立繪 fx_tower_spire origin(0.5,1.0)×towerScale。
+    // ①單塔放大校對（用戶定調：別畫美術圖）：畫**錐狀色塊代表塔** + **底部碰撞圈**（貼地壓扁橢圓）。
+    //   色塊底部＝塔基＝碰撞圈圓心（明確、不用讀 alpha 猜塔基）。碰撞圈半徑 towerCollisionRadiusPx??110 + offset + 貼地壓扁 0.5。
+    //   用戶調半徑/offset → 碰撞圈相對錐狀色塊底部即時變化，一目了然。★不畫魂力環。
     const idx = Math.min(twSoloIndex, Math.max(0, p.towerCount - 1));
     const colR = p.towerCollisionRadiusPx ?? TOWER_DEFAULT_COLLISION_RADIUS_PX; // 場景 px
-    // 塔立繪自然尺寸（載入後才有）→ 顯示尺寸 = 自然 × towerScale（場景 px，比照 game finalScale 觀感）。
-    const natW = twSpireLoaded ? twSpireRef.naturalWidth : 90;
-    const natH = twSpireLoaded ? twSpireRef.naturalHeight : 180;
-    const towerH = natH * scale; // 顯示高（場景 px）
-    const towerW = natW * scale;
-    // 放大比例 sc：讓整體內容（塔高 + 腳底貼地圓盤下緣，圓盤在腳底往下探 colR×squash）約佔畫布 70%。
-    const diskHalfY = colR * GROUND_SQUASH + Math.abs(p.towerCollisionOffsetYPx ?? 0) * GROUND_SQUASH;
-    const contentH = towerH + diskHalfY; // 塔頂→腳底 + 圓盤下半（腳底以下）
-    const extent = Math.max(contentH, colR * 2 + Math.abs(p.towerCollisionOffsetXPx ?? 0) * 2, towerW);
+    // 錐狀色塊尺寸（示意塔身，吃 towerScale）：底寬、頂寬（尖）、高。純幾何、非美術圖。
+    const baseW = 120 * scale;   // 錐底寬
+    const topW = 30 * scale;     // 錐頂寬（尖）
+    const towerH = 200 * scale;  // 錐高（＝塔身視覺高，塔基在底邊）
+    const offX = (p.towerCollisionOffsetXPx ?? 0);
+    const offY = (p.towerCollisionOffsetYPx ?? 0);
+    // 放大比例 sc：容納 max(錐高+圓盤下探, 碰撞圈寬, 錐底寬) 約佔畫布 70%。
+    const diskDownY = (colR + Math.abs(offY)) * GROUND_SQUASH; // 圓盤在塔基往下探（貼地壓扁後）
+    const extent = Math.max(towerH + diskDownY, colR * 2 + Math.abs(offX) * 2, baseW);
     const sc = (Math.min(W, H) * 0.7) / Math.max(1, extent);
-    // 版面：把「塔頂→圓盤下緣」整體垂直置中。腳底 footY 使內容置中：footY = 畫布中央 + (內容中心到腳底的距離)。
     const centerX = W / 2;
-    // 內容垂直範圍：top = footY - towerH*sc，bottom = footY + diskHalfY*sc；令其中點 = H/2。
-    const footY = H / 2 + (towerH * sc - diskHalfY * sc) / 2;
-    // 畫真實塔立繪（底部錨點：x 置中、底邊在 footY）。
-    if (twSpireLoaded) {
-      const dw = towerW * sc, dh = towerH * sc;
-      ctx.drawImage(twSpireRef, centerX - dw / 2, footY - dh, dw, dh);
-    } else {
-      // 圖未載入的暫時佔位（極簡，不誤導；載入後即重繪成真圖）。
-      ctx.fillStyle = '#3a3a5c';
-      ctx.fillRect(centerX - (towerW * sc) / 2, footY - towerH * sc, towerW * sc, towerH * sc);
-    }
-    // ★碰撞圈（貼地橢圓，跟遊戲視覺塔基底貼地圓盤 1:1）：圓心＝**視覺塔基底**(centerX, visualBaseY) + offset，半徑 colR。
-    //   第三次精修定案（d910b8ef，用戶+變身-leader，game 58fc024）：圓心讀塔素材 alpha 不透明底（腳底錨點在
-    //   視覺塔基下方 ~22px 透明區，圈放腳底會掉塔下方路）。★同源公式（照征騎，直用 opaqueMaxY 少湊整誤差）：
-    //   frameTop = footY − displayHeight；visualBaseY = frameTop + (opaqueMaxY+1)/texH × displayHeight。
-    //   讀不到 alpha（opaqueMaxY<0/圖沒載）→ 退腳底 footY（同 game fallback getTowerRingGroundCenter）。
-    const displayH = towerH * sc; // 顯示高（canvas px）
-    const frameTop = footY - displayH;
-    const visualBaseY = (twSpireLoaded && twSpireOpaqueMaxY >= 0 && natH > 0)
-      ? frameTop + ((twSpireOpaqueMaxY + 1) / natH) * displayH
-      : footY; // fallback 腳底
-    const ccx = centerX + (p.towerCollisionOffsetXPx ?? 0) * sc;
-    const ccy = visualBaseY + (p.towerCollisionOffsetYPx ?? 0) * sc * GROUND_SQUASH; // 圓心 Y 基準＝視覺塔基底；offset Y 同步貼地壓扁
+    // 版面：把「錐頂→圓盤下緣」整體垂直置中。塔基 baseY：內容 top=baseY−towerH*sc、bottom=baseY+diskDownY*sc，中點=H/2。
+    const baseY = H / 2 + (towerH * sc - diskDownY * sc) / 2; // 塔基（錐底邊）Y
+    // 畫錐狀色塊（梯形：底邊在 baseY、頂邊在 baseY−towerH*sc）。
+    const bw = baseW * sc, tw = topW * sc, th = towerH * sc;
+    const topY = baseY - th;
+    ctx.save();
+    ctx.fillStyle = 'rgba(120,110,180,0.55)'; ctx.strokeStyle = 'rgba(180,170,230,0.9)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(centerX - tw / 2, topY);
+    ctx.lineTo(centerX + tw / 2, topY);
+    ctx.lineTo(centerX + bw / 2, baseY);
+    ctx.lineTo(centerX - bw / 2, baseY);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    // ★碰撞圈（貼地壓扁橢圓，跟(乙)後遊戲貼地圓盤一致）：圓心＝**錐狀色塊底部（塔基）** + offset。
+    const ccx = centerX + offX * sc;
+    const ccy = baseY + offY * sc * GROUND_SQUASH; // 圓心 Y 基準＝塔基（色塊底），offset Y 同步貼地壓扁
     ctx.save();
     ctx.strokeStyle = 'rgba(255,170,60,0.95)'; ctx.setLineDash([5, 4]); ctx.lineWidth = 2;
     ctx.beginPath(); ctx.ellipse(ccx, ccy, colR * sc, colR * sc * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,170,60,0.95)'; ctx.setLineDash([5, 4]); ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.ellipse(ccx, ccy, colR * sc, colR * sc * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
-    // 圓心十字（標塔視覺中心+offset 的實際圓心）。
+    // 圓心十字。
     ctx.save();
     ctx.strokeStyle = 'rgba(255,170,60,0.95)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(ccx - 6, ccy); ctx.lineTo(ccx + 6, ccy);
     ctx.moveTo(ccx, ccy - 6); ctx.lineTo(ccx, ccy + 6); ctx.stroke();
     ctx.restore();
     ctx.fillStyle = '#9a9ab5'; ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(`單塔放大校對（1:1 對遊戲）｜塔 ${idx + 1}/${p.towerCount}｜碰撞圈 ${colR}px（貼地橢圓，圓心＝視覺塔基底＋偏移 ${p.towerCollisionOffsetXPx ?? 0},${p.towerCollisionOffsetYPx ?? 0}）｜塔 ×${scale.toFixed(1)}`, 8, H - 8);
+    ctx.fillText(`單塔校對（錐狀示意）｜塔 ${idx + 1}/${p.towerCount}｜碰撞圈 ${colR}px（貼地橢圓，圓心＝塔基＋偏移 ${offX},${offY}）｜塔 ×${scale.toFixed(1)}`, 8, H - 8);
     return;
   }
 
