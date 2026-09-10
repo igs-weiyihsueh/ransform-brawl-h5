@@ -276,6 +276,9 @@ export class GameScene extends Phaser.Scene {
       // A2：塔位＝preset.positions 前 N 座（有則用），不足/省略用預設環形補到 towerCount（1920×1080 場景座標）。
       const positions = resolveTowerPositions(preset.positions, n, GAME_WIDTH, GAME_HEIGHT);
       const scale = preset.towerScale != null && preset.towerScale > 0 ? preset.towerScale : 1; // A3：塔 sprite 縮放（省略=1）
+      // ★真空帶（塔 body 碰撞半徑）：波騎 towerCollisionRadiusPx preset 欄→覆寫塔 radiusPx→角色能貼近塔、可調。
+      //   波騎 towerConfig 已有此欄（正式型別）；省略＝不覆寫、用現行預設 radiusPx（不破舊行為）。跟 ring vacuumRadiusPx 無關。
+      const towerCollisionRadiusPx = preset.towerCollisionRadiusPx;
       // 波騎 preset 欄位解析（resolveTowerIntro/Ui/Messages 純函式，逐欄 ?? 預設，0-nullish 安全）。
       const intro = resolveTowerIntro(preset);
       const ui = resolveTowerUi(preset);
@@ -289,6 +292,9 @@ export class GameScene extends Phaser.Scene {
         const towers = [];
         for (let i = 0; i < n; i += 1) {
           const t = spawner.spawnTower(positions[i].x, positions[i].y, preset.towerHp, ring, scale);
+          if (towerCollisionRadiusPx != null && towerCollisionRadiusPx >= 0) {
+            t.setTowerCollisionRadius(towerCollisionRadiusPx); // ★真空帶：覆寫塔碰撞半徑，讓角色能貼近+可調（正式型別）
+          }
           towers.push(t);
         }
         return towers;

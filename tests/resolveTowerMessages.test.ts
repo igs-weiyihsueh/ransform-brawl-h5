@@ -93,6 +93,12 @@ describe('validateTower — 訊息欄（文字非字串擋、秒數負擋、\'\'
     expect(validateTower(withMsg({ ringSkill: { ringCount: 3, baseRadiusPx: 60, radiusStepPx: 40, ringIntervalSec: 0.6, ringThicknessPx: 20, energyCost: 2, warningSec: 0.5, vacuumRadiusPx: -5 } })).ok).toBe(false);
   });
 
+  it('★ towerCollisionRadiusPx（真空帶＝塔 body 碰撞半徑，選填 min0；≠魂力環 vacuumRadiusPx）：合法過 / 負擋', () => {
+    expect(validateTower(withMsg({ towerCollisionRadiusPx: 70 })).ok).toBe(true);
+    expect(validateTower(withMsg({ towerCollisionRadiusPx: 0 })).ok).toBe(true);
+    expect(validateTower(withMsg({ towerCollisionRadiusPx: -1 })).ok).toBe(false);
+  });
+
   it('★ D 塔血條 UI + E 獎勵：合法值過 / rewardTickets 負擋', () => {
     expect(validateTower(withMsg({ barWidthPx: 200, barHeightPx: 20, barOffsetYPx: -50, labelOffsetYPx: 0, rewardTickets: 0 })).ok).toBe(true);
     expect(validateTower(withMsg({ rewardTickets: -1 })).ok).toBe(false);

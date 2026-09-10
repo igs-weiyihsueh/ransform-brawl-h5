@@ -381,6 +381,8 @@ function twBuildInspector(): void {
   insp.appendChild(numberRow('限時 timeLimit (s)', p.timeLimitSec, (v) => { p.timeLimitSec = v; }, { min: 1, max: 300, step: 5 }, on));
   insp.appendChild(numberRow('尖塔血量 towerHp', p.towerHp, (v) => { p.towerHp = v; }, { min: 1, max: 1000, step: 10 }, on));
   insp.appendChild(numberRow('塔大小 towerScale (×)', p.towerScale ?? 1, (v) => { p.towerScale = v; }, { min: 0.2, max: 4, step: 0.1 }, on));
+  // ★真空帶＝塔 body 碰撞半徑（角色/怪能貼多近塔）；≠魂力環內圈半徑（那是環狀攻擊、下方 ringSkill）。省略＝現行預設(~45×scale)。
+  insp.appendChild(numberRow('真空帶半徑（碰撞距離）towerCollisionRadiusPx (px)', p.towerCollisionRadiusPx ?? 45, (v) => { p.towerCollisionRadiusPx = v; }, { min: 0, max: 400, step: 5 }, on));
   // 登場訊息（照搬守護波兩段：事件宣告大字 + 提示 + 顯示時間）。
   const msgTitle = document.createElement('div');
   msgTitle.className = 'section-title'; msgTitle.style.marginTop = '12px';
@@ -415,7 +417,7 @@ function twBuildInspector(): void {
   insp.appendChild(numberRow('每層間隔 ringInterval (s)', r.ringIntervalSec, (v) => { r.ringIntervalSec = v; }, { min: 0.05, max: 5, step: 0.05 }, on));
   insp.appendChild(numberRow('環厚 ringThickness (px)', r.ringThicknessPx, (v) => { r.ringThicknessPx = v; }, { min: 1, max: 100, step: 1 }, on));
   insp.appendChild(numberRow('環預警秒數 warning (s)', r.warningSec, (v) => { r.warningSec = v; }, { min: 0, max: 3, step: 0.1 }, on));
-  insp.appendChild(numberRow('真空帶半徑 vacuumRadius (px)', r.vacuumRadiusPx ?? r.baseRadiusPx, (v) => { r.vacuumRadiusPx = v; }, { min: 0, max: 400, step: 5 }, on));
+  insp.appendChild(numberRow('魂力環內圈半徑 vacuumRadius (px)', r.vacuumRadiusPx ?? r.baseRadiusPx, (v) => { r.vacuumRadiusPx = v; }, { min: 0, max: 400, step: 5 }, on));
   insp.appendChild(numberRow('扣能量段數 energyCost', r.energyCost, (v) => { r.energyCost = Math.round(v); }, { min: 0, max: 6, step: 1, int: true }, on));
   // A2：塔位置區塊——按鈕清除自訂位置（回預設環形）。拖曳在 tw-preview canvas。
   const posTitle = document.createElement('div');
@@ -484,11 +486,17 @@ function twRender(): void {
       ctx.lineWidth = Math.max(1, (r.ringThicknessPx * m.s) || 1);
       ctx.beginPath(); ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
     }
-    // ②真空帶（最內圈安全區）：綠色虛線圈，讓用戶看到真空帶半徑。
+    // 魂力環內圈（ring.vacuumRadiusPx，環狀攻擊安全區）：綠色虛線圈。
     const vac = (r.vacuumRadiusPx ?? r.baseRadiusPx) * m.s;
     ctx.save();
     ctx.strokeStyle = 'rgba(89,217,142,0.8)'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.ellipse(c.x, c.y, vac, vac * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+    // ★真空帶＝塔 body 碰撞半徑（towerCollisionRadiusPx，角色/怪貼不進此半徑）：橘色虛線圈，跟環內圈分色。
+    const col = (p.towerCollisionRadiusPx ?? 45) * m.s;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,170,60,0.9)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, col, col * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
   });
   positions.forEach((pos, i) => {

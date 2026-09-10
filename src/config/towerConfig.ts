@@ -52,6 +52,12 @@ export interface TowerPreset {
    */
   towerScale?: number;
   /**
+   * ★真空帶＝塔的 body 碰撞半徑（像素，>=0；選填，省略＝現行預設 ENEMY_BODY_RADIUS_PX×scale，不破舊）。
+   * 用戶「真空帶」真義＝物件間碰撞/推擠距離（角色/怪能貼多近塔），非魂力環 ring.vacuumRadiusPx（那是環狀攻擊內圈、另一回事，別混）。
+   * 征騎 game-side setTowerCollisionRadius 讀此覆寫塔 radiusPx（getBodyRadius；setTowerScale 只動 sprite 不動 radiusPx，故需獨立可調欄）。
+   */
+  towerCollisionRadiusPx?: number;
+  /**
    * A2：每座塔的位置（場景座標，1920×1080 基準；editor 可滑鼠拖曳編輯疊在場景底圖上）。
    * 省略／長度不足 towerCount → game-side 用預設環形/散佈補足。長度可 != towerCount（前 N 座用設定、其餘預設）。
    */

@@ -111,7 +111,7 @@ export class Enemy implements Hittable {
     warningSec: number;
     vacuumRadiusPx?: number;
   } | null = null;
-  private readonly radiusPx: number;
+  private radiusPx: number; // body 碰撞/推擠半徑（真空帶）；塔可由 setTowerCollisionRadius 覆寫（故非 readonly）
 
   private state: EnemyState = 'chase';
   private timer = 0; // 當前狀態的計時（charge/cooldown/damaged 用）
@@ -648,6 +648,18 @@ export class Enemy implements Hittable {
   setTowerScale(scale: number): void {
     if (!Number.isFinite(scale) || scale <= 0) return;
     this.anim.sprite.setScale(scale);
+  }
+
+  /**
+   * ★真空帶（物件間碰撞/推擠最小距離）：覆寫塔的 body 碰撞半徑 radiusPx。
+   * getBodyRadius() 回此值 → ContactSolver paceMove 接觸距離 = 玩家半徑 + 此半徑 → 縮小它讓角色能貼近塔。
+   * 用戶要能調塔真空帶（碰撞半徑），towerCollisionRadiusPx preset 欄由 spawnTower 傳入。>=0；省略不呼＝現行預設。
+   * ★只改碰撞半徑值，不動 ContactSolver/paceMove 演算法、immovable 維持（塔仍推不動、只是碰撞圈縮小）。
+   * ★跟魂力環 ring vacuumRadiusPx（環狀攻擊最內圈）完全無關、不同回事。
+   */
+  setTowerCollisionRadius(px: number): void {
+    if (!Number.isFinite(px) || px < 0) return;
+    this.radiusPx = px;
   }
 
   /**
