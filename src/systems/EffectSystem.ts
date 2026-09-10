@@ -784,6 +784,56 @@ export class EffectSystem {
     });
   }
 
+  /**
+   * ★定案A：魔尖塔波「每座塔各一個聚光燈」聚焦壓黑（多座塔＝一層壓黑 + 每塔各一顆亮暈精準照）。
+   * 有別於 guardSpotlight（單點：一層 vignette + 一顆 glow）——多塔用 guardSpotlight×N 會疊 N 層 vignette 互相壓黑成一坨。
+   * 這裡：★單一層全螢幕壓黑（一次）+ 每座塔位各一顆暖白亮暈（ADD，穿透壓黑）＝每塔身上都有獨立聚光、不互相蓋。
+   * @param points 每座塔位（場景座標）。@param radiusPx 每顆聚光半徑（框單塔）。回傳 fadeOut 一次清全部。
+   */
+  towerSpotlights(points: readonly { x: number; y: number }[], radiusPx = 200): { fadeOut: () => void } {
+    const depth = ENERGY_FLY_DEPTH + 10;
+    const objs: Phaser.GameObjects.GameObject[] = [];
+    // ①單一層全螢幕壓黑（只一層，避免多層 vignette 疊成一坨）。
+    const dim = this.scene.add
+      .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
+      .setScrollFactor(0)
+      .setDepth(depth)
+      .setAlpha(0);
+    this.scene.tweens.add({ targets: dim, alpha: 1, duration: 350, ease: 'Sine.easeOut' });
+    objs.push(dim);
+    // ②每座塔位各一顆暖白亮暈（ADD 穿透壓黑）＝每塔精準聚光。素材沒載→退回半透明白圓。
+    const glowKey = ENEMY_ATTACK_VFX.guardFocusGlow.key;
+    const hasGlow = this.scene.textures.exists(glowKey);
+    // ★亮暈直徑收斂到「框住單座塔」大小（≈spotlightRadiusPx×1.4），別放大到 ×3.2(=832px)——
+    //   Tower4 塔間距 ~427px，×3.2 會讓相鄰亮暈嚴重重疊糊成中央一大團（翼騎 headed 抓到）。
+    //   ×1.4：radiusPx 200→直徑 280px < 塔間距 427px → 每塔亮暈分離、中間有暗隙、中心貼塔身。
+    const glowDiameter = radiusPx * 1.4;
+    for (const p of points) {
+      let glow: Phaser.GameObjects.GameObject;
+      if (hasGlow) {
+        const g = this.scene.add.image(p.x, p.y, glowKey).setScrollFactor(0).setDepth(depth + 1).setAlpha(0);
+        g.setDisplaySize(glowDiameter, glowDiameter);
+        g.setBlendMode(Phaser.BlendModes.ADD);
+        glow = g;
+      } else {
+        // 後備半透明白圓：半徑＝glowDiameter/2（跟貼圖版同尺寸，別用整個 radiusPx 當半徑=太大重疊）。
+        const g = this.scene.add.circle(p.x, p.y, glowDiameter / 2, 0xfff2cc, 0.6).setScrollFactor(0).setDepth(depth + 1).setAlpha(0);
+        g.setBlendMode(Phaser.BlendModes.ADD);
+        glow = g;
+      }
+      this.scene.tweens.add({ targets: glow, alpha: 0.9, duration: 400, ease: 'Sine.easeOut' });
+      objs.push(glow);
+    }
+    return {
+      fadeOut: () => {
+        this.scene.tweens.add({
+          targets: objs, alpha: 0, duration: 350, ease: 'Sine.easeIn',
+          onComplete: () => objs.forEach((o) => o.destroy()),
+        });
+      },
+    };
+  }
+
   guardSpotlight(x: number, y: number, radiusPx = 200): { fadeOut: () => void } {
     const depth = ENERGY_FLY_DEPTH + 10; // 960：壓暗蓋住場上角色/敵人/背景（雕像由呼叫端提到此之上）
     const objs: Phaser.GameObjects.GameObject[] = [];

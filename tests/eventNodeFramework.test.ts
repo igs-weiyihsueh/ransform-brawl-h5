@@ -9,6 +9,11 @@ import { validateLevels } from '@/config/levelSchema';
 import { WaveSystem, type TowerPreset } from '@/systems/WaveSystem';
 import { clearResolvedMineCache } from '@/config/mineSchema';
 import { clearResolvedTowerCache } from '@/config/towerSchema';
+import * as towerSchema from '@/config/towerSchema';
+import * as guardSchema from '@/config/guardSchema';
+import * as fireRainSchema from '@/config/fireRainSchema';
+import * as mineSchema from '@/config/mineSchema';
+import { vi } from 'vitest';
 import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 import { TOWER_MESSAGE_DEFAULTS } from '@/config/towerConfig';
 import type { LevelData, LevelsFile } from '@/config/levelSchema';
@@ -62,6 +67,22 @@ function makeWaveCapturingMsgs(nodes: unknown[]): {
 beforeEach(() => {
   clearResolvedMineCache();
   clearResolvedTowerCache();
+  vi.restoreAllMocks();
+});
+
+describe('★編輯器調值→遊戲即時生效：enterNode 清 resolved preset cache（免 F5，用戶爆氣真空帶調了沒變真因）', () => {
+  it('進節點時清 guard/firerain/mine/tower cache（重讀 localStorage override）', () => {
+    const guardSpy = vi.spyOn(guardSchema, 'clearResolvedGuardCache');
+    const fireSpy = vi.spyOn(fireRainSchema, 'clearResolvedFireRainCache');
+    const mineSpy = vi.spyOn(mineSchema, 'clearResolvedMineCache');
+    const towerSpy = vi.spyOn(towerSchema, 'clearResolvedTowerCache');
+    // init→enterNode(0) 應清四種 cache（進波前重讀 override）。
+    makeWave([{ nodeType: 'Event', eventPresetName: 'Tower4' }]);
+    expect(guardSpy).toHaveBeenCalled();
+    expect(fireSpy).toHaveBeenCalled();
+    expect(mineSpy).toHaveBeenCalled();
+    expect(towerSpy).toHaveBeenCalled();
+  });
 });
 
 describe('地雷=附加類 attachMineTrap → getActiveMinePreset', () => {

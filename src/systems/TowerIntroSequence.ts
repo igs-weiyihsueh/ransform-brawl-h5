@@ -1,7 +1,7 @@
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
 import { PLAYER_CONFIG } from '@/config/combatConfig';
 import { scriptedMoveStep, allScriptedArrived, type Vec2 } from '@/systems/guardIntro';
-import { towerGatherTargets, towerSpotlightTarget } from '@/systems/towerIntro';
+import { towerGatherTargets } from '@/systems/towerIntro';
 import type { GameContext } from '@/systems/GameContext';
 import type { Enemy } from '@/entities/Enemy';
 
@@ -36,6 +36,7 @@ export class TowerIntroSequence {
   private readonly towerMessageText: string;
   /** Bug2：聚焦聚光燈打在「塔」上（塔位包圍盒中心+框整組半徑），非玩家聚集點 this.center。 */
   private readonly towerPositions: readonly Vec2[];
+  /** ★定案A：每座塔各一顆聚光（towerSpotlights：一層壓黑+每塔一顆亮暈）；回傳單一 handle，fadeOut 一次清全部。 */
   private spotlight: { fadeOut: () => void } | null = null;
   private guardTextHandle: { fadeOut: () => void } | null = null;
 
@@ -158,7 +159,7 @@ export class TowerIntroSequence {
     }
   }
 
-  /** ②★Bug2：先生塔+提 depth 到 spotlight 之上（塔在亮圈中被照亮）→ 聚焦壓黑 spotlight（打在塔上）+ 第二段提示 + 定格凍結。 */
+  /** ②★Bug2/定案A：先生塔+提 depth 到 spotlight 之上 → 每座塔各一個 guardSpotlight 精準照 + 第二段提示 + 定格凍結。 */
   private beginFocus(): void {
     // ★Bug2 真因修：塔在聚焦「之前」就生成+提 depth 到 spotlight overlay(960) 之上（比照守護波雕像 constructor 就建、
     //   focus 時 setDepth 972 被照亮）。原本塔在 endFocus 才生→聚焦壓黑整段亮圈中心是空的、玩家點又≈塔中心→亮圈裡只看到玩家。
@@ -168,11 +169,11 @@ export class TowerIntroSequence {
       t.setTowerFocusDepth?.(); // depth 提到 spotlight 之上→聚焦時塔可見
       t.playTowerAppear?.();    // 聚焦當下塔發亮顯現
     });
-    // 聚光燈中心＝塔位（towerSpotlightTarget 包圍盒中心+框整組半徑）；無塔位保底用玩家聚集中心。
-    const spot = this.towerPositions.length > 0
-      ? towerSpotlightTarget(this.towerPositions, this.spotlightRadiusPx)
-      : { center: this.center, radiusPx: this.spotlightRadiusPx };
-    this.spotlight = this.ctx.effects?.guardSpotlight?.(spot.center.x, spot.center.y, spot.radiusPx) ?? null;
+    // ★定案A：每座塔各一顆聚光燈精準照（towerSpotlights：★一層全螢幕壓黑 + 每塔位各一顆亮暈 ADD 穿透）。
+    //   有別於呼 guardSpotlight×N 會疊 N 層 vignette 互相壓黑成一坨中央大圈；這裡每塔身上都有獨立聚光、中心不壓在塔陣空地。
+    //   spotlightRadiusPx 語意＝「每座塔的聚光燈半徑」（框單塔）。無塔位保底退回玩家聚集中心單顆。
+    const focusPoints = this.towerPositions.length > 0 ? this.towerPositions : [this.center];
+    this.spotlight = this.ctx.effects?.towerSpotlights?.(focusPoints, this.spotlightRadiusPx) ?? null;
     this.guardTextHandle = this.ctx.effects?.guardText?.(this.towerMessageText) ?? null;
     this.ctx.guardFocusPause = true; // 定格：玩法系統凍結（dt=0，含 EnemySpawner ringSkill），聚焦 UI tween 照播
     this.phase = 'focus';
@@ -190,7 +191,7 @@ export class TowerIntroSequence {
   }
 
   private cleanupFocus(): void {
-    this.spotlight?.fadeOut();
+    this.spotlight?.fadeOut(); // ★定案A：towerSpotlights 單一 handle→fadeOut 一次清全部（壓黑+每塔亮暈）
     this.spotlight = null;
     this.guardTextHandle?.fadeOut();
     this.guardTextHandle = null;

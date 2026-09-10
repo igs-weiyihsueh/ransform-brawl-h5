@@ -390,16 +390,12 @@ function twBuildInspector(): void {
   insp.appendChild(textRow('事件宣告大字 introEventText', p.introEventText ?? md.introEventText, (v) => { p.introEventText = v; }, on));
   insp.appendChild(textRow('提示訊息 towerMessageText', p.towerMessageText ?? md.towerMessageText, (v) => { p.towerMessageText = v; }, on));
   insp.appendChild(numberRow('宣告顯示秒數 eventTextDuration (s)', p.eventTextDurationSec ?? md.eventTextDurationSec, (v) => { p.eventTextDurationSec = v; }, { min: 0, max: 10, step: 0.5 }, on));
-  // D：塔血條 UI（比照守護波雕像血條）。E：過關獎勵券。
+  // E：過關獎勵券。（★塔血條顯示已移除 game-side，故移除殘留 barWidth/barHeight/barOffsetY/labelOffsetY editor 欄——調了也沒用。）
   const uiTitle = document.createElement('div');
   uiTitle.className = 'section-title'; uiTitle.style.marginTop = '12px';
-  uiTitle.textContent = '塔血條 UI + 過關獎勵';
+  uiTitle.textContent = '過關獎勵';
   insp.appendChild(uiTitle);
   const ud = TOWER_UI_DEFAULTS;
-  insp.appendChild(numberRow('血條寬 barWidth (px)', p.barWidthPx ?? ud.barWidthPx, (v) => { p.barWidthPx = v; }, { min: 0, max: 400, step: 5 }, on));
-  insp.appendChild(numberRow('血條高 barHeight (px)', p.barHeightPx ?? ud.barHeightPx, (v) => { p.barHeightPx = v; }, { min: 0, max: 60, step: 1 }, on));
-  insp.appendChild(numberRow('血條 Y 位移 barOffsetY (px)', p.barOffsetYPx ?? ud.barOffsetYPx, (v) => { p.barOffsetYPx = v; }, { min: -300, max: 300, step: 5 }, on));
-  insp.appendChild(numberRow('標籤 Y 位移 labelOffsetY (px)', p.labelOffsetYPx ?? ud.labelOffsetYPx, (v) => { p.labelOffsetYPx = v; }, { min: -300, max: 300, step: 5 }, on));
   insp.appendChild(numberRow('過關獎勵券 rewardTickets', p.rewardTickets ?? ud.rewardTickets, (v) => { p.rewardTickets = Math.max(0, Math.round(v)); }, { min: 0, max: 100, step: 1, int: true }, on));
   // B：開場演出（玩家聚集中央 + 聚焦壓黑 + 定格，比照守護波但走位目標＝中央非四角）。
   const introTitle = document.createElement('div');

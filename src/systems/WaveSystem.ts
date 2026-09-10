@@ -8,10 +8,11 @@ import {
 import {
   getResolvedFireRainPreset,
   isResolvedFireRainPreset,
+  clearResolvedFireRainCache,
 } from '@/config/fireRainSchema';
-import { getResolvedGuardPreset } from '@/config/guardSchema';
-import { getResolvedMinePreset, isResolvedMinePreset } from '@/config/mineSchema';
-import { getResolvedTowerPreset, isResolvedTowerPreset } from '@/config/towerSchema';
+import { getResolvedGuardPreset, clearResolvedGuardCache } from '@/config/guardSchema';
+import { getResolvedMinePreset, isResolvedMinePreset, clearResolvedMineCache } from '@/config/mineSchema';
+import { getResolvedTowerPreset, isResolvedTowerPreset, clearResolvedTowerCache } from '@/config/towerSchema';
 import type { MinePreset } from '@/config/mineConfig';
 import type { TowerPreset } from '@/config/towerConfig';
 import { resolveTowerMessages } from '@/config/towerConfig';
@@ -585,6 +586,13 @@ export class WaveSystem implements GameSystem {
   /** 進入目前關卡的指定節點索引，重置節點狀態。 */
   private enterNode(index: number): void {
     this.nodeIndex = index;
+    // ★編輯器調值→遊戲即時生效通則（用戶：真空帶調了沒變的真因＝resolved cache 一個 page load 只讀 localStorage 一次就 cache 死）。
+    //   進節點前把本系統會讀的 preset cache 清一次，重讀 localStorage override→用戶在編輯器套用後下次進波即讀到新值（免 F5）。
+    //   tower cache 另在下方 isTowerNode 分支清（同精神）；guard/firerain/mine 通用在此清。
+    clearResolvedGuardCache();
+    clearResolvedFireRainCache();
+    clearResolvedMineCache();
+    clearResolvedTowerCache();
     this.kills = 0;
     this.spawnCooldown = 0;
     this.spawnRefilling = true; // 新節點：先補到 maxAlive（達上限才關 latch）
