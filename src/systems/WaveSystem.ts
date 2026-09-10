@@ -138,6 +138,12 @@ export class WaveSystem implements GameSystem {
    * ★失敗不 GameOver：兩者都 advance 下一節點（沿用守護波規格 decision）。
    */
   onTowerWaveResult: ((won: boolean) => void) | null = null;
+  /**
+   * #2 架構對稱：塔波「戰鬥開始」旗標（預設 false）。塔波雜兵 drip gate 綁此（非 eventTriggered），
+   * 比照守護波 GuardEvent.isCombatPhase()——聚焦壓黑（gather→focus）期間 drip 不跑，endFocus（聚焦結束）後才 drip。
+   * 由征騎 TowerIntroSequence.endFocus() 呼 notifyTowerCombatStart() 設 true；進 node/觸發時歸 false。
+   */
+  private towerCombatStarted = false;
 
   /** 進行中的守護波（Event 節點）；null 表示非守護波。 */
   private guardEvent: GuardEvent | null = null;
@@ -188,6 +194,15 @@ export class WaveSystem implements GameSystem {
    */
   notifyTowerDestroyed(): void {
     this.towersDestroyed += 1;
+  }
+
+  /**
+   * #2 架構對稱：征騎 TowerIntroSequence.endFocus()（聚焦壓黑結束、開打）呼此，本系統設 towerCombatStarted=true
+   * → 塔波雜兵 drip 才開始（比照守護波 endFocus 進 combat phase）。聚焦期間不呼＝drip 不跑。
+   * 非塔波呼叫無害（進 node/觸發時歸 false，且 drip 僅在 tower 節點跑）。
+   */
+  notifyTowerCombatStart(): void {
+    this.towerCombatStarted = true;
   }
 
   /**
@@ -446,14 +461,15 @@ export class WaveSystem implements GameSystem {
       this.eventTriggered = true;
       this.eventHold = t.timeLimitSec; // 限時倒數
       this.towersDestroyed = 0; // 本波擊破數歸零
+      this.towerCombatStarted = false; // #2：觸發生塔＝進入聚焦壓黑，尚未開打→drip 先不跑，等征騎 endFocus 通知
       this.onTowerWave?.(t); // 觸發入口（征騎接：waveMessage 已顯完 → 壓黑+生成 towerCount 座尖塔＋發亮＋ringSkill 環狀技）
     }
     this.eventHold -= dt;
 
-    // Bug4：塔波附加雜兵 drip（照守護波/一般波純 drip 平移）。node 有 spawns → combat 期間維持場上雜兵壓力。
-    //   ★雜兵是「附加壓力」純 drip、不計過關（過關只看 towersDestroyed）；換節點 enterNode 清雜兵/pending。
-    //   維持邏輯同扁平 drip：占用<spawnThreshold 開補、達 maxAlive 關（refill latch），受 spawnInterval 節流。
-    if (node.spawns && node.spawns.length > 0 && (node.maxAlive ?? 0) > 0) {
+    // #2 架構對稱：塔波附加雜兵 drip gate 綁 towerCombatStarted（非 eventTriggered），比照守護波 isCombatPhase()。
+    //   聚焦壓黑（gather→focus）期間 towerCombatStarted=false → 不 drip；征騎 endFocus→notifyTowerCombatStart 後才 drip。
+    //   ★雜兵是「附加壓力」純 drip、不計過關（過關只看 towersDestroyed）；換節點 enterNode 清雜兵/pending+旗標。
+    if (this.towerCombatStarted && node.spawns && node.spawns.length > 0 && (node.maxAlive ?? 0) > 0) {
       const scale = this.playerCountScale();
       const maxAlive = Math.max(1, Math.round((node.maxAlive ?? 0) * scale));
       const spawnThreshold = Math.max(1, Math.round((node.spawnThreshold ?? node.maxAlive ?? 1) * scale));
@@ -476,6 +492,9 @@ export class WaveSystem implements GameSystem {
     // 失敗：限時到還沒打完 → 不 GameOver，一樣前進下一節點。
     if (this.eventHold <= 0) {
       this.eventHold = 0;
+      // #3 照守護波 finish 平移：清場上未打掉的塔（塔=isTower 的 Enemy 一併清），避免超時失敗塔留在場上。
+      //   同守護波 GuardEvent.finish()/Debug skip 清怪位置、完全對稱。
+      this.ctx.spawner.clearAllEnemies();
       this.onTowerWaveResult?.(false);
       this.advanceNode();
     }
@@ -565,6 +584,7 @@ export class WaveSystem implements GameSystem {
     this.eventHold = 0; // 換節點清事件（MineTrap/TowerWave）計時
     this.eventTriggered = false;
     this.towersDestroyed = 0; // 換節點清魔尖塔擊破數（階段 B）
+    this.towerCombatStarted = false; // #2：換節點清塔波戰鬥旗標（drip gate；下個塔波等 endFocus 才 true）
     // group 分層：進 Spawn 節點時依 node.groups 重建 per-group 狀態；無 groups → 空陣列（走扁平單流）。
     const enteredNode = this.currentLevel()?.nodes[index];
     const groups = enteredNode?.nodeType === 'Spawn' ? (enteredNode as SpawnNodeData).groups : undefined;

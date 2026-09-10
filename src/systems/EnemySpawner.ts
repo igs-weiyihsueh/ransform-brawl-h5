@@ -465,12 +465,15 @@ export class EnemySpawner {
       }
 
       // ★命中判定只在 active phase（warning 零判定，不變量①）。本環對同玩家只扣一次（不變量②）。
-      //   ★判定圓心＝塔腳底地面 c（跟視覺同圓心）：玩家站地面踩環帶被打、正圓 annulus 真半徑。
+      //   ★判定圓心＝塔腳底地面 c；玩家判定點也用「腳底」getFootPosition（跟塔腳底同 y 基準）——
+      //   #4 真因修：原本玩家用 getVacuumCenter（身體中心，比腳底高 ~75.6px），跟塔腳底圓心 y 基準不一致，
+      //   橢圓垂直放大(dy/squashY)後下方真空帶偏窄偏下、玩家從下方要壓超近才進安全區＝主觀「下方特別大難貼近」。
+      //   兩點同用腳底＝上下對稱、下方可正常貼近。
       if (phase !== 'active') continue;
       for (const p of this.getAllPlayers()) {
         const pid = p.playerId;
         if (state.hitPlayersThisRing.has(pid)) continue;
-        const pc = p.getVacuumCenter?.() ?? p.getHitCenter();
+        const pc = p.getFootPosition?.() ?? p.getVacuumCenter?.() ?? p.getHitCenter();
         const pr = p.getVacuumRadius?.() ?? p.getHitRadius();
         if (ringHitsPlayer(c, radius, params.halfThicknessPx, pc, pr, GROUND_SQUASH_Y)) {
           state.hitPlayersThisRing.add(pid);

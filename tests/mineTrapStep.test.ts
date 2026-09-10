@@ -82,6 +82,8 @@ function makeSys(getPreset: () => MinePreset | null) {
   let announceCount = 0;
   let curLevel = 0; // Bug3：地雷宣告整關一次，可變 level 供測換關重播
   const levelIndex = () => curLevel;
+  let deferAnnounce = false; // #1：true→mineAnnounce 存 callback 不立刻呼（手動觸發驗 announcing gate）
+  let pendingAnnounceDone: (() => void) | null = null;
   const ctx = {
     players,
     getEnemies: () => enemies,
@@ -93,7 +95,13 @@ function makeSys(getPreset: () => MinePreset | null) {
       mineWarningStart: () => ({}) as unknown,
       mineWarningEnd: () => {},
       mineExplosion: () => {},
-      mineAnnounce: () => { announceCount += 1; },
+      // ★#1 announcing gate：真 mineAnnounce 宣告演完才呼 onDone→撒雷。
+      //   測用預設：同步立刻呼 onDone（宣告瞬完→撒雷），除非 deferAnnounce 開（存起 callback 手動觸發驗 gate）。
+      mineAnnounce: (onDone?: () => void) => {
+        announceCount += 1;
+        if (deferAnnounce) { pendingAnnounceDone = onDone ?? null; }
+        else onDone?.();
+      },
     },
   } as unknown as GameContext;
   const sys = new MineTrapSystem();
@@ -103,7 +111,7 @@ function makeSys(getPreset: () => MinePreset | null) {
   const triggeredCount = () =>
     (sys as unknown as { mines: { triggered: boolean }[] }).mines.filter((m) => m.triggered).length;
   const mineAt = (i: number) => (sys as unknown as { mines: { x: number; y: number }[] }).mines[i];
-  return { sys, players, enemies, mineCount, triggeredCount, mineAt, getAnnounce: () => announceCount, setLevel: (l: number) => { curLevel = l; } };
+  return { sys, players, enemies, mineCount, triggeredCount, mineAt, getAnnounce: () => announceCount, setLevel: (l: number) => { curLevel = l; }, setDeferAnnounce: (d: boolean) => { deferAnnounce = d; }, fireAnnounceDone: () => { const cb = pendingAnnounceDone; pendingAnnounceDone = null; cb?.(); } };
 }
 
 describe('MineTrapSystem 踩雷式', () => {
@@ -127,6 +135,21 @@ describe('MineTrapSystem 踩雷式', () => {
     // 宣告一節點只發一次。
     sys.update(0.016);
     expect(getAnnounce()).toBe(1);
+  });
+
+  it('#1 announcing gate（照火雨）：宣告演出中不撒雷，宣告演完 callback 才撒第一批', () => {
+    let preset: MinePreset | null = null;
+    const { sys, mineCount, getAnnounce, setDeferAnnounce, fireAnnounceDone } = makeSys(() => preset);
+    setDeferAnnounce(true); // mineAnnounce 存 callback 不立刻呼（模擬宣告演出播放中）
+    preset = PRESET;
+    sys.update(0.016); // 進地雷節點 → 發宣告（announceCount 1）、但★宣告演出中 → 還沒撒雷
+    expect(getAnnounce()).toBe(1);
+    expect(mineCount()).toBe(0); // ★gate：宣告演完前不撒
+    sys.update(0.016); // 再推幾幀，仍在宣告中 → 仍不撒
+    expect(mineCount()).toBe(0);
+    // 宣告演出播完 → callback 觸發 → 撒第一批。
+    fireAnnounceDone();
+    expect(mineCount()).toBe(PRESET.count);
   });
 
   it('Bug3 地雷警示整關一次（照火雨）：同關多個地雷節點只宣告一次，換關才重播', () => {

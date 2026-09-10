@@ -1639,11 +1639,11 @@ export class EffectSystem {
   }
 
   /**
-   * 「小心地雷！」宣告（★踩雷式：開放撒雷時發，比照 fireRainAnnounce 左滑進→停留→右滑出→銷毀）。
+   * 「小心地雷！」宣告（★踩雷式：開放撒雷時發，比照 fireRainAnnounce 左滑進→停留→右滑出→銷毀→onDone）。
    * 定位讀 layout.screen.mineMessage；無則 fallback fireRainMessage 定位；再無則內建置中。
-   * 純視覺提示（不 gate 撒雷；波次宣告時機已由波騎 mineGateSec 處理）。
+   * ★#1：宣告演出播完才呼 onDone（MineTrapSystem announcing gate 用：宣告演完 callback 才撒雷，比照火雨）。
    */
-  mineAnnounce(): void {
+  mineAnnounce(onDone?: () => void): void {
     const el = this.screenElement('fireRainMessage', {
       x: 0,
       y: GAME_HEIGHT / 2 - 60 - 46,
@@ -1651,7 +1651,10 @@ export class EffectSystem {
       height: 92,
       align: 'center',
     });
-    if (!isVisible(el)) return; // 勾掉訊息 → 不顯宣告字（純視覺、無 onDone 需求）
+    if (!isVisible(el)) {
+      onDone?.(); // ★勾掉訊息→不顯宣告字，但仍呼 onDone（否則地雷被卡住不撒，比照火雨 #6）
+      return;
+    }
     const cy = el.y + el.height / 2;
     const align = el.align ?? 'center';
     const cx = align === 'left' ? el.x : align === 'right' ? el.x + el.width : el.x + el.width / 2;
@@ -1682,7 +1685,10 @@ export class EffectSystem {
           delay: holdMs,
           duration: slideMs,
           ease: 'Cubic.easeIn',
-          onComplete: () => txt.destroy(),
+          onComplete: () => {
+            txt.destroy();
+            onDone?.(); // ★宣告演出播完 → 撒雷（MineTrapSystem announcing gate）
+          },
         });
       },
     });

@@ -42,6 +42,8 @@ export class TowerIntroSequence {
   // 生塔（★Bug2：提前到 beginFocus 生，聚焦時塔已在亮圈中被照亮；ringSkill 判定靠 guardFocusPause 凍結、combat 才開）
   private readonly spawnTowers: () => Enemy[];
   private spawnedTowers: Enemy[] = [];
+  /** ★#2：聚焦結束(endFocus)＝塔波 combat 開始 → 通知（GameScene 接→WaveSystem drip gate；聚焦期間不 drip、combat 才 drip，比照守護波 phase==='combat'）。 */
+  private readonly onCombatStart?: () => void;
   private finished = false;
 
   constructor(
@@ -67,6 +69,8 @@ export class TowerIntroSequence {
       towerPositions?: readonly Vec2[];
       /** ★Bug2：生塔+發亮（GameScene 提供，回傳生成的塔 entities 供聚焦提 depth）。beginFocus 前呼叫→聚焦時塔已在亮圈中。 */
       spawnTowers: () => Enemy[];
+      /** ★#2：聚焦結束(combat 開始)回呼（GameScene 接→通知 WaveSystem 開 drip；聚焦期間不 drip）。 */
+      onCombatStart?: () => void;
     },
   ) {
     this.ctx = ctx;
@@ -77,6 +81,7 @@ export class TowerIntroSequence {
     this.towerMessageText = opts.towerMessageText ?? '打掉所有尖塔！';
     this.towerPositions = opts.towerPositions ?? [];
     this.spawnTowers = opts.spawnTowers;
+    this.onCombatStart = opts.onCombatStart;
 
     // ①鎖操作 + 導引走位到中央聚集（比照 GuardEvent constructor）。
     this.ctx.scriptedControl = true;
@@ -181,6 +186,7 @@ export class TowerIntroSequence {
     this.ctx.scriptedControl = false;
     this.phase = 'done';
     this.finished = true;
+    this.onCombatStart?.(); // ★#2：通知 combat 開始（WaveSystem 才開 drip；聚焦期間不 drip，比照守護波 phase==='combat'）
   }
 
   private cleanupFocus(): void {

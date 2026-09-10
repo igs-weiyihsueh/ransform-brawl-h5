@@ -308,6 +308,7 @@ export class GameScene extends Phaser.Scene {
         towerMessageText: msgs.towerMessageText,
         towerPositions: positions, // Bug2：聚焦聚光燈打在塔位上（非玩家聚集點）
         spawnTowers, // ★Bug2：beginFocus 前生塔+回傳 entities（聚焦時提 depth 照亮）
+        onCombatStart: () => wave.notifyTowerCombatStart(), // ★#2：聚焦結束→通知 WaveSystem 開 drip（波騎 WaveSystem 已有 public notifyTowerCombatStart method，正式型別呼叫）
       });
     };
     // 每摧毀一座尖塔 → 通知守護波累計（波騎判 towersDestroyed>=towerCount 過關提前 advance）。

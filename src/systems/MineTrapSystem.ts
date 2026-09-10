@@ -52,6 +52,8 @@ export class MineTrapSystem implements GameSystem {
   /** 本節點是否已發過「小心地雷！」宣告（一節點只宣告一次）。 */
   /** Bug3：地雷警示整關只顯示一次（照火雨 announcedLevelIndex；-1＝尚未宣告；換關 getLevelIndex 變自然重播）。 */
   private announcedLevelIndex = -1;
+  /** ★#1：宣告演出播放中旗標（照火雨 FireRainSystem.announcing）——true 期間不撒雷，宣告演完 callback 才撒。 */
+  private announcing = false;
   /**
    * ★per-mine 再生佇列（用戶#3）：每爆掉一顆 → push 一個 respawnDelaySec 倒數；
    * 每幀扣 dt，到期（<=0）且場上存活數 < maintainCount 才補一顆（per-mine 節奏、非立即、非批次補到滿）。
@@ -104,19 +106,36 @@ export class MineTrapSystem implements GameSystem {
 
     if (preset !== null) {
       if (!this.active) {
-        // null → non-null：波次宣告顯完、開放撒雷 → 發「小心地雷！」宣告 + 撒初始 count 顆。
+        // null → non-null：開放撒雷 → 首節點發「小心地雷！」宣告（★#1 照火雨 announcing gate：宣告演完 callback 才撒），
+        //   同關後續節點（已宣告過）直接撒（不重播、不 gate）。
         this.active = true;
         this.respawnTimers = [];
-        // Bug3：地雷警示整關一次（照火雨 announcedLevelIndex）——同一關的多個地雷節點只宣告一次；換關才重播。
         const level = this.ctx.wave.getLevelIndex();
         if (level !== this.announcedLevelIndex) {
+          // 本關第一個地雷節點：宣告 + gate（announcing=true，宣告演完 callback 才撒第一批）。
           this.announcedLevelIndex = level;
-          this.ctx.effects?.mineAnnounce?.();
+          this.announcing = true;
+          const first = preset;
+          if (typeof this.ctx.effects?.mineAnnounce === 'function') {
+            this.ctx.effects.mineAnnounce(() => {
+              this.announcing = false;
+              // 宣告演完那刻若還在本地雷節點（preset 仍 non-null）才撒；已離開就不撒（保險）。
+              if (this.active && (this.ctx.wave?.getActiveMinePreset?.() ?? null) !== null) {
+                this.scatterMines(first, Math.max(1, first.count));
+              }
+            });
+          } else {
+            // 無宣告字 API → 不 gate，直接撒（比照火雨 else 分支）。
+            this.announcing = false;
+            this.scatterMines(preset, Math.max(1, preset.count));
+          }
+        } else {
+          // 同關後續地雷節點：已宣告過 → 不再宣告、不 gate，直接撒。
+          this.announcing = false;
+          this.scatterMines(preset, Math.max(1, preset.count));
         }
-        this.scatterMines(preset, Math.max(1, preset.count));
-      } else {
-        // ★per-mine 再生（用戶#3）：推進每個 respawn 倒數；到期的 → 若場上存活 < maintainCount 才補一顆
-        //   （非立即補、非批次補到滿；每顆爆掉隔 respawnDelaySec 補一顆的節奏）。
+      } else if (!this.announcing) {
+        // ★宣告演出中不 drip 再生（announcing gate）；宣告演完才進 per-mine 再生節奏。
         this.tickRespawns(dt, preset);
       }
     } else if (this.active) {
@@ -125,6 +144,7 @@ export class MineTrapSystem implements GameSystem {
       this.clearAll();
       this.respawnTimers = [];
       this.active = false;
+      this.announcing = false; // 保險：離開節點清 gate（別卡在宣告中）
     }
 
     if (this.mines.length === 0) return;

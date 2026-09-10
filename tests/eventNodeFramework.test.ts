@@ -26,7 +26,7 @@ function makeWave(nodes: unknown[]): WaveSystem {
   const ws = new WaveSystem(wrap(nodes).levels);
   const ctx = {
     effects: { waveMessage: () => {}, fireRainAnnounce: () => {} },
-    spawner: { spawn: () => ({}), clear: () => {} },
+    spawner: { spawn: () => ({}), clear: () => {}, clearAllEnemies: () => {} },
     players: [],
     player: { getPosition: () => ({ x: 0, y: 0 }) },
     getEnemies: () => [],
@@ -50,7 +50,7 @@ function makeWaveCapturingMsgs(nodes: unknown[]): {
       timedEventText: (_d: number, t: string) => { eventTexts.push(t); },
       guardText: (t: string) => { guardTexts.push(t); return { fadeOut: () => {} }; },
     },
-    spawner: { spawn: () => ({}), clear: () => {} },
+    spawner: { spawn: () => ({}), clear: () => {}, clearAllEnemies: () => {} },
     players: [],
     player: { getPosition: () => ({ x: 0, y: 0 }) },
     getEnemies: () => [],
@@ -190,41 +190,56 @@ describe('塔波登場訊息（Bug1：enterNode 只發第一段大字，第二�
   });
 });
 
-describe('塔波附加雜兵 drip（Bug4：塔波帶 spawns → combat 期間生雜兵，過關仍只看塔數）', () => {
-  function makeWaveCountingSpawn(nodes: unknown[]): { ws: WaveSystem; spawnCount: () => number } {
+describe('塔波附加雜兵 drip（Bug4 + #2 combat gate：drip 綁 towerCombatStarted，聚焦期間不生）', () => {
+  function makeWaveCountingSpawn(nodes: unknown[]): { ws: WaveSystem; spawnCount: () => number; cleared: () => number } {
     let count = 0;
+    let clears = 0;
     const ws = new WaveSystem(wrap(nodes).levels);
     const ctx = {
       effects: { waveMessage: () => {}, fireRainAnnounce: () => {}, timedEventText: () => {}, guardText: () => ({ fadeOut: () => {} }) },
-      spawner: { spawn: () => { count += 1; return {}; }, clear: () => {} },
+      spawner: { spawn: () => { count += 1; return {}; }, clear: () => {}, clearAllEnemies: () => { clears += 1; } },
       players: [],
       player: { getPosition: () => ({ x: 0, y: 0 }) },
       getEnemies: () => [],
     } as unknown as Parameters<WaveSystem['init']>[0];
     ws.init(ctx);
-    return { ws, spawnCount: () => count };
+    return { ws, spawnCount: () => count, cleared: () => clears };
   }
 
-  it('Tower4 帶 spawns/maxAlive → gate 跑完(觸發)後 drip 生雜兵；帶 spawns 但過關只看塔數', () => {
+  it('#2 聚焦期間（未 notifyTowerCombatStart）→ 不生雜兵；endFocus 通知後才 drip', () => {
     const { ws, spawnCount } = makeWaveCountingSpawn([
       { nodeType: 'Event', eventPresetName: 'Tower4', maxAlive: 3, spawnThreshold: 3, spawnInterval: 0, spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }] },
       { nodeType: 'Reward' },
     ]);
-    ws.update(TOWER_GATE_ADVANCE); // gate 跑完、觸發生塔 + 首次 drip
-    // getEnemies 回 [] → occupancy 0 < maxAlive → 每次 update 補雜兵（spawnInterval 0）。
+    ws.update(TOWER_GATE_ADVANCE); // gate 跑完、觸發生塔（聚焦壓黑，towerCombatStarted 仍 false）
     for (let i = 0; i < 5; i += 1) ws.update(0.1);
-    expect(spawnCount()).toBeGreaterThan(0); // ★塔波有生雜兵
+    expect(spawnCount()).toBe(0); // ★聚焦期間不生雜兵（drip gate 綁 combat）
+    ws.notifyTowerCombatStart(); // 征騎 endFocus 通知開打
+    for (let i = 0; i < 5; i += 1) ws.update(0.1);
+    expect(spawnCount()).toBeGreaterThan(0); // 開打後才 drip
     // 過關仍只看塔數：打掉 4 塔 → 過關前進（雜兵不影響）。
     for (let i = 0; i < 4; i += 1) ws.notifyTowerDestroyed();
     ws.update(0.016);
     expect(ws.getNodeIndex()).toBe(1);
   });
 
-  it('Tower4 無 spawns → 不生雜兵（只有塔）', () => {
+  it('Tower4 無 spawns → 不生雜兵（即使 combat 開打）', () => {
     const { ws, spawnCount } = makeWaveCountingSpawn([{ nodeType: 'Event', eventPresetName: 'Tower4' }]);
     ws.update(TOWER_GATE_ADVANCE);
+    ws.notifyTowerCombatStart();
     for (let i = 0; i < 5; i += 1) ws.update(0.1);
     expect(spawnCount()).toBe(0);
+  });
+
+  it('#3 限時到沒打完 → advanceNode 前 clearAllEnemies（清未打掉的塔）', () => {
+    const { ws, cleared } = makeWaveCountingSpawn([
+      { nodeType: 'Event', eventPresetName: 'Tower4' },
+      { nodeType: 'Reward' },
+    ]);
+    ws.update(TOWER_GATE_ADVANCE); // 觸發生塔
+    for (let i = 0; i < 61 * 60 && ws.getNodeIndex() === 0; i += 1) ws.update(1 / 60); // 推到限時到失敗
+    expect(cleared()).toBeGreaterThan(0); // ★超時失敗有清場（清未打掉的塔）
+    expect(ws.getNodeIndex()).toBe(1);
   });
 });
 
