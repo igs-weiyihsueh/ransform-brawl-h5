@@ -546,12 +546,13 @@ function twRender(): void {
       ctx.fillStyle = '#3a3a5c';
       ctx.fillRect(centerX - (towerW * sc) / 2, footY - towerH * sc, towerW * sc, towerH * sc);
     }
-    // ★碰撞圓（正圓）：圓心＝塔視覺中心(centerX,centerY) + offset（offset 不壓扁），半徑 colR。橘色。
+    // ★碰撞圈（貼地橢圓，跟遊戲貼地圓盤 1:1）：圓心＝塔視覺中心(centerX,centerY) + offset，半徑 colR。
+    //   (乙) 後全遊戲碰撞改貼地圓盤（判定圓對圓、視覺 GROUND_SQUASH_Y=0.5 壓扁橢圓）→預覽同步壓扁畫。
     const ccx = centerX + (p.towerCollisionOffsetXPx ?? 0) * sc;
-    const ccy = centerY + (p.towerCollisionOffsetYPx ?? 0) * sc;
+    const ccy = centerY + (p.towerCollisionOffsetYPx ?? 0) * sc * GROUND_SQUASH; // offset Y 同步貼地壓扁
     ctx.save();
     ctx.strokeStyle = 'rgba(255,170,60,0.95)'; ctx.setLineDash([5, 4]); ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(ccx, ccy, colR * sc, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(ccx, ccy, colR * sc, colR * sc * GROUND_SQUASH, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
     // 圓心十字（標塔視覺中心+offset 的實際圓心）。
     ctx.save();
@@ -560,7 +561,7 @@ function twRender(): void {
     ctx.moveTo(ccx, ccy - 6); ctx.lineTo(ccx, ccy + 6); ctx.stroke();
     ctx.restore();
     ctx.fillStyle = '#9a9ab5'; ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(`單塔放大校對（1:1 對遊戲）｜塔 ${idx + 1}/${p.towerCount}｜碰撞圓 ${colR}px（正圓，圓心＝塔視覺中心＋偏移 ${p.towerCollisionOffsetXPx ?? 0},${p.towerCollisionOffsetYPx ?? 0}）｜塔 ×${scale.toFixed(1)}`, 8, H - 8);
+    ctx.fillText(`單塔放大校對（1:1 對遊戲）｜塔 ${idx + 1}/${p.towerCount}｜碰撞圈 ${colR}px（貼地橢圓，圓心＝塔視覺中心＋偏移 ${p.towerCollisionOffsetXPx ?? 0},${p.towerCollisionOffsetYPx ?? 0}）｜塔 ×${scale.toFixed(1)}`, 8, H - 8);
     return;
   }
 

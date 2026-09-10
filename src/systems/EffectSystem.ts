@@ -6,6 +6,7 @@ import { validateUiLayout, isVisible, type ScreenElement } from '@/config/uiLayo
 import { loadOverride, EDITOR_STORE_KEYS } from '@/config/editorStore';
 import { WAVE_MESSAGE_FX } from '@/systems/waveMessage';
 import { MINE_BODY_RADIUS_PX } from '@/systems/mineTrapMath';
+import { MIN_HOLLOW_PX } from '@/systems/towerRingSkill';
 import { ENERGY_FLY, flyAlpha, flyPosition, flyScale } from '@/systems/energyFlyMath';
 import {
   CHEST_REWARD_FX,
@@ -1770,9 +1771,11 @@ export class EffectSystem {
     const sq = EffectSystem.GROUND_SQUASH_Y;
     const g = this.scene.add.graphics();
     g.setPosition(x, y).setDepth(PANEL_DEPTH + 10);
-    g.fillStyle(0xff3300, 0.22);
-    g.fillCircle(0, 0, radius + lw / 2);
-    g.lineStyle(Math.max(3, lw), 0xff5522, 0.9);
+    // ★環厚(B)修實心：移除 fillCircle（不填中央實心紅片）→ 純 strokeCircle 空心環帶（中央中空，跟魂力環一致）。
+    //   clamp 畫線寬保證中空：drawLw <= (radius - MIN_HOLLOW_PX)×2 → 環帶內緣(radius-drawLw/2) >= MIN_HOLLOW_PX，
+    //   thicknessPx 再大也不蓋掉中央中空。★只夾「畫的線寬」（純視覺），判定帶 halfThickness 不動。
+    const drawLw = Math.max(3, Math.min(lw, Math.max(2, (radius - MIN_HOLLOW_PX) * 2)));
+    g.lineStyle(drawLw, 0xff5522, 0.9);
     g.strokeCircle(0, 0, radius);
     g.setScale(1, sq).setAlpha(0.85);
     const pulse = this.scene.tweens.add({
@@ -1802,13 +1805,18 @@ export class EffectSystem {
   private towerRingActiveGraphics(x: number, y: number, d: number, lw: number, dur: number): void {
     const radius = d / 2;
     const sq = EffectSystem.GROUND_SQUASH_Y;
+    // ★環厚(B)：clamp 畫線寬保證中空（同 warning）——drawLw <= (radius - MIN_HOLLOW_PX)×2，core 用 1.6× 更粗，一起夾。
+    //   純視覺夾（判定帶 halfThickness 不動）。thicknessPx 再大也不蓋掉中央中空。
+    const maxLw = Math.max(2, (radius - MIN_HOLLOW_PX) * 2);
+    const coreLw = Math.max(3, Math.min(lw * 1.6, maxLw));
+    const edgeLw = Math.max(2, Math.min(lw * 0.5, maxLw));
     const core = this.scene.add.graphics();
     core.setPosition(x, y).setDepth(PANEL_DEPTH + 12).setBlendMode(Phaser.BlendModes.ADD);
-    core.lineStyle(lw * 1.6, 0x9b5cff, 1);
+    core.lineStyle(coreLw, 0x9b5cff, 1);
     core.strokeCircle(0, 0, radius);
     const edge = this.scene.add.graphics();
     edge.setPosition(x, y).setDepth(PANEL_DEPTH + 13).setBlendMode(Phaser.BlendModes.ADD);
-    edge.lineStyle(Math.max(2, lw * 0.5), 0xe0c8ff, 1);
+    edge.lineStyle(edgeLw, 0xe0c8ff, 1);
     edge.strokeCircle(0, 0, radius);
     for (const g of [core, edge]) g.setScale(1.08, 1.08 * sq).setAlpha(0);
     this.scene.tweens.add({
