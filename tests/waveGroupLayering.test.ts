@@ -105,6 +105,60 @@ describe('group 分層 — 多 group 並行 drip 各自維持', () => {
     }
     expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1); // 全場 killQuota 達標 → 已離開 Spawn 節點
   });
+
+  it('★★ 卡關 bug 復現：groups 波 + 下一節點非 Spawn，殺到 killQuota 後停生→清場→通關（修前 group 每殺補一隻 alive 恆>0 死鎖）', () => {
+    const level: LevelData = {
+      id: 'deadlock',
+      nodes: [
+        {
+          // 快補的 group（spawnInterval 0.05 遠快於殺速）：修前達 quota 仍每殺即補→alive 永>0→卡關。
+          nodeType: 'Spawn', killQuota: 5, maxAlive: 99, spawnThreshold: 99, spawnInterval: 1,
+          spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }],
+          groups: [{ spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }], spawnInterval: 0.05, maxConcurrent: 4 }],
+        },
+        { nodeType: 'Reward', rewardTickets: 3 } as unknown as LevelData['nodes'][number],
+      ],
+    } as unknown as LevelData;
+    const { sys, live } = makeWave([level]);
+    // 玩家清場速度(每 8 幀殺一隻)慢於 group 補生(0.05s≈每 3 幀)→修前 group 恆補到 maxConcurrent=4、alive 永>0。
+    // 修前：達 quota 後 group 仍每殺即補→alive 恆>0→shouldAdvanceSpawn 的 alive<=0 永不成立→死鎖卡在 idx0。
+    // 修後：達 quota（下一節點非 Spawn）→停 group 補生→殘怪被殺光→alive=0→advance。
+    let advanced = false;
+    for (let i = 0; i < 60 * 30; i += 1) { // 給足 30s
+      const a = live.filter((e) => !e.isDead());
+      if (a.length > 0 && i % 8 === 0) a[0].kill(); // 每 8 幀殺一隻（慢於補生）
+      sys.update(1 / 60);
+      if (nodeIdx(sys) >= 1) { advanced = true; break; }
+    }
+    expect(advanced).toBe(true); // ★修前這裡會 false（死鎖卡在 idx0）
+    expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1);
+  });
+
+  it('★ nextIsSpawn（下一關也 Spawn）時 groups 不套停生 gate：維持滿場語意不變', () => {
+    const level: LevelData = {
+      id: 'g2g',
+      nodes: [
+        {
+          nodeType: 'Spawn', killQuota: 3, maxAlive: 99, spawnThreshold: 99, spawnInterval: 1,
+          spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }],
+          groups: [{ spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }], spawnInterval: 0.1, maxConcurrent: 4 }],
+        },
+        {
+          nodeType: 'Spawn', killQuota: 999, maxAlive: 99, spawnThreshold: 99, spawnInterval: 1,
+          spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }],
+          groups: [{ spawns: [{ enemyType: 'Enemy_Rush', weight: 1 }], spawnInterval: 0.1, maxConcurrent: 4 }],
+        },
+      ],
+    } as unknown as LevelData;
+    const { sys, live } = makeWave([level]);
+    // 殺滿第一波 quota=3（nextIsSpawn → 只看 kills>=quota，殘怪接續帶進下一波，不需清空）。
+    for (let i = 0; i < 60 * 5 && nodeIdx(sys) < 1; i += 1) {
+      const a = live.filter((e) => !e.isDead());
+      if (a.length > 0 && i % 4 === 0) a[0].kill();
+      sys.update(1 / 60);
+    }
+    expect(nodeIdx(sys)).toBeGreaterThanOrEqual(1); // nextIsSpawn：殺滿即進，不因 gate 停
+  });
 });
 
 describe('group 分層 — 向後相容（無 groups 走扁平單流）', () => {

@@ -703,7 +703,13 @@ export class WaveSystem implements GameSystem {
 
     // group 分層：多 group 各自並行 drip（各自 cooldown/佔用/維持場上數）；killQuota 全場過關（上方已判）。
     if (this.spawnGroupStates.length > 0) {
-      this.updateSpawnGroups(dt);
+      // ★修 groups 卡關 bug：groups 原本只看 occupancy<maxConcurrent 無 killQuota 停生 gate，
+      //   達 quota 後照樣每殺一隻補一隻→alive 恆>0→shouldAdvanceSpawn 的 alive<=0 永不成立→死鎖。
+      //   比照扁平單流 shouldSpawnMore 首行 `!nextIsSpawn && kills+alive+pending>=quota 停生`：
+      //   下一節點非 Spawn（該收斂進 Reward/Event）且達 quota → 停 group drip 讓場面清空過關。
+      //   nextIsSpawn（下一關也 Spawn）不套此 gate（維持滿場語意不變）。
+      const stopDrip = !nextIsSpawn && this.kills + alive + pending >= killQuota;
+      this.updateSpawnGroups(dt, stopDrip);
       return;
     }
 
@@ -733,8 +739,9 @@ export class WaveSystem implements GameSystem {
    * 各自遲滯 latch、各自 cooldown、補到自己的 maxConcurrent（純 drip 維持場上數，無產出上限）。
    * killQuota 全場過關已在 updateSpawnNode 上方判（此處只管刷）。
    * minConcurrent 省略 → 門檻＝maxConcurrent（< max 即補的單純維持）；填了 → 跌破 min 才觸發、補到 max。
+   * ★stopDrip：達 quota 且下一節點非 Spawn（該收斂進 Reward/Event）→ 停所有 group 補生，讓場面清空過關（修卡關）。
    */
-  private updateSpawnGroups(dt: number): void {
+  private updateSpawnGroups(dt: number, stopDrip: boolean): void {
     const scale = this.playerCountScale();
     const livingSet = new Set<Enemy>(this.ctx.getEnemies());
     for (const gs of this.spawnGroupStates) {
@@ -752,7 +759,8 @@ export class WaveSystem implements GameSystem {
       if (gs.cooldown > 0) gs.cooldown -= dt;
 
       // 純 drip 維持（無 killQuota 上限、無 count）：達 maxConcurrent 停，否則跌破門檻或補怪中 → 補。
-      const canSpawn = occupancy < maxConcurrent && (occupancy < threshold || gs.refilling);
+      // ★達 quota 收斂（stopDrip）→ 一律停生，讓殘怪被清光、alive 歸 0 使過關判定成立。
+      const canSpawn = !stopDrip && occupancy < maxConcurrent && (occupancy < threshold || gs.refilling);
       if (gs.cooldown <= 0 && canSpawn) {
         this.spawnOne(gs.cfg.spawns, gs);
         gs.cooldown = gs.cfg.spawnInterval;
