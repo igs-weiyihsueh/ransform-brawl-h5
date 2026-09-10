@@ -173,9 +173,17 @@ function contentRect(): Rect {
     return { x: 0, y: 0, width: layout.design.width, height: layout.design.height };
   }
   if (currentSection === 'overhead') {
+    // ★包住「角色參照 + 頭上 UI 容器（按 offsetY 在角色上方）」兩者，讓調 offsetY 時距離看得到、view 自動 fit。
     const c = overheadContainerRect();
-    const m = 60; // 容器四周留白，讓超出容器的元素(如 combo 在上方)也看得到
-    return { x: c.x - m, y: c.y - m, width: c.width + m * 2, height: c.height + m * 2 };
+    const pc = overheadPlayerCenter();
+    const refX = pc.x - REF_SPRITE_SIZE / 2;
+    const refY = pc.y - REF_SPRITE_SIZE / 2;
+    const minX = Math.min(c.x, refX);
+    const minY = Math.min(c.y, refY);
+    const maxX = Math.max(c.x + c.width, refX + REF_SPRITE_SIZE);
+    const maxY = Math.max(c.y + c.height, refY + REF_SPRITE_SIZE);
+    const m = 60; // 四周留白（含容器上方 combo 等外擴）
+    return { x: minX - m, y: minY - m, width: maxX - minX + m * 2, height: maxY - minY + m * 2 };
   }
   // panel：4 欄整條的邊界，並涵蓋 P1 欄內元素的外擴（如 platform 在欄上方 y<0）+ 留白
   const first = slotRect(0);
@@ -218,17 +226,27 @@ let currentSection: Section = 'overhead';
 const selectedBySection: Record<Section, string | null> = { overhead: null, panel: null, screen: null };
 
 /**
- * 頭上 UI 容器編輯錨點：置中於舞台（此區塊單獨顯示，放大看清 local 相對位置）。
- * local 座標基準=容器中心；容器 200×80 置中，四周留白供 zoom 放大檢視。
+ * 頭上 UI 預覽的「玩家中心」錨點（角色參照畫在此）：置於舞台設計中心，供頭上 UI 容器按 offsetY 擺其上方，
+ * 讓用戶看到頭上 UI 相對角色的真實垂直距離。（遊戲中容器每幀移到 player 中心 +(offsetX,offsetY)。）
+ */
+function overheadPlayerCenter(): { x: number; y: number } {
+  return { x: layout.design.width / 2, y: layout.design.height / 2 };
+}
+
+/**
+ * 頭上 UI 容器矩形：★按 offsetY 擺在「角色中心上方」（容器中心 = 玩家中心 + (offsetX, offsetY)）——
+ * offsetY=-140 → 容器在角色上方 140px；offsetY 改小 → 往角色靠近。用戶調 offsetY 即時看到離角色距離變化。
+ * local 座標基準＝容器中心。（原本只置中舞台當靜態錨點、不反映 offsetY，看不到與角色距離；現改真實相對位置。）
  */
 function overheadContainerRect(): Rect {
   const ov = layout.overhead;
-  const cx = layout.design.width / 2;
-  const cy = layout.design.height / 2;
-  return { x: cx - ov.width / 2, y: cy - ov.height / 2, width: ov.width, height: ov.height };
+  const pc = overheadPlayerCenter();
+  const ccx = pc.x + (ov.offsetX ?? 0);
+  const ccy = pc.y + (ov.offsetY ?? 0);
+  return { x: ccx - ov.width / 2, y: ccy - ov.height / 2, width: ov.width, height: ov.height };
 }
 
-/** 頭上容器中心（local 原點）在舞台的像素座標。 */
+/** 頭上容器中心（local 原點）在舞台的像素座標（＝玩家中心 + offset）。 */
 function overheadOrigin(): { x: number; y: number } {
   const c = overheadContainerRect();
   return { x: c.x + c.width / 2, y: c.y + c.height / 2 };
@@ -641,7 +659,9 @@ function renderStage(): void {
       stageEl.appendChild(slot);
     }
   } else if (currentSection === 'overhead') {
-    // 頭上 UI 容器框（此區塊單獨顯示，置中放大檢視）
+    // ★角色參照（玩家中心）：畫真實比例角色示意，讓「頭上 UI 離角色距離」看得準。
+    renderOverheadCharacterReference(off);
+    // 頭上 UI 容器框（★按 offsetY 擺在角色上方，反映與角色的真實垂直距離）
     const oc = overheadContainerRect();
     const cont = document.createElement('div');
     cont.id = 'overhead-container';
@@ -651,9 +671,11 @@ function renderStage(): void {
     cont.style.height = `${oc.height}px`;
     const clab = document.createElement('div');
     clab.className = 'slot-label';
-    clab.textContent = '頭上 UI 容器（跟隨玩家，local 相對中心）';
+    clab.textContent = '頭上 UI 容器（offsetY 決定離角色距離，local 相對中心）';
     cont.appendChild(clab);
     stageEl.appendChild(cont);
+    // ★距離指示：從角色中心到容器中心畫一條虛線 + 標 offsetY 距離，調 offsetY 即時看到拉近/拉遠。
+    renderOverheadDistanceIndicator(off);
   }
   // screen 區塊：整個 1920×1080 畫布當背景（stage 本身即設計畫布）。
   // 腳下圈（foot）需角色參照才調得準 → 在畫布中心畫一個角色示意 sprite，搜索圈疊在其腳下。
@@ -942,7 +964,83 @@ function renderCharacterReference(off: { x: number; y: number }): void {
   stageEl.appendChild(label);
 }
 
-/** P2~P4 佔位欄：alpha 0.4 複製 P1 欄底框 + P1 template 元素 icon（唯讀，不可拖）。 */
+/**
+ * ★頭上 UI 區塊的角色參照：畫真實比例角色示意（REF_SPRITE_SIZE，跟腳下圈區塊同尺度），中心＝玩家中心。
+ * 讓「頭上 UI 容器按 offsetY 擺其上方」的垂直距離所見即所得（角色顯示高度對得上遊戲）。
+ */
+function renderOverheadCharacterReference(off: { x: number; y: number }): void {
+  const pc = overheadPlayerCenter();
+  const left = pc.x - REF_SPRITE_SIZE / 2 - off.x;
+  const top = pc.y - REF_SPRITE_SIZE / 2 - off.y;
+
+  const wrap = document.createElement('div');
+  wrap.id = 'overhead-char-ref';
+  wrap.style.cssText =
+    `position:absolute;left:${left}px;top:${top}px;` +
+    `width:${REF_SPRITE_SIZE}px;height:${REF_SPRITE_SIZE}px;z-index:0;pointer-events:none;`;
+  const img = document.createElement('img');
+  img.src = REF_SPRITE_URL;
+  img.alt = '角色參照';
+  img.style.cssText = 'width:100%;height:100%;object-fit:contain;opacity:0.8;';
+  img.addEventListener('error', () => {
+    img.remove();
+    const ph = document.createElement('div');
+    ph.textContent = '🧍';
+    ph.style.cssText =
+      'width:100%;height:100%;display:flex;align-items:center;justify-content:center;' +
+      `font-size:${Math.round(REF_SPRITE_SIZE * 0.8)}px;opacity:0.5;`;
+    wrap.appendChild(ph);
+  });
+  wrap.appendChild(img);
+
+  // 玩家中心十字標記
+  const mark = document.createElement('div');
+  mark.style.cssText =
+    `position:absolute;left:${pc.x - off.x - 6}px;top:${pc.y - off.y - 6}px;` +
+    'width:12px;height:12px;z-index:1;pointer-events:none;' +
+    'border-left:2px solid rgba(120,220,255,0.9);border-top:2px solid rgba(120,220,255,0.9);' +
+    'transform:rotate(45deg);';
+  mark.title = '玩家中心（頭上 UI offsetY 相對此）';
+
+  const label = document.createElement('div');
+  label.textContent = '角色（玩家中心）';
+  label.style.cssText =
+    `position:absolute;left:${left}px;top:${top + REF_SPRITE_SIZE + 2}px;z-index:1;pointer-events:none;` +
+    'color:#cfefff;font-size:13px;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,0.8);';
+
+  stageEl.appendChild(wrap);
+  stageEl.appendChild(mark);
+  stageEl.appendChild(label);
+}
+
+/**
+ * ★頭上 UI 與角色距離指示：從玩家中心到容器中心畫一條垂直虛線 + 標「offsetY=… px」，
+ * 調 offsetY 時線長跟著變（拉近/拉遠看得到），是用戶要的「與角色距離的預覽」。
+ */
+function renderOverheadDistanceIndicator(off: { x: number; y: number }): void {
+  const ov = layout.overhead;
+  const pc = overheadPlayerCenter();
+  const oOrigin = overheadOrigin(); // 容器中心 = 玩家中心 + offset
+  const x0 = pc.x - off.x;
+  const y0 = pc.y - off.y;
+  const y1 = oOrigin.y - off.y;
+  const topY = Math.min(y0, y1);
+  const h = Math.abs(y1 - y0);
+  // 垂直虛線（畫在玩家中心 x）
+  const line = document.createElement('div');
+  line.style.cssText =
+    `position:absolute;left:${x0 - 1}px;top:${topY}px;width:0;height:${h}px;z-index:1;pointer-events:none;` +
+    'border-left:2px dashed rgba(255,210,120,0.9);';
+  // 距離標籤
+  const tag = document.createElement('div');
+  tag.textContent = `offsetY = ${Math.round(ov.offsetY)} px`;
+  tag.style.cssText =
+    `position:absolute;left:${x0 + 6}px;top:${topY + h / 2 - 10}px;z-index:2;pointer-events:none;` +
+    'color:#ffd278;font-size:13px;font-weight:bold;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,0.85);';
+  stageEl.appendChild(line);
+  stageEl.appendChild(tag);
+}
+
 function renderPlaceholderColumns(off: { x: number; y: number }): void {
   const p1Col = layout.panel.columns.find((c) => c.playerIndex === 0);
   const p1Elements = p1Col ? p1Col.elements : [];
@@ -1101,9 +1199,32 @@ function currentEditable(): Editable | undefined {
 function renderInspector(): void {
   const insp = $('inspector');
   insp.innerHTML = '';
+  // ★頭上 UI「容器 offsetY/offsetX」常駐欄（整組容器屬性、非單一元素→不綁選中元素，overhead 區塊一律顯示於最上）。
+  //   存 layout.overhead.offsetY → 匯出 uiLayout.json → resolveOverheadLayout 已讀 ov.offsetY → 遊戲頭上容器位移生效。
+  //   numStrRow 內建 beginEdit(focus)/commitEdit(change)→自動進 undo 歷史，跟其他數值欄一致。
+  if (currentSection === 'overhead') {
+    const ov = layout.overhead;
+    const ctitle = document.createElement('div');
+    ctitle.className = 'section-title';
+    ctitle.textContent = '頭上 UI 容器（整組）';
+    insp.appendChild(ctitle);
+    insp.appendChild(numStrRow('容器 offsetY（頭上UI離玩家垂直距離，負=往上）', ov.offsetY, (v) => { ov.offsetY = v; }));
+    insp.appendChild(numStrRow('容器 offsetX（水平位移，次要）', ov.offsetX, (v) => { ov.offsetX = v; }));
+    const chint = document.createElement('div');
+    chint.className = 'hint';
+    chint.textContent = '容器 offsetY＝整組頭上 UI 相對玩家中心的垂直距離（預設 -140，越負越往上離角色越遠）。匯出 uiLayout.json 套用到遊戲。';
+    insp.appendChild(chint);
+  }
   const ed = currentEditable();
   if (!ed) {
-    insp.innerHTML = '<div class="hint">在畫面點選一個 UI 元素以編輯座標/尺寸。</div>';
+    if (currentSection !== 'overhead') {
+      insp.innerHTML = '<div class="hint">在畫面點選一個 UI 元素以編輯座標/尺寸。</div>';
+    } else {
+      const h = document.createElement('div');
+      h.className = 'hint';
+      h.textContent = '在畫面點選一個頭上 UI 元素以編輯其 local 座標/尺寸（容器 offsetY 見上）。';
+      insp.appendChild(h);
+    }
     return;
   }
   const title = document.createElement('div');
