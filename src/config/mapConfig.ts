@@ -63,6 +63,31 @@ export const PLAYER_BOUNDS = {
 } as const;
 
 /**
+ * ★關卡推進 step2（camera-follow 過場）用：玩家左界的「臨時放寬」override（runtime，非改常數）。
+ *   通道開啟時把左界往左延伸（讓玩家能走出原 playfield 進通道延伸區、鏡頭有東西跟隨），
+ *   走到盡頭觸發重置後 setLeftBoundOverride(null) 還原。PLAYER_BOUNDS 常數本身永不改。
+ *   ★單一 seam：PlayerControlSystem 夾限一律走 effectivePlayerBounds()，變身-leader review 此處。
+ */
+let _playerLeftBoundOverride: number | null = null;
+/** 設玩家左界臨時 override（px）；傳 null 還原成 PLAYER_BOUNDS.minX。 */
+export function setPlayerLeftBoundOverride(minX: number | null): void {
+  _playerLeftBoundOverride = minX;
+}
+/** 現行玩家左界 override（null＝無、用常數）。 */
+export function getPlayerLeftBoundOverride(): number | null {
+  return _playerLeftBoundOverride;
+}
+/** 生效的玩家夾限邊界：套用左界 override（其餘同 PLAYER_BOUNDS）。夾限端一律用此。 */
+export function effectivePlayerBounds(): { minX: number; maxX: number; minY: number; maxY: number } {
+  return {
+    minX: _playerLeftBoundOverride ?? PLAYER_BOUNDS.minX,
+    maxX: PLAYER_BOUNDS.maxX,
+    minY: PLAYER_BOUNDS.minY,
+    maxY: PLAYER_BOUNDS.maxY,
+  };
+}
+
+/**
  * 敵人遊玩可走邊界（第四輪#1）：X/上界同 MAP_BOUNDS；**下界面板感知**（用 PANEL_TOP_Y，非只 MAP_BOUNDS.maxY）。
  * Enemy 再 insetBounds(此, radiusPx) → 怪底邊(中心+radiusPx)停在面板上緣、不擦進面板。
  * 別寫死：從 PANEL_TOP_Y 算，面板高變動自動跟。

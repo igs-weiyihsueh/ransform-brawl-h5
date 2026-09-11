@@ -27,7 +27,7 @@ import {
 } from '@/systems/contactSolver';
 import { getPlayerSolver } from '@/config/surroundConfig';
 import { GAME_HEIGHT, GAME_WIDTH, PPU } from '@/config/gameConfig';
-import { PLAYER_BOUNDS, clampToBounds } from '@/config/mapConfig';
+import { effectivePlayerBounds, clampToBounds } from '@/config/mapConfig';
 import { playerColor } from '@/config/playerConfig';
 import { WAITING_PLATFORM_LIFT } from '@/config/playerConfig';
 import { landingX } from '@/systems/entranceMath';
@@ -371,7 +371,8 @@ export class PlayerControlSystem implements GameSystem {
       typeof player.setPosition === 'function'
     ) {
       const pos = player.getPosition();
-      const c = clampToBounds(pos.x, pos.y, PLAYER_BOUNDS); // 下界收到面板上緣之上（不進下方面板）
+      // ★左界走 effectivePlayerBounds()（含 step2 通道臨時放寬 override；平時＝PLAYER_BOUNDS）。
+      const c = clampToBounds(pos.x, pos.y, effectivePlayerBounds()); // 下界收到面板上緣之上（不進下方面板）
       if (c.changed) player.setPosition(c.x, c.y);
     }
 
