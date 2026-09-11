@@ -55,6 +55,8 @@ export interface HitFeelFx {
   enemyCharge?(x: number, y: number, durationMs?: number, diskPx?: number): Phaser.GameObjects.Image | null;
   /** 用戶 #3 圓形範圍攻擊特效（純視覺；菁英蓄力改 Graphics 貼地壓扁圓盤，不自轉）。 */
   enemyAoeRing?(x: number, y: number, radiusPx: number): Phaser.GameObjects.Graphics | null;
+  /** ★菁英蓄力圓盤「由內而外紅填充」每幀重畫（progress 0~1＝蓄力進度，填滿=發招）。純視覺、貼地壓扁不自轉。 */
+  redrawEnemyAoeRing?(g: Phaser.GameObjects.Graphics, radiusPx: number, progress: number): void;
   enemyAoeBurst?(x: number, y: number, radiusPx: number): void;
   /** ★魔尖塔環狀技（C9 拆兩特效，貼地壓扁 annulus）：預警（紅填充+脈動危險感）+ 攻擊（能量迸發衝擊）。thicknessPx=環帶厚。 */
   towerRingWarning?(x: number, y: number, diameterPx: number, thicknessPx: number, durationMs: number): void;
@@ -148,6 +150,8 @@ export class Enemy implements Hittable {
   private chargeTintTween: Phaser.Tweens.Tween | null = null;
   /** 用戶 #3：圓形範圍攻擊預告圈（菁英蓄力，改 Graphics 貼地壓扁圓盤；出手/離開 destroy）。 */
   private aoeRingFx: Phaser.GameObjects.Image | Phaser.GameObjects.Graphics | null = null;
+  /** ★菁英蓄力圓盤半徑（建立時存，供 syncChargeFx 每幀按蓄力進度重畫由內而外紅填充）。 */
+  private aoeRingRadiusPx = 0;
 
   /** 局部頓幀剩餘秒數（hitFeel microFreeze，只凍被打這隻：>0 時 update 早退不動作）。 */
   private freezeRemaining = 0;
@@ -533,15 +537,15 @@ export class Enemy implements Hittable {
   }
 
   /**
-   * ★小怪蓄力身體閃紅（大更：取代腳底 chargeFx 法陣盤）：sprite 紅 tint 0xff4444 + alpha 呼吸脈動（tween yoyo）。
+   * ★小怪蓄力身體閃紅（大更；用戶回饋太強→減弱）：sprite 淡紅 tint 0xff8888 + 輕微 alpha 呼吸（幅度小）。
    * 蓄力期間持續；出手瞬間 flashChargeTintOnFire() 閃亮一下再清；出手/取消/死亡 clearChargeTint。
    */
   private startChargeTint(): void {
     const sp = this.anim.sprite;
-    sp.setTint(0xff4444);
+    sp.setTint(0xff8888); // 減弱：0xff4444→0xff8888（淡紅、不那麼強烈）
     this.chargeTintTween?.stop();
     this.chargeTintTween = sp.scene.tweens.add({
-      targets: sp, alpha: { from: 1, to: 0.6 }, duration: 220, yoyo: true, repeat: -1, ease: 'Sine.inOut',
+      targets: sp, alpha: { from: 1, to: 0.85 }, duration: 260, yoyo: true, repeat: -1, ease: 'Sine.inOut', // 呼吸幅度縮小 0.6→0.85
     });
   }
 
@@ -582,6 +586,13 @@ export class Enemy implements Hittable {
     if (this.aoeRingFx) {
       const center = this.getBodyCenter();
       this.aoeRingFx.setPosition(center.x, center.y);
+      // ★菁英蓄力「由內而外紅填充」＝蓄力進度：progress = 已蓄力/總蓄力（timer 從 chargeTime 倒數）。
+      //   填滿(progress→1) 那刻＝發招。每幀重畫（Graphics 才能，貼地壓扁不自轉）。
+      const total = this.cfg.chargeTime > 0 ? this.cfg.chargeTime : 1;
+      const progress = Math.min(1, Math.max(0, 1 - this.timer / total));
+      if (this.aoeRingFx instanceof Phaser.GameObjects.Graphics) {
+        this.hitFeelFx?.redrawEnemyAoeRing?.(this.aoeRingFx, this.aoeRingRadiusPx, progress);
+      }
     }
   }
 
@@ -1049,6 +1060,7 @@ export class Enemy implements Hittable {
             // 五輪#4：預警圈圓心用視覺 body 中心(非 sprite 幾何中心, frame 上方留白會偏上)→菁英在圈正中央。
             // 十五輪：攻擊範圍尺寸不隨體型（sizeScale=1）；offset 位置仍對變大的身體(scaleFactor)。
             const circle = buildAttackCircle(this.cfg.attack, this.getBodyCenter(), this.facing, this.scaleFactor, aim, ATTACK_SIZE_SCALE);
+            this.aoeRingRadiusPx = circle.radius; // 存半徑供 syncChargeFx 按進度重畫填充
             this.aoeRingFx =
               this.hitFeelFx?.enemyAoeRing?.(circle.center.x, circle.center.y, circle.radius) ?? null;
           } else {

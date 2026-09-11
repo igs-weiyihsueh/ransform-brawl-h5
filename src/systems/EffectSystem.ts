@@ -1352,63 +1352,72 @@ export class EffectSystem {
   }
 
   /**
-   * 圓形範圍攻擊預告圈（用戶 #3 → 大更：菁英蓄力改 Graphics 貼地壓扁圓盤，★絕不自轉/翻）：
-   * 貼地壓扁圓（水平半徑=radiusPx、垂直×GROUND_SQUASH_Y）紅預警 0xff3300（填低 alpha + 描邊高 alpha），
-   * 能量感用 alpha 呼吸脈動（tween yoyo，★不 setAngle/不 scale-Y——壓扁橢圓一轉就立起來翻）。
-   * depth 壓角色下（貼地）。回傳 Graphics 供 syncChargeFx 每幀跟位置（菁英被推跟隨）+ 出手 destroy。
+   * 圓形範圍攻擊預告圈（用戶大更：菁英蓄力 Graphics 貼地壓扁圓盤，★由內而外紅填充＝蓄力進度、絕不自轉/翻）：
+   * 這裡只建 Graphics handle + 畫外框（空圈）；由內而外的紅填充由 redrawEnemyAoeRing 每幀按 progress 重畫
+   * （filledRadius = radiusPx×progress，填滿 progress→1 那刻＝發招）。貼地壓扁（垂直×GROUND_SQUASH_Y）。
+   * depth 壓角色下（貼地）。回傳 Graphics 供 syncChargeFx 每幀 setPosition + redraw + 出手 destroy。
    * @param x,y 圓心（敵人 body 中心，世界座標）。@param radiusPx AOE 半徑。
    */
   enemyAoeRing(x: number, y: number, radiusPx: number): Phaser.GameObjects.Graphics | null {
-    const sq = EffectSystem.GROUND_SQUASH_Y;
     const g = this.scene.add.graphics();
     g.setPosition(x, y).setDepth(-4); // 貼地（角色 PLAY_DEPTH=10 之下）
-    const w = radiusPx * 2;
-    const h = radiusPx * 2 * sq; // 貼地壓扁（俯視橢圓）
-    g.fillStyle(0xff3300, 0.2);
-    g.fillEllipse(0, 0, w, h);
-    g.lineStyle(3, 0xff3300, 0.8);
-    g.strokeEllipse(0, 0, w, h);
-    g.setAlpha(0);
-    // 淡入 → alpha 呼吸脈動（★不自轉、不改 scale-Y，保持貼地水平）。
-    this.scene.tweens.add({ targets: g, alpha: 0.9, duration: 220, ease: 'Sine.easeOut' });
-    this.scene.tweens.add({
-      targets: g, alpha: { from: 0.9, to: 0.5 }, duration: 320, yoyo: true, repeat: -1,
-      ease: 'Sine.inOut', delay: 220,
-    });
+    this.redrawEnemyAoeRing(g, radiusPx, 0); // 初畫（progress 0＝空圈只外框）
     return g;
   }
 
   /**
-   * 圓形範圍攻擊爆發（用戶 #3 → 四輪#3#4：壓到貼地層不蓋角色）：命中/出手瞬間播。同圓心、爆開放大、隨機旋轉、後半淡出。
-   * depth 壓到角色之下(貼地)＝地面爆發、不遮擋角色/怪主體（原 ATTACK_VFX_DEPTH+1=951 蓋在角色上）。
-   * @param x,y 圓心（世界座標）。
-   * @param radiusPx AOE 半徑（爆發覆蓋 ≈ 此）。
+   * ★菁英蓄力圓盤「由內而外紅填充」每幀重畫（progress 0~1＝蓄力進度，填滿=發招）：
+   * 貼地壓扁橢圓（垂直×GROUND_SQUASH_Y）——外框恆畫（紅 0xff3300 描邊，標範圍）、
+   * 內部紅填充半徑 = radiusPx×progress（由內而外長大），填滿即整圈紅＝發招時機。★絕不 setAngle/自轉/scale-Y。
+   */
+  redrawEnemyAoeRing(g: Phaser.GameObjects.Graphics, radiusPx: number, progress: number): void {
+    const sq = EffectSystem.GROUND_SQUASH_Y;
+    const p = Math.min(1, Math.max(0, progress));
+    g.clear();
+    const w = radiusPx * 2;
+    const h = radiusPx * 2 * sq;
+    // 外框（範圍圈，恆顯）：低 alpha 底 + 高 alpha 描邊。
+    g.fillStyle(0xff3300, 0.12);
+    g.fillEllipse(0, 0, w, h);
+    g.lineStyle(3, 0xff3300, 0.85);
+    g.strokeEllipse(0, 0, w, h);
+    // ★由內而外紅填充＝進度：半徑 radiusPx×p 的實心紅橢圓（貼地壓扁）。
+    if (p > 0.001) {
+      const fw = w * p;
+      const fh = h * p;
+      g.fillStyle(0xff3300, 0.6);
+      g.fillEllipse(0, 0, fw, fh);
+    }
+  }
+
+  /**
+   * 圓形範圍攻擊爆發（用戶大更：菁英攻擊 VFX 也改 Graphics 貼地壓扁圓盤，跟蓄力圓盤一致貼地觀感、★不自轉）：
+   * 命中/出手瞬間播：貼地壓扁紅橢圓（垂直×GROUND_SQUASH_Y）微爆開放大 + 淡出。depth 壓角色下（貼地爆發、不遮角色）。
+   * @param x,y 圓心（世界座標）。@param radiusPx AOE 半徑（爆發覆蓋 ≈ 此）。
    */
   enemyAoeBurst(x: number, y: number, radiusPx: number): void {
-    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.aoeBurst.key)) return;
-    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.aoeBurst.key);
-    // 六輪#4(用戶定調以警戒圈為準)：aoeBurst 改成跟 aoeRing「完全同套擺放」→ 預警圈=爆發圈完全重合(所見即所得)。
-    // aoeRing 擺法：origin(0.5)、depth-4 貼地、setDisplaySize(radiusPx*2, radiusPx*2) 1:1 正圓、無壓扁無 rotation。
-    // aoeBurst 對齊：同圓心(x,y=傳入 buildAttackCircle center)、同 1:1 尺寸、貼地；depth-3(在 ring -4 之上、角色 PLAY_DEPTH10 之下)當地面爆發不蓋角色。
-    spr.setOrigin(0.5, 0.5).setDepth(-3);
-    spr.setBlendMode(Phaser.BlendModes.ADD); // 貼地在暗地面更亮醒目
-    const full = radiusPx * 2; // 與 aoeRing 同直徑(1:1 正圓、無壓扁)
-    spr.setDisplaySize(full, full).setAlpha(1);
-    // ~0.2s：scale 從滿圈微爆開 + 後半淡出（維持 1:1 正圓、與 aoeRing 同形）。
+    const sq = EffectSystem.GROUND_SQUASH_Y;
+    const g = this.scene.add.graphics();
+    g.setPosition(x, y).setDepth(-3).setBlendMode(Phaser.BlendModes.ADD); // 貼地（ring -4 之上、角色之下）
+    const draw = (scale: number) => {
+      g.clear();
+      const w = radiusPx * 2 * scale;
+      const h = radiusPx * 2 * sq * scale;
+      g.fillStyle(0xff5522, 0.5);
+      g.fillEllipse(0, 0, w, h);
+      g.lineStyle(4, 0xff8844, 0.9);
+      g.strokeEllipse(0, 0, w, h);
+    };
+    draw(1);
+    // ~0.2s：微爆開放大（scale 1→1.15）+ 後半淡出。★用 tween 驅動一個 scalar 每幀 redraw（不 setAngle/不轉）。
+    const state = { s: 1 };
     this.scene.tweens.add({
-      targets: spr,
-      displayWidth: full * 1.15,
-      displayHeight: full * 1.15, // 1:1 同步放大，保持正圓與 aoeRing 重合
-      duration: 200,
-      ease: 'Cubic.easeOut',
+      targets: state, s: 1.15, duration: 200, ease: 'Cubic.easeOut',
+      onUpdate: () => draw(state.s),
     });
     this.scene.tweens.add({
-      targets: spr,
-      alpha: 0,
-      delay: 100,
-      duration: 100,
-      ease: 'Sine.easeIn',
-      onComplete: () => spr.destroy(),
+      targets: g, alpha: 0, delay: 100, duration: 100, ease: 'Sine.easeIn',
+      onComplete: () => g.destroy(),
     });
   }
 
