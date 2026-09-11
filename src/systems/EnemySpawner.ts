@@ -16,6 +16,7 @@ import { EnemySkillRunner } from '@/systems/EnemySkillRunner';
 import { enemySkillFromProjectileAttack } from '@/config/enemySkillSchema';
 import { EnemyFormation } from '@/systems/EnemyFormation';
 import { computeFormationSlots } from '@/config/formationConfig';
+import { hitTier } from '@/systems/hitTierMath';
 import { SurroundSlotManager, type ISurroundTarget } from '@/systems/SurroundSlotManager';
 import { isValidEnemyTarget } from '@/systems/targetingMath';
 import {
@@ -446,8 +447,8 @@ export class EnemySpawner {
       const hit = p.update(target, dt, this.worldBounds);
       if (hit) {
         this.applyAttackDamage(p.damage, p.sourceLabel);
-        // ★技能三層 VFX：子彈命中在命中點播爆點特效（fx_enemy_bullet_hit，配子彈色）。打雕像也播（命中回饋）。
-        this.hitFeelFx?.enemyBulletHit?.(hitCenter.x, hitCenter.y, p.tint);
+        // ★命中分級（第 3 塊，純表現層）：讀已結算傷害 p.damage 算 tier → 播對應等級命中特效（不碰判定/傷害）。
+        this.hitFeelFx?.playHitEffect?.(hitCenter.x, hitCenter.y, hitTier(p.damage), p.tint);
       }
     }
     this.projectiles = this.projectiles.filter((p) => !p.isDead());
@@ -586,10 +587,10 @@ export class EnemySpawner {
       );
       if (hit) {
         this.applyAttackDamage(ev.damage, ev.sourceName);
-        // 用戶 #7：命中玩家瞬間播命中爆閃（生在受擊點；打雕像不播）。純視覺。
+        // ★命中分級（第 3 塊，純表現層）：讀已結算傷害 ev.damage 算 tier → 播對應等級命中特效（打雕像不播）。不碰判定/傷害。
         if (!this.guardTarget) {
           const hc = this.player.getHitCenter();
-          this.hitFeelFx?.enemyImpact?.(hc.x, hc.y);
+          this.hitFeelFx?.playHitEffect?.(hc.x, hc.y, hitTier(ev.damage));
         }
       }
       this.lastMeleeCircle = ev.meleeCircle;

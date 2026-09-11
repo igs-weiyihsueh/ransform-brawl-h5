@@ -51,6 +51,10 @@ const ENEMY_ATTACK_VFX = {
   bullet: { key: 'vfx-enemy-bullet', path: `${BASE_PATH}/fx_enemy_bullet.png` },
   /** 技能三層：子彈命中爆點（96×96，白熱核+放射星芒+衝擊環+火星，可 setTint 配子彈色）。 */
   bulletHit: { key: 'vfx-enemy-bullet-hit', path: `${BASE_PATH}/fx_enemy_bullet_hit.png` },
+  /** 命中分級（第 3 塊 HitEffectPackage）：輕/中/重命中特效（小火花→大爆點；特效手做，可 setTint）。 */
+  hitLight: { key: 'vfx-hit-light', path: `${BASE_PATH}/fx_hit_light.png` },
+  hitMid: { key: 'vfx-hit-mid', path: `${BASE_PATH}/fx_hit_mid.png` },
+  hitHeavy: { key: 'vfx-hit-heavy', path: `${BASE_PATH}/fx_hit_heavy.png` },
   /** 守護開場聚焦放射漸層（用戶 #4，中心透明→外圈壓黑；異靈畫，alpha 客觀確認）。 */
   spotlight: { key: 'vfx-spotlight-radial', path: `${BASE_PATH}/spotlight_radial.png` },
   /** 三輪#11 火雨重製：從天墜落的火球（帶火焰拖尾）。素材到位前用 aoeBurst 佔位。 */
@@ -1322,6 +1326,41 @@ export class EffectSystem {
   /** 技能三層：子彈貼圖 key（Projectile 用；貼圖沒載回 undefined 讓 Projectile 退 Arc 佔位）。 */
   getEnemyBulletTextureKey(): string | undefined {
     return this.scene.textures.exists(ENEMY_ATTACK_VFX.bullet.key) ? ENEMY_ATTACK_VFX.bullet.key : undefined;
+  }
+
+  /**
+   * ★命中分級特效（第 3 塊 HitEffectPackage，純表現層）：依 tier 選 light/mid/heavy package 播一次性爆點。
+   *  輕＝小 scale 短、重＝大 scale 長（小傷小火花、大傷大爆點）。setTint 配色。
+   *  ★素材沒到 → fallback 現有 enemyBulletHit（佔位跑通，不 break）。
+   *  ★純表現：只播 VFX，不碰任何傷害/判定（tier 由呼叫端傳已結算傷害算出）。
+   * @param x,y 命中點（世界座標，既有值 offset-無關）。
+   * @param tier 'light'|'mid'|'heavy'（呼叫端 hitTier(已結算傷害) 算）。
+   * @param tint 染色；undefined 不染。
+   */
+  playHitEffect(x: number, y: number, tier: 'light' | 'mid' | 'heavy', tint?: number): void {
+    // 各級 package 參數：起始/結束 scale + 時長（輕小短→重大長）。
+    const cfg = tier === 'heavy'
+      ? { def: ENEMY_ATTACK_VFX.hitHeavy, from: 0.7, to: 1.6, dur: 280 }
+      : tier === 'mid'
+        ? { def: ENEMY_ATTACK_VFX.hitMid, from: 0.55, to: 1.1, dur: 220 }
+        : { def: ENEMY_ATTACK_VFX.hitLight, from: 0.4, to: 0.75, dur: 160 };
+    // 素材沒到 → fallback 現有 enemyBulletHit（佔位；用 tier 對應 scale 近似）。
+    if (!this.scene.textures.exists(cfg.def.key)) {
+      this.enemyBulletHit(x, y, tint, cfg.to);
+      return;
+    }
+    const spr = this.scene.add.image(x, y, cfg.def.key);
+    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH + 1);
+    if (tint !== undefined) spr.setTint(tint);
+    spr.setScale(cfg.from).setAlpha(1);
+    this.scene.tweens.add({
+      targets: spr,
+      scale: cfg.to,
+      alpha: 0,
+      duration: cfg.dur,
+      ease: 'Quad.easeOut',
+      onComplete: () => spr.destroy(),
+    });
   }
 
   /**

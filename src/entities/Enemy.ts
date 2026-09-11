@@ -63,6 +63,8 @@ export interface HitFeelFx {
   enemyBulletHit?(x: number, y: number, tint?: number, scale?: number): void;
   /** ★技能三層：子彈貼圖 key（Projectile 用；沒載回 undefined 退 Arc 佔位）。 */
   getEnemyBulletTextureKey?(): string | undefined;
+  /** ★命中分級（第 3 塊 HitEffectPackage，純表現層）：依 tier 播 light/mid/heavy 命中特效。 */
+  playHitEffect?(x: number, y: number, tier: 'light' | 'mid' | 'heavy', tint?: number): void;
   /** ★魔尖塔環狀技（C9 拆兩特效，貼地壓扁 annulus）：預警（紅填充+脈動危險感）+ 攻擊（能量迸發衝擊）。thicknessPx=環帶厚。 */
   towerRingWarning?(x: number, y: number, diameterPx: number, thicknessPx: number, durationMs: number): void;
   towerRingActive?(x: number, y: number, diameterPx: number, thicknessPx: number, durationMs: number): void;
