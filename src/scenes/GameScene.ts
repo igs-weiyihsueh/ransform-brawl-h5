@@ -43,6 +43,7 @@ import { GrabSystem } from '@/systems/GrabSystem';
 import { WaveSystem } from '@/systems/WaveSystem';
 import { MineTrapSystem } from '@/systems/MineTrapSystem';
 import { LevelProgressSystem } from '@/systems/LevelProgressSystem';
+import { GlobalJuice } from '@/systems/GlobalJuice';
 
 /**
  * GameScene — 主場景（系統註冊表版）。
@@ -57,6 +58,8 @@ import { LevelProgressSystem } from '@/systems/LevelProgressSystem';
 export class GameScene extends Phaser.Scene {
   private systems: GameSystem[] = [];
   private ctx!: GameContext;
+  /** ★全域手感骨幹（第 4 塊）：TimeScaleCounter（scaledDt 單一注入）+ camera.shake + Boss-gate。 */
+  private globalJuice!: GlobalJuice;
   /** UISystem 實例（create 提前建立供擊殺回呼取寶盒錨點；registerSystems 再註冊）。 */
   private uiSystem!: UISystem;
   /** 2 新事件：地雷陷阱系統（附加類讀取式；create 建、registerSystems 註冊供每幀 update 讀 getActiveMinePreset）。 */
@@ -222,6 +225,14 @@ export class GameScene extends Phaser.Scene {
       triggerWave: (preset: unknown) => wave.onTowerWave?.(preset as never),
       /** probe 用：讀開場定格/鎖操作旗標。 */
       flags: () => ({ scriptedControl: this.ctx.scriptedControl, guardFocusPause: this.ctx.guardFocusPause }),
+      /** probe 用（第 4 塊）：讀生效時間縮放 + 是否 hitstop 中。 */
+      juiceState: () => ({ scale: this.globalJuice.getEffectiveScale(), hitstop: this.globalJuice.isHitstopped() }),
+      /** probe 用（第 4 塊）：觸發 Boss 級衝擊（camera.shake + 全域 hitstop）。 */
+      triggerBossImpact: (opts?: { shakeIntensity?: number; shakeDurationSec?: number; hitstopSec?: number }) =>
+        this.globalJuice.triggerBossImpact(opts),
+      /** probe 用（第 4 塊）：推/移除時間縮放層（測 slow/halt）。 */
+      pushTimeScale: (layer: 'system' | 'director' | 'code' | 'custom', v: number) => this.globalJuice.pushTimeScale(layer, v),
+      popTimeScale: (layer: 'system' | 'director' | 'code' | 'custom') => this.globalJuice.popTimeScale(layer),
     };
 
     // 開箱報獎表演（第5項，純視覺）：openChest 尾段回呼 → 在該玩家寶盒位置演出。
@@ -345,6 +356,9 @@ export class GameScene extends Phaser.Scene {
       }
     };
 
+    // ★全域手感骨幹（第 4 塊）：TimeScaleCounter + camera.shake + Boss-gate（預設全 1.0/globalEffectsBossOnly=true）。
+    this.globalJuice = new GlobalJuice(this);
+
     this.registerSystems();
 
     for (const sys of this.systems) {
@@ -447,14 +461,23 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, deltaMs: number): void {
     const dt = deltaMs / 1000;
-    // 守護波聚焦定格（對齊 Unity Time.timeScale=0）：focus 期間玩法系統凍結（dt=0），
-    //   但 WaveSystem 照跑真實 dt（驅動 GuardEvent focus 計時器結束聚焦，否則卡死）；聚焦 UI 是 scene.tweens 不受 dt 影響照播。
+    // ★第 4 塊全域時間縮放：hitstop 倒數用 real dt（不吃自己的 scale，否則頓幀把自己頓死）。
+    this.globalJuice.tick(dt);
+    // ★單一注入點：effective dt = raw dt × ∏ 時間縮放層（含 hitstop→0）。預設 1.0＝scaledDt===dt byte 同現況。
+    const scaledDt = dt * this.globalJuice.getEffectiveScale();
+    // 守護波聚焦定格（focusPause）＋全域頓幀（hitstop）：玩法系統凍結；★豁免清單走 real dt 不被凍死：
+    //   WaveSystem（驅動事件/聚焦計時器，比照現有）+ UISystem（HUD 純顯示，頓幀時數字不該凍）。
+    //   （towerIntro/hitstop 計時器/Boss 演出序列各自在迴圈外用 real dt。）
     const focusPause = this.ctx.guardFocusPause;
     for (const sys of this.systems) {
-      sys.update(focusPause && sys.name !== 'WaveSystem' ? 0 : dt);
+      const exempt = sys.name === 'WaveSystem' || sys.name === 'UISystem';
+      if (exempt) {
+        sys.update(dt); // 豁免：real dt（focusPause 期 WaveSystem 本就 real dt；hitstop 期也不凍）
+      } else {
+        sys.update(focusPause ? 0 : scaledDt); // 玩法系統：focusPause→0；否則吃 scaledDt（含 hitstop→0）
+      }
     }
-    // ★塔波開場序列：用真實 dt tick（不吃 focusPause 凍結，否則聚焦計時器卡死；比照 WaveSystem 驅動 GuardEvent focus）。
-    //   走位/聚焦期間 guardFocusPause 由序列自己開關；玩法系統照上面凍結。intro 完成 → 生塔已觸發、清空。
+    // ★塔波開場序列：用真實 dt tick（不吃 focusPause/scaledDt 凍結，否則聚焦計時器卡死；比照 WaveSystem）。
     if (this.towerIntro) {
       if (this.towerIntro.update(dt)) this.towerIntro = null;
     }
