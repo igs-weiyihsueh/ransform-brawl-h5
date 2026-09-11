@@ -80,10 +80,41 @@ export function getPlayerLeftBoundOverride(): number | null {
 /** 生效的玩家夾限邊界：套用左界 override（其餘同 PLAYER_BOUNDS）。夾限端一律用此。 */
 export function effectivePlayerBounds(): { minX: number; maxX: number; minY: number; maxY: number } {
   return {
-    minX: _playerLeftBoundOverride ?? PLAYER_BOUNDS.minX,
-    maxX: PLAYER_BOUNDS.maxX,
+    minX: _playerLeftBoundOverride ?? (PLAYER_BOUNDS.minX + _levelOffsetX),
+    maxX: PLAYER_BOUNDS.maxX + _levelOffsetX,
     minY: PLAYER_BOUNDS.minY,
     maxY: PLAYER_BOUNDS.maxY,
+  };
+}
+
+/**
+ * ★關卡推進 step2 升級（block-offset model，真相鄰場景）：關卡水平偏移基準（世界 px）。
+ *   進下一關時 X 座標基準往左遞進（不擴世界，用偏移平移 bounds/生怪基準）。玩家連續走過分界、
+ *   鏡頭連續跟（只 X），走到新區塊就地開下一關——不 setScroll 回原點、不拉回玩家（避免瞬移）。
+ *   ★碰撞/生怪/貼地/AI 全用世界座標，offset 平移一致；PLAYER_BOUNDS/ENEMY_PLAY_BOUNDS 常數本身永不改。
+ *   ★單一 seam：玩家夾限走 effectivePlayerBounds()、敵人可走界走 effectiveEnemyPlayBounds()、
+ *     波騎 offset-aware spawn 讀 getLevelOffsetX()。變身-leader review 此處 + 累積 offset 正確性 headed 驗。
+ */
+let _levelOffsetX = 0;
+/** 現行關卡水平偏移（世界 px；0＝第一關原點，往左遞進為負）。 */
+export function getLevelOffsetX(): number {
+  return _levelOffsetX;
+}
+/** 遞進關卡偏移（deltaX，往左為負）。走進新區塊時呼叫，讓 bounds/生怪基準平移到新區塊。 */
+export function advanceLevelOffsetX(deltaX: number): void {
+  _levelOffsetX += deltaX;
+}
+/** 設定關卡偏移絕對值（測試/重置用；0＝回第一關原點）。 */
+export function setLevelOffsetX(x: number): void {
+  _levelOffsetX = x;
+}
+/** 生效的敵人可走界：ENEMY_PLAY_BOUNDS 套用 levelOffsetX 平移（波騎 offset-aware spawn 用；生怪落在當前區塊）。 */
+export function effectiveEnemyPlayBounds(): { minX: number; maxX: number; minY: number; maxY: number } {
+  return {
+    minX: ENEMY_PLAY_BOUNDS.minX + _levelOffsetX,
+    maxX: ENEMY_PLAY_BOUNDS.maxX + _levelOffsetX,
+    minY: ENEMY_PLAY_BOUNDS.minY,
+    maxY: ENEMY_PLAY_BOUNDS.maxY,
   };
 }
 

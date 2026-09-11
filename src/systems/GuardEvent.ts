@@ -6,7 +6,7 @@ import { pickGuardEnemy, guardSideSpawnPoint, resolveGuardDrip, resolveGuardStat
 import { getResolvedGuardPreset } from '@/config/guardSchema';
 import { GuardTarget } from '@/entities/GuardTarget';
 import { guardCornerTargets, scriptedMoveStep, allScriptedArrived } from '@/systems/guardIntro';
-import { MAP_BOUNDS } from '@/config/mapConfig';
+import { MAP_BOUNDS, getLevelOffsetX } from '@/config/mapConfig';
 import type { GameContext } from '@/systems/GameContext';
 /**
  * 守護波開場常數已搬進 GuardPreset（七輪#2，支援單獨編輯）：
@@ -70,7 +70,8 @@ export class GuardEvent {
     this.introTextTotalSec = this.msgs.introEventText === '' ? 0 : 0.4 + this.msgs.eventTextDurationSec + 0.4;
 
     // 生雕像於場中央（先隱藏，開場玩家就定位後才 reveal 顯現）。敵人攻擊改打雕像（在 combat 階段前不 drip）。
-    const sx = GAME_WIDTH / 2;
+    // ★關卡推進 block-offset：雕像 X 加當前 levelOffsetX → 生在玩家當前所在區塊中央（非原點，連過多關對區塊）。
+    const sx = GAME_WIDTH / 2 + getLevelOffsetX();
     const sy = GAME_HEIGHT / 2;
     this.target = new GuardTarget(ctx.scene, sx, sy, this.preset.targetHP, resolveGuardStatueUi(this.preset));
     this.target.setVisible(false);
@@ -232,7 +233,10 @@ export class GuardEvent {
 
   private spawnAroundTarget(): void {
     // 三輪#9：守護波怪從左右兩側場地邊緣交替生成（往雕像靠攏包圍感，對照 Unity FindGuardSideSpawnPos）。
-    const pos = guardSideSpawnPoint(this.guardSpawnNextLeft, MAP_BOUNDS);
+    // ★關卡推進 block-offset：MAP_BOUNDS 的 X 平移當前 levelOffsetX → 守護怪從玩家當前區塊兩側生（非原點區塊）。
+    const off = getLevelOffsetX();
+    const bounds = { minX: MAP_BOUNDS.minX + off, maxX: MAP_BOUNDS.maxX + off, minY: MAP_BOUNDS.minY, maxY: MAP_BOUNDS.maxY };
+    const pos = guardSideSpawnPoint(this.guardSpawnNextLeft, bounds);
     this.guardSpawnNextLeft = !this.guardSpawnNextLeft; // 翻轉 → 下隻另一側（兩側平均）
     const type = pickGuardEnemy(this.drip.spawns);
     this.ctx.spawner.spawn(type, pos.x, pos.y);

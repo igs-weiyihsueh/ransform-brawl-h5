@@ -1,6 +1,6 @@
 import { loadLevels } from '@/config/levelLoader';
 import { SPAWN_WARNING_DURATION_SEC, ENEMY_BODY_RADIUS_PX } from '@/config/enemyConfig';
-import { ENEMY_PLAY_BOUNDS, insetBounds } from '@/config/mapConfig';
+import { effectiveEnemyPlayBounds, insetBounds } from '@/config/mapConfig';
 import {
   type FireRainPreset,
   resolveNodeFireRain,
@@ -885,11 +885,12 @@ export class WaveSystem implements GameSystem {
     return spawns[spawns.length - 1].enemyType;
   }
 
-  /** 選生怪位置（七輪 spawn 位置 bug）：改用 ENEMY_PLAY_BOUNDS(怪可移動區, inset 體型)取代 worldBounds(整畫面)
-   *  → 生在界內(不出遊戲區/不進面板)；離玩家 minDist、回第一個夠遠的(非挑最遠→不會離玩家太遠)。 */
+  /** 選生怪位置：用 effectiveEnemyPlayBounds()（＝ENEMY_PLAY_BOUNDS 已 +當前 levelOffsetX，怪可移動區, inset 體型）
+   *  → ★關卡推進 block-offset：怪生在玩家當前所在的 offset 區塊（非原點），連過多關持續生對區塊。
+   *  離玩家 minDist、回第一個夠遠的(非挑最遠→不會離玩家太遠)。 */
   private pickSpawnPosition(): { x: number; y: number } {
-    // ENEMY_PLAY_BOUNDS inset 敵人體型 → 生怪點讓整個 body 都在可移動區內。
-    const bounds = insetBounds(ENEMY_PLAY_BOUNDS, ENEMY_BODY_RADIUS_PX);
+    // effectiveEnemyPlayBounds()＝ENEMY_PLAY_BOUNDS 平移當前 levelOffsetX（征騎 seam）；inset 敵人體型 → 整個 body 在界內。
+    const bounds = insetBounds(effectiveEnemyPlayBounds(), ENEMY_BODY_RADIUS_PX);
     const b = { minX: bounds.minX, maxX: bounds.maxX, minY: bounds.minY, maxY: bounds.maxY };
     const playerPos = this.ctx.player.getPosition();
     const minDistFromPlayer = 260; // 離玩家(px)：夠遠不生身上、又不會太遠跑很久(用戶：別太遠)
