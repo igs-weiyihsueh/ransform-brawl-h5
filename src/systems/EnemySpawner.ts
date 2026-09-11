@@ -290,8 +290,15 @@ export class EnemySpawner {
     for (let i = 0; i < this.enemies.length; i += 1) {
       const e = this.enemies[i];
       e.setNeighbors(positions.filter((_, j) => j !== i));
-      // 無有效目標（玩家待機、無雕像）→ 傳 null 讓敵人待命（不追不打）；有目標照常。
-      e.update(targetActive ? playerPos : null, dt);
+      // ★CREDIT 待機隔離修（用戶：沒 CREDIT 時怪帶蓄力特效移動+投 CREDIT 瞬移）：
+      //   無有效目標（玩家待機/沒 CREDIT，且無雕像）→ 怪「凍結待命」（idle 站定、不移動、不遊走、清蓄力），
+      //   而非傳 null 走「隨機遊走 wander」分支（那讓怪待機期移動+殘留 charge 態→投 CREDIT 目標恢復時
+      //   charge case 把 sprite 鎖回 chargeAnchor＝瞬移感、且蓄力 FX 跟著遊走）。有目標照常追。
+      if (targetActive) {
+        e.update(playerPos, dt);
+      } else {
+        e.freezeIdleWaiting(dt);
+      }
     }
 
     // 魔尖塔環狀技（2 新事件階段 B）：尖塔週期放環 + 環擴散 + 環圈命中玩家扣能量 + 播 VFX。
