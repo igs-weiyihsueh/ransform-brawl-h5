@@ -12,6 +12,8 @@ import {
 } from '@/systems/contactSolver';
 import { getOverlapSolver, getSurroundMode } from '@/config/surroundConfig';
 import { Projectile } from '@/systems/Projectile';
+import { EnemySkillRunner } from '@/systems/EnemySkillRunner';
+import { enemySkillFromProjectileAttack } from '@/config/enemySkillSchema';
 import { SurroundSlotManager, type ISurroundTarget } from '@/systems/SurroundSlotManager';
 import { isValidEnemyTarget } from '@/systems/targetingMath';
 import {
@@ -560,18 +562,22 @@ export class EnemySpawner {
       this.lastMeleeCircle = ev.meleeCircle;
       this.meleeCircleFlash = 0.15;
     } else if (ev.kind === 'projectile' && ev.projectile) {
-      this.projectiles.push(
-        new Projectile(this.scene, {
-          x: ev.projectile.x,
-          y: ev.projectile.y,
-          dir: ev.projectile.dir,
-          speedUnits: ev.projectile.speedUnits,
-          radiusUnits: ev.projectile.radiusUnits,
-          damage: ev.damage,
-          knockback: ev.knockback,
-          sourceLabel: ev.sourceName,
-        }),
-      );
+      // ★技能三層（第 1 塊）：projectile 攻擊升級走 Skill→BulletShooter→Bullet(Projectile)。
+      //   一般怪單招直線＝行為對齊現況（單顆、直線、同速度/半徑/傷害）；走三層路徑供 Boss 彈幕擴充。
+      //   命中沿用 Projectile 既有 circleIntersectsCircle（不重寫）；生出的子彈進 this.projectiles registry（清場一併清）。
+      const pj = ev.projectile;
+      const dir = pj.dir;
+      const aim = { x: pj.x + dir.x, y: pj.y + dir.y }; // 由發射點+方向構出瞄準點（shooter 用方向）
+      const skill = enemySkillFromProjectileAttack({
+        speedUnits: pj.speedUnits,
+        radiusUnits: pj.radiusUnits,
+        damage: ev.damage,
+        knockback: ev.knockback,
+        cooldownSec: 0, // 冷卻沿用敵人 FSM attackCooldown 時序，不在此重複 gate
+      });
+      const runner = new EnemySkillRunner(this.scene, skill);
+      const bullets = runner.trigger({ x: pj.x, y: pj.y }, { x: aim.x - pj.x, y: aim.y - pj.y }, ev.sourceName);
+      this.projectiles.push(...bullets);
     }
   }
 
