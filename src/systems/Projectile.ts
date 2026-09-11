@@ -36,10 +36,18 @@ export interface ProjectileOptions {
   /** tracking 參數（movementType='tracking' 時用）。 */
   trackingRangeUnits?: number;
   rotationSpeedDegPerSec?: number;
+  /** ★子彈貼圖 key（提供且已載入→用 Image 渲染：依飛行方向 setRotation + setTint 染怪色；否則退 Arc 佔位）。 */
+  textureKey?: string;
+  /** ★染色（配怪色系）；undefined 不染。 */
+  tint?: number;
+  /** ★視覺 scale（依怪體型；預設 1）。 */
+  visualScale?: number;
 }
 
 export class Projectile {
-  private readonly gfx: Phaser.GameObjects.Arc;
+  /** 視覺：有貼圖→Image（旋轉朝飛行方向、染怪色）；否則 Arc 佔位。 */
+  private readonly gfx: Phaser.GameObjects.Arc | Phaser.GameObjects.Image;
+  private readonly usesSprite: boolean;
   private dirX: number;
   private dirY: number;
   private readonly speedPx: number;
@@ -47,6 +55,8 @@ export class Projectile {
   readonly damage: number;
   readonly knockback: number;
   readonly sourceLabel: string;
+  /** 命中特效染色（配子彈色，供命中端讀）。 */
+  readonly tint: number | undefined;
   /** 壽命三態（新）：距離為主 offset-無關。 */
   private readonly life: BulletLifetime;
   private traveledUnits = 0;
@@ -66,14 +76,29 @@ export class Projectile {
     this.damage = opts.damage;
     this.knockback = opts.knockback;
     this.sourceLabel = opts.sourceLabel ?? 'projectile';
+    this.tint = opts.tint;
     // 壽命：新 life 優先；否則相容舊 lifetime(秒)；都無→預設飛行距離 12 unit + 命中 1。
     this.life = opts.life ?? { timeSec: opts.lifetime ?? 4, maxHits: 1 };
     this.movementType = opts.movementType ?? 'straight';
     this.trackingRangeUnits = opts.trackingRangeUnits ?? 0;
     this.rotationSpeedDegPerSec = opts.rotationSpeedDegPerSec ?? 0;
 
-    this.gfx = scene.add.circle(opts.x, opts.y, Math.max(6, this.radiusPx), 0xffd54f);
-    this.gfx.setStrokeStyle(2, 0xff6f00);
+    if (opts.textureKey && scene.textures.exists(opts.textureKey)) {
+      // ★真素材：能量彈 Image，依飛行方向 setRotation（素材彈頭朝右→rotation=atan2(dir)）、setTint 染怪色、依體型 scale。
+      const img = scene.add.image(opts.x, opts.y, opts.textureKey);
+      img.setOrigin(0.5, 0.5);
+      if (opts.tint !== undefined) img.setTint(opts.tint);
+      img.setScale(opts.visualScale ?? 1);
+      img.setRotation(Math.atan2(this.dirY, this.dirX));
+      this.gfx = img;
+      this.usesSprite = true;
+    } else {
+      // 佔位：Arc（素材沒載/未指定時退回，行為不變）。
+      const arc = scene.add.circle(opts.x, opts.y, Math.max(6, this.radiusPx), 0xffd54f);
+      arc.setStrokeStyle(2, 0xff6f00);
+      this.gfx = arc;
+      this.usesSprite = false;
+    }
   }
 
   isDead(): boolean {
@@ -106,6 +131,8 @@ export class Projectile {
       );
       this.dirX = nd.x;
       this.dirY = nd.y;
+      // 貼圖朝飛行方向（追蹤轉向時同步旋轉；素材彈頭朝右）。
+      if (this.usesSprite) (this.gfx as Phaser.GameObjects.Image).setRotation(Math.atan2(this.dirY, this.dirX));
     }
 
     const stepPx = this.speedPx * dt;

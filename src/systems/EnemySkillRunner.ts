@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BulletShooter } from '@/systems/BulletShooter';
+import { BulletShooter, type BulletVisual } from '@/systems/BulletShooter';
 import type { Projectile } from '@/systems/Projectile';
 import type { EnemySkillDef, SkillPhaseDef } from '@/config/enemySkillSchema';
 import type { Vec2 } from '@/systems/hitDetection';
@@ -44,19 +44,22 @@ export class EnemySkillRunner {
    * @param rng 機率源（可注入，測試用；預設 Math.random）。
    * @returns 立即生成的子彈。
    */
-  trigger(origin: Vec2, aim: Vec2, sourceLabel: string, rng: () => number = Math.random): Projectile[] {
+  trigger(origin: Vec2, aim: Vec2, sourceLabel: string, rng: () => number = Math.random, visual?: BulletVisual): Projectile[] {
     this.cooldownRemaining = this.def.cooldownSec;
+    this.visual = visual;
     const immediate: Projectile[] = [];
     this.def.phases.forEach((ph, i) => {
       if (rng() > ph.probability) return; // 機率未中 → 此 Phase 不觸發
       if (ph.delaySec <= 0) {
-        immediate.push(...this.shooters[i].fire(origin, aim, sourceLabel));
+        immediate.push(...this.shooters[i].fire(origin, aim, sourceLabel, visual));
       } else {
         this.pending.push({ phaseIndex: i, delaySec: ph.delaySec, origin, aim });
       }
     });
     return immediate;
   }
+
+  private visual: BulletVisual | undefined;
 
   /**
    * 每幀推進：冷卻倒數 + 延遲 Phase 到期發射 + shooter 內部 interval 齊發。
@@ -69,7 +72,7 @@ export class EnemySkillRunner {
     if (this.pending.length > 0) {
       for (const p of this.pending) p.delaySec -= dt;
       const ready = this.pending.filter((p) => p.delaySec <= 0);
-      for (const p of ready) due.push(...this.shooters[p.phaseIndex].fire(p.origin, p.aim, sourceLabel));
+      for (const p of ready) due.push(...this.shooters[p.phaseIndex].fire(p.origin, p.aim, sourceLabel, this.visual));
       this.pending = this.pending.filter((p) => p.delaySec > 0);
     }
     // shooter 內部 interval 齊發（多顆間隔）。

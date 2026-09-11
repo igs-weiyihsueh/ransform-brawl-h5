@@ -47,6 +47,10 @@ const ENEMY_ATTACK_VFX = {
   aoeRing: { key: 'vfx-enemy-aoe-ring', path: `${BASE_PATH}/fx_enemy_aoe_ring.png` },
   /** 圓形範圍攻擊爆發（用戶 #3：白熱核+放射+衝擊波）。 */
   aoeBurst: { key: 'vfx-enemy-aoe-burst', path: `${BASE_PATH}/fx_enemy_aoe_burst.png` },
+  /** 技能三層：敵人能量子彈（96×96，彈頭朝右=飛行方向、拖尾朝左，中性白青可 setTint 染怪色）。 */
+  bullet: { key: 'vfx-enemy-bullet', path: `${BASE_PATH}/fx_enemy_bullet.png` },
+  /** 技能三層：子彈命中爆點（96×96，白熱核+放射星芒+衝擊環+火星，可 setTint 配子彈色）。 */
+  bulletHit: { key: 'vfx-enemy-bullet-hit', path: `${BASE_PATH}/fx_enemy_bullet_hit.png` },
   /** 守護開場聚焦放射漸層（用戶 #4，中心透明→外圈壓黑；異靈畫，alpha 客觀確認）。 */
   spotlight: { key: 'vfx-spotlight-radial', path: `${BASE_PATH}/spotlight_radial.png` },
   /** 三輪#11 火雨重製：從天墜落的火球（帶火焰拖尾）。素材到位前用 aoeBurst 佔位。 */
@@ -1290,6 +1294,34 @@ export class EffectSystem {
       ease: 'Quad.easeOut',
       onComplete: () => spr.destroy(),
     });
+  }
+
+  /**
+   * 技能三層：子彈命中爆點（在命中點播 fx_enemy_bullet_hit 一次，不循環）。
+   * ~0.2s：scale 0.6→1.0 爆開 + alpha 淡出；setTint 配子彈色（傳入 tint，undefined＝不染）。純視覺。
+   * @param x,y 命中點（世界座標）。
+   * @param tint 染色（配子彈色）；undefined 不染。
+   * @param scale 尺寸倍率（依怪體型；預設 1）。
+   */
+  enemyBulletHit(x: number, y: number, tint?: number, scale = 1): void {
+    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.bulletHit.key)) return;
+    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.bulletHit.key);
+    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH + 1);
+    if (tint !== undefined) spr.setTint(tint);
+    spr.setScale(0.6 * scale).setAlpha(1);
+    this.scene.tweens.add({
+      targets: spr,
+      scale: 1.0 * scale,
+      alpha: 0,
+      duration: 200,
+      ease: 'Quad.easeOut',
+      onComplete: () => spr.destroy(),
+    });
+  }
+
+  /** 技能三層：子彈貼圖 key（Projectile 用；貼圖沒載回 undefined 讓 Projectile 退 Arc 佔位）。 */
+  getEnemyBulletTextureKey(): string | undefined {
+    return this.scene.textures.exists(ENEMY_ATTACK_VFX.bullet.key) ? ENEMY_ATTACK_VFX.bullet.key : undefined;
   }
 
   /**

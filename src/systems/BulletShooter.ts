@@ -4,6 +4,13 @@ import { spreadDirections } from '@/systems/bulletMath';
 import type { BulletShooterDef } from '@/config/enemySkillSchema';
 import type { Vec2 } from '@/systems/hitDetection';
 
+/** 子彈視覺參數（貼圖/染色/scale）；由呼叫端（EnemySpawner 讀 EffectSystem）注入，schema 不含 Phaser。 */
+export interface BulletVisual {
+  textureKey?: string;
+  tint?: number;
+  visualScale?: number;
+}
+
 /**
  * BulletShooter — 技能三層「中層」：一次發射依 def 生 N 顆 Bullet（Projectile），可扇形展開 + 間隔齊發。
  * 怪物 AI 移植第 1 塊（鬥破規格第 7 節）。
@@ -35,22 +42,24 @@ export class BulletShooter {
    * @param sourceLabel debug 來源名。
    * @returns 立即生成的 Projectile（interval=0 時＝全部）。
    */
-  fire(origin: Vec2, aimDir: Vec2, sourceLabel: string): Projectile[] {
+  fire(origin: Vec2, aimDir: Vec2, sourceLabel: string, visual?: BulletVisual): Projectile[] {
     const dirs = spreadDirections(aimDir, this.def.bulletsPerShot, this.def.spreadDeg);
     const immediate: Projectile[] = [];
     dirs.forEach((dir, i) => {
       const delay = this.def.intervalSec * i;
       if (delay <= 0) {
-        immediate.push(this.makeBullet(origin, dir, sourceLabel));
+        immediate.push(this.makeBullet(origin, dir, sourceLabel, visual));
       } else {
         this.pending.push({ dir, delaySec: delay, origin });
       }
     });
     this.pendingLabel = sourceLabel;
+    this.pendingVisual = visual;
     return immediate;
   }
 
   private pendingLabel = 'projectile';
+  private pendingVisual: BulletVisual | undefined;
 
   /**
    * 每幀推進排隊子彈（intervalSec>0）；回本幀到期該生的 Projectile（呼叫端 push 進 registry）。
@@ -61,7 +70,7 @@ export class BulletShooter {
     const due: Projectile[] = [];
     for (const p of this.pending) p.delaySec -= dt;
     const ready = this.pending.filter((p) => p.delaySec <= 0);
-    for (const p of ready) due.push(this.makeBullet(p.origin, p.dir, this.pendingLabel));
+    for (const p of ready) due.push(this.makeBullet(p.origin, p.dir, this.pendingLabel, this.pendingVisual));
     this.pending = this.pending.filter((p) => p.delaySec > 0);
     return due;
   }
@@ -70,7 +79,7 @@ export class BulletShooter {
     return this.pending.length > 0;
   }
 
-  private makeBullet(origin: Vec2, dir: Vec2, sourceLabel: string): Projectile {
+  private makeBullet(origin: Vec2, dir: Vec2, sourceLabel: string, visual?: BulletVisual): Projectile {
     const b = this.def.bullet;
     return new Projectile(this.scene, {
       x: origin.x,
@@ -85,6 +94,9 @@ export class BulletShooter {
       movementType: b.movementType,
       trackingRangeUnits: b.trackingRangeUnits,
       rotationSpeedDegPerSec: b.rotationSpeedDegPerSec,
+      textureKey: visual?.textureKey,
+      tint: visual?.tint,
+      visualScale: visual?.visualScale,
     });
   }
 }

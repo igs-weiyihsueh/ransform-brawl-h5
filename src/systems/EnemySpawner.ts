@@ -407,14 +407,12 @@ export class EnemySpawner {
     // 守護波：射彈打雕像；否則打玩家。
     const target = this.guardTarget ?? this.player;
     for (const p of this.projectiles) {
+      const hitCenter = p.getCenter(); // 命中點＝子彈當前位置（play 爆點用）
       const hit = p.update(target, dt, this.worldBounds);
       if (hit) {
         this.applyAttackDamage(p.damage, p.sourceLabel);
-        // 用戶 #7：射彈命中玩家也播命中爆閃（打雕像不播）。純視覺。
-        if (!this.guardTarget) {
-          const hc = this.player.getHitCenter();
-          this.hitFeelFx?.enemyImpact?.(hc.x, hc.y);
-        }
+        // ★技能三層 VFX：子彈命中在命中點播爆點特效（fx_enemy_bullet_hit，配子彈色）。打雕像也播（命中回饋）。
+        this.hitFeelFx?.enemyBulletHit?.(hitCenter.x, hitCenter.y, p.tint);
       }
     }
     this.projectiles = this.projectiles.filter((p) => !p.isDead());
@@ -576,7 +574,15 @@ export class EnemySpawner {
         cooldownSec: 0, // 冷卻沿用敵人 FSM attackCooldown 時序，不在此重複 gate
       });
       const runner = new EnemySkillRunner(this.scene, skill);
-      const bullets = runner.trigger({ x: pj.x, y: pj.y }, { x: aim.x - pj.x, y: aim.y - pj.y }, ev.sourceName);
+      // ★VFX：子彈用真素材 fx_enemy_bullet（依飛行方向旋轉、染色；貼圖沒載→Projectile 退 Arc 佔位）。
+      const bulletTex = this.hitFeelFx?.getEnemyBulletTextureKey?.();
+      const bullets = runner.trigger(
+        { x: pj.x, y: pj.y },
+        { x: aim.x - pj.x, y: aim.y - pj.y },
+        ev.sourceName,
+        undefined,
+        { textureKey: bulletTex }, // tint 先中性（白青素材已好看；per-enemy 染色待怪色 config）
+      );
       this.projectiles.push(...bullets);
     }
   }

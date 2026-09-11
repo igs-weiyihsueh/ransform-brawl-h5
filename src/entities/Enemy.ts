@@ -58,6 +58,10 @@ export interface HitFeelFx {
   /** ★菁英蓄力圓盤「由內而外紅填充」每幀重畫（progress 0~1＝蓄力進度，填滿=發招）。純視覺、貼地壓扁不自轉。 */
   redrawEnemyAoeRing?(g: Phaser.GameObjects.Graphics, radiusPx: number, progress: number): void;
   enemyAoeBurst?(x: number, y: number, radiusPx: number): void;
+  /** ★技能三層：子彈命中爆點（fx_enemy_bullet_hit，配子彈色 tint）。純視覺。 */
+  enemyBulletHit?(x: number, y: number, tint?: number, scale?: number): void;
+  /** ★技能三層：子彈貼圖 key（Projectile 用；沒載回 undefined 退 Arc 佔位）。 */
+  getEnemyBulletTextureKey?(): string | undefined;
   /** ★魔尖塔環狀技（C9 拆兩特效，貼地壓扁 annulus）：預警（紅填充+脈動危險感）+ 攻擊（能量迸發衝擊）。thicknessPx=環帶厚。 */
   towerRingWarning?(x: number, y: number, diameterPx: number, thicknessPx: number, durationMs: number): void;
   towerRingActive?(x: number, y: number, diameterPx: number, thicknessPx: number, durationMs: number): void;
