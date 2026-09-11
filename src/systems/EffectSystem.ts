@@ -1338,12 +1338,12 @@ export class EffectSystem {
    * @param tint 染色；undefined 不染。
    */
   playHitEffect(x: number, y: number, tier: 'light' | 'mid' | 'heavy', tint?: number): void {
-    // 各級 package 參數：起始/結束 scale + 時長（輕小短→重大長）。
+    // 各級 package 參數（特效手建議：輕快閃小傷不干擾→重最有份量）：起始/結束 scale + 時長。
     const cfg = tier === 'heavy'
-      ? { def: ENEMY_ATTACK_VFX.hitHeavy, from: 0.7, to: 1.6, dur: 280 }
+      ? { def: ENEMY_ATTACK_VFX.hitHeavy, from: 0.7, to: 1.2, dur: 300 }
       : tier === 'mid'
-        ? { def: ENEMY_ATTACK_VFX.hitMid, from: 0.55, to: 1.1, dur: 220 }
-        : { def: ENEMY_ATTACK_VFX.hitLight, from: 0.4, to: 0.75, dur: 160 };
+        ? { def: ENEMY_ATTACK_VFX.hitMid, from: 0.6, to: 1.0, dur: 200 }
+        : { def: ENEMY_ATTACK_VFX.hitLight, from: 0.5, to: 0.9, dur: 150 };
     // 素材沒到 → fallback 現有 enemyBulletHit（佔位；用 tier 對應 scale 近似）。
     if (!this.scene.textures.exists(cfg.def.key)) {
       this.enemyBulletHit(x, y, tint, cfg.to);
