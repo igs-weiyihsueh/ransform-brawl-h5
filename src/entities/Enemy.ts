@@ -890,24 +890,26 @@ export class Enemy implements Hittable {
 
   /** 每幀更新：套擊退殘速 → 跑狀態機 → 更新動畫。 */
   /**
-   * ★CREDIT 待機凍結（用戶：沒 CREDIT 時怪不該移動/蓄力/遊走，投 CREDIT 不該瞬移）：
-   * 玩家待機/沒 CREDIT 且無雕像目標時 EnemySpawner 每幀呼此——怪站定 idle、不移動、不遊走、不推進 AI/計時，
-   * 並清掉蓄力狀態+特效+chargeAnchor（否則殘留 charge 態→目標恢復時 charge case 把 sprite 鎖回 chargeAnchor＝瞬移；
-   * 且蓄力 FX 會跟著移動）。死亡/被抓/擊退/麻痺照各自邏輯（不干擾），其餘一律 idle 定住。
+   * ★CREDIT 待機（用戶定案：怪要保持平常巡邏 wander 遊走、不能定住；只去掉兩個真問題）：
+   * 玩家待機/沒 CREDIT 且無雕像目標時 EnemySpawner 每幀呼此——
+   *  1) 清蓄力態+FX+chargeAnchor（怪待機時不進蓄力、不殘留蓄力 FX 跟著遊走）；
+   *  2) 防投 CREDIT 瞬移（不殘留 charge→目標恢復時不會被 charge case 鎖回舊 chargeAnchor）；
+   *  然後**照常走一般 update(null)＝隨機遊走巡邏**（怪照常走動、不定住）。
+   * 死亡/被抓/麻痺/擊退暫態由 update 內各自處理、不干擾。
    */
   freezeIdleWaiting(dt: number): void {
     if (this.dead || this.state === 'death') return;
-    // 被抓由 GrabSystem 驅動、麻痺/擊退各自倒數——不干擾這些既有狀態。
-    if (this.grabber || this.stunRemaining > 0 || this.knockbackRemaining > 0) {
-      this.update(null, dt); // 交回一般 update 處理這些暫態（其內各自 return，不會走遊走）
-      return;
+    // 清蓄力（防殘留 charge→目標恢復瞬移 + 蓄力 FX 跟著遊走）；被抓/麻痺/擊退不動它們的態。
+    if (!this.grabber && this.stunRemaining <= 0 && this.knockbackRemaining <= 0) {
+      if (this.state === 'charge') {
+        this.clearChargeFx();
+        this.chargeAnchor = null;
+        this.state = 'chase'; // 回中性態，目標恢復從 chase 重新 gate（不殘留 charge/attack/cooldown）
+        this.timer = 0;
+      }
     }
-    // 清蓄力（防殘留 charge→目標恢復瞬移 + 蓄力 FX 跟著移動）。
-    if (this.state === 'charge') this.clearChargeFx();
-    this.chargeAnchor = null;
-    this.state = 'chase'; // 回中性態，目標恢復時從 chase 重新逼近/gate（不殘留 charge/attack/cooldown）
-    this.timer = 0;
-    this.anim.play('idle'); // 站定，不移動、不遊走
+    // ★照常走一般 update(null)＝待機正常巡邏遊走（會動、不定住）。
+    this.update(null, dt);
   }
 
   update(playerPos: Vec2 | null, dt: number): void {    if (this.dead) return;
