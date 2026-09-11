@@ -53,8 +53,8 @@ export interface HitFeelFx {
   enemyFan?(x: number, y: number, angleRad: number, scale?: number): void;
   enemyImpact?(x: number, y: number, scale?: number): void;
   enemyCharge?(x: number, y: number, durationMs?: number, diskPx?: number): Phaser.GameObjects.Image | null;
-  /** 用戶 #3 圓形範圍攻擊特效（純視覺）。 */
-  enemyAoeRing?(x: number, y: number, radiusPx: number): Phaser.GameObjects.Image | null;
+  /** 用戶 #3 圓形範圍攻擊特效（純視覺；菁英蓄力改 Graphics 貼地壓扁圓盤，不自轉）。 */
+  enemyAoeRing?(x: number, y: number, radiusPx: number): Phaser.GameObjects.Graphics | null;
   enemyAoeBurst?(x: number, y: number, radiusPx: number): void;
   /** ★魔尖塔環狀技（C9 拆兩特效，貼地壓扁 annulus）：預警（紅填充+脈動危險感）+ 攻擊（能量迸發衝擊）。thicknessPx=環帶厚。 */
   towerRingWarning?(x: number, y: number, diameterPx: number, thicknessPx: number, durationMs: number): void;
@@ -144,8 +144,10 @@ export class Enemy implements Hittable {
   hitFeelFx: HitFeelFx | null = null;
   /** 用戶 #7：蓄力預警特效 sprite（進 charge 時建、出手/離開時 destroy）。 */
   private chargeFx: Phaser.GameObjects.Image | null = null;
-  /** 用戶 #3：圓形範圍攻擊預告圈 sprite（circle shape 敵人蓄力時建、出手/離開時 destroy）。 */
-  private aoeRingFx: Phaser.GameObjects.Image | null = null;
+  /** ★小怪蓄力身體閃紅 tint 呼吸 tween（進 charge 建、出手/取消/死亡清）。 */
+  private chargeTintTween: Phaser.Tweens.Tween | null = null;
+  /** 用戶 #3：圓形範圍攻擊預告圈（菁英蓄力，改 Graphics 貼地壓扁圓盤；出手/離開 destroy）。 */
+  private aoeRingFx: Phaser.GameObjects.Image | Phaser.GameObjects.Graphics | null = null;
 
   /** 局部頓幀剩餘秒數（hitFeel microFreeze，只凍被打這隻：>0 時 update 早退不動作）。 */
   private freezeRemaining = 0;
@@ -527,6 +529,44 @@ export class Enemy implements Hittable {
       this.aoeRingFx.destroy();
       this.aoeRingFx = null;
     }
+    this.clearChargeTint(); // ★清小怪蓄力身體閃紅 tint
+  }
+
+  /**
+   * ★小怪蓄力身體閃紅（大更：取代腳底 chargeFx 法陣盤）：sprite 紅 tint 0xff4444 + alpha 呼吸脈動（tween yoyo）。
+   * 蓄力期間持續；出手瞬間 flashChargeTintOnFire() 閃亮一下再清；出手/取消/死亡 clearChargeTint。
+   */
+  private startChargeTint(): void {
+    const sp = this.anim.sprite;
+    sp.setTint(0xff4444);
+    this.chargeTintTween?.stop();
+    this.chargeTintTween = sp.scene.tweens.add({
+      targets: sp, alpha: { from: 1, to: 0.6 }, duration: 220, yoyo: true, repeat: -1, ease: 'Sine.inOut',
+    });
+  }
+
+  /** ★出手瞬間：身體閃亮一下（alpha 拉滿）再清 tint，作為蓄力結束的爆發提示。 */
+  private flashChargeTintOnFire(): void {
+    const sp = this.anim.sprite;
+    this.chargeTintTween?.stop();
+    this.chargeTintTween = null;
+    sp.setAlpha(1);
+    sp.setTint(0xffffff); // 閃亮白一下
+    sp.scene.tweens.add({
+      targets: sp, alpha: 1, duration: 90, ease: 'Sine.easeOut',
+      onComplete: () => sp.clearTint(),
+    });
+  }
+
+  /** ★清小怪蓄力身體 tint（出手/取消/死亡）：停呼吸 tween、還原 alpha、清 tint。 */
+  private clearChargeTint(): void {
+    if (this.chargeTintTween) {
+      this.chargeTintTween.stop();
+      this.chargeTintTween = null;
+    }
+    const sp = this.anim.sprite;
+    sp.setAlpha(1);
+    sp.clearTint();
   }
 
   /**
@@ -1012,12 +1052,10 @@ export class Enemy implements Hittable {
             this.aoeRingFx =
               this.hitFeelFx?.enemyAoeRing?.(circle.center.x, circle.center.y, circle.radius) ?? null;
           } else {
-            // 衝鋒/一般近戰(slash)：保留腳底 charge disk 法陣盤(俯視壓扁+盤旋氣流)，出手 destroy 接 slash。
-            const cpos = this.getHitCenter();
-            const footY = cpos.y + this.radiusPx * 1.7; // 腳底之下(body 中心往下 ~1.7×body 半徑, 讓盤在腿之下不被身體蓋)
-            const diskPx = this.radiusPx * 2.8; // 圓盤直徑放大(更多面積超出角色輪廓, 地面法陣盤更明顯)
-            this.chargeFx =
-              this.hitFeelFx?.enemyCharge?.(cpos.x, footY, this.cfg.chargeTime * 1000, diskPx) ?? null;
+            // ★小怪蓄力（大更）：取消腳底 chargeFx 法陣盤 → 改「身體閃紅 tint 脈動」提示蓄力。
+            //   0xff4444 紅 tint + alpha 呼吸（tween yoyo），蓄力期間持續；出手瞬間閃亮一下再 clearTint。
+            //   出手/取消/死亡清 tint（clearChargeTint / clearChargeFx）。
+            this.startChargeTint();
           }
         } else if (this.guardTarget || (dist <= detectPx && dist > 0.001)) {
           // 十五輪回歸修①：有守護目標(雕像)＝一律朝雕像逼近（雕像是圍攻目標，非「偵測到才追」），
@@ -1155,6 +1193,8 @@ export class Enemy implements Hittable {
     // 用戶 #7/#3：出手當下收掉蓄力/預告圈，播出手特效。純視覺。
     this.clearChargeFx();
     const vfx = enemyAttackVfx(this.cfg.attackKind, this.cfg.attackVfx); // 三輪#12：slash/aoe/none
+    // ★小怪（slash）蓄力身體閃紅→出手瞬間閃亮一下再清（大更）。菁英(aoe)/射彈不套。
+    if (vfx === 'slash' || vfx === 'fan') this.flashChargeTintOnFire();
     if (vfx === 'aoe') {
       // 真大範圍敵人(菁英) → 播 AOE 爆發（同攻擊圓心、依 AOE 半徑）。七輪#3：offset 朝 aim(playerPos)。
       // 十五輪：AOE 爆發視覺半徑=實際攻擊範圍(sizeScale=1，不隨體型)，與預警圈/傷害圓一致(所見即所得)。

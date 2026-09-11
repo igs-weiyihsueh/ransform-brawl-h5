@@ -1352,21 +1352,30 @@ export class EffectSystem {
   }
 
   /**
-   * 圓形範圍攻擊預告圈（用戶 #3）：平貼地面、以敵人為圓心、依 AOE 半徑 scale，蓄力期持續 + 緩慢自轉。
-   * 回傳 sprite 供出手時 destroy（接 aoeBurst）。純視覺。
-   * @param x,y 圓心（敵人攻擊圓心，世界座標）。
-   * @param radiusPx AOE 半徑（px，預告圈直徑=2×此）。
-   * @returns 預告圈 sprite；貼圖沒載則回 null。
+   * 圓形範圍攻擊預告圈（用戶 #3 → 大更：菁英蓄力改 Graphics 貼地壓扁圓盤，★絕不自轉/翻）：
+   * 貼地壓扁圓（水平半徑=radiusPx、垂直×GROUND_SQUASH_Y）紅預警 0xff3300（填低 alpha + 描邊高 alpha），
+   * 能量感用 alpha 呼吸脈動（tween yoyo，★不 setAngle/不 scale-Y——壓扁橢圓一轉就立起來翻）。
+   * depth 壓角色下（貼地）。回傳 Graphics 供 syncChargeFx 每幀跟位置（菁英被推跟隨）+ 出手 destroy。
+   * @param x,y 圓心（敵人 body 中心，世界座標）。@param radiusPx AOE 半徑。
    */
-  enemyAoeRing(x: number, y: number, radiusPx: number): Phaser.GameObjects.Image | null {
-    if (!this.scene.textures.exists(ENEMY_ATTACK_VFX.aoeRing.key)) return null;
-    const spr = this.scene.add.image(x, y, ENEMY_ATTACK_VFX.aoeRing.key);
-    spr.setOrigin(0.5, 0.5).setDepth(-4); // 平貼地面（角色之下，PLAY_DEPTH=10）
-    spr.setDisplaySize(radiusPx * 2, radiusPx * 2).setAlpha(0);
-    // 淡入 + 緩慢自轉（警示感）。
-    this.scene.tweens.add({ targets: spr, alpha: 0.85, duration: 250, ease: 'Sine.easeOut' });
-    this.scene.tweens.add({ targets: spr, angle: 360, duration: 4000, repeat: -1, ease: 'Linear' });
-    return spr;
+  enemyAoeRing(x: number, y: number, radiusPx: number): Phaser.GameObjects.Graphics | null {
+    const sq = EffectSystem.GROUND_SQUASH_Y;
+    const g = this.scene.add.graphics();
+    g.setPosition(x, y).setDepth(-4); // 貼地（角色 PLAY_DEPTH=10 之下）
+    const w = radiusPx * 2;
+    const h = radiusPx * 2 * sq; // 貼地壓扁（俯視橢圓）
+    g.fillStyle(0xff3300, 0.2);
+    g.fillEllipse(0, 0, w, h);
+    g.lineStyle(3, 0xff3300, 0.8);
+    g.strokeEllipse(0, 0, w, h);
+    g.setAlpha(0);
+    // 淡入 → alpha 呼吸脈動（★不自轉、不改 scale-Y，保持貼地水平）。
+    this.scene.tweens.add({ targets: g, alpha: 0.9, duration: 220, ease: 'Sine.easeOut' });
+    this.scene.tweens.add({
+      targets: g, alpha: { from: 0.9, to: 0.5 }, duration: 320, yoyo: true, repeat: -1,
+      ease: 'Sine.inOut', delay: 220,
+    });
+    return g;
   }
 
   /**
