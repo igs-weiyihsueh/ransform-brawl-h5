@@ -30,16 +30,21 @@ interface LevelAdvanceWave {
   isAwaitingLevelAdvance?(): boolean;
 }
 
-/** 通道視覺帶：箭頭區寬（螢幕 px）。 */
+/** 通道箭頭區寬（螢幕 px）。 */
 const CORRIDOR_WIDTH_PX = 160;
+/** ★發光通道「入口」帶寬（世界 px）：只是入口視覺標記（窄），畫在當前區塊左界往左這麼寬。碰到不觸發 commit。 */
+const CORRIDOR_ENTRANCE_W_PX = 260;
 /**
  * ★區塊跨距（世界 px）＝一關往左遞進的偏移量＝玩家從當前區塊中心走到新區塊中心的距離。
- *   需 > (GAME_WIDTH/2 - PLAYER_BOUNDS.minX) 讓「新區塊中心」落在「當前區塊左界」左側
- *   （玩家越左界後還要繼續往左走進新地圖到其中心，順序才對）。用戶嫌 1600 太長→縮短成 1000（新中心在左界左 ~200px）。
+ *   ★玩家越左界(入口)後到「新地圖中心定點」要走的距離＝STRIDE − (GAME_WIDTH/2 − PLAYER_BOUNDS.minX=800)。
+ *   用戶抱怨「一碰發光區就位移」＝定點太靠入口（STRIDE 太小 walk 太短）。設 1500 → 越界後還要走 700px 才到中心 commit
+ *   （真的走過通道一段、非碰到就跳）。仍比原 1600 略短。
  */
-const BLOCK_STRIDE_PX = 1000;
-/** 開通道後玩家往左越過此線（＝當前區塊左界）→ 開始跨界鏡頭捲。 */
+const BLOCK_STRIDE_PX = 1500;
+/** 開通道後玩家往左越過此線（＝當前區塊左界＝入口）→ 開始跨界鏡頭捲（此刻不 commit，要繼續走到中心）。 */
 const CROSS_START_INSET_PX = 0;
+/** ★入口→commit 之間最少要走的距離（世界 px）防呆：玩家從越界點起至少往左走這麼多才允許 commit（碰入口不跳）。 */
+const MIN_WALK_BEFORE_COMMIT_PX = 500;
 /** 鏡頭跨界捲動平滑係數（lerp，越小越滑）。可調。 */
 const CAM_LERP_X = 0.1;
 
@@ -56,6 +61,8 @@ export class LevelProgressSystem implements GameSystem {
   private panning = false;
   /** 開通道當下的 levelOffsetX（算當前/新區塊左界、中心定點、鏡頭 home）。 */
   private baseOffsetAtOpen = 0;
+  /** ★玩家越入口（當前區塊左界）那刻的 x，用於 MIN_WALK_BEFORE_COMMIT_PX 防呆（碰入口不 commit）。 */
+  private crossStartX = 0;
   private prevOnLevelCleared: (() => void) | null = null;
 
   init(ctx: GameContext): void {
@@ -81,10 +88,11 @@ export class LevelProgressSystem implements GameSystem {
     const curLeft = PLAYER_BOUNDS.minX + this.baseOffsetAtOpen; // 當前區塊左界（原分界）
     const newCenterX = GAME_WIDTH / 2 + newOff; // ★新區塊中心定點（offset 後畫面中央 x）
 
-    // 玩家（自由控）往左越過當前區塊左界 → 進入跨界過場：鏡頭開始往左捲進新地圖。
+    // 玩家（自由控）往左越過當前區塊左界（＝入口）→ 進入跨界過場：記越界點、鏡頭開始往左捲進新地圖。
     if (this.awaitingCross && pos.x <= curLeft - CROSS_START_INSET_PX) {
       this.awaitingCross = false;
       this.panning = true;
+      this.crossStartX = pos.x; // 記越界點：commit 要求從此再往左走 MIN_WALK_BEFORE_COMMIT_PX（碰入口不跳）
     }
 
     if (this.panning) {
@@ -94,8 +102,9 @@ export class LevelProgressSystem implements GameSystem {
         const tx = 1 - Math.pow(1 - CAM_LERP_X, Math.max(1, dt * 60));
         cam.setScroll(cam.scrollX + (newOff - cam.scrollX) * tx, cam.scrollY);
       }
-      // ★玩家走到新地圖中心定點 → 全對齊無縫啟動（offset 遞進+邊界還原+鏡頭定中心+啟動戰鬥）。
-      if (pos.x <= newCenterX) {
+      // ★玩家走到新地圖中心定點 且 從入口起已實走 >= MIN_WALK_BEFORE_COMMIT_PX（真的走過一段、非碰入口就跳）→ 全對齊無縫啟動。
+      const walked = this.crossStartX - pos.x; // 從越界點往左走的距離
+      if (pos.x <= newCenterX && walked >= MIN_WALK_BEFORE_COMMIT_PX) {
         this.commitAdvance();
       }
     }
@@ -140,23 +149,23 @@ export class LevelProgressSystem implements GameSystem {
     this.awaitingCross = false;
   }
 
-  /** 顯示短發光通道：發光帶 + 指向左的箭頭（世界座標＝offset-aware）。畫在當前區塊左界往左一個 STRIDE。 */
+  /** 顯示發光通道「入口」：窄發光帶 + 指向左的箭頭（世界座標＝offset-aware，畫在當前區塊左界＝入口，窄）。★只是入口視覺，碰到不 commit。 */
   private showCorridor(): void {
     const sc = this.ctx.scene;
     if (!sc) return;
-    const curLeft = PLAYER_BOUNDS.minX + this.baseOffsetAtOpen; // 當前區塊左界
-    const extendedLeft = curLeft - BLOCK_STRIDE_PX; // 新區塊左界
+    const curLeft = PLAYER_BOUNDS.minX + this.baseOffsetAtOpen; // 當前區塊左界＝入口
+    const entranceLeft = curLeft - CORRIDOR_ENTRANCE_W_PX; // 窄入口帶左緣
     const top = PLAYER_BOUNDS.minY;
     const bottom = PLAYER_BOUNDS.maxY;
     const midY = (top + bottom) / 2;
-    const bandW = curLeft - extendedLeft; // ＝BLOCK_STRIDE_PX（短）
     const g = sc.add.graphics();
     g.setDepth(5); // 貼地層
-    g.fillStyle(0x33ddff, 0.18);
-    g.fillRect(extendedLeft, top, bandW, bottom - top);
-    g.lineStyle(3, 0x66eeff, 0.7);
-    g.strokeRect(extendedLeft, top, bandW, bottom - top);
-    // 指向左的箭頭（當前分界內側，引導往左走過分界）。
+    // 窄發光入口帶（示意「往左出口／下一區」，非整條走道；玩家碰到還要繼續走進去）。
+    g.fillStyle(0x33ddff, 0.2);
+    g.fillRect(entranceLeft, top, CORRIDOR_ENTRANCE_W_PX, bottom - top);
+    g.lineStyle(3, 0x66eeff, 0.75);
+    g.strokeRect(entranceLeft, top, CORRIDOR_ENTRANCE_W_PX, bottom - top);
+    // 指向左的箭頭（入口內側，引導往左走進新地圖）。
     const ax = curLeft - CORRIDOR_WIDTH_PX * 0.38;
     const ah = 70;
     const tipX = curLeft - CORRIDOR_WIDTH_PX;
