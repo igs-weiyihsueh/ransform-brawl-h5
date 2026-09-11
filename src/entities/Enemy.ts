@@ -5,7 +5,7 @@ import { ENEMY_AI, ENEMY_BODY_RADIUS_PX, ENEMY_BODY_CENTER_OFFSET_Y, type EnemyA
 import { getResolvedEnemy } from '@/config/enemySchema';
 import { PPU, GROUND_SQUASH_Y } from '@/config/gameConfig';
 import { FOOT_GLOW } from '@/config/playerConfig';
-import { ENEMY_PLAY_BOUNDS, clampToBounds, insetBounds } from '@/config/mapConfig';
+import { effectiveEnemyPlayBounds, clampToBounds, insetBounds } from '@/config/mapConfig';
 import { CharacterAnimator } from '@/systems/CharacterAnimator';
 import {
   attackFacing,
@@ -316,7 +316,8 @@ export class Enemy implements Hittable {
     if (this.dead || this.state === 'death') return;
     // 用 body 半徑內縮邊界，確保敵人整個身體都在界內、不會被推擠推到邊界外露出。
     // 第四輪#1：下界改用面板感知 ENEMY_PLAY_BOUNDS（怪底邊停面板上緣、不擦進下方面板）。
-    const bounds = insetBounds(ENEMY_PLAY_BOUNDS, this.radiusPx);
+    // ★block-offset：用 effectiveEnemyPlayBounds()（已套當前 levelOffsetX），怪在當前區塊內夾限、不被拉回原點。
+    const bounds = insetBounds(effectiveEnemyPlayBounds(), this.radiusPx);
     const c = clampToBounds(this.anim.sprite.x, this.anim.sprite.y, bounds);
     if (c.changed) {
       this.anim.sprite.x = c.x;

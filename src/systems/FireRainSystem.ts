@@ -4,6 +4,7 @@ import type { GameSystem } from '@/systems/GameSystem';
 import type { Vec2 } from '@/systems/hitDetection';
 import type { FireRainPreset } from '@/config/fireRainConfig';
 import { pickFireRainPoint, playersInStrike } from '@/systems/fireRainMath';
+import { getLevelOffsetX } from '@/config/mapConfig';
 
 /** 一道進行中的火雨（預警中 or 已落下待清）。 */
 interface Strike {
@@ -102,14 +103,20 @@ export class FireRainSystem implements GameSystem {
 
   private trySpawnStrike(): void {
     const p = this.preset!;
-    const pos = pickFireRainPoint(
-      this.activePoints(),
+    // ★關卡推進 block-offset：pickFireRainPoint 純函式在原點座標空間算落點/不重疊（用 MAP_BOUNDS）。
+    //   當前 levelOffsetX：把在途落點先減 offset 回原點空間做不重疊判定 → 算完再把落點加回 offset
+    //   → 火雨落**當前區塊**（玩家腳下），非原點。pickFireRainPoint 保持純不動、測不受影響。
+    const off = getLevelOffsetX();
+    const activeOrigin = this.activePoints().map((pt) => ({ x: pt.x - off, y: pt.y }));
+    const raw = pickFireRainPoint(
+      activeOrigin,
       Math.random,
       p.radiusPx,
       p.edgeMarginPx,
       p.maxConcurrent,
     );
-    if (!pos) return; // 額度滿/太近 → 這道略過
+    if (!raw) return; // 額度滿/太近 → 這道略過
+    const pos = { x: raw.x + off, y: raw.y }; // 平移回當前 offset 區塊
     const ring = this.ctx.effects.fireWarningRing(pos.x, pos.y, p.radiusPx);
     // 三輪#11：warning 期間一顆火球從天墜落到落點；墜落時長=warning，落地=resolveStrike(傷害那刻)→視覺與傷害同步。
     this.ctx.effects.fireballFall?.(pos.x, pos.y, p.warningSec * 1000);

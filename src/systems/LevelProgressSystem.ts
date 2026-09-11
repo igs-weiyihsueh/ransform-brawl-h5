@@ -10,9 +10,9 @@ import {
 
 /**
  * LevelProgressSystem — 關卡推進（step2 升級：block-offset model，真相鄰場景）：
- *  全波次打完（波騎 WaveSystem emit onLevelCleared）→ 左邊開「通道」+ 解除左界
- *  → 角色**連續往左走過分界**進真的下一塊區域、鏡頭**只水平(X)跟隨**（垂直 Y 鎖住）
- *  → 走過分界 → levelOffsetX **遞進**（不 setScroll 回原點、不拉回玩家＝不瞬移）+ notifyPortalEntered
+ *  全波次打完（波騎 WaveSystem emit onLevelCleared）→ 左邊開「通道」+ 解除左界 + **鎖玩家輸入 scripted 自動往左走**
+ *  → 角色**連續自動走過分界**進真的下一塊區域、鏡頭**只水平(X)跟隨**（垂直 Y 鎖住）
+ *  → 走過分界 → levelOffsetX **遞進**（不 setScroll 回原點、不拉回玩家＝不瞬移）+ notifyPortalEntered + 解鎖輸入
  *  → 就地開下一關（怪生在新 offset 區塊，波騎 offset-aware spawn 讀 getLevelOffsetX）。
  *
  * 分工：波騎 WaveSystem 出 onLevelCleared（本關全清 emit + 停生怪 waitingForPortal，不自動進關）
@@ -57,6 +57,8 @@ export class LevelProgressSystem implements GameSystem {
   private following = false;
   /** ★過場鎖定的鏡頭 Y（scrollY 固定不動＝垂直鎖，用戶要求）。 */
   private lockedScrollY = 0;
+  /** ★過場鎖定的玩家 Y（scripted walk 期間每幀 pin，避免被推擠/殘留位移拉動＝Y 不變，用戶要求）。 */
+  private lockedPlayerY = 0;
   /** 過場起點的 levelOffsetX（開通道當下），算「當前區塊左界／新區塊左界」用。 */
   private baseOffsetAtOpen = 0;
   private prevOnLevelCleared: (() => void) | null = null;
@@ -82,11 +84,20 @@ export class LevelProgressSystem implements GameSystem {
     }
     const pos = this.ctx.player?.getPosition?.();
     if (!pos) return;
-    // ★鏡頭只水平(X)平滑跟隨角色（scrollY 鎖住 lockedScrollY＝垂直不跟）：看得到角色往左走、鏡頭橫捲、無黑幕。
-    this.followCameraX(pos.x, dt);
+    // ★scripted 自動往左走（只 X，Y 不變）：鎖玩家輸入下由本 system 驅動 player.move 往左，
+    //   避免玩家過場往右卡 bounds/offset 邊界 + 玩家不能上下亂跑→鏡頭自然只水平捲、垂直不動（用戶抱怨一次解）。
+    this.ctx.player?.move?.({ x: -1, y: 0 }, dt);
+    // ★pin 玩家 Y＝lockedPlayerY（防被推擠/殘留位移/降臨拉動 Y；用戶明確要 Y 不變）。
+    const p2 = this.ctx.player;
+    const cur = p2?.getPosition?.();
+    if (cur && typeof p2?.setPosition === 'function' && cur.y !== this.lockedPlayerY) {
+      p2.setPosition(cur.x, this.lockedPlayerY);
+    }
+    // ★鏡頭只水平(X)平滑跟隨角色（scrollY 鎖住 lockedScrollY＝垂直不跟）：看得到角色自動往左走、鏡頭橫捲、無黑幕。
+    this.followCameraX((cur ?? pos).x, dt);
     // 角色走過分界進新區塊（中心 x <= 新區塊左界 + margin）→ 遞進 offset 開下一關。
     const newBlockLeft = PLAYER_BOUNDS.minX + this.baseOffsetAtOpen - BLOCK_STRIDE_PX;
-    if (pos.x <= newBlockLeft + CROSS_MARGIN_PX) {
+    if ((cur ?? pos).x <= newBlockLeft + CROSS_MARGIN_PX) {
       this.commitAdvance();
     }
   }
@@ -110,11 +121,14 @@ export class LevelProgressSystem implements GameSystem {
     this.showCorridor();
     // ★解除左界：放寬到「新區塊左界」（當前左界再往左一個 STRIDE），讓角色能連續走過分界進下一塊。
     setPlayerLeftBoundOverride(PLAYER_BOUNDS.minX + this.baseOffsetAtOpen - BLOCK_STRIDE_PX);
-    // 鎖定過場鏡頭 Y＝當前 scrollY（垂直不跟）。
+    // ★鎖玩家輸入（scriptedControl）：過場改 scripted 自動往左走（見 update），玩家不自由控＝不往右卡、不上下亂跑。
+    this.ctx.scriptedControl = true;
+    // 鎖定過場鏡頭 Y＝當前 scrollY（垂直不跟）+ 鎖定玩家 Y（走位期間 pin，Y 不變）。
     const cam = this.ctx.scene?.cameras?.main;
     this.lockedScrollY = cam ? cam.scrollY : 0;
+    this.lockedPlayerY = this.ctx.player?.getPosition?.().y ?? 0;
     this.following = true;
-    // 鏡頭 X 跟隨由 update() 自管 lerp（不靠 Phaser startFollow）。
+    // 鏡頭 X 跟隨 + scripted walk-left 由 update() 驅動。
   }
 
   /**
@@ -125,6 +139,7 @@ export class LevelProgressSystem implements GameSystem {
   private commitAdvance(): void {
     advanceLevelOffsetX(-BLOCK_STRIDE_PX); // 座標基準往左遞進一塊
     setPlayerLeftBoundOverride(null); // 還原 override（正常界已隨 offset 平移到新區塊）
+    this.ctx.scriptedControl = false; // ★解鎖玩家輸入（新關開打玩家可控）
     this.wave.notifyPortalEntered?.(); // 波騎重置波次進下一輪（生怪讀當前 offset 落新區塊）
     this.hideCorridor();
     this.following = false;
@@ -134,6 +149,7 @@ export class LevelProgressSystem implements GameSystem {
   /** 別處已推進 → 只收尾還原（不重複遞進 offset / 不 notify）。 */
   private endFollow(): void {
     setPlayerLeftBoundOverride(null);
+    this.ctx.scriptedControl = false; // 解鎖輸入
     this.hideCorridor();
     this.following = false;
   }
@@ -181,9 +197,10 @@ export class LevelProgressSystem implements GameSystem {
 
   destroy(): void {
     this.hideCorridor();
-    // ★過場中被銷毀（切場景）→ 安全還原左界 override（offset 本身留給下場景延續；不強制 setScroll）。
+    // ★過場中被銷毀（切場景）→ 安全還原左界 override + 解鎖輸入（offset 本身留給下場景延續；不強制 setScroll）。
     if (this.following) {
       setPlayerLeftBoundOverride(null);
+      this.ctx.scriptedControl = false;
       this.following = false;
     }
     // 還原 onLevelCleared（避免多場景殘留）。

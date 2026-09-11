@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CHARACTERS } from '@/config/animationConfig';
 import { chestChargeForResolved, getResolvedChest } from '@/config/chestSchema';
 import { BACKGROUND_COLOR, GAME_HEIGHT, GAME_WIDTH } from '@/config/gameConfig';
+import { getLevelOffsetX } from '@/config/mapConfig';
 import { resolveTowerPositions } from '@/systems/towerRingSkill';
 import { TOWER_DEFAULT_COLLISION_RADIUS_PX } from '@/entities/Enemy';
 import { resolveTowerIntro, resolveTowerUi, resolveTowerMessages } from '@/config/towerConfig';
@@ -276,7 +277,10 @@ export class GameScene extends Phaser.Scene {
         vacuumRadiusPx: preset.ringSkill.vacuumRadiusPx, // ②真空帶半徑（用戶可調，波騎新增欄）
       };
       // A2：塔位＝preset.positions 前 N 座（有則用），不足/省略用預設環形補到 towerCount（1920×1080 場景座標）。
-      const positions = resolveTowerPositions(preset.positions, n, GAME_WIDTH, GAME_HEIGHT);
+      //   ★block-offset：塔位/gather 中心 +getLevelOffsetX()，讓塔波演在當前區塊（否則下一 lap 塔演回原點）。
+      const levelOff = getLevelOffsetX();
+      const basePositions = resolveTowerPositions(preset.positions, n, GAME_WIDTH, GAME_HEIGHT);
+      const positions = basePositions.map((p) => ({ x: p.x + levelOff, y: p.y }));
       const scale = preset.towerScale != null && preset.towerScale > 0 ? preset.towerScale : 1; // A3：塔 sprite 縮放（省略=1）
       // ★真空帶（塔 body 碰撞半徑 + 圓心偏移）：波騎 towerConfig 已有 towerCollisionRadiusPx/OffsetXPx/YPx 欄（正式型別）。
       //   省略＝不覆寫、用現行預設 radiusPx/圓心（不破舊行為）。跟 ring vacuumRadiusPx 無關。
@@ -313,7 +317,7 @@ export class GameScene extends Phaser.Scene {
       //   中心＝波騎 gatherPointPx（可編、預設畫面中央 960,540）；聚集半徑用預設（波騎未給 gatherOffsetPx）。
       this.towerIntro?.forceFinish(); // 保險：上一場 intro 未清乾淨先收掉
       this.towerIntro = new TowerIntroSequence(this.ctx, {
-        center: { x: intro.gatherPointPx.x, y: intro.gatherPointPx.y },
+        center: { x: intro.gatherPointPx.x + levelOff, y: intro.gatherPointPx.y },
         maxWalkSec: intro.maxWalkSec,
         introFocusSec: intro.introFocusSec,
         spotlightRadiusPx: intro.spotlightRadiusPx,
