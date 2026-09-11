@@ -1,21 +1,25 @@
 import Phaser from 'phaser';
 import type { GameSystem } from '@/systems/GameSystem';
 import type { GameContext } from '@/systems/GameContext';
+import { GAME_WIDTH } from '@/config/gameConfig';
 import { PLAYER_BOUNDS, setPlayerLeftBoundOverride, advanceLevelOffsetX, getLevelOffsetX } from '@/config/mapConfig';
 
 /**
- * LevelProgressSystem — 關卡推進（step2：block-offset 真相鄰場景，玩家自由控 + 鏡頭只在跨界過場那段捲）：
- *  全波次打完（波騎 emit onLevelCleared）→ 左邊開「發光通道」+ 解左界（玩家可往左走進通道）
- *  → 玩家**自由控制**走到左邊界、要跨過去那刻 → **鏡頭才 lerp 往左捲一個區塊**到新區塊（平時鏡頭固定不跟玩家）
- *  → 玩家走到新區塊左界 → levelOffsetX 遞進 + notifyPortalEntered → 就地開下一關（無縫、無瞬移/走完位移）。
+ * LevelProgressSystem — 關卡推進（step2：block-offset 真相鄰場景，玩家自由控 + 鏡頭只跨界捲 + 到中心定點對齊啟動）：
+ *  全波次打完（波騎 emit onLevelCleared）→ 左邊開「短發光通道」+ 解左界（玩家可自由往左走進通道）
+ *  → 玩家**自由控制**走到左邊界要跨過去 → **鏡頭才 lerp 往左捲**進新地圖（平時鏡頭固定不跟玩家）+ 角色繼續自己走進新地圖
+ *  → 走到**新地圖中心定點** → offset/座標對齊此定點無縫遞進 + 邊界還原新地圖正常界（左右框住）+ 鏡頭停新地圖中心 + 啟動戰鬥生怪。
  *
- * 分工：波騎 WaveSystem 出 onLevelCleared（本關全清 emit + 停生怪 waitingForPortal）+ notifyPortalEntered()（我呼→重置）
- *   + isAwaitingLevelAdvance()。征騎（本 system）＝通道視覺 + 解左界 + 跨界鏡頭捲 + offset 遞進（game-side + offset seam）。
- * ★用戶定案（試 f166cb5 後釐清）：
- *   1. 玩家**自由控制**（上下左右自己走，不 scripted 自動走、不鎖輸入、不 pin Y）。
- *   2. 鏡頭**平時固定不動**（玩家在畫面內走動鏡頭都不跟）；**只**玩家走到左邊界要跨過去那刻，鏡頭才 lerp 往左捲過去。
- *   3. 發光通道區**短**（別讓玩家走很久）——STRIDE 縮短。
- *   4. ★走完通道**不位移**（offset 遞進那刻玩家/鏡頭連續、無縫接縫，不跳一下）。
+ * 分工：波騎 WaveSystem 出 onLevelCleared + notifyPortalEntered()（我呼→重置生怪）+ isAwaitingLevelAdvance()。
+ *   征騎（本 system）＝通道視覺 + 解/還原左界 + 跨界鏡頭捲 + 到中心定點 offset 遞進（game-side + offset seam）。
+ * ★用戶定案（試 f166cb5/7e49f60 後釐清）：
+ *   1. 玩家**自由控制**（上下左右自己走，不 scripted、不鎖輸入、不 pin Y）。
+ *   2. 鏡頭**平時固定不動**；只玩家走到左界要跨過去那刻鏡頭才 lerp 往左捲進新地圖。
+ *   3. 發光通道區**短**（STRIDE 縮短）。
+ *   4. ★**到中心定點對齊啟動**取代走到邊界＝**走完無位移**：走到新地圖中心定點才 offset 遞進+鏡頭停中心+啟動戰鬥，
+ *      玩家已在中心＝無需拉回/瞬移。定點＝新區塊中心（offset 後畫面中央 x）。
+ *   5. ★**進新地圖邊界還原**：offset 遞進後 setPlayerLeftBoundOverride(null)→正常界＝base 界+新 offset（左右都框住，
+ *      玩家走不出新地圖，像第一關）。修「解界後沒關回左界、玩家新地圖能往左走出去」bug。
  * ★鐵律：mapConfig 常數不改（用 offset/override）；碰撞/生怪/貼地/AI 世界座標 offset 一致；UI scrollFactor0 不動；波騎介面零改。
  */
 
@@ -29,29 +33,28 @@ interface LevelAdvanceWave {
 /** 通道視覺帶：箭頭區寬（螢幕 px）。 */
 const CORRIDOR_WIDTH_PX = 160;
 /**
- * ★區塊跨距（世界 px）＝一關往左遞進的偏移量＝發光通道要走的距離。
- *   用戶嫌太長→縮短成 700（非整 playfield 1600；各關清場重生不共存、區塊可重疊，短走位即可）。
+ * ★區塊跨距（世界 px）＝一關往左遞進的偏移量＝玩家從當前區塊中心走到新區塊中心的距離。
+ *   需 > (GAME_WIDTH/2 - PLAYER_BOUNDS.minX) 讓「新區塊中心」落在「當前區塊左界」左側
+ *   （玩家越左界後還要繼續往左走進新地圖到其中心，順序才對）。用戶嫌 1600 太長→縮短成 1000（新中心在左界左 ~200px）。
  */
-const BLOCK_STRIDE_PX = 700;
+const BLOCK_STRIDE_PX = 1000;
 /** 開通道後玩家往左越過此線（＝當前區塊左界）→ 開始跨界鏡頭捲。 */
 const CROSS_START_INSET_PX = 0;
 /** 鏡頭跨界捲動平滑係數（lerp，越小越滑）。可調。 */
 const CAM_LERP_X = 0.1;
-/** 鏡頭到位判定：|scrollX - 目標| <= 此值 視為捲到位。 */
-const CAM_SNAP_EPS_PX = 2;
 
 export class LevelProgressSystem implements GameSystem {
   readonly name = 'LevelProgressSystem';
 
   private ctx!: GameContext;
   private wave!: LevelAdvanceWave;
-  /** 通道視覺（發光帶+箭頭），僅在 levelCleared→走過分界 期間存在。 */
+  /** 通道視覺（發光帶+箭頭），僅在 levelCleared→到中心定點 期間存在。 */
   private corridorGfx: Phaser.GameObjects.Graphics | null = null;
   /** ★是否等待玩家跨界（已開通道解左界、鏡頭尚未開始捲）。 */
   private awaitingCross = false;
   /** ★是否跨界鏡頭捲動中（玩家已越左界，鏡頭 lerp 往新區塊；期間玩家仍自由走）。 */
   private panning = false;
-  /** 開通道當下的 levelOffsetX（算當前/新區塊左界 + 鏡頭 home）。 */
+  /** 開通道當下的 levelOffsetX（算當前/新區塊左界、中心定點、鏡頭 home）。 */
   private baseOffsetAtOpen = 0;
   private prevOnLevelCleared: (() => void) | null = null;
 
@@ -67,33 +70,32 @@ export class LevelProgressSystem implements GameSystem {
 
   update(dt: number): void {
     if (!this.awaitingCross && !this.panning) return; // 非過場：完全不碰鏡頭（平時固定）
-    // 別處已推進 → 收尾還原。
+    // 別處已推進 → 收尾還原（也還原邊界，避免左界殘留放寬）。
     if (this.wave.isAwaitingLevelAdvance && !this.wave.isAwaitingLevelAdvance()) {
       this.endTransition();
       return;
     }
     const pos = this.ctx.player?.getPosition?.();
     if (!pos) return;
+    const newOff = this.baseOffsetAtOpen - BLOCK_STRIDE_PX; // 新區塊 offset
     const curLeft = PLAYER_BOUNDS.minX + this.baseOffsetAtOpen; // 當前區塊左界（原分界）
-    const newBlockLeft = curLeft - BLOCK_STRIDE_PX; // 新區塊左界
+    const newCenterX = GAME_WIDTH / 2 + newOff; // ★新區塊中心定點（offset 後畫面中央 x）
 
-    // 玩家（自由控）往左越過當前區塊左界 → 進入跨界過場：鏡頭開始往左捲。
+    // 玩家（自由控）往左越過當前區塊左界 → 進入跨界過場：鏡頭開始往左捲進新地圖。
     if (this.awaitingCross && pos.x <= curLeft - CROSS_START_INSET_PX) {
       this.awaitingCross = false;
       this.panning = true;
     }
 
     if (this.panning) {
-      // ★鏡頭 lerp 往新區塊 home（scrollX：baseOffset-STRIDE；scrollY 不動＝只水平捲）。
+      // ★鏡頭 lerp 往新區塊 home（scrollX＝newOff；scrollY 不動＝只水平捲）。角色同時自己走進新地圖。
       const cam = this.ctx.scene?.cameras?.main;
-      const targetX = this.baseOffsetAtOpen - BLOCK_STRIDE_PX;
       if (cam) {
         const tx = 1 - Math.pow(1 - CAM_LERP_X, Math.max(1, dt * 60));
-        cam.setScroll(cam.scrollX + (targetX - cam.scrollX) * tx, cam.scrollY);
+        cam.setScroll(cam.scrollX + (newOff - cam.scrollX) * tx, cam.scrollY);
       }
-      // 玩家走到新區塊左界 且 鏡頭已捲到位 → 遞進 offset 開下一關（無縫）。
-      const camAtHome = !cam || Math.abs(cam.scrollX - targetX) <= CAM_SNAP_EPS_PX;
-      if (pos.x <= newBlockLeft && camAtHome) {
+      // ★玩家走到新地圖中心定點 → 全對齊無縫啟動（offset 遞進+邊界還原+鏡頭定中心+啟動戰鬥）。
+      if (pos.x <= newCenterX) {
         this.commitAdvance();
       }
     }
@@ -104,31 +106,33 @@ export class LevelProgressSystem implements GameSystem {
     if (this.awaitingCross || this.panning) return;
     this.baseOffsetAtOpen = getLevelOffsetX();
     this.showCorridor();
-    // ★解左界：放寬到新區塊左界（玩家可自由往左走進通道到新區塊）。
+    // ★解左界：放寬到新區塊左界（玩家可自由往左走進通道到新地圖中心）。
     setPlayerLeftBoundOverride(PLAYER_BOUNDS.minX + this.baseOffsetAtOpen - BLOCK_STRIDE_PX);
     this.awaitingCross = true;
     // 鏡頭平時固定：此刻不動；等玩家走到左界才在 update 開始捲。
   }
 
   /**
-   * ★走到新區塊左界 + 鏡頭捲到位 → 遞進 offset 開下一關（無縫）。
-   *   advanceLevelOffsetX(-STRIDE)：座標基準平移到新區塊（正常界隨之平移）。此刻鏡頭已 lerp 到新 home、
-   *   玩家已在新區塊左界＝視覺連續，offset 遞進不移動 sprite/鏡頭＝無縫、走完不位移。
+   * ★走到新地圖中心定點 → 全對齊無縫啟動下一關。
+   *   ①offset 遞進 advanceLevelOffsetX(-STRIDE)：座標基準平移到新區塊。
+   *   ②★邊界還原：setPlayerLeftBoundOverride(null)→正常界＝base 界+新 offset（左右都框住，玩家走不出新地圖，像第一關）。
+   *   ③鏡頭精確吸附新區塊 home（＝新 offset，畫面框住新地圖中心）。
+   *   ④notifyPortalEntered 啟動戰鬥（波騎重置波次、生怪讀新 offset 落新區塊）。
+   *   ★玩家已在中心定點＝視覺連續，offset 遞進不移動 sprite＝無縫、走完不位移。
    */
   private commitAdvance(): void {
-    advanceLevelOffsetX(-BLOCK_STRIDE_PX); // 座標基準往左遞進一塊（＝STRIDE）
-    setPlayerLeftBoundOverride(null); // 還原 override（正常界已隨 offset 平移到新區塊）
-    // ★鏡頭精確吸附新 home（＝新 offset），確保平時固定鏡頭正好框住新區塊、無殘留誤差。
+    advanceLevelOffsetX(-BLOCK_STRIDE_PX); // ① 座標基準往左遞進一塊
+    setPlayerLeftBoundOverride(null); // ② ★邊界還原：正常界（base+新 offset），左右框住玩家（修「新地圖左界沒關回」bug）
     const cam = this.ctx.scene?.cameras?.main;
-    if (cam) cam.setScroll(getLevelOffsetX(), cam.scrollY);
-    this.wave.notifyPortalEntered?.(); // 波騎重置波次進下一輪（生怪讀新 offset 落新區塊）
+    if (cam) cam.setScroll(getLevelOffsetX(), cam.scrollY); // ③ 鏡頭精確吸附新區塊 home（框住新地圖中心）
+    this.wave.notifyPortalEntered?.(); // ④ 啟動戰鬥（波騎重置、生怪讀新 offset 落新區塊）
     this.hideCorridor();
     this.panning = false;
     this.awaitingCross = false;
-    // ★不拉回玩家、不改玩家 y：玩家就地自由續走＝無縫、走完不位移。
+    // ★不拉回玩家、不改玩家 y：玩家已在新地圖中心定點就地續戰＝無縫、走完不位移。
   }
 
-  /** 別處已推進 → 只收尾還原（不重複遞進 / 不 notify）。 */
+  /** 別處已推進 → 只收尾還原（不重複遞進 / 不 notify；★仍還原邊界 override 避免左界殘留放寬）。 */
   private endTransition(): void {
     setPlayerLeftBoundOverride(null);
     this.hideCorridor();
