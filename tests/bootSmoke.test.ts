@@ -60,6 +60,7 @@ const EXPECTED_SYSTEMS = [
   'ChestSystem',
   'JpSystem',
   'WaveSystem',
+  'LevelProgressSystem', // 關卡推進 step1（排 Wave 後、MineTrap 前）：全波次打完→左通道→走進→notifyPortalEntered 重置進下一輪
   'MineTrapSystem', // 2 新事件階段 B 地雷陷阱（排 Wave 後、FireRain 前；接 onMineTrap 每幀推進延遲爆）
   'FireRainSystem', // #10 天降火雨波次玩法（排 Wave 後、ProgressBar 前，commit ac730d8）
   'GrabSystem', // #4 抓人機制（排 FireRain 後、ProgressBar 前，commit 79ba146）

@@ -41,6 +41,7 @@ import { FireRainSystem } from '@/systems/FireRainSystem';
 import { GrabSystem } from '@/systems/GrabSystem';
 import { WaveSystem } from '@/systems/WaveSystem';
 import { MineTrapSystem } from '@/systems/MineTrapSystem';
+import { LevelProgressSystem } from '@/systems/LevelProgressSystem';
 
 /**
  * GameScene — 主場景（系統註冊表版）。
@@ -426,6 +427,7 @@ export class GameScene extends Phaser.Scene {
     this.register(this.ctx.chest); // 寶盒：擊殺累積能量/自動開箱
     this.register(this.ctx.jp); // JP：幕通關給燈/命中累積倍數/集滿派彩
     this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
+    this.register(new LevelProgressSystem()); // 關卡推進 step1：全波次打完→左通道→走進→notifyPortalEntered（掛 wave.onLevelCleared、update 查走進）
     if (this.mineTrapSystem) this.register(this.mineTrapSystem); // 2 新事件：地雷（讀取式每幀讀 getActiveMinePreset 自撒+推進延遲爆）
     this.register(new FireRainSystem()); // 天降火雨（守護波進行中觸發，只傷玩家）
     this.register(new GrabSystem()); // 抓人機制：沒打怪 8s → grabber 衝來抓、攻擊/倒數掙脫（per-player）

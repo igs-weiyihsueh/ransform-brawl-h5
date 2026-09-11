@@ -112,8 +112,17 @@ export class WaveSystem implements GameSystem {
   /** 預警中（登場預警圈淡入中、敵人尚未生成）的數量：計入 alive，避免預警期間超生。 */
   private pendingSpawns = 0;
 
-  /** 一幕通關回呼（本關 nodes 全跑完時觸發，供 JP 給燈）。 */
+  /** 一幕通關回呼（本關 nodes 全跑完時觸發，供 JP 給燈）。★純視覺給燈，不推進（推進走 waitingForPortal gate）。 */
   onStageClear: (() => void) | null = null;
+
+  /**
+   * ★關卡推進 step1（無 camera）：本關全波次跑完 → emit 此（供征騎開左通道 UI）+ 進 waitingForPortal gate 停生怪。
+   * 玩家走進通道 → 征騎呼 notifyPortalEntered() → 重置波次組當「下一關」。與 onStageClear 語意分開：
+   * onStageClear＝給燈（純視覺）、onLevelCleared＝開通道 gate 流程（兩者同點都發、邏輯不重複）。
+   */
+  onLevelCleared: (() => void) | null = null;
+  /** ★等待玩家走進通道（本關跑完後停住）：true 期間 update 不生怪、不推進，直到 notifyPortalEntered()。 */
+  private waitingForPortal = false;
 
   /** 獎勵節點回呼（用戶 #3：進 Reward 節點時觸發一次，供 GameScene 播報獎演出+點 JP 燈）。 */
   onReward: (() => void) | null = null;
@@ -413,6 +422,8 @@ export class WaveSystem implements GameSystem {
 
   update(dt: number): void {
     if (!this.levels) return; // JSON 尚未就緒 → 安靜等待（不生怪）
+    // ★關卡推進 gate：本關跑完後停住等玩家走進通道（notifyPortalEntered）→ 期間不生怪、不推進。
+    if (this.waitingForPortal) return;
     const node = this.currentNode();
     if (!node) return; // 全部節點跑完
 
@@ -663,22 +674,42 @@ export class WaveSystem implements GameSystem {
     this.ctx.effects?.waveMessage(text);
   }
 
-  /** 前進到下一節點；本關跑完則進下一關（皆無則停在尾端）。 */
+  /** 前進到下一節點；本關 nodes 全跑完 → 開通道 gate（等玩家走進 notifyPortalEntered 才進下一輪，step1）。 */
   private advanceNode(): void {
     const level = this.currentLevel();
     if (!level) return;
     if (this.nodeIndex + 1 < level.nodes.length) {
       this.enterNode(this.nodeIndex + 1);
-    } else if (this.levels && this.levelIndex + 1 < this.levels.length) {
-      // 本關 nodes 全跑完 = 一幕通關。
-      this.onStageClear?.();
-      this.levelIndex += 1;
-      this.enterNode(0);
     } else {
-      // 全破：最後一關 nodes 全跑完 = 一幕通關（也算）。
-      this.onStageClear?.();
-      this.nodeIndex = level.nodes.length;
+      // ★本關 nodes 全跑完＝一關通關：onStageClear 給燈（純視覺）+ onLevelCleared 開通道 gate。
+      //   ★step1：不再自動 levelIndex+1，改停住 waitingForPortal，等玩家走進通道呼 notifyPortalEntered()。
+      this.nodeIndex = level.nodes.length; // 停在末端（currentNode()=undefined，不再生怪）
+      this.waitingForPortal = true;
+      this.onStageClear?.(); // 給燈（視覺慶祝，照舊）
+      this.onLevelCleared?.(); // 開通道 gate（征騎收→畫左通道）
     }
+  }
+
+  /**
+   * ★關卡推進 step1（無 camera）：玩家走進左通道時征騎呼此 → 重置波次組當「下一關」重跑一輪。
+   * 現只 1 關 Level0，先 loop（levelIndex 回 0、enterNode(0)、清 gate）；之後有多關序列資料再進下一組。
+   * 防呆：非 waitingForPortal 態呼叫忽略（避免重複觸發/誤呼）。比照 notifyTowerCombatStart public API 範式。
+   */
+  notifyPortalEntered(): void {
+    if (!this.waitingForPortal) return; // 非等待態 → 忽略（防呆）
+    this.waitingForPortal = false;
+    this.ctx.spawner.clearAllEnemies(); // 進下一關前清場上殘怪（乾淨起跑，比照 skip/塔波失敗清場）
+    if (this.levels && this.levelIndex + 1 < this.levels.length) {
+      this.levelIndex += 1; // 有下一關序列 → 進下一組
+    } else {
+      this.levelIndex = 0; // 最後一關（現只 1 關）→ loop 重跑同組當下一關
+    }
+    this.enterNode(0);
+  }
+
+  /** ★是否在「本關跑完、等玩家走進通道」態（征騎/進度條可查；true 期間 WaveSystem 停生怪）。 */
+  isAwaitingLevelAdvance(): boolean {
+    return this.waitingForPortal;
   }
 
   // ---- Spawn 節點 -----------------------------------------------------------
