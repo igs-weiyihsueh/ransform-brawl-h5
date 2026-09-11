@@ -1098,7 +1098,11 @@ export class Enemy implements Hittable {
           // 真因=gate 只擋「進 charge」那刻、沒擋「出手」那刻，蓄力期玩家跑出範圍仍照揮→空揮。
           // 搆不到 → 取消出手、收蓄力特效、回 chase 繼續逼近（不空揮、不發呆；下一幀 chase 重新逼近/gate）。
           this.chargeAnchor = null; // 離開 charge 解鎖站定
-          if (this.canReachTarget(aim)) {
+          // ★用戶選 B：菁英(aoe)蓄滿「必發」——跳過 canReachTarget gate、就算玩家跑出範圍也硬打出去
+          //   （＝由內而外填滿圓盤那刻一定打出攻擊 VFX，跟填充進度視覺一致：填滿=發招、不會填滿卻取消）。
+          //   小怪(slash)保留現行：蓄滿搆不到→取消回 chase 不空揮（用戶只要菁英改 B）。
+          const isAoe = enemyAttackVfx(this.cfg.attackKind, this.cfg.attackVfx) === 'aoe';
+          if (isAoe || this.canReachTarget(aim)) {
             this.state = 'attack';
             this.attackAnimDone = false;
             this.fireAttack(aim); // 對準目標（守護波為雕像，否則玩家）出手
