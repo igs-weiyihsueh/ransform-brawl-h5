@@ -97,6 +97,42 @@ export interface SpawnGroup {
   minConcurrent?: number;
 }
 
+/** 陣型類型（怪物 AI 第 2 塊，5 種隊形推進）。 */
+export type FormationType = 'Line' | 'Triangle' | 'Square' | 'Circle' | 'Hexagonal';
+
+/**
+ * 陣型設定（怪物 AI 第 2 塊）：整齊列隊推進的敵人。單一來源型別（本檔 export，
+ * game-side computeFormationSlots(config)/EnemyFormation 與 level-editor 陣型面板共用同一型別）。
+ * ★距離/半徑單位＝unit（算座標時 ×PPU=100 轉 px，全 schema 統一 unit）；角度＝度。
+ * ★零遊戲依賴：純資料型別（computeFormationSlots 純函式在 formationConfig.ts，非此檔）。
+ */
+export interface FormationConfig {
+  /** 隊形類型。 */
+  type: FormationType;
+  /** 成員數 2~30（Line/Triangle/Circle 用；Square/Hexagonal 由 rows*cols 或 count 推）。 */
+  count: number;
+  /** 成員間隔（unit）。 */
+  distance: number;
+  /** Square/Hexagonal 行數（選填）。 */
+  rows?: number;
+  /** Square/Hexagonal 列數（選填；省略→由 count 自動接近正方排）。 */
+  cols?: number;
+  /** Triangle 頂角度數（選填，預設 60）。 */
+  triangleAngle?: number;
+  /** Circle 半徑（unit，選填）。 */
+  circleRadius?: number;
+  /** Hexagonal 環數（選填；1=中心+6、2=+12…；優先於 rows/cols）。 */
+  hexRings?: number;
+  /** 陣型朝向/推進方向（度，0=右、90=下）。 */
+  facingDeg: number;
+  /** 整隊移動（執行端用；編輯器可畫箭頭）。 */
+  move?: { speedUnits: number; spline?: { x: number; y: number }[] };
+  /** 陣型內敵種（第 2 塊：整隊單一敵種；選填，省略→game-side 預設 Enemy_Melee）。 */
+  enemyType?: string;
+  /** 每 slot 指定敵種（後續混編用，選填，先留欄不改名）。 */
+  slotTypes?: string[];
+}
+
 /** Spawn 節點：滴流生怪，殺到 killQuota 完成。 */
 export interface SpawnNodeData {
   nodeType: 'Spawn';
@@ -131,6 +167,12 @@ export interface SpawnNodeData {
    * 註：零遊戲依賴，只驗「非空字串」；preset 名合法性由編輯器下拉 + game-side getResolvedMinePreset(fallback) 把關。
    */
   attachMineTrap?: string;
+  /**
+   * 陣型（怪物 AI 第 2 塊，additive optional）：這波用哪個隊形推進（Line/Triangle/Square/Circle/Hexagonal）。
+   * 省略＝散兵（現有環繞 AI）。型別 FormationConfig 由 formationConfig.ts 單一來源（type-only import，執行期零耦合）。
+   * game-side EnemyFormation 讀此欄 → computeFormationSlots 算整隊座標推進。編輯器：level-editor Spawn 節點陣型子面板編。
+   */
+  formation?: FormationConfig;
 }
 
 /** Reward 節點：發獎（本階段流程未實作，schema 先定型）。 */
@@ -504,6 +546,64 @@ function validateSpawnNode(
           validateSpawnEntries(g.spawns, `${gAt} 的`, errors);
         }
       });
+    }
+  }
+
+  // formation（怪物 AI 第 2 塊，optional）：若提供必須是合法 FormationConfig。省略＝散兵。
+  if (node.formation !== undefined) {
+    validateFormation(node.formation, `${at} 的陣型 formation`, errors);
+  }
+}
+
+/**
+ * 陣型設定驗證（怪物 AI 第 2 塊，optional）：type 五選一、count 2~30、distance>0、facingDeg 數、enemyType 非空字串；
+ * 依 type 驗選填參數（Triangle→triangleAngle、Circle→circleRadius、Square/Hex→rows/cols/hexRings）。零遊戲依賴純驗證。
+ */
+function validateFormation(raw: unknown, at: string, errors: string[]): void {
+  if (typeof raw !== 'object' || raw === null) {
+    errors.push(`${at} 必須是物件。`);
+    return;
+  }
+  const f = raw as Record<string, unknown>;
+  const TYPES = ['Line', 'Triangle', 'Square', 'Circle', 'Hexagonal'];
+  if (typeof f.type !== 'string' || !TYPES.includes(f.type)) {
+    errors.push(`${at} 的「隊形 type」必須是 ${TYPES.join('/')} 之一。`);
+  }
+  if (!isFiniteNumber(f.count) || (f.count as number) < 2 || (f.count as number) > 30) {
+    errors.push(`${at} 的「成員數 count」必須是 2~30 的數。`);
+  }
+  if (!isFiniteNumber(f.distance) || (f.distance as number) <= 0) {
+    errors.push(`${at} 的「間隔 distance」缺少或非正數（unit）。`);
+  }
+  if (!isFiniteNumber(f.facingDeg)) {
+    errors.push(`${at} 的「朝向 facingDeg」缺少或非數（度）。`);
+  }
+  if (f.enemyType !== undefined && !isNonEmptyString(f.enemyType)) {
+    errors.push(`${at} 的「敵種 enemyType」若提供必須是非空字串（省略→game 預設）。`);
+  }
+  // 選填參數（若提供須合理）。
+  if (f.rows !== undefined && (!isFiniteNumber(f.rows) || (f.rows as number) < 1)) {
+    errors.push(`${at} 的「行數 rows」若提供必須是 >=1 的數。`);
+  }
+  if (f.cols !== undefined && (!isFiniteNumber(f.cols) || (f.cols as number) < 1)) {
+    errors.push(`${at} 的「列數 cols」若提供必須是 >=1 的數。`);
+  }
+  if (f.triangleAngle !== undefined && (!isFiniteNumber(f.triangleAngle) || (f.triangleAngle as number) <= 0)) {
+    errors.push(`${at} 的「三角頂角 triangleAngle」若提供必須是正數（度）。`);
+  }
+  if (f.circleRadius !== undefined && (!isFiniteNumber(f.circleRadius) || (f.circleRadius as number) < 0)) {
+    errors.push(`${at} 的「圓半徑 circleRadius」若提供必須是非負數（unit）。`);
+  }
+  if (f.hexRings !== undefined && (!isFiniteNumber(f.hexRings) || (f.hexRings as number) < 1)) {
+    errors.push(`${at} 的「六角環數 hexRings」若提供必須是 >=1 的整數。`);
+  }
+  if (f.slotTypes !== undefined && !Array.isArray(f.slotTypes)) {
+    errors.push(`${at} 的「每 slot 敵種 slotTypes」若提供必須是陣列。`);
+  }
+  if (f.move !== undefined) {
+    const m = f.move as Record<string, unknown>;
+    if (typeof m !== 'object' || m === null || !isFiniteNumber(m.speedUnits)) {
+      errors.push(`${at} 的「移動 move」若提供必須含 speedUnits（數，unit/s）。`);
     }
   }
 }

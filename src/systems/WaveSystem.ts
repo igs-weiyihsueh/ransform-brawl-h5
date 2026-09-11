@@ -123,6 +123,8 @@ export class WaveSystem implements GameSystem {
   onLevelCleared: (() => void) | null = null;
   /** ★等待玩家走進通道（本關跑完後停住）：true 期間 update 不生怪、不推進，直到 notifyPortalEntered()。 */
   private waitingForPortal = false;
+  /** ★陣型（怪物 AI 第 2 塊）：本節點是否已生過陣型（有 node.formation 時進節點呼一次 spawnFormation，避免重生）。 */
+  private formationSpawned = false;
 
   /** 獎勵節點回呼（用戶 #3：進 Reward 節點時觸發一次，供 GameScene 播報獎演出+點 JP 燈）。 */
   onReward: (() => void) | null = null;
@@ -618,6 +620,7 @@ export class WaveSystem implements GameSystem {
     this.eventTriggered = false;
     this.towersDestroyed = 0; // 換節點清魔尖塔擊破數（階段 B）
     this.towerCombatStarted = false; // #2：換節點清塔波戰鬥旗標（drip gate；下個塔波等 endFocus 才 true）
+    this.formationSpawned = false; // ★換節點清陣型旗標（下個 formation 節點進入時再呼一次 spawnFormation）
     // group 分層：進 Spawn 節點時依 node.groups 重建 per-group 狀態；無 groups → 空陣列（走扁平單流）。
     const enteredNode = this.currentLevel()?.nodes[index];
     const groups = enteredNode?.nodeType === 'Spawn' ? (enteredNode as SpawnNodeData).groups : undefined;
@@ -730,6 +733,22 @@ export class WaveSystem implements GameSystem {
     if (shouldAdvanceSpawn(this.kills, killQuota, alive, pending, nextIsSpawn)) {
       this.advanceNode();
       return;
+    }
+
+    // ★陣型（怪物 AI 第 2 塊）：有 node.formation → 進節點呼一次征騎 spawnFormation（一次生齊整隊、列隊推進），
+    //   之後不跑 drip；killQuota 照掃 getEnemies 判過關（formation 怪也在 getEnemies）。無 formation → 現有散兵 drip。
+    //   ★anchor＝可走區中心 + 當前 levelOffsetX（offset-aware，陣型生玩家當前區塊；征騎 spawnFormation 內部不再加 offset）。
+    if (node.formation) {
+      if (!this.formationSpawned) {
+        this.formationSpawned = true;
+        const eb = effectiveEnemyPlayBounds(); // 已含 levelOffsetX（比照 pickSpawnPosition）
+        const anchor = { x: (eb.minX + eb.maxX) / 2, y: (eb.minY + eb.maxY) / 2 };
+        // 征騎 EnemySpawner.spawnFormation(config, anchor)；用型別轉接（EnemySpawner 是征騎 file、他 cp 後有此法）。
+        (this.ctx.spawner as unknown as {
+          spawnFormation?: (config: unknown, anchor: { x: number; y: number }) => unknown;
+        }).spawnFormation?.(node.formation, anchor);
+      }
+      return; // 有 formation → 不跑 drip（列隊推進，非滴流）
     }
 
     // group 分層：多 group 各自並行 drip（各自 cooldown/佔用/維持場上數）；killQuota 全場過關（上方已判）。

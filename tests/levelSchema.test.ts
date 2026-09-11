@@ -492,3 +492,55 @@ describe('validateLevels — SpawnNode.attachFireRain（optional 附加火雨）
     expect(mentionsField(errorsOf(f2), 'attachFireRain')).toBe(true);
   });
 });
+
+describe('validateLevels — 陣型 formation（怪物 AI 第 2 塊，optional）', () => {
+  const validFormation = () => ({ type: 'Line', count: 6, distance: 1.2, facingDeg: 90, enemyType: 'Enemy_Rush' });
+
+  it('合法 formation（Line）放行', () => {
+    const f = makeValidFile();
+    firstSpawnNode(f).formation = validFormation();
+    expect(errorsOf(f)).toHaveLength(0);
+  });
+
+  it('省略 formation（散兵）放行', () => {
+    const f = makeValidFile();
+    delete firstSpawnNode(f).formation;
+    expect(errorsOf(f)).toHaveLength(0);
+  });
+
+  it('type 非五選一 → 抓錯', () => {
+    const f = makeValidFile();
+    firstSpawnNode(f).formation = { ...validFormation(), type: 'Blob' };
+    expect(mentionsField(errorsOf(f), 'type')).toBe(true);
+  });
+
+  it('count 超範圍(1 或 31) → 抓錯', () => {
+    const f = makeValidFile();
+    firstSpawnNode(f).formation = { ...validFormation(), count: 1 };
+    expect(mentionsField(errorsOf(f), 'count')).toBe(true);
+    const f2 = makeValidFile();
+    firstSpawnNode(f2).formation = { ...validFormation(), count: 31 };
+    expect(mentionsField(errorsOf(f2), 'count')).toBe(true);
+  });
+
+  it('distance<=0 / facingDeg 非數 / enemyType 空 → 各自抓錯', () => {
+    const f = makeValidFile();
+    firstSpawnNode(f).formation = { ...validFormation(), distance: 0 };
+    expect(mentionsField(errorsOf(f), 'distance')).toBe(true);
+    const f2 = makeValidFile();
+    firstSpawnNode(f2).formation = { ...validFormation(), facingDeg: 'x' };
+    expect(mentionsField(errorsOf(f2), 'facingDeg')).toBe(true);
+    const f3 = makeValidFile();
+    firstSpawnNode(f3).formation = { ...validFormation(), enemyType: '' };
+    expect(mentionsField(errorsOf(f3), 'enemyType')).toBe(true);
+  });
+
+  it('選填參數（circleRadius 負 / hexRings 0）→ 抓錯', () => {
+    const f = makeValidFile();
+    firstSpawnNode(f).formation = { ...validFormation(), type: 'Circle', circleRadius: -1 };
+    expect(mentionsField(errorsOf(f), 'circleRadius')).toBe(true);
+    const f2 = makeValidFile();
+    firstSpawnNode(f2).formation = { ...validFormation(), type: 'Hexagonal', hexRings: 0 };
+    expect(mentionsField(errorsOf(f2), 'hexRings')).toBe(true);
+  });
+});

@@ -16,6 +16,8 @@ import {
   assertValidLevels,
   type EnemyType,
   type EventNodeData,
+  type FormationConfig,
+  type FormationType,
   type LevelData,
   type LevelNodeData,
   type LevelsFile,
@@ -24,6 +26,8 @@ import {
   type SpawnNodeData,
   validateLevels,
 } from '@/config/levelSchema';
+import { computeFormationSlots } from '@/config/formationConfig';
+import { PPU } from '@/config/gameConfig';
 import {
   EDITOR_STORE_KEYS,
   applyToGame,
@@ -589,6 +593,114 @@ function renderSpawnInspector(node: SpawnNodeData): void {
     mineHint.textContent = '選地雷 preset → 此波次進行時全場自動撒該種地雷；（無地雷）= 不附加。';
   }
   inspectorEl.appendChild(mineHint);
+
+  // 陣型（怪物 AI 第 2 塊，可選）：這波用哪個隊形推進。無=散兵（現有環繞 AI）。
+  renderFormationEditor(node);
+}
+
+function defaultFormation(enemyType: EnemyType): FormationConfig {
+  return { type: 'Line', count: 6, distance: 1.2, facingDeg: 90, enemyType };
+}
+
+/**
+ * 陣型編輯子面板（怪物 AI 第 2 塊）：type 下拉 + 依 type 調參 + enemyType 下拉 → canvas 預覽。
+ * ★預覽用征騎共用純函式 computeFormationSlots（同源 1:1，d910b8ef）算 slot 偏移（unit）→ ×PPU 畫，
+ *   slot 圈半徑＝敵人 body 半徑觀感（幾何 1:1）。無 formation＝散兵（現有 AI）。
+ */
+function renderFormationEditor(node: SpawnNodeData): void {
+  const title = document.createElement('div');
+  title.className = 'section-title'; title.style.marginTop = '12px';
+  title.textContent = '陣型（可選；無=散兵）';
+  inspectorEl.appendChild(title);
+
+  const enable = document.createElement('button');
+  enable.textContent = node.formation ? '移除陣型（回散兵）' : '＋ 啟用陣型';
+  enable.addEventListener('click', () => {
+    if (node.formation) delete node.formation;
+    else node.formation = defaultFormation((getEnemyTypeKeys()[0] ?? ENEMY_TYPES[0]) as EnemyType);
+    renderInspector();
+  });
+  inspectorEl.appendChild(enable);
+  const f = node.formation;
+  if (!f) {
+    const hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.textContent = '啟用陣型 → 這波敵人列隊推進（Line/Triangle/Square/Circle/Hexagonal）；不啟用＝現有散兵環繞 AI。';
+    inspectorEl.appendChild(hint);
+    return;
+  }
+
+  const TYPES: FormationType[] = ['Line', 'Triangle', 'Square', 'Circle', 'Hexagonal'];
+  inspectorEl.appendChild(fieldRow('隊形 type', selectInput(f.type, TYPES.map((t) => [t, t]), (v) => { f.type = v as FormationType; renderInspector(); })));
+  inspectorEl.appendChild(fieldRow('成員數 count (2~30)', numberInput(f.count, (v) => { f.count = Math.max(2, Math.min(30, Math.round(v))); renderFormationPreview(f); })));
+  inspectorEl.appendChild(fieldRow('間隔 distance (unit)', numberInput(f.distance, (v) => { f.distance = v; renderFormationPreview(f); })));
+  inspectorEl.appendChild(fieldRow('朝向 facingDeg (度)', numberInput(f.facingDeg, (v) => { f.facingDeg = v; renderFormationPreview(f); })));
+  // 依 type 顯選填參數。
+  if (f.type === 'Square' || f.type === 'Hexagonal') {
+    inspectorEl.appendChild(fieldRow('行數 rows', numberInput(f.rows ?? 0, (v) => { f.rows = v > 0 ? Math.round(v) : undefined; renderFormationPreview(f); })));
+    inspectorEl.appendChild(fieldRow('列數 cols', numberInput(f.cols ?? 0, (v) => { f.cols = v > 0 ? Math.round(v) : undefined; renderFormationPreview(f); })));
+  }
+  if (f.type === 'Hexagonal') {
+    inspectorEl.appendChild(fieldRow('六角環數 hexRings', numberInput(f.hexRings ?? 0, (v) => { f.hexRings = v > 0 ? Math.round(v) : undefined; renderFormationPreview(f); })));
+  }
+  if (f.type === 'Triangle') {
+    inspectorEl.appendChild(fieldRow('三角頂角 triangleAngle (度)', numberInput(f.triangleAngle ?? 60, (v) => { f.triangleAngle = v; renderFormationPreview(f); })));
+  }
+  if (f.type === 'Circle') {
+    inspectorEl.appendChild(fieldRow('圓半徑 circleRadius (unit)', numberInput(f.circleRadius ?? 0, (v) => { f.circleRadius = v >= 0 ? v : undefined; renderFormationPreview(f); })));
+  }
+  // 敵種（第 2 塊單一敵種）。
+  const dyn = getEnemyTypeKeys();
+  const curType = f.enemyType ?? (dyn[0] ?? ENEMY_TYPES[0]);
+  const types = dyn.includes(curType as EnemyType) ? dyn : [...dyn, curType];
+  inspectorEl.appendChild(fieldRow('敵種 enemyType', selectInput(curType, types.map((t) => [t, enemyTypeLabel(t as EnemyType)]), (v) => { f.enemyType = v; })));
+
+  // 預覽畫布。
+  const cv = document.createElement('canvas');
+  cv.id = 'formation-preview'; cv.width = 320; cv.height = 200;
+  cv.style.cssText = 'width:100%;background:#10101c;border:1px solid #3a3a5c;margin-top:8px;border-radius:4px;';
+  inspectorEl.appendChild(cv);
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  hint.textContent = '預覽＝征騎 computeFormationSlots 同源座標（1:1）；點＝各 slot（敵人 body 半徑觀感）。';
+  inspectorEl.appendChild(hint);
+  renderFormationPreview(f);
+}
+
+/** 陣型預覽：用征騎 computeFormationSlots（同源 1:1）算 slot 偏移(unit)→×PPU 置中畫圈。 */
+function renderFormationPreview(f: FormationConfig): void {
+  const cv = document.getElementById('formation-preview') as HTMLCanvasElement | null;
+  if (!cv) return;
+  const ctx = cv.getContext('2d'); if (!ctx) return;
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#10101c'; ctx.fillRect(0, 0, W, H);
+  let slots: { x: number; y: number }[] = [];
+  try { slots = computeFormationSlots(f); } catch { slots = []; }
+  if (slots.length === 0) { return; }
+  // slot 偏移 unit→px；求 bounds 自動縮放置中（約佔畫布 80%）。
+  const pts = slots.map((s) => ({ x: s.x * PPU, y: s.y * PPU }));
+  const minX = Math.min(...pts.map((p) => p.x)), maxX = Math.max(...pts.map((p) => p.x));
+  const minY = Math.min(...pts.map((p) => p.y)), maxY = Math.max(...pts.map((p) => p.y));
+  const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
+  const sc = Math.min((W * 0.8) / spanX, (H * 0.8) / spanY, 1);
+  const cx = W / 2 - ((minX + maxX) / 2) * sc, cy = H / 2 - ((minY + maxY) / 2) * sc;
+  // 朝向箭頭（facingDeg）。
+  ctx.save();
+  ctx.strokeStyle = 'rgba(140,120,255,0.5)'; ctx.lineWidth = 1;
+  const rad = (f.facingDeg * Math.PI) / 180;
+  ctx.beginPath(); ctx.moveTo(W / 2, H / 2); ctx.lineTo(W / 2 + Math.cos(rad) * 30, H / 2 + Math.sin(rad) * 30); ctx.stroke();
+  ctx.restore();
+  // slot 圈（敵人 body 半徑觀感 45px×sc）。
+  const r = Math.max(3, 45 * sc);
+  pts.forEach((p, i) => {
+    ctx.fillStyle = 'rgba(89,217,142,0.55)'; ctx.strokeStyle = '#59d98e'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx + p.x * sc, cy + p.y * sc, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e6e6f0'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(i + 1), cx + p.x * sc, cy + p.y * sc);
+  });
+  ctx.fillStyle = '#9a9ab5'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(`${f.type}｜${slots.length} 隻｜間隔 ${f.distance}u｜朝向 ${f.facingDeg}°`, 6, H - 6);
 }
 
 function renderRewardInspector(node: RewardNodeData): void {

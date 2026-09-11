@@ -30,6 +30,7 @@ import {
 import { knockbackDistancePx } from '@/config/hitFeelConfig';
 import { getResolvedHitFeel } from '@/config/hitFeelSchema';
 import { ENTRANCE_TRANSFORM } from '@/systems/entranceTransformMath';
+import { stepTowardNode } from '@/systems/formationMath';
 
 /**
  * ★塔專屬「碰撞半徑」預設（省略 preset.towerCollisionRadiusPx 時 game-side 走此，非沿用怪 ENEMY_BODY_RADIUS_PX×scale）。
@@ -232,6 +233,25 @@ export class Enemy implements Hittable {
   setSlotTarget(slotPos: Vec2 | null, ringCenter: Vec2 | null): void {
     this.slotPos = slotPos;
     this.slotRingCenter = ringCenter;
+  }
+
+  /**
+   * ★陣型控制旗標（怪物 AI 第 2 塊）：true 時此怪由 EnemyFormation 驅動（followFormationNode）、
+   *  EnemySpawner 不呼 e.update（＝不各自 chase）；解除陣型設 false → 回 e.update 乾淨 chase。
+   */
+  private formationControlled = false;
+  setFormationControlled(v: boolean): void {
+    // 解除陣型：清蓄力態保險（雖 followFormationNode 進入已清；解除當幀也確保中性）。
+    if (this.formationControlled && !v && this.state === 'charge') {
+      this.clearChargeFx();
+      this.chargeAnchor = null;
+      this.state = 'chase';
+      this.timer = 0;
+    }
+    this.formationControlled = v;
+  }
+  isFormationControlled(): boolean {
+    return this.formationControlled;
   }
 
   /**
@@ -968,6 +988,39 @@ export class Enemy implements Hittable {
     this.update(null, dt);
   }
 
+  /**
+   * ★陣型跟隨（怪物 AI 第 2 塊，比照 freezeIdleWaiting 範式：取代 e.update 的外部驅動、不跑 chase FSM）：
+   *  EnemyFormation 每幀呼此，讓怪朝分配到的陣型節點移動（速度補償+最大速度），**不各自 chase 玩家**。
+   *  ★契約：不碰 switch/enum FSM（外層編排）；進入時清蓄力態（同 freezeIdleWaiting，不殘留 charge/FX/anchor）；
+   *   解除陣型＝EnemyFormation 停呼此、改回 e.update → 乾淨回 chase（狀態不殘留）。
+   * @param node 目標節點世界座標（px；由 EnemyFormation 算，含 offset-aware anchor）。
+   * @param dt 幀時間。
+   * @param maxSpeedUnits 入位追節點最大速度（unit/s）；省略＝moveSpeed×2。
+   */
+  followFormationNode(node: Vec2, dt: number, maxSpeedUnits?: number): void {
+    if (this.dead || this.state === 'death') return;
+    // 被抓/麻痺/擊退暫態不干擾（由各自邏輯處理）。
+    if (this.grabber || this.stunRemaining > 0 || this.knockbackRemaining > 0) return;
+    // 進陣型清蓄力態（比照 freezeIdleWaiting，不殘留 charge→解除瞬移/空揮）。
+    if (this.state === 'charge') {
+      this.clearChargeFx();
+      this.chargeAnchor = null;
+      this.state = 'chase'; // 中性態，解除陣型從 chase 重新 gate
+      this.timer = 0;
+    }
+    const cur = { x: this.anim.sprite.x, y: this.anim.sprite.y };
+    const baseSpeedPx = this.cfg.moveSpeed * PPU;
+    const maxSpeedPx = maxSpeedUnits !== undefined ? maxSpeedUnits * PPU : undefined;
+    const next = stepTowardNode(cur, node, baseSpeedPx, dt, maxSpeedPx);
+    // 面向推進方向（水平）。
+    if (next.x - cur.x > 0.01) this.setFacing(1);
+    else if (next.x - cur.x < -0.01) this.setFacing(-1);
+    this.anim.sprite.x = next.x;
+    this.anim.sprite.y = next.y;
+    // 到節點站定播 idle、否則 move。
+    const atNode = Math.hypot(node.x - next.x, node.y - next.y) < 2;
+    this.anim.play(atNode ? 'idle' : 'move');
+  }
   update(playerPos: Vec2 | null, dt: number): void {    if (this.dead) return;
 
     // 記錄移動前位置（immovable 菁英防穿透用：只擋自己前進、不被玩家推回）。

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GROUND_SQUASH_Y } from '@/config/gameConfig';
+import { GROUND_SQUASH_Y, PPU } from '@/config/gameConfig';
 import { Enemy, type EnemyAttackEvent } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import { circleIntersectsCircle, type Vec2 } from '@/systems/hitDetection';
@@ -14,6 +14,8 @@ import { getOverlapSolver, getSurroundMode } from '@/config/surroundConfig';
 import { Projectile } from '@/systems/Projectile';
 import { EnemySkillRunner } from '@/systems/EnemySkillRunner';
 import { enemySkillFromProjectileAttack } from '@/config/enemySkillSchema';
+import { EnemyFormation } from '@/systems/EnemyFormation';
+import { computeFormationSlots } from '@/config/formationConfig';
 import { SurroundSlotManager, type ISurroundTarget } from '@/systems/SurroundSlotManager';
 import { isValidEnemyTarget } from '@/systems/targetingMath';
 import {
@@ -43,6 +45,8 @@ export class EnemySpawner {
 
   private enemies: Enemy[] = [];
   private projectiles: Projectile[] = [];
+  /** ★陣型 registry（怪物 AI 第 2 塊）：每幀 update、done/清場移除。 */
+  private formations: EnemyFormation[] = [];
 
   /** 敵人近戰判定圓的最近一次（供 debug 繪製）。 */
   private lastMeleeCircle: { center: { x: number; y: number }; radius: number } | null =
@@ -100,12 +104,37 @@ export class EnemySpawner {
 
   /** 清除全部場上敵人（守護波結束 ClearAllActiveEnemies 用）。 */
   clearAllEnemies(): void {
+    // ★陣型：先解控+標 done（回收；解控雖成員接著被 destroy，仍守「清場陣型一併清、無主殘留」）。
+    for (const f of this.formations) f.destroy();
+    this.formations = [];
     for (const e of this.enemies) {
       this.releaseSurroundFor(e);
       e.forceDestroy();
     }
     this.enemies = [];
     this.projectiles = [];
+  }
+
+  /**
+   * ★生成一組陣型敵人（怪物 AI 第 2 塊）：依 config.count 生怪、綁 EnemyFormation、進 registry。
+   *  ★anchor offset-aware：由呼叫端（波次）傳「生成點 + getLevelOffsetX」的世界座標。
+   * @param config 陣型設定（node.formation）。
+   * @param anchor 起始錨點（世界 px，offset-aware）。
+   * @returns 建立的 EnemyFormation。
+   */
+  spawnFormation(config: import('@/config/formationConfig').FormationConfig, anchor: Vec2): EnemyFormation {
+    const slots = computeFormationSlots(config);
+    const type = config.enemyType ?? 'Enemy_Melee';
+    const members: Enemy[] = [];
+    for (let i = 0; i < slots.length; i += 1) {
+      // 生在該 slot 節點世界座標（anchor + 偏移×PPU），入位近；也可生 anchor 集中再入位（此處直接生節點附近）。
+      const x = anchor.x + slots[i].x * PPU;
+      const y = anchor.y + slots[i].y * PPU;
+      members.push(this.spawn(type, x, y));
+    }
+    const formation = new EnemyFormation(config, anchor, members);
+    this.formations.push(formation);
+    return formation;
   }
 
   // --- 槽位同心圓環繞協調（每幀 update 前） ---
@@ -295,12 +324,18 @@ export class EnemySpawner {
       // ★CREDIT 待機修（用戶定案：怪保持平常巡邏遊走、不定住；只去掉「蓄力 FX 跟著漂」+「投 CREDIT 瞬移」）：
       //   無有效目標（玩家待機/沒 CREDIT，且無雕像）→ freezeIdleWaiting（清蓄力態/FX/chargeAnchor 後照常 wander 巡邏），
       //   不進蓄力、不殘留蓄力 FX、目標恢復不鎖回舊 anchor。有目標照常追。
-      if (targetActive) {
+      if (e.isFormationControlled()) {
+        // ★陣型控制中：由 EnemyFormation.update 驅動 followFormationNode（不呼 e.update＝不各自 chase）。
+      } else if (targetActive) {
         e.update(playerPos, dt);
       } else {
         e.freezeIdleWaiting(dt);
       }
     }
+
+    // ★陣型：每幀推進整隊（anchor 移動 + 驅動成員 followFormationNode）；done 移除（走完/全員死回收）。
+    for (const f of this.formations) f.update(dt);
+    this.formations = this.formations.filter((f) => !f.isDone());
 
     // 魔尖塔環狀技（2 新事件階段 B）：尖塔週期放環 + 環擴散 + 環圈命中玩家扣能量 + 播 VFX。
     // ★聚焦壓黑期間（skipTowerRings＝guardFocusPause）整個 skip：塔環完全靜默（不 tick/不畫首環預警/不攻擊），
