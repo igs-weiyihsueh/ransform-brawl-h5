@@ -1,3 +1,4 @@
+import type Phaser from 'phaser';
 import type { IPlayerControlStrategy } from '@/systems/control/IPlayerControlStrategy';
 import type { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import type { GameContext } from '@/systems/GameContext';
@@ -23,6 +24,12 @@ interface DouqiPlayerState {
   nextAttackAllowedAt: number;
   /** 本次衝刺已推進距離（px）；用於 empty/item 走位到達 dashDistancePx 收尾。 */
   dashTraveledPx: number;
+  /** ★視覺：融合鎖定框 handle（跟鎖定敵；瞄準/衝刺中顯示，無鎖定/收尾時收）。 */
+  lockMarker: Phaser.GameObjects.Graphics | null;
+  /** ★視覺：鎖定框當前跟的敵人（供偵測鎖定目標切換→更新/重建框）。 */
+  markedEnemy: Enemy | null;
+  /** ★視覺：衝刺護盾特效 handle（衝刺起手播、收尾停）。 */
+  dashShield: Phaser.GameObjects.Image | null;
 }
 
 /**
@@ -76,8 +83,9 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
         credit.canAct(player.playerId) && // 耗盡倒數中不可操作（走待機/耗盡表演）
         !credit.isJustExpired(player.playerId); // ★本幀剛過期→委派 updatePlayer 由它 consume 並 ReturnToWaiting（非消耗窺看，不搶消耗）
       if (!operable) {
-        // 若此幀正處於衝刺，先安全收尾（關護盾），避免委派期間留著無敵旗標。
+        // 若此幀正處於衝刺，先安全收尾（關護盾、停視覺）；並收鎖定框（委派期間不顯鬥氣鎖定 UI）。
         this.endDash(player);
+        this.setLockMarker(this.stateOf(player.playerId), null);
         this.sys.updatePlayer(player, dt);
         continue;
       }
@@ -98,7 +106,19 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
 
     // B) 未在衝刺：按攻擊 + 冷卻好 + ★credit 可攻擊（比照 normal，credit 見底不能衝刺攻擊、走投幣經濟）→ 觸發一次衝刺。
     const src = player.inputSource;
-    if (src == null) return;
+    if (src == null) { this.setLockMarker(st, null); return; }
+
+    // ★視覺：不衝刺時也算「當前滑鼠瞄準的融合目標」→ 面向它 + 顯示鎖定框（用戶第一痛點：一眼看出鎖誰、按攻擊會衝去打它）。
+    const pointerNow = src.getPointerWorld?.();
+    if (pointerNow != null) {
+      const originNow = player.getPosition();
+      const aimNow = Math.atan2(pointerNow.y - originNow.y, pointerNow.x - originNow.x);
+      const preview = this.pickFusionEnemy(originNow, aimNow);
+      // 面向：有鎖定敵→面向敵；否則面向滑鼠方向。
+      player.faceDouqiAim?.(preview ? preview.getHitCenter().x : pointerNow.x);
+      this.setLockMarker(st, preview);
+    }
+
     if (!src.justPressedAttack() || now < st.nextAttackAllowedAt) return;
     if (!this.sys.ctxRef.credit.canAttack(player.playerId)) return; // ★credit 守：見底不可衝刺攻擊
 
@@ -108,31 +128,14 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
 
     const origin = player.getPosition();
     const aimAngle = Math.atan2(pointer.y - origin.y, pointer.x - origin.x);
+    const selected = this.pickFusionEnemy(origin, aimAngle);
 
-    // 候選：敵人（跳過已死；階段 1 跳過塔 isTower 以保單純）。
-    // TODO（階段 2）：納入道具候選（isItem:true，itemAimPriorityMult 略優先），需道具清單 API 明確後再加。
-    const enemies = this.sys.ctxRef.getEnemies();
-    const candidates: AimCandidate[] = [];
-    for (let i = 0; i < enemies.length; i++) {
-      const e = enemies[i];
-      if (e.isDead() || e.isTower()) continue;
-      const c = e.getHitCenter();
-      candidates.push({ id: i, x: c.x, y: c.y, isItem: false });
-    }
-
-    const selectedId = selectFusionTarget(origin, aimAngle, candidates, {
-      coneHalfAngleDeg: this.cfg.aimConeHalfAngleDeg,
-      itemWeight: this.cfg.itemAimPriorityMult,
-      maxRangePx: this.cfg.searchRadiusPx,
-    });
-
-    if (selectedId != null) {
+    if (selected != null) {
       // 鎖到敵人：衝向其 hitCenter，到達 attackReach 內揮擊。★終點先 clamp 到場地內（主防線）。
-      const enemy = enemies[selectedId];
-      const c = enemy.getHitCenter();
+      const c = selected.getHitCenter();
       st.dashTarget = this.clampToArena(c.x, c.y);
       st.dashMode = 'enemy';
-      st.lockedEnemy = enemy;
+      st.lockedEnemy = selected;
     } else {
       // 錐內無怪：朝滑鼠方向走位 dashDistancePx。★終點先 clamp（滑鼠指場外→夾到邊緣、衝到邊停不出界/不進面板）。
       st.dashTarget = this.clampToArena(
@@ -143,16 +146,63 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
       st.lockedEnemy = null;
     }
 
-    // 起手：設冷卻、開衝刺、開護盾無敵（setFacing 為 private → 不呼叫，略過朝向）。
+    // 起手：設冷卻、開衝刺、開護盾無敵 + ★視覺（朝向+move 動畫+殘影 + 護盾 fx）。
     st.nextAttackAllowedAt = now + this.cfg.attackCooldownMs;
     st.dashing = true;
     st.dashTraveledPx = 0;
     player.setShielded?.(true);
+    // ★視覺回饋③：衝刺起手朝向+move 動畫+殘影。
+    const dir = { x: st.dashTarget.x - origin.x, y: st.dashTarget.y - origin.y };
+    player.beginDouqiDashVisual?.(dir);
+    this.setLockMarker(st, st.lockedEnemy);
+    // ★護盾 fx（衝刺無敵視覺）：起手播，跟本體+朝向。
+    const angle = Math.atan2(dir.y, dir.x);
+    st.dashShield = this.sys.ctxRef.effects?.playerDash?.(origin.x, origin.y, angle) ?? null;
   }
 
-  /** 衝刺推進一幀：移動、鎖怪到達判定、★邊界 clamp + 防震盪（v45 三重處理，dashSpeed1400 必備）。 */
+  /** 融合瞄準選當前鎖定敵（純選擇，錐內加權角度差最小；供瞄準預覽+起手共用）。 */
+  private pickFusionEnemy(origin: { x: number; y: number }, aimAngle: number): Enemy | null {
+    const enemies = this.sys.ctxRef.getEnemies();
+    const candidates: AimCandidate[] = [];
+    for (let i = 0; i < enemies.length; i++) {
+      const e = enemies[i];
+      if (e.isDead() || e.isTower()) continue;
+      const c = e.getHitCenter();
+      candidates.push({ id: i, x: c.x, y: c.y, isItem: false });
+    }
+    const id = selectFusionTarget(origin, aimAngle, candidates, {
+      coneHalfAngleDeg: this.cfg.aimConeHalfAngleDeg,
+      itemWeight: this.cfg.itemAimPriorityMult,
+      maxRangePx: this.cfg.searchRadiusPx,
+    });
+    return id != null ? enemies[id] : null;
+  }
+
+  /** ★視覺回饋①：設鎖定框跟隨（target 變化→更新位置；null→收框）。 */
+  private setLockMarker(st: DouqiPlayerState, target: Enemy | null): void {
+    const fx = this.sys.ctxRef.effects;
+    if (target == null || (typeof target.isDead === 'function' && target.isDead())) {
+      if (st.lockMarker) { fx?.endDouqiLockMarker?.(st.lockMarker); st.lockMarker = null; }
+      st.markedEnemy = null;
+      return;
+    }
+    const c = target.getHitCenter();
+    if (st.lockMarker == null || st.markedEnemy !== target) {
+      // 新鎖定/切換目標：收舊框、建新框。
+      if (st.lockMarker) fx?.endDouqiLockMarker?.(st.lockMarker);
+      st.lockMarker = fx?.douqiLockMarker?.(c.x, c.y) ?? null;
+      st.markedEnemy = target;
+    } else {
+      fx?.updateDouqiLockMarker?.(st.lockMarker, c.x, c.y);
+    }
+  }
+
+  /** 衝刺推進一幀：移動、鎖怪到達判定、★邊界 clamp + 防震盪（v45 三重處理）+ ★視覺（殘影/護盾/鎖定框跟隨）。 */
   private advanceDash(player: GameContext['player'], st: DouqiPlayerState, dt: number): void {
     const pos = player.getPosition();
+
+    // ★視覺：衝刺期間持續生殘影（比照普通 updateDash 節奏）。
+    player.tickDouqiDashVisual?.(dt);
 
     // enemy 模式：目標會移動 → 每幀重取鎖定敵人 hitCenter（★同樣 clamp 到場內）；敵人死亡→轉空走收尾。
     if (st.dashMode === 'enemy') {
@@ -160,9 +210,11 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
       if (enemy == null || enemy.isDead()) {
         st.dashMode = 'empty';
         st.lockedEnemy = null;
+        this.setLockMarker(st, null); // 鎖定敵死亡→收框
       } else {
         const c = enemy.getHitCenter();
         st.dashTarget = this.clampToArena(c.x, c.y);
+        this.setLockMarker(st, enemy); // ★鎖定框跟鎖定敵
       }
     }
 
@@ -207,6 +259,12 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     player.setPosition(clamped.x, clamped.y);
     st.dashTraveledPx += step;
 
+    // ★視覺：護盾 fx 跟本體+朝向。
+    if (st.dashShield) {
+      const ang = Math.atan2(dy, dx);
+      this.sys.ctxRef.effects?.updatePlayerDashShield?.(st.dashShield, clamped.x, clamped.y, ang);
+    }
+
     // ★★防震盪①：若這一幀被邊界夾回（撞界）→ 直接 endDashState（速度歸零、撞牆立即停、
     //   不再反向外衝、不卡 isDashing 導致「貼牆一直晃、能瞄不能衝」的 v41 血淚 bug）。
     if (clamped.x !== rawX || clamped.y !== rawY) {
@@ -237,7 +295,7 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     this.sys.applyDouqiSwingHit(player, enemy, this.cfg.attackDamage, this.cfg.knockback);
   }
 
-  /** 收尾一次衝刺：關護盾無敵、清狀態旗標。 */
+  /** 收尾一次衝刺：關護盾無敵、清狀態旗標 + ★收視覺（idle 動畫、停護盾 fx）。鎖定框留給下幀 tick 重判。 */
   private endDash(player: GameContext['player']): void {
     const st = this.state.get(player.playerId);
     if (st == null || !st.dashing) return;
@@ -245,6 +303,9 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     st.lockedEnemy = null;
     st.dashTraveledPx = 0;
     player.setShielded?.(false);
+    // ★視覺收尾：回 idle 動畫、停護盾 fx。鎖定框不在此收（下幀瞄準 tick 會依當前滑鼠重判顯示/收）。
+    player.endDouqiDashVisual?.();
+    if (st.dashShield) { this.sys.ctxRef.effects?.endPlayerDashShield?.(st.dashShield); st.dashShield = null; }
   }
 
   /** 取（或初始化）某 pid 的鬥氣狀態。 */
@@ -258,6 +319,9 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
         lockedEnemy: null,
         nextAttackAllowedAt: 0,
         dashTraveledPx: 0,
+        lockMarker: null,
+        markedEnemy: null,
+        dashShield: null,
       };
       this.state.set(pid, st);
     }

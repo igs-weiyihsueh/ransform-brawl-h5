@@ -1278,6 +1278,72 @@ export class EffectSystem {
   }
 
   /**
+   * ★鬥氣模式（階段 1 視覺回饋）：融合瞄準鎖定框（handle 式）。起手 spawn 一個持續 Graphics 鎖定框，
+   *   每幀 updateDouqiLockMarker 跟鎖定敵位置，鎖定目標消失/切換時 endDouqiLockMarker 收。
+   *   ★用戶第一痛點「看不出鎖定誰」——旋轉方框 + 脈動，一眼看出當前鎖定目標。純視覺、不改判定。
+   * @returns Graphics handle（無 scene 時 null）。
+   */
+  douqiLockMarker(x: number, y: number, color = 0xffe14d): Phaser.GameObjects.Graphics | null {
+    const g = this.scene.add.graphics();
+    g.setDepth(ATTACK_VFX_DEPTH + 2); // 鎖定框在最上層，明顯
+    g.setData('lockColor', color);
+    this.drawDouqiLockMarker(g, 0);
+    g.setPosition(x, y);
+    // 持續旋轉（鎖定感）；updateDouqiLockMarker 只移位置，旋轉靠 tween。
+    this.scene.tweens.add({ targets: g, angle: 360, duration: 1400, repeat: -1, ease: 'Linear' });
+    g.setScale(1).setAlpha(0);
+    this.scene.tweens.add({ targets: g, alpha: 1, duration: 90, ease: 'Quad.easeOut' });
+    return g;
+  }
+
+  /** 畫鎖定框（旋轉方括號 4 角 + 內圈）。相對 handle 原點(0,0)畫，位置/旋轉由 handle transform。 */
+  private drawDouqiLockMarker(g: Phaser.GameObjects.Graphics, _t: number): void {
+    const color = (g.getData('lockColor') as number) ?? 0xffe14d;
+    const r = 30; // 框半徑
+    const corner = 12; // 角括號臂長
+    g.clear();
+    g.lineStyle(3, color, 1);
+    // 4 角括號（L 形）。
+    const pts: Array<[number, number, number, number]> = [
+      [-r, -r + corner, -r, -r], [-r, -r, -r + corner, -r], // 左上
+      [r - corner, -r, r, -r], [r, -r, r, -r + corner], // 右上
+      [r, r - corner, r, r], [r, r, r - corner, r], // 右下
+      [-r + corner, r, -r, r], [-r, r, -r, r - corner], // 左下
+    ];
+    for (const [x1, y1, x2, y2] of pts) {
+      g.beginPath();
+      g.moveTo(x1, y1);
+      g.lineTo(x2, y2);
+      g.strokePath();
+    }
+    // 內圈細環。
+    g.lineStyle(1.5, color, 0.6);
+    g.strokeCircle(0, 0, r * 0.55);
+  }
+
+  /** ★鬥氣鎖定框每幀跟鎖定敵位置（DouqiControlStrategy 呼）。handle=null 忽略。 */
+  updateDouqiLockMarker(handle: Phaser.GameObjects.Graphics | null, x: number, y: number): void {
+    if (!handle || !handle.active) return;
+    handle.setPosition(x, y);
+  }
+
+  /** ★鬥氣鎖定框收（鎖定目標消失/切換/衝刺結束時）。handle=null 忽略。 */
+  endDouqiLockMarker(handle: Phaser.GameObjects.Graphics | null): void {
+    if (!handle) return;
+    this.scene.tweens.killTweensOf(handle);
+    if (!handle.active) { handle.destroy(); return; }
+    this.scene.tweens.add({
+      targets: handle,
+      alpha: 0,
+      scaleX: 1.4,
+      scaleY: 1.4,
+      duration: 120,
+      ease: 'Quad.easeOut',
+      onComplete: () => handle.destroy(),
+    });
+  }
+
+  /**
    * 敵人命中爆閃（用戶 #7）：攻擊命中玩家瞬間播。隨機旋轉、爆開放大、淡出。
    * 純視覺疊加（受擊結算後 hook）。
    * @param x,y 玩家受擊點/身體中心（世界座標）。

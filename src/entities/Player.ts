@@ -865,6 +865,40 @@ export class Player implements Hittable {
     });
   }
 
+  // --- ★鬥氣模式（階段 1 視覺回饋）：衝刺視覺（取 startDash 的視覺、不取其 dashing/duration 狀態） ---
+  //   ★位移仍由 DouqiControlStrategy 的 v45 一衝一衝 setPosition 控制；這裡只補「朝向+move 動畫+殘影」視覺。
+  //   ★normal 路徑的 startDash 完全不變（仍走原流程），只新增 douqi 專用視覺方法（byte-gate normal 不破）。
+
+  /** 鬥氣衝刺起手視覺：依方向設面向 + 播 move 動畫 + 起手殘影（不動 dashing/dashRemaining 狀態）。 */
+  beginDouqiDashVisual(dir: Vec2): void {
+    const len = Math.hypot(dir.x, dir.y);
+    const x = len < 1e-6 ? this.facing : dir.x / len;
+    if (x > 0.001) this.setFacing(1);
+    else if (x < -0.001) this.setFacing(-1);
+    this.afterImageTimer = 0;
+    this.anim.play('move'); // 沿用普通衝刺的 move 動畫
+    this.spawnAfterImage(); // 起手先生一個殘影
+  }
+
+  /** 鬥氣衝刺每幀視覺：依 AFTER_IMAGE_INTERVAL 生殘影（比照 updateDash 的殘影節奏；不動位移/狀態）。 */
+  tickDouqiDashVisual(dt: number): void {
+    this.afterImageTimer += dt;
+    while (this.afterImageTimer >= AFTER_IMAGE_INTERVAL) {
+      this.afterImageTimer -= AFTER_IMAGE_INTERVAL;
+      this.spawnAfterImage();
+    }
+  }
+
+  /** 鬥氣衝刺結束視覺：回 idle 動畫（不動狀態）。 */
+  endDouqiDashVisual(): void {
+    this.anim.play('idle');
+  }
+
+  /** 鬥氣瞄準時面向鎖定目標/滑鼠世界 x（不衝刺時也轉身，供「看得出在瞄哪」）。 */
+  faceDouqiAim(targetX: number): void {
+    this.faceTowards(targetX);
+  }
+
   /** 衝刺命中去重：回傳 true 表示這隻本次衝刺尚未打過（並記錄）。 */
   tryDashHit(enemy: object): boolean {
     if (this.dashHitSet.has(enemy)) return false;
