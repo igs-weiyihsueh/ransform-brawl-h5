@@ -32,6 +32,7 @@ import { HelmetSystem } from '@/systems/HelmetSystem';
 import { InputSystem } from '@/systems/InputSystem';
 import { JpSystem } from '@/systems/JpSystem';
 import { JpLampHud } from '@/systems/ui/JpLampHud';
+import { DouqiExpBar } from '@/systems/ui/DouqiExpBar';
 import { pickLightGroup, JP_TICKET_FACE } from '@/config/jpConfig';
 import { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import { TransformSystem } from '@/systems/TransformSystem';
@@ -69,6 +70,8 @@ export class GameScene extends Phaser.Scene {
   private mineTrapSystem?: MineTrapSystem;
   /** 用戶 #3：JP 燈 HUD（3組×5顆，飛光終點+反映 JpSystem litCount）。 */
   private jpLampHud?: JpLampHud;
+  /** ★鬥氣模式 teamLevel+經驗條 HUD（階段 3；只 douqi 建/更新）。 */
+  private douqiExpBar?: DouqiExpBar;
   /** 魔尖塔波開場演出序列（塔波照搬守護波 GuardEvent intro：玩家聚集中央→聚焦壓黑定格→生塔）；active 時每幀 tick。 */
   private towerIntro: TowerIntroSequence | null = null;
   /** 塔波過關獎勵券數（onTowerWave 時由 preset resolveTowerUi.rewardTickets 設，onTowerWaveResult(true) 發獎用）。 */
@@ -195,8 +198,9 @@ export class GameScene extends Phaser.Scene {
     // + 能量飛寶盒表演（第4項，純視覺）：每個有貢獻的 player 從敵人死亡位置飛一道識別色能量光
     //   到該 player 寶盒 UI 位置。⚠️ addCharge 維持即時加值、飛光只是疊加表演（數值/視覺解耦）。
     spawner.onEnemyKilled = (enemyKey, damageByPlayer, deathPos) => {
-      const total = chestChargeForResolved(getResolvedChest(), enemyKey);
-      const shares = splitChestByDamage(total, damageByPlayer, player.playerId);
+      // ★階段 3：鬥氣模式擊殺給 teamLevel 經驗（全隊共用一條；normal 模式 no-op）。
+      if (this.gameMode === 'douqi') this.playerControlRef?.grantDouqiKillExp?.(enemyKey);
+      const total = chestChargeForResolved(getResolvedChest(), enemyKey);      const shares = splitChestByDamage(total, damageByPlayer, player.playerId);
       for (const [pid, amount] of shares) {
         chest.addCharge(pid, amount); // 即時加值（不動時機/邏輯）
         // 階段3：二段變身能量改「擊中累積」（PlayerControl 命中 hook），不再擊殺累積——此處移除 accumulateSecondTransform。
@@ -214,6 +218,11 @@ export class GameScene extends Phaser.Scene {
     };
     // 防穿透對所有 player（多人）：讓 spawner 讀 players[]。
     spawner.getAllPlayers = () => this.ctx.players;
+    // ★階段 3 commit2：鬥氣模式生怪後套 teamLevel 敵人 scale（HP/傷×curEnemyScale）。★只 douqi 設此回呼；
+    //   normal 模式不設→spawner.onEnemySpawned=null→怪 byte 不變（WaveSystem/EnemySpawner 現有怪數值不碰）。
+    if (this.gameMode === 'douqi') {
+      spawner.onEnemySpawned = (enemy) => this.playerControlRef?.scaleDouqiEnemy?.(enemy);
+    }
     // 階段3：玩家被怪擊中 → 二段能量倒扣（★flag 關/能量 0/未一段變身 → no-op 由 TransformSystem gate）。
     spawner.onPlayerHit = (pid) => transform.loseSecondTransformEnergy(pid);
     // 魔尖塔環狀技命中玩家 → 扣 energyCost 段能量（ratio 已在 EnemySpawner 算好：段×energyLossOnHit）。
@@ -241,6 +250,8 @@ export class GameScene extends Phaser.Scene {
       douqiCombo: (pid: number) => this.playerControlRef?.getDouqiComboForProbe?.(pid) ?? 0,
       /** probe 用（階段 2）：讀鬥氣強化剩餘 ms。 */
       douqiEmpowerMs: (pid: number) => this.playerControlRef?.getDouqiEmpowerMsForProbe?.(pid) ?? 0,
+      /** probe 用（階段 3）：讀鬥氣 teamLevel + 當前等級內經驗。 */
+      douqiLevel: () => ({ level: this.playerControlRef?.getDouqiTeamLevel?.() ?? 1, exp: this.playerControlRef?.getDouqiTeamExp?.() ?? 0 }),
       /** probe 用（第 4 塊）：讀生效時間縮放 + 是否 hitstop 中。 */
       juiceState: () => ({ scale: this.globalJuice.getEffectiveScale(), hitstop: this.globalJuice.isHitstopped() }),
       /** probe 用（第 4 塊）：觸發 Boss 級衝擊（camera.shake + 全域 hitstop）。 */
@@ -268,6 +279,8 @@ export class GameScene extends Phaser.Scene {
 
     // 用戶 #3 收尾：JP 燈 HUD（3組×5顆，機台 jackpot 三層感），每幀反映 JpSystem litCount。
     this.jpLampHud = new JpLampHud(this);
+    // ★階段 3 commit4：鬥氣模式建經驗條 HUD（用戶要 B 顯示 teamLevel+經驗條）；normal 不建＝HUD 不變。
+    if (this.gameMode === 'douqi') this.douqiExpBar = new DouqiExpBar(this);
 
     // 獎勵節點報獎演出（用戶 #3，純視覺）：進 Reward 節點 → 「恭喜獲獎！」banner + 飛光到「該組下一顆 JP 燈」→ 到達點亮該燈。
     // 先 pickLightGroup 決定要點哪組 → 飛光飛向該組真燈位置 → 到達 jp.addRewardLight(該組) 點亮（看得到燈號增加）。
@@ -504,6 +517,14 @@ export class GameScene extends Phaser.Scene {
       (g) => this.ctx.jp.getLights(g),
       (g) => this.ctx.jp.getMultiplier(g) * JP_TICKET_FACE,
     );
+    // ★階段 3 commit4：鬥氣經驗條 HUD 更新（teamLevel + 當前等級內經驗進度）。只 douqi 建了才更新。
+    if (this.douqiExpBar && this.playerControlRef) {
+      this.douqiExpBar.update(
+        this.playerControlRef.getDouqiTeamLevel(),
+        this.playerControlRef.getDouqiTeamExp(),
+        this.playerControlRef.getDouqiExpToNext(),
+      );
+    }
   }
 
   /** 場景關閉：依序清理每個 system，清空 registry。由 SHUTDOWN 事件觸發。 */

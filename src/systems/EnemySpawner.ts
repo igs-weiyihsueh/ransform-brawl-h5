@@ -91,6 +91,9 @@ export class EnemySpawner {
   /** hitFeel 表演（由 GameScene 注入 EffectSystem）；spawn 時傳給每隻新敵人。 */
   hitFeelFx: import('@/entities/Enemy').HitFeelFx | null = null;
 
+  /** ★鬥氣模式生怪後處理（GameScene 於 douqi 設定，套 teamLevel 敵人 scale；normal 不設＝no-op、怪 byte 不變）。 */
+  onEnemySpawned: ((enemy: Enemy) => void) | null = null;
+
   /** 生怪 API：生成一隻指定類型的敵人於 (x,y)，回傳該敵人。 */
   spawn(type: string, x: number, y: number): Enemy {
     const e = new Enemy(this.scene, x, y, type);
@@ -100,6 +103,7 @@ export class EnemySpawner {
       this.onEnemyKilled?.(key, dmgByPlayer, deathPos);
     if (this.guardTarget) e.setGuardTarget(this.guardTarget); // 守護波中新生怪也打雕像
     this.enemies.push(e);
+    this.onEnemySpawned?.(e); // ★鬥氣模式套 teamLevel 敵人 scale（normal 不設此回呼→no-op、怪 byte 不變）
     return e;
   }
 

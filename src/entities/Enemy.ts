@@ -118,6 +118,8 @@ export class Enemy implements Hittable {
 
   private hp: number;
   private maxHp: number;
+  /** ★鬥氣模式敵人傷害倍率（curEnemyDamageScale by teamLevel；預設 1＝normal 模式敵人不變）。只 douqi 生的怪由 spawner 套。 */
+  private damageMult = 1;
   /** 尖塔環狀技參數覆寫（TowerWave 節點設定，spawnTower 套用；null＝用 config.ringSkill）。 */
   private ringSkillOverride: {
     ringCount: number;
@@ -957,6 +959,11 @@ export class Enemy implements Hittable {
     this.hp = hp;
   }
 
+  /** ★鬥氣模式：設敵人傷害倍率（curEnemyDamageScale by teamLevel）。只 douqi 生的怪套；normal 不呼＝維持 1。 */
+  setDamageMult(m: number): void {
+    if (Number.isFinite(m) && m > 0) this.damageMult = m;
+  }
+
   getState(): EnemyState {
     return this.state;
   }
@@ -1304,7 +1311,7 @@ export class Enemy implements Hittable {
       this.onAttack?.({
         kind: 'melee',
         sourceName: this.cfg.characterKey,
-        damage: a.damage,
+        damage: a.damage * this.damageMult,
         knockback: a.knockback,
         meleeCircle: { center: circle.center, radius: meleeRadius },
       });
@@ -1316,7 +1323,7 @@ export class Enemy implements Hittable {
       this.onAttack?.({
         kind: 'projectile',
         sourceName: this.cfg.characterKey,
-        damage: a.damage,
+        damage: a.damage * this.damageMult,
         knockback: a.knockback,
         projectile: {
           x: spawnX,

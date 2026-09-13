@@ -190,6 +190,32 @@ export class PlayerControlSystem implements GameSystem {
     return typeof s?.debugEmpowerMs === 'function' ? s.debugEmpowerMs(pid) : 0;
   }
 
+  /** ★階段 3：擊殺給經驗（GameScene onEnemyKilled 於 douqi 時呼；normal 策略無此方法→no-op）。 */
+  grantDouqiKillExp(enemyKey: string): void {
+    const s = this.strategy as unknown as { grantKillExp?: (k: string) => void };
+    s?.grantKillExp?.(enemyKey);
+  }
+  /** ★階段 3：讀 teamLevel（僅 douqi；normal 回 1）。 */
+  getDouqiTeamLevel(): number {
+    const s = this.strategy as unknown as { getTeamLevel?: () => number };
+    return typeof s?.getTeamLevel === 'function' ? s.getTeamLevel() : 1;
+  }
+  /** ★階段 3：讀 teamExp（僅 douqi；normal 回 0）。 */
+  getDouqiTeamExp(): number {
+    const s = this.strategy as unknown as { getTeamExp?: () => number };
+    return typeof s?.getTeamExp === 'function' ? s.getTeamExp() : 0;
+  }
+  /** ★階段 3 commit2：套鬥氣敵人 scale（GameScene onEnemySpawned 於 douqi 呼；normal 策略無此方法→no-op）。 */
+  scaleDouqiEnemy(enemy: import('@/entities/Enemy').Enemy): void {
+    const s = this.strategy as unknown as { scaleSpawnedEnemy?: (e: unknown) => void };
+    s?.scaleSpawnedEnemy?.(enemy);
+  }
+  /** ★階段 3 commit4：升下一級所需經驗（經驗條 UI；normal 回 0）。 */
+  getDouqiExpToNext(): number {
+    const s = this.strategy as unknown as { getExpToNext?: () => number };
+    return typeof s?.getExpToNext === 'function' ? s.getExpToNext() : 0;
+  }
+
   /**
    * @internal 供 control strategy 委派呼叫（NormalControlStrategy.update 逐字搬用）。body 不動、僅可見性放寬。
    * 單一 player 的操控主迴圈（人類/AI 皆同，只差 InputSource）。

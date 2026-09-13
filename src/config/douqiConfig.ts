@@ -99,3 +99,69 @@ export const DOUQI_COMBO_CONFIG: DouqiComboConfig = {
   burst: { hits: 16 },
   empower: { durationMs: 5000, damageMult: 1.8, rangeMult: 1.5, moveMult: 1.4, dashSpeedMult: 1.5 },
 };
+
+/**
+ * ★鬥氣等級雙軌 config（階段 3，海牛 v45）。一條 teamLevel（全隊共用，cap 10），擊殺經驗升級；
+ * levelLerp 雙軌：(A) 角色成長（Lv1×lv1Scale→Lv10 滿）、(B) 敵人難度成長（HP/傷/量/間隔隨等級）。
+ */
+export interface DouqiLevelConfig {
+  cap: number;
+  /** 每殺一隻基礎經驗（×敵種倍率）。 */
+  expPerKillBase: number;
+  /** 敵種經驗倍率（tower/npc/anchor=0 不給經驗）。 */
+  killExpMult: Record<string, number>;
+  /** 升級曲線：expToNext[i]＝從 Lv(i+1) 升 Lv(i+2) 所需（length=cap−1）。 */
+  expToNext: number[];
+  /** (A) 角色成長 Lv1 倍率（→Lv10 滿值 1.0）。 */
+  characterLv1: {
+    attackDamage: number; // 普攻傷 ×0.6→滿
+    skillDamage: number; // 招傷 ×0.55→滿
+    skillRange: number; // 招範圍 ×0.6→滿
+    dashHitRadius: number; // 衝撞命中半徑 ×0.6→滿
+  };
+  /** (B) 敵人難度成長 Lv1 倍率（→Lv10 滿值 1.0）。 */
+  difficultyLv1: {
+    enemyHp: number; // ×0.35→滿（前期刻意脆）
+    enemyDamage: number; // ×0.55→滿
+    maxAlive: number; // ×0.5→滿
+    spawnInterval: number; // ×1.6(慢)→1.0(快)
+  };
+}
+
+/** ★海牛 v45 等級雙軌值。 */
+export const DOUQI_LEVEL_CONFIG: DouqiLevelConfig = {
+  cap: 10,
+  expPerKillBase: 10,
+  killExpMult: {
+    Enemy_Rush: 1, // normal
+    Enemy_Elite: 3, // tank/菁英
+    Enemy_Tower: 0, // 塔不給經驗
+    // shielder2/shooter1.5/charger2/bomber1.8/boss20：怪種齊全後補（10 關 DouqiSpawnSystem 對齊 key）。
+  },
+  expToNext: [50, 100, 150, 200, 250, 290, 340, 380, 440], // Lv1→2..9→10，總 2200
+  characterLv1: { attackDamage: 0.6, skillDamage: 0.55, skillRange: 0.6, dashHitRadius: 0.6 },
+  difficultyLv1: { enemyHp: 0.35, enemyDamage: 0.55, maxAlive: 0.5, spawnInterval: 1.6 },
+};
+
+/**
+ * ★鬥氣怪種數值表 base（階段 3 commit2 config 化備用）。海牛 v45 值。
+ * 實際 HP=maxHp×curEnemyHpScale(teamLevel)、傷害×curEnemyDamageScale。
+ * ★怪種 pick/byWave 解鎖/成群密度＝10 關流程階段的 DouqiSpawnSystem 才用（現在生怪仍走 WaveSystem 佔位、只套 scale）。
+ */
+export interface DouqiEnemyStat {
+  maxHp: number;
+  speed: number;
+  radius: number;
+  spawnWeight: number;
+  unlockWave: number; // byWave 解鎖（10 關階段用）
+  frontDamageMult?: number; // shielder 正面減傷
+}
+export const DOUQI_ENEMY_STATS: Record<string, DouqiEnemyStat> = {
+  normal: { maxHp: 90, speed: 70, radius: 14, spawnWeight: 75, unlockWave: 1 },
+  tank: { maxHp: 200, speed: 40, radius: 22, spawnWeight: 12, unlockWave: 2 },
+  shielder: { maxHp: 100, speed: 58, radius: 16, spawnWeight: 6, unlockWave: 4, frontDamageMult: 0.15 },
+  bomber: { maxHp: 60, speed: 55, radius: 15, spawnWeight: 8, unlockWave: 5 },
+  shooter: { maxHp: 45, speed: 60, radius: 13, spawnWeight: 10, unlockWave: 6 },
+  charger: { maxHp: 110, speed: 66, radius: 15, spawnWeight: 0, unlockWave: 99 }, // 未啟用
+  boss: { maxHp: 3000, speed: 46, radius: 42, spawnWeight: 0, unlockWave: 99 }, // 階段 5
+};

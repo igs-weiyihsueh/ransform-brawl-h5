@@ -3,9 +3,10 @@ import type { IPlayerControlStrategy } from '@/systems/control/IPlayerControlStr
 import type { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import type { GameContext } from '@/systems/GameContext';
 import type { Enemy } from '@/entities/Enemy';
-import { DOUQI_CONTROL_CONFIG, DOUQI_COMBO_CONFIG } from '@/config/douqiConfig';
+import { DOUQI_CONTROL_CONFIG, DOUQI_COMBO_CONFIG, DOUQI_LEVEL_CONFIG } from '@/config/douqiConfig';
 import { effectivePlayerBounds } from '@/config/mapConfig';
 import { bumpCombo, comboSkillReady, pointInCircle, pointInOrientedRect } from '@/systems/comboSkillMath';
+import { expForKill, applyKillExp, levelScale, expToNextLevel } from '@/systems/douqiLevelMath';
 import { selectFusionTarget, type AimCandidate } from '@/systems/fusionAimMath';
 
 /** 衝刺目標種類（v45 模型）：鎖怪 / 指空地走位 / 朝道具（階段 1 道具走位未啟用，保留列舉）。 */
@@ -61,8 +62,49 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
   private readonly cfg = DOUQI_CONTROL_CONFIG;
   /** per-pid 鬥氣衝刺狀態。 */
   private readonly state = new Map<number, DouqiPlayerState>();
+  /** ★階段 3：全隊共用一條 teamLevel（多人共享，非各自）+ 當前等級內累積經驗。 */
+  private teamLevelValue = 1;
+  private teamExp = 0;
 
   constructor(private readonly sys: PlayerControlSystem) {}
+
+  /** ★階段 3：擊殺給經驗（GameScene onEnemyKilled hook 於 douqi 時呼）。跨門檻自動升級（cap 10）。 */
+  grantKillExp(enemyKey: string): void {
+    const lv = DOUQI_LEVEL_CONFIG;
+    const gained = expForKill(enemyKey, lv.expPerKillBase, lv.killExpMult);
+    if (gained <= 0) return;
+    const r = applyKillExp(this.teamLevelValue, this.teamExp, gained, lv.expToNext, lv.cap);
+    this.teamLevelValue = r.level;
+    this.teamExp = r.exp;
+  }
+
+  /** ★階段 3：當前 teamLevel（全隊共用；連段技解鎖/雙軌 scale/UI 讀）。 */
+  getTeamLevel(): number {
+    return this.teamLevelValue;
+  }
+  /** ★階段 3：當前等級內累積經驗（經驗條 UI 用）。 */
+  getTeamExp(): number {
+    return this.teamExp;
+  }
+  /** ★階段 3 commit4：當前等級升下一級所需經驗（經驗條 UI 進度；滿級回 0）。 */
+  getExpToNext(): number {
+    return expToNextLevel(this.teamLevelValue, DOUQI_LEVEL_CONFIG.expToNext, DOUQI_LEVEL_CONFIG.cap);
+  }
+
+  /**
+   * ★階段 3 commit2：鬥氣模式生怪後套 teamLevel 難度 scale（EnemySpawner.onEnemySpawned 於 douqi 呼）。
+   *   敵 HP ×curEnemyHpScale(Lv1×0.35→Lv10 滿)、敵傷 ×curEnemyDamageScale(×0.55→滿)。★只 douqi 生的怪套。
+   *   ★修「怪太弱」病根＝敵人接上 teamLevel（雙軌另一半）。base HP＝敵自身 config hp（現走 WaveSystem normal 關卡怪）。
+   */
+  scaleSpawnedEnemy(enemy: { getMaxHp?: () => number; setMaxHp?: (hp: number) => void; setDamageMult?: (m: number) => void }): void {
+    const cap = DOUQI_LEVEL_CONFIG.cap;
+    const lv = this.teamLevelValue;
+    const hpScale = levelScale(DOUQI_LEVEL_CONFIG.difficultyLv1.enemyHp, lv, cap);
+    const dmgScale = levelScale(DOUQI_LEVEL_CONFIG.difficultyLv1.enemyDamage, lv, cap);
+    const baseHp = enemy.getMaxHp?.() ?? 0;
+    if (baseHp > 0) enemy.setMaxHp?.(Math.max(1, Math.round(baseHp * hpScale)));
+    enemy.setDamageMult?.(dmgScale);
+  }
 
   update(dt: number): void {
     const now = performance.now();
@@ -246,9 +288,9 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     const dy = st.dashTarget.y - pos.y;
     const distToTarget = Math.hypot(dx, dy);
 
-    // 鎖怪：到達 attackReach + enemy hitRadius 內 → 停衝、揮擊、收尾（不因其他敵人中斷）。
+    // 鎖怪：到達 attackReach + enemy hitRadius 內 → 停衝、揮擊、收尾（不因其他敵人中斷）。★attackReach ×角色成長 scale。
     if (st.dashMode === 'enemy' && st.lockedEnemy != null) {
-      const reach = this.cfg.attackReachPx + st.lockedEnemy.getHitRadius();
+      const reach = this.cfg.attackReachPx * this.charDashHitScale() + st.lockedEnemy.getHitRadius();
       if (distToTarget <= reach) {
         this.performAttackOn(player, st.lockedEnemy);
         this.endDash(player);
@@ -327,9 +369,9 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     this.tryComboSkills(player, st, enemy);
   }
 
-  /** ★階段 2 (D)：teamLevel 恆滿足高值（保留 comboSkillReady 雙條件結構；階段 3 換真 teamLevel）。 */
+  /** ★階段 3：接真 teamLevel（取代階段 2 的 (D) 全解鎖 999）——連段技依真等級解鎖（Lv1 只強化、Lv2 圓、Lv4 氣波、Lv6 爆發）。 */
   private teamLevel(_player: GameContext['player']): number {
-    return 999; // 階段 2 全解鎖：等級門檻恆過，四技只靠 combo 門檻 3/6/9/10 觸發。
+    return this.teamLevelValue;
   }
 
   /** 檢查並自動疊放連段技（圓形斬/氣波/爆發/強化）。普攻命中的附帶疊放，同幀可多技（低→高門檻）。 */
@@ -361,8 +403,8 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
   /** ①圓形斬：以玩家為心的圓 AOE，對全場可傷怪一次性結算（走 applyDouqiAoeHit takeHit）+青環 VFX。 */
   private triggerCircleSlash(player: GameContext['player'], origin: { x: number; y: number }): void {
     const cfg = DOUQI_COMBO_CONFIG.circle;
-    const radius = cfg.radiusPx * this.empowerRangeMult(player);
-    const dmg = Math.round(cfg.damage * this.empowerDamageMult(player));
+    const radius = cfg.radiusPx * this.charSkillRangeScale() * this.empowerRangeMult(player);
+    const dmg = Math.round(cfg.damage * this.charSkillDamageScale() * this.empowerDamageMult(player));
     for (const e of this.sys.ctxRef.getEnemies()) {
       if (e.isDead()) continue; // 可傷怪（含菁英/塔）
       const c = e.getHitCenter();
@@ -377,10 +419,10 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
   /** ②直線氣波：朝 aimAngle 矩形貫穿，pointInOrientedRect 對全場可傷怪一次性結算+紅斬帶 VFX。 */
   private triggerLineWave(player: GameContext['player'], origin: { x: number; y: number }, aimAngle: number): void {
     const cfg = DOUQI_COMBO_CONFIG.line;
-    const rmult = this.empowerRangeMult(player);
+    const rmult = this.charSkillRangeScale() * this.empowerRangeMult(player);
     const length = cfg.lengthPx * rmult;
     const halfWidth = (cfg.widthPx * rmult) / 2;
-    const dmg = Math.round(cfg.damage * this.empowerDamageMult(player));
+    const dmg = Math.round(cfg.damage * this.charSkillDamageScale() * this.empowerDamageMult(player));
     for (const e of this.sys.ctxRef.getEnemies()) {
       if (e.isDead()) continue;
       const c = e.getHitCenter();
@@ -395,8 +437,8 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
   private triggerBurst(player: GameContext['player'], origin: { x: number; y: number }): void {
     const cfg = DOUQI_COMBO_CONFIG.burst;
     const circle = DOUQI_COMBO_CONFIG.circle;
-    const radius = circle.radiusPx * this.empowerRangeMult(player);
-    const perHit = Math.round(circle.damage * this.empowerDamageMult(player));
+    const radius = circle.radiusPx * this.charSkillRangeScale() * this.empowerRangeMult(player);
+    const perHit = Math.round(circle.damage * this.charSkillDamageScale() * this.empowerDamageMult(player));
     // 16 段：對範圍內可傷怪各結算 hits 次（一次性總量＝perHit×hits，比照 v45 多段亂打；擊退用圓形斬 kb）。
     for (const e of this.sys.ctxRef.getEnemies()) {
       if (e.isDead()) continue;
@@ -426,6 +468,25 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
   private isEmpowered(player: GameContext['player']): boolean {
     return (this.state.get(player.playerId)?.empowerRemainingMs ?? 0) > 0;
   }
+
+  // --- ★階段 3 commit3：角色成長 scale（curXxxScale by teamLevel；Lv1×lv1Scale→Lv10 滿值 1.0）。強化倍率在其之上再乘。---
+  /** 普攻傷 scale（×0.6→滿）。 */
+  private charAttackDamageScale(): number {
+    return levelScale(DOUQI_LEVEL_CONFIG.characterLv1.attackDamage, this.teamLevelValue, DOUQI_LEVEL_CONFIG.cap);
+  }
+  /** 招傷 scale（×0.55→滿）。 */
+  private charSkillDamageScale(): number {
+    return levelScale(DOUQI_LEVEL_CONFIG.characterLv1.skillDamage, this.teamLevelValue, DOUQI_LEVEL_CONFIG.cap);
+  }
+  /** 招範圍 scale（×0.6→滿）。 */
+  private charSkillRangeScale(): number {
+    return levelScale(DOUQI_LEVEL_CONFIG.characterLv1.skillRange, this.teamLevelValue, DOUQI_LEVEL_CONFIG.cap);
+  }
+  /** 衝撞命中半徑 scale（×0.6→滿）。 */
+  private charDashHitScale(): number {
+    return levelScale(DOUQI_LEVEL_CONFIG.characterLv1.dashHitRadius, this.teamLevelValue, DOUQI_LEVEL_CONFIG.cap);
+  }
+
   private empowerDamageMult(player: GameContext['player']): number {
     return this.isEmpowered(player) ? DOUQI_COMBO_CONFIG.empower.damageMult : 1;
   }
@@ -439,7 +500,8 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     return this.isEmpowered(player) ? DOUQI_COMBO_CONFIG.empower.dashSpeedMult : 1;
   }
   private empoweredDamage(player: GameContext['player']): number {
-    return Math.round(this.cfg.attackDamage * this.empowerDamageMult(player));
+    // ★普攻傷＝base × 角色成長 scale(×0.6→滿) × 強化倍率(×1.8)。
+    return Math.round(this.cfg.attackDamage * this.charAttackDamageScale() * this.empowerDamageMult(player));
   }
 
   /** 收尾一次衝刺：關護盾無敵、清狀態旗標 + ★收視覺（idle 動畫、停護盾 fx）。鎖定框留給下幀 tick 重判。 */
