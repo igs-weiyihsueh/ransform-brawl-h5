@@ -61,20 +61,22 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
         continue;
       }
 
-      // 2) ★非「完全可操作」狀態一律委派普通路徑 sys.updatePlayer（不套鬥氣）——
-      //    ★★根因修（用戶實機 bug）：投幣後 waiting→isTransformFloating（變身浮起）→isEntering（降臨），
-      //    這串「進場流程」全在 updatePlayer 內推進。原本守衛只擋 isWaiting，導致按 C 離開待機進入
-      //    isTransformFloating 後 douqi 就搶去跑 tickPlayer→變身/降臨不再推進→卡原地、沒變身、沒進場。
-      //    故委派條件擴為：待機 / 變身浮起中 / 降臨中 / 被暈 / 被抓 / 導引走位鎖操作。全部走普通路徑照舊。
-      if (
-        this.sys.ctxRef.scriptedControl ||
-        player.isWaiting?.() ||
-        player.isTransformFloating?.() ||
-        player.isEntering?.() ||
-        player.isStunned?.() ||
-        player.isGrabbed?.()
-      ) {
-        // 若此幀正處於衝刺，先安全收尾（關護盾），避免守衛期間留著無敵旗標。
+      // 2) ★白名單守衛（變身-leader 架構建議，根治同型 bug）：只有「明確完全可操作」才跑鬥氣 tickPlayer；
+      //    否則一律委派 sys.updatePlayer 走既有路徑。★這樣任何 updatePlayer 的 early-return 型態
+      //    （待機/變身浮起/降臨/被暈/被抓/導引鎖操作/credit 耗盡回待機，含未來新增）都自動委派，
+      //    不用再一個個列黑名單（原黑名單已漏兩次同型：先漏 float/entering、又漏 credit justExpired）。
+      const credit = this.sys.ctxRef.credit;
+      const operable =
+        !this.sys.ctxRef.scriptedControl &&
+        !(player.isWaiting?.() ?? false) &&
+        !(player.isTransformFloating?.() ?? false) &&
+        !(player.isEntering?.() ?? false) &&
+        !(player.isStunned?.() ?? false) &&
+        !(player.isGrabbed?.() ?? false) &&
+        credit.canAct(player.playerId) && // 耗盡倒數中不可操作（走待機/耗盡表演）
+        !credit.isJustExpired(player.playerId); // ★本幀剛過期→委派 updatePlayer 由它 consume 並 ReturnToWaiting（非消耗窺看，不搶消耗）
+      if (!operable) {
+        // 若此幀正處於衝刺，先安全收尾（關護盾），避免委派期間留著無敵旗標。
         this.endDash(player);
         this.sys.updatePlayer(player, dt);
         continue;
@@ -94,10 +96,11 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
       return;
     }
 
-    // B) 未在衝刺：按攻擊 + 冷卻好 → 觸發一次衝刺（融合瞄準決定落點）。
+    // B) 未在衝刺：按攻擊 + 冷卻好 + ★credit 可攻擊（比照 normal，credit 見底不能衝刺攻擊、走投幣經濟）→ 觸發一次衝刺。
     const src = player.inputSource;
     if (src == null) return;
     if (!src.justPressedAttack() || now < st.nextAttackAllowedAt) return;
+    if (!this.sys.ctxRef.credit.canAttack(player.playerId)) return; // ★credit 守：見底不可衝刺攻擊
 
     const pointer = src.getPointerWorld?.();
     // canAim 已在 update 保證 getPointerWorld 存在；此處 pointer 可能為 null（尚無指標）→ 不動。

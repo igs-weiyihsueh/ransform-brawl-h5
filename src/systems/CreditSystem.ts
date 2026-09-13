@@ -141,6 +141,14 @@ export class CreditSystem implements GameSystem {
     return true;
   }
 
+  /**
+   * ★非消耗式「窺看」本幀是否剛過期（鬥氣模式白名單守衛用：偵測到→委派 updatePlayer 走既有回待機，
+   *   由 updatePlayer 的 consumeJustExpired 真正消耗旗標。不清旗標，避免雙重消耗把 ReturnToWaiting 跳掉）。
+   */
+  isJustExpired(playerId: number): boolean {
+    return this.stateOf(playerId).justExpired;
+  }
+
   // --- UI / 狀態查詢 ---
   getCredit(playerId: number): number {
     return this.stateOf(playerId).credit;
