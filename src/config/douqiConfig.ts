@@ -155,13 +155,94 @@ export interface DouqiEnemyStat {
   spawnWeight: number;
   unlockWave: number; // byWave 解鎖（10 關階段用）
   frontDamageMult?: number; // shielder 正面減傷
+  /**
+   * ★實際生怪素材 key（spawner.spawn 用）。目前我方只有 Enemy_Rush/Enemy_Ranged/Enemy_Elite 三種素材，
+   *  shielder/bomber/charger/boss 尚無專屬素材→暫時 fallback 到現有素材（數值/行為仍走該怪 stat，
+   *  待特效手/美術補素材後換真 key）。★DouqiSpawnSystem pickWeightedType 只從 spawnWeight>0 的抽。
+   */
+  spawnKey: string;
 }
 export const DOUQI_ENEMY_STATS: Record<string, DouqiEnemyStat> = {
-  normal: { maxHp: 90, speed: 70, radius: 14, spawnWeight: 75, unlockWave: 1 },
-  tank: { maxHp: 200, speed: 40, radius: 22, spawnWeight: 12, unlockWave: 2 },
-  shielder: { maxHp: 100, speed: 58, radius: 16, spawnWeight: 6, unlockWave: 4, frontDamageMult: 0.15 },
-  bomber: { maxHp: 60, speed: 55, radius: 15, spawnWeight: 8, unlockWave: 5 },
-  shooter: { maxHp: 45, speed: 60, radius: 13, spawnWeight: 10, unlockWave: 6 },
-  charger: { maxHp: 110, speed: 66, radius: 15, spawnWeight: 0, unlockWave: 99 }, // 未啟用
-  boss: { maxHp: 3000, speed: 46, radius: 42, spawnWeight: 0, unlockWave: 99 }, // 階段 5
+  normal: { maxHp: 90, speed: 70, radius: 14, spawnWeight: 75, unlockWave: 1, spawnKey: 'Enemy_Rush' },
+  tank: { maxHp: 200, speed: 40, radius: 22, spawnWeight: 12, unlockWave: 2, spawnKey: 'Enemy_Elite' },
+  shooter: { maxHp: 45, speed: 60, radius: 13, spawnWeight: 10, unlockWave: 6, spawnKey: 'Enemy_Ranged' },
+  // ★以下尚無專屬素材，暫 fallback（數值走各自 stat/killExpMult 待補；有素材即換 spawnKey）：
+  shielder: { maxHp: 100, speed: 58, radius: 16, spawnWeight: 6, unlockWave: 4, frontDamageMult: 0.15, spawnKey: 'Enemy_Rush' },
+  bomber: { maxHp: 60, speed: 55, radius: 15, spawnWeight: 8, unlockWave: 5, spawnKey: 'Enemy_Rush' },
+  charger: { maxHp: 110, speed: 66, radius: 15, spawnWeight: 0, unlockWave: 99, spawnKey: 'Enemy_Rush' }, // 未啟用（不在表）
+  boss: { maxHp: 3000, speed: 46, radius: 42, spawnWeight: 0, unlockWave: 99, spawnKey: 'Enemy_Elite' }, // 階段 5
+};
+
+/**
+ * ★鬥氣 10 關生怪驅動設定（階段 3 後半 DouqiSpawnSystem）。海牛 v45 值。
+ * 難度全靠 teamLevel 雙軌 scale + quota 遞增 + 怪種 byWave 解鎖；關卡自身無額外難度乘數。
+ */
+export interface DouqiSpawnConfig {
+  /** 生怪間隔基準（ms，存活越久越快）。v45 initialIntervalMs=1700。 */
+  initialIntervalMs: number;
+  /** 每存活秒 interval 遞減（ms）。v45 intervalDecayPerSec=16。 */
+  intervalDecayPerSec: number;
+  /** interval 下限（ms）。v45 minIntervalMs=650。 */
+  minIntervalMs: number;
+  /** 同屏敵人上限基準。v45 maxAlive=416。 */
+  maxAliveBase: number;
+  /** 登場保護時間（ms）：生成後半透明不可傷不可被打。v45 spawnTelegraphMs=420。 */
+  spawnTelegraphMs: number;
+  /** 生怪離玩家最小距離（px，避免貼臉）。v45 safeDistanceFromPlayer=130。 */
+  safeDistanceFromPlayerPx: number;
+  /** 生怪離地圖邊緣內縮（px）。v45 edgeInset=90。 */
+  edgeInsetPx: number;
+  /** 喘息（intermission）時長（ms）。 */
+  intermissionMs: number;
+  /** quota 基準（第1關）。v45 base=10。 */
+  quotaBase: number;
+  /** quota 每關成長。v45 growth=8。 */
+  quotaGrowth: number;
+  /** 第 8/9 關 quota 乘數（BOSS 前壓力）。v45 preBossQuotaMult=1.5。 */
+  preBossQuotaMult: number;
+  /** quota 上限。v45 cap=90。 */
+  quotaCap: number;
+  /** 總關數。v45=10（第 10 關 BOSS）。 */
+  totalWaves: number;
+  /** 事件關（循環內第 N 關，wave%10 命中）。v45 event=[3,5,7]。 */
+  eventWaves: readonly number[];
+  /** 陣型類型加權（v45 名→我方 FormationType 映射見 DouqiSpawnSystem）。 */
+  formationWeights: Record<string, number>;
+  /** 陣型成員數範圍（依類型，v45 一陣型 6~25 隻）。 */
+  formationCountMin: number;
+  formationCountMax: number;
+  /** 陣型成員間隔（unit）。 */
+  formationSpacingUnit: number;
+  /** 等級 → spawnInterval 乘數（Lv1 慢 ×1.6 → Lv10 快 ×1.0；線性內插）。 */
+  intervalMultLv1: number;
+  intervalMultCap: number;
+  /** 等級 → 同屏上限乘數（Lv1 ×0.5 → Lv10 ×1.0）。 */
+  maxAliveMultLv1: number;
+  maxAliveMultCap: number;
+}
+
+/** ★鬥氣 10 關生怪驅動 v45 值。 */
+export const DOUQI_SPAWN_CONFIG: DouqiSpawnConfig = {
+  initialIntervalMs: 1700,
+  intervalDecayPerSec: 16,
+  minIntervalMs: 650,
+  maxAliveBase: 416,
+  spawnTelegraphMs: 420,
+  safeDistanceFromPlayerPx: 130,
+  edgeInsetPx: 90,
+  intermissionMs: 2600,
+  quotaBase: 10,
+  quotaGrowth: 8,
+  preBossQuotaMult: 1.5,
+  quotaCap: 90,
+  totalWaves: 10,
+  eventWaves: [3, 5, 7],
+  formationWeights: { matrix: 20, ring: 24, line: 16, wedge: 14, doubleRing: 12, scatter: 14 },
+  formationCountMin: 6,
+  formationCountMax: 25,
+  formationSpacingUnit: 0.9,
+  intervalMultLv1: 1.6,
+  intervalMultCap: 1.0,
+  maxAliveMultLv1: 0.5,
+  maxAliveMultCap: 1.0,
 };

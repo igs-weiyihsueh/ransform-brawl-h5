@@ -88,3 +88,27 @@ export function pickSpawnPoint(
   }
   return { x, y };
 }
+
+/**
+ * 輪盤法：依相對權重挑一個敵種（自 WaveSystem.pickWeighted 抽出成共用純函式；鬥氣 DouqiSpawnSystem 亦 import 用）。
+ * 零 Phaser、rng 注入（可測）。★行為與原 WaveSystem private pickWeighted 逐字等價（byte-gate）：
+ *   空陣列→null；總權重<=0→回第一筆 enemyType；否則 r=rng()*total 逐筆扣、r<=0 命中；掃完回最後一筆（浮點保險）。
+ * @param entries 敵種權重表（{enemyType, weight}[]）。weight 負值以 0 計（Math.max(0,weight)）。
+ * @param rng 回 [0,1) 隨機源（預設 Math.random；測試可注入定值）。
+ * @returns 選中的 enemyType，或 null（空陣列）。
+ */
+export function pickWeightedType<T extends { enemyType: string; weight: number }>(
+  entries: readonly T[],
+  rng: () => number = Math.random,
+): string | null {
+  if (entries.length === 0) return null;
+  let total = 0;
+  for (const s of entries) total += Math.max(0, s.weight);
+  if (total <= 0) return entries[0].enemyType;
+  let r = rng() * total;
+  for (const s of entries) {
+    r -= Math.max(0, s.weight);
+    if (r <= 0) return s.enemyType;
+  }
+  return entries[entries.length - 1].enemyType;
+}

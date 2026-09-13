@@ -44,6 +44,7 @@ import { GrabSystem } from '@/systems/GrabSystem';
 import { WaveSystem } from '@/systems/WaveSystem';
 import { MineTrapSystem } from '@/systems/MineTrapSystem';
 import { LevelProgressSystem } from '@/systems/LevelProgressSystem';
+import { DouqiSpawnSystem } from '@/systems/DouqiSpawnSystem';
 import { GlobalJuice } from '@/systems/GlobalJuice';
 import { DEFAULT_GAME_MODE, resolveGameMode, type GameMode } from '@/config/gameMode';
 
@@ -72,6 +73,8 @@ export class GameScene extends Phaser.Scene {
   private jpLampHud?: JpLampHud;
   /** ★鬥氣模式 teamLevel+經驗條 HUD（階段 3；只 douqi 建/更新）。 */
   private douqiExpBar?: DouqiExpBar;
+  /** ★鬥氣模式 10 關生怪驅動（階段 3 後半；只 douqi 註冊，與 normal WaveSystem 互斥）。 */
+  private douqiSpawn?: DouqiSpawnSystem;
   /** 魔尖塔波開場演出序列（塔波照搬守護波 GuardEvent intro：玩家聚集中央→聚焦壓黑定格→生塔）；active 時每幀 tick。 */
   private towerIntro: TowerIntroSequence | null = null;
   /** 塔波過關獎勵券數（onTowerWave 時由 preset resolveTowerUi.rewardTickets 設，onTowerWaveResult(true) 發獎用）。 */
@@ -199,7 +202,10 @@ export class GameScene extends Phaser.Scene {
     //   到該 player 寶盒 UI 位置。⚠️ addCharge 維持即時加值、飛光只是疊加表演（數值/視覺解耦）。
     spawner.onEnemyKilled = (enemyKey, damageByPlayer, deathPos) => {
       // ★階段 3：鬥氣模式擊殺給 teamLevel 經驗（全隊共用一條；normal 模式 no-op）。
-      if (this.gameMode === 'douqi') this.playerControlRef?.grantDouqiKillExp?.(enemyKey);
+      if (this.gameMode === 'douqi') {
+        this.playerControlRef?.grantDouqiKillExp?.(enemyKey);
+        this.douqiSpawn?.notifyKill(enemyKey); // ★階段 3 後半：本波擊殺 +1（過關 quota 判定）
+      }
       const total = chestChargeForResolved(getResolvedChest(), enemyKey);      const shares = splitChestByDamage(total, damageByPlayer, player.playerId);
       for (const [pid, amount] of shares) {
         chest.addCharge(pid, amount); // 即時加值（不動時機/邏輯）
@@ -252,6 +258,16 @@ export class GameScene extends Phaser.Scene {
       douqiEmpowerMs: (pid: number) => this.playerControlRef?.getDouqiEmpowerMsForProbe?.(pid) ?? 0,
       /** probe 用（階段 3）：讀鬥氣 teamLevel + 當前等級內經驗。 */
       douqiLevel: () => ({ level: this.playerControlRef?.getDouqiTeamLevel?.() ?? 1, exp: this.playerControlRef?.getDouqiTeamExp?.() ?? 0 }),
+      /** probe 用（階段 3 後半）：讀鬥氣 10 關生怪驅動狀態（狀態機/關卡/quota/擊殺）。 */
+      douqiWave: () =>
+        this.douqiSpawn
+          ? {
+              state: this.douqiSpawn.getState(),
+              wave: this.douqiSpawn.getCurrentWave(),
+              quota: this.douqiSpawn.getQuota(),
+              killed: this.douqiSpawn.getKilled(),
+            }
+          : null,
       /** probe 用（第 4 塊）：讀生效時間縮放 + 是否 hitstop 中。 */
       juiceState: () => ({ scale: this.globalJuice.getEffectiveScale(), hitstop: this.globalJuice.isHitstopped() }),
       /** probe 用（第 4 塊）：觸發 Boss 級衝擊（camera.shake + 全域 hitstop）。 */
@@ -477,8 +493,16 @@ export class GameScene extends Phaser.Scene {
     this.register(this.ctx.ticket); // 彩票計數器
     this.register(this.ctx.chest); // 寶盒：擊殺累積能量/自動開箱
     this.register(this.ctx.jp); // JP：幕通關給燈/命中累積倍數/集滿派彩
-    this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
-    this.register(new LevelProgressSystem()); // 關卡推進 step1：全波次打完→左通道→走進→notifyPortalEntered（掛 wave.onLevelCleared、update 查走進）
+    // ★鬥氣模式階段 3 後半：生怪驅動互斥註冊。normal→WaveSystem+LevelProgressSystem（現況、byte 不變）；
+    //   douqi→DouqiSpawnSystem（獨立 10 關生怪驅動，quota/過關 douqi 自寫），同時只一個生怪驅動跑。
+    //   ★完全不動 WaveSystem 本體（波騎 file）；ctx.wave 仍建（JP/塔波等既有接線讀它），只是 douqi 不 register 進主迴圈驅動。
+    if (this.gameMode === 'douqi') {
+      this.douqiSpawn = new DouqiSpawnSystem(() => this.playerControlRef?.getDouqiTeamLevel?.() ?? 1);
+      this.register(this.douqiSpawn); // 鬥氣生怪驅動（取代 WaveSystem+LevelProgressSystem）
+    } else {
+      this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
+      this.register(new LevelProgressSystem()); // 關卡推進 step1：全波次打完→左通道→走進→notifyPortalEntered
+    }
     if (this.mineTrapSystem) this.register(this.mineTrapSystem); // 2 新事件：地雷（讀取式每幀讀 getActiveMinePreset 自撒+推進延遲爆）
     this.register(new FireRainSystem()); // 天降火雨（守護波進行中觸發，只傷玩家）
     this.register(new GrabSystem()); // 抓人機制：沒打怪 8s → grabber 衝來抓、攻擊/倒數掙脫（per-player）

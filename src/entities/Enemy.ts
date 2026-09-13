@@ -120,6 +120,8 @@ export class Enemy implements Hittable {
   private maxHp: number;
   /** ★鬥氣模式敵人傷害倍率（curEnemyDamageScale by teamLevel；預設 1＝normal 模式敵人不變）。只 douqi 生的怪由 spawner 套。 */
   private damageMult = 1;
+  /** ★鬥氣登場保護剩餘秒（>0＝保護中：不可被打、不可攻擊；0＝無保護＝normal 模式怪 byte 不變）。update 每幀遞減。 */
+  private spawnProtectSec = 0;
   /** 尖塔環狀技參數覆寫（TowerWave 節點設定，spawnTower 套用；null＝用 config.ringSkill）。 */
   private ringSkillOverride: {
     ringCount: number;
@@ -964,6 +966,19 @@ export class Enemy implements Hittable {
     if (Number.isFinite(m) && m > 0) this.damageMult = m;
   }
 
+  /** ★鬥氣登場保護：設保護秒數（生成後不可被打/不可攻擊 + 半透明表演）。只 douqi 生怪套；normal 不呼＝恆 0 byte 不變。 */
+  setSpawnProtectionSec(sec: number): void {
+    if (Number.isFinite(sec) && sec > 0) {
+      this.spawnProtectSec = sec;
+      this.anim.sprite.setAlpha(0.45); // 半透明提示登場保護中
+    }
+  }
+
+  /** ★鬥氣登場保護中？（true＝不可被打/攻擊）。 */
+  isSpawnProtected(): boolean {
+    return this.spawnProtectSec > 0;
+  }
+
   getState(): EnemyState {
     return this.state;
   }
@@ -1031,6 +1046,15 @@ export class Enemy implements Hittable {
     this.anim.play(atNode ? 'idle' : 'move');
   }
   update(playerPos: Vec2 | null, dt: number): void {    if (this.dead) return;
+
+    // ★鬥氣登場保護倒數（>0 期間不可被打/不可攻擊；normal 怪恆 0＝不進此分支、byte 不變）。
+    if (this.spawnProtectSec > 0) {
+      this.spawnProtectSec -= dt;
+      if (this.spawnProtectSec <= 0) {
+        this.spawnProtectSec = 0;
+        this.anim.sprite.setAlpha(1); // 保護結束恢復不透明
+      }
+    }
 
     // 記錄移動前位置（immovable 菁英防穿透用：只擋自己前進、不被玩家推回）。
     this.prevPos = { x: this.anim.sprite.x, y: this.anim.sprite.y };
@@ -1255,6 +1279,7 @@ export class Enemy implements Hittable {
   }
 
   private fireAttack(playerPos: Vec2): void {
+    if (this.spawnProtectSec > 0) return; // ★鬥氣登場保護中不可攻擊（normal 怪恆 0＝不觸發、byte 不變）
     // 用戶新#2：出手瞬間強制面向玩家那側（根治蓄力 0.5s 間玩家繞到另一側/dx≈0 卡背對）。
     // this.facing 供攻擊圓 offset 方向 + setFacing 更新視覺(setFacingEnemy)，兩者一致朝玩家。
     this.setFacing(attackFacing(playerPos.x, this.anim.sprite.x, this.facing));
@@ -1345,6 +1370,7 @@ export class Enemy implements Hittable {
   /** 被玩家攻擊：扣血、hitStun 硬直、擊退。HP 歸 0 播 death 消失。 */
   takeHit(damage: number, knockback: number, fromPos: Vec2): void {
     if (this.dead || this.state === 'death') return;
+    if (this.spawnProtectSec > 0) return; // ★鬥氣登場保護中不可被打（normal 怪恆 0＝不觸發、byte 不變）
     if (this.grabber) return; // grabber 衝來期間無敵（掙脫由 GrabSystem 處理，不走一般傷害）
     const hf = getResolvedHitFeel(); // 第十一輪：hitFeel override 優先（頓幀/擊退/白閃等時長可套用）
     // 六輪#3：菁英蓄力不可被打斷——charge 期間受擊照扣血，但不清蓄力特效、不進 damaged 硬直、不擊退，繼續蓄力到出手。

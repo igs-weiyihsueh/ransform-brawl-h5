@@ -16,7 +16,7 @@ import { getResolvedTowerPreset, isResolvedTowerPreset, clearResolvedTowerCache 
 import type { MinePreset } from '@/config/mineConfig';
 import type { TowerPreset } from '@/config/towerConfig';
 import { resolveTowerMessages } from '@/config/towerConfig';
-import { shouldSpawnMore, shouldAdvanceSpawn, pickSpawnPoint } from '@/systems/waveMath';
+import { shouldSpawnMore, shouldAdvanceSpawn, pickSpawnPoint, pickWeightedType } from '@/systems/waveMath';
 import type {
   EnemyType,
   EventNodeData,
@@ -892,18 +892,9 @@ export class WaveSystem implements GameSystem {
     this.activeSpawnWarnings = [];
   }
 
-  /** 輪盤法：依相對權重挑一個敵種。 */
+  /** 輪盤法：依相對權重挑一個敵種（委派共用純函式 pickWeightedType，行為 byte 等價；DouqiSpawnSystem 亦共用該函式）。 */
   private pickWeighted(spawns: SpawnEntry[]): EnemyType | null {
-    if (spawns.length === 0) return null;
-    let total = 0;
-    for (const s of spawns) total += Math.max(0, s.weight);
-    if (total <= 0) return spawns[0].enemyType;
-    let r = Math.random() * total;
-    for (const s of spawns) {
-      r -= Math.max(0, s.weight);
-      if (r <= 0) return s.enemyType;
-    }
-    return spawns[spawns.length - 1].enemyType;
+    return pickWeightedType(spawns, Math.random) as EnemyType | null;
   }
 
   /** 選生怪位置：用 effectiveEnemyPlayBounds()（＝ENEMY_PLAY_BOUNDS 已 +當前 levelOffsetX，怪可移動區, inset 體型）

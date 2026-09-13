@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { shouldSpawnMore, shouldAdvanceSpawn } from '@/systems/waveMath';
+import { shouldSpawnMore, shouldAdvanceSpawn, pickWeightedType } from '@/systems/waveMath';
 
 /**
  * waveMath 純函式（用戶 #6 根治「怪沒清完就進獎勵」，翼騎 757b84e）。
@@ -136,5 +136,36 @@ describe('shouldAdvanceSpawn — nextIsSpawn（六輪#5 Spawn接Spawn維持場�
   it('壞版對照：next=Spawn 殘怪 vs next非Spawn 殘怪 結果相反（差異化生效）', () => {
     expect(shouldAdvanceSpawn(10, 10, 3, 0, true)).toBe(true); // Spawn 接續
     expect(shouldAdvanceSpawn(10, 10, 3, 0, false)).toBe(false); // 非 Spawn 要清空
+  });
+});
+
+describe('pickWeightedType — 加權輪盤挑敵種（自 WaveSystem.pickWeighted 抽出，byte 等價；douqi 共用）', () => {
+  it('空陣列 → null', () => {
+    expect(pickWeightedType([], Math.random)).toBeNull();
+  });
+
+  it('總權重<=0（全 0/全負）→ 回第一筆 enemyType', () => {
+    expect(pickWeightedType([{ enemyType: 'A', weight: 0 }, { enemyType: 'B', weight: 0 }], () => 0.5)).toBe('A');
+    expect(pickWeightedType([{ enemyType: 'A', weight: -3 }, { enemyType: 'B', weight: -1 }], () => 0.9)).toBe('A');
+  });
+
+  it('rng 注入 → 命中對應權重區間（A:1 B:3 total4；r=rng×4）', () => {
+    const e = [{ enemyType: 'A', weight: 1 }, { enemyType: 'B', weight: 3 }];
+    expect(pickWeightedType(e, () => 0.0)).toBe('A');   // r=0→扣 A(1)→r=-1<=0 命中 A
+    expect(pickWeightedType(e, () => 0.1)).toBe('A');   // r=0.4→扣 A(1)→-0.6<=0 A
+    expect(pickWeightedType(e, () => 0.3)).toBe('B');   // r=1.2→扣 A→0.2>0→扣 B→命中 B
+    expect(pickWeightedType(e, () => 0.99)).toBe('B');  // r≈3.96→A 後 2.96→B 命中
+  });
+
+  it('負權重以 0 計（Math.max(0,weight)）', () => {
+    // A weight -5 視 0、B weight 2 → total 2；任何 rng 都應命中 B（A 區間 0 寬）。
+    const e = [{ enemyType: 'A', weight: -5 }, { enemyType: 'B', weight: 2 }];
+    expect(pickWeightedType(e, () => 0.5)).toBe('B');
+    expect(pickWeightedType(e, () => 0.0)).toBe('A'); // r=0→扣 A(0)→r=0<=0 命中 A（邊界，與原 byte 等價）
+  });
+
+  it('rng 預設 Math.random 也能跑（回其中一個 enemyType）', () => {
+    const e = [{ enemyType: 'A', weight: 1 }, { enemyType: 'B', weight: 1 }];
+    expect(['A', 'B']).toContain(pickWeightedType(e));
   });
 });
