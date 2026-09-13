@@ -1344,6 +1344,64 @@ export class EffectSystem {
   }
 
   /**
+   * ★鬥氣連段技①圓形斬 VFX（階段 2）：以 (x,y) 為心的擴張環（青色，durMs 淡出）。純視覺、一次性。
+   * @param x,y 中心（玩家位置）。 @param radius 最終半徑（=圓形斬 radiusPx）。 @param color 環色。 @param durMs 時長。
+   */
+  douqiCircleSlash(x: number, y: number, radius: number, color: number, durMs: number): void {
+    const g = this.scene.add.graphics();
+    g.setDepth(ATTACK_VFX_DEPTH + 1).setPosition(x, y);
+    g.lineStyle(6, color, 1);
+    g.strokeCircle(0, 0, radius);
+    g.setScale(0.15).setAlpha(1);
+    this.scene.tweens.add({ targets: g, scale: 1, alpha: 0, duration: durMs, ease: 'Cubic.easeOut', onComplete: () => g.destroy() });
+  }
+
+  /**
+   * ★鬥氣連段技②直線氣波 VFX（階段 2）：朝 angle 的旋轉斬擊帶（紅色，durMs 淡出）。純視覺、一次性。
+   * @param x,y 起點（玩家位置，帶底邊中心）。 @param angle 前向弧度。 @param length 帶長。 @param width 帶寬。
+   */
+  douqiLineWave(x: number, y: number, angle: number, length: number, width: number, color: number, durMs: number): void {
+    const g = this.scene.add.graphics();
+    g.setDepth(ATTACK_VFX_DEPTH + 1).setPosition(x, y).setRotation(angle);
+    g.fillStyle(color, 0.85);
+    // 帶：從 origin 沿 +x（本地）延伸 length、上下半寬 width/2。旋轉由 setRotation(angle) 對齊。
+    g.fillRect(0, -width / 2, length, width);
+    g.setAlpha(1);
+    this.scene.tweens.add({ targets: g, alpha: 0, scaleY: 0.4, duration: durMs, ease: 'Quad.easeOut', onComplete: () => g.destroy() });
+  }
+
+  /**
+   * ★鬥氣滿連段強化光環（階段 2）：角色身上金色脈動圈 handle（強化期間持續、收尾停）。
+   * @returns Graphics handle。
+   */
+  douqiEmpowerAura(x: number, y: number, color = 0xffd24d): Phaser.GameObjects.Graphics | null {
+    const g = this.scene.add.graphics();
+    g.setDepth(ATTACK_VFX_DEPTH + 1).setPosition(x, y);
+    g.lineStyle(4, color, 0.9);
+    g.strokeCircle(0, 0, 46);
+    g.lineStyle(2, color, 0.5);
+    g.strokeCircle(0, 0, 60);
+    g.setAlpha(0);
+    this.scene.tweens.add({ targets: g, alpha: 1, duration: 120 });
+    this.scene.tweens.add({ targets: g, scale: 1.15, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    return g;
+  }
+
+  /** ★強化光環每幀跟本體。handle=null 忽略。 */
+  updateDouqiEmpowerAura(handle: Phaser.GameObjects.Graphics | null, x: number, y: number): void {
+    if (!handle || !handle.active) return;
+    handle.setPosition(x, y);
+  }
+
+  /** ★強化光環收（強化結束）。handle=null 忽略。 */
+  endDouqiEmpowerAura(handle: Phaser.GameObjects.Graphics | null): void {
+    if (!handle) return;
+    this.scene.tweens.killTweensOf(handle);
+    if (!handle.active) { handle.destroy(); return; }
+    this.scene.tweens.add({ targets: handle, alpha: 0, scale: 1.5, duration: 160, onComplete: () => handle.destroy() });
+  }
+
+  /**
    * 敵人命中爆閃（用戶 #7）：攻擊命中玩家瞬間播。隨機旋轉、爆開放大、淡出。
    * 純視覺疊加（受擊結算後 hook）。
    * @param x,y 玩家受擊點/身體中心（世界座標）。

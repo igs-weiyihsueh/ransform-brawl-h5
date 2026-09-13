@@ -178,6 +178,18 @@ export class PlayerControlSystem implements GameSystem {
     this.strategy.update(dt);
   }
 
+  /** probe/測試用：讀鬥氣 combo（僅 douqi 策略有；normal 回 0）。階段 2 headed 驗。 */
+  getDouqiComboForProbe(pid: number): number {
+    const s = this.strategy as unknown as { debugCombo?: (pid: number) => number };
+    return typeof s?.debugCombo === 'function' ? s.debugCombo(pid) : 0;
+  }
+
+  /** probe/測試用：讀鬥氣強化剩餘 ms（僅 douqi；normal 回 0）。 */
+  getDouqiEmpowerMsForProbe(pid: number): number {
+    const s = this.strategy as unknown as { debugEmpowerMs?: (pid: number) => number };
+    return typeof s?.debugEmpowerMs === 'function' ? s.debugEmpowerMs(pid) : 0;
+  }
+
   /**
    * @internal 供 control strategy 委派呼叫（NormalControlStrategy.update 逐字搬用）。body 不動、僅可見性放寬。
    * 單一 player 的操控主迴圈（人類/AI 皆同，只差 InputSource）。
@@ -622,6 +634,19 @@ export class PlayerControlSystem implements GameSystem {
     this.ctx.combo.onHit(attackerId);
     this.ctx.jp.notifyCreditSpent(1);
     void c;
+  }
+
+  /**
+   * @internal 鬥氣連段技 AOE 命中（階段 2）：對一隻敵人套傷害（走現有 takeHit a655c53d，不自造）。
+   *   ★連段技 AOE 命中【不】累積 combo（combo 只普攻揮擊 +1）；此處只做傷害+歸屬+JP 記帳（不呼 credit/reward-combo，
+   *   避免一次 AOE 掃多隻灌爆 credit/reward）。呼叫端已篩存活/範圍內。
+   * @param fromPos 擊退來源（圓形斬=玩家中心；氣波=玩家中心，沿玩家→敵推）。
+   */
+  applyDouqiAoeHit(player: GameContext['player'], enemy: Enemy, damage: number, knockback: number, fromPos: { x: number; y: number }): void {
+    if (typeof enemy.isDead === 'function' && enemy.isDead()) return;
+    enemy.takeHit(damage, knockback, fromPos);
+    enemy.recordDamageFrom(player.playerId, damage);
+    this.ctx.jp.recordDamage(player.playerId, damage);
   }
 
   /** 十一輪#2：存活敵人 hitCenter 清單（auto-aim 找最近怪用）。dead 排除。 */

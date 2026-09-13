@@ -3,8 +3,9 @@ import type { IPlayerControlStrategy } from '@/systems/control/IPlayerControlStr
 import type { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import type { GameContext } from '@/systems/GameContext';
 import type { Enemy } from '@/entities/Enemy';
-import { DOUQI_CONTROL_CONFIG } from '@/config/douqiConfig';
+import { DOUQI_CONTROL_CONFIG, DOUQI_COMBO_CONFIG } from '@/config/douqiConfig';
 import { effectivePlayerBounds } from '@/config/mapConfig';
+import { bumpCombo, comboSkillReady, pointInCircle, pointInOrientedRect } from '@/systems/comboSkillMath';
 import { selectFusionTarget, type AimCandidate } from '@/systems/fusionAimMath';
 
 /** 衝刺目標種類（v45 模型）：鎖怪 / 指空地走位 / 朝道具（階段 1 道具走位未啟用，保留列舉）。 */
@@ -30,6 +31,12 @@ interface DouqiPlayerState {
   markedEnemy: Enemy | null;
   /** ★視覺：衝刺護盾特效 handle（衝刺起手播、收尾停）。 */
   dashShield: Phaser.GameObjects.Image | null;
+  /** ★階段 2 連段：per-pid combo 計數（普攻揮擊命中 +1，無時間衰減，cap maxCombo；empower 觸發後歸零）。 */
+  combo: number;
+  /** ★階段 2 強化：剩餘強化時間（ms，real dt 倒數；>0＝強化中）。 */
+  empowerRemainingMs: number;
+  /** ★階段 2 強化：金色光環 handle（強化期間持續跟本體、收尾停）。 */
+  empowerAura: Phaser.GameObjects.Graphics | null;
 }
 
 /**
@@ -98,6 +105,19 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
   private tickPlayer(player: GameContext['player'], dt: number, now: number): void {
     const st = this.stateOf(player.playerId);
 
+    // ★階段 2 強化 buff 倒數（real dt；>0 期間無敵+傷/範圍/移速/衝速提升，角色仍可操控）。歸零→收 buff/視覺/光環。
+    if (st.empowerRemainingMs > 0) {
+      st.empowerRemainingMs -= dt * 1000;
+      const pos = player.getPosition();
+      this.sys.ctxRef.effects?.updateDouqiEmpowerAura?.(st.empowerAura, pos.x, pos.y);
+      if (st.empowerRemainingMs <= 0) {
+        st.empowerRemainingMs = 0;
+        player.setShielded?.(false);
+        player.setEmpowerVisual?.(false);
+        if (st.empowerAura) { this.sys.ctxRef.effects?.endDouqiEmpowerAura?.(st.empowerAura); st.empowerAura = null; }
+      }
+    }
+
     // A) 衝刺推進中：朝 dashTarget 移動；沿途鎖怪到達→揮擊；空地/道具到達或超距→收尾。
     if (st.dashing) {
       this.advanceDash(player, st, dt);
@@ -137,10 +157,11 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
       st.dashMode = 'enemy';
       st.lockedEnemy = selected;
     } else {
-      // 錐內無怪：朝滑鼠方向走位 dashDistancePx。★終點先 clamp（滑鼠指場外→夾到邊緣、衝到邊停不出界/不進面板）。
+      // 錐內無怪：朝滑鼠方向走位 dashDistancePx（★強化 ×moveMult1.4）。★終點先 clamp（滑鼠指場外→夾到邊緣、衝到邊停不出界/不進面板）。
+      const dist = this.cfg.dashDistancePx * this.empowerMoveMult(player);
       st.dashTarget = this.clampToArena(
-        origin.x + Math.cos(aimAngle) * this.cfg.dashDistancePx,
-        origin.y + Math.sin(aimAngle) * this.cfg.dashDistancePx,
+        origin.x + Math.cos(aimAngle) * dist,
+        origin.y + Math.sin(aimAngle) * dist,
       );
       st.dashMode = 'empty';
       st.lockedEnemy = null;
@@ -235,12 +256,13 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
       }
     }
 
-    // 本幀步進距離。
-    const step = this.cfg.dashSpeedPxPerSec * dt;
+    // 本幀步進距離（★強化 ×dashSpeedMult1.5＝衝速 2100）。
+    const dashSpeed = this.cfg.dashSpeedPxPerSec * this.empowerDashSpeedMult(player);
+    const step = dashSpeed * dt;
 
     // ★防震盪②：結束門檻隨速度放大（stopDist = max(12, dashSpeed×0.032)）——剩餘距離 < 這一步會走的量
     //   就直接停+收尾，不設反向速度（否則高速貼牆會來回抖）。
-    const stopDist = Math.max(12, this.cfg.dashSpeedPxPerSec * 0.032);
+    const stopDist = Math.max(12, dashSpeed * 0.032);
     if (distToTarget <= stopDist || distToTarget < 1e-6) {
       const snap = this.clampToArena(st.dashTarget.x, st.dashTarget.y);
       player.setPosition(snap.x, snap.y);
@@ -275,8 +297,8 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
       return;
     }
 
-    // 空地/道具走位：累計超過 dashDistancePx → 收尾（鎖怪不受此限，追到為止）。
-    if ((st.dashMode === 'empty' || st.dashMode === 'item') && st.dashTraveledPx >= this.cfg.dashDistancePx) {
+    // 空地/道具走位：累計超過 dashDistancePx（★強化 ×moveMult）→ 收尾（鎖怪不受此限，追到為止）。
+    if ((st.dashMode === 'empty' || st.dashMode === 'item') && st.dashTraveledPx >= this.cfg.dashDistancePx * this.empowerMoveMult(player)) {
       this.endDash(player);
     }
   }
@@ -293,9 +315,131 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     return { x: cx, y: cy };
   }
 
-  /** 揮擊命中：走 PlayerControlSystem 的 helper（用現有 takeHit/ContactSolver，不自造傷害）。 */
+  /** 揮擊命中：走 PlayerControlSystem 的 helper（用現有 takeHit/ContactSolver，不自造傷害）+ combo 累積 + 連段技觸發。 */
   private performAttackOn(player: GameContext['player'], enemy: Enemy): void {
-    this.sys.applyDouqiSwingHit(player, enemy, this.cfg.attackDamage, this.cfg.knockback);
+    this.sys.applyDouqiSwingHit(player, enemy, this.empoweredDamage(player), this.cfg.knockback);
+    // ★階段 2 連段：普攻【揮擊命中】+1 combo（命中次數計，一次揮擊+1；無時間衰減、cap maxCombo）。
+    //   連段技 AOE 命中【不】累積（只此普攻揮擊 hook 累積，避免無限疊放）。
+    const st = this.stateOf(player.playerId);
+    st.combo = bumpCombo(st.combo, DOUQI_COMBO_CONFIG.maxCombo);
+    // ★連段技自動疊放（普攻命中的附帶疊放、不按鍵、不取代普攻衝刺揮擊）：達門檻+teamLevel 雙條件即觸發。
+    //   ★階段 2 (D)：teamLevel 先餵恆滿足高值（保留雙條件結構，階段 3 接真 teamLevel 直接換值）。
+    this.tryComboSkills(player, st, enemy);
+  }
+
+  /** ★階段 2 (D)：teamLevel 恆滿足高值（保留 comboSkillReady 雙條件結構；階段 3 換真 teamLevel）。 */
+  private teamLevel(_player: GameContext['player']): number {
+    return 999; // 階段 2 全解鎖：等級門檻恆過，四技只靠 combo 門檻 3/6/9/10 觸發。
+  }
+
+  /** 檢查並自動疊放連段技（圓形斬/氣波/爆發/強化）。普攻命中的附帶疊放，同幀可多技（低→高門檻）。 */
+  private tryComboSkills(player: GameContext['player'], st: DouqiPlayerState, lockedEnemy: Enemy): void {
+    const cfg = DOUQI_COMBO_CONFIG;
+    const lvl = this.teamLevel(player);
+    const combo = st.combo;
+    const origin = player.getPosition();
+    // ①圓形斬 combo≥3 且 Lv≥2。
+    if (comboSkillReady(combo, lvl, cfg.thresholds.circle, cfg.unlockLevel.circle)) {
+      this.triggerCircleSlash(player, origin);
+    }
+    // ②直線氣波 combo≥6 且 Lv≥4：朝鎖定目標/鎖定敵方向。
+    if (comboSkillReady(combo, lvl, cfg.thresholds.line, cfg.unlockLevel.line)) {
+      const c = lockedEnemy.getHitCenter();
+      const aimAngle = Math.atan2(c.y - origin.y, c.x - origin.x);
+      this.triggerLineWave(player, origin, aimAngle);
+    }
+    // ③爆發 combo≥9 且 Lv≥6。
+    if (comboSkillReady(combo, lvl, cfg.thresholds.burst, cfg.unlockLevel.burst)) {
+      this.triggerBurst(player, origin);
+    }
+    // ④滿連段強化 combo≥10 且 Lv≥1：觸發後 combo 歸零。
+    if (comboSkillReady(combo, lvl, cfg.thresholds.empower, cfg.unlockLevel.empower)) {
+      this.triggerEmpower(player, st);
+    }
+  }
+
+  /** ①圓形斬：以玩家為心的圓 AOE，對全場可傷怪一次性結算（走 applyDouqiAoeHit takeHit）+青環 VFX。 */
+  private triggerCircleSlash(player: GameContext['player'], origin: { x: number; y: number }): void {
+    const cfg = DOUQI_COMBO_CONFIG.circle;
+    const radius = cfg.radiusPx * this.empowerRangeMult(player);
+    const dmg = Math.round(cfg.damage * this.empowerDamageMult(player));
+    for (const e of this.sys.ctxRef.getEnemies()) {
+      if (e.isDead()) continue; // 可傷怪（含菁英/塔）
+      const c = e.getHitCenter();
+      if (pointInCircle(c.x, c.y, origin.x, origin.y, radius + e.getHitRadius())) {
+        this.sys.applyDouqiAoeHit(player, e, dmg, cfg.knockback, origin); // fromPos=玩家心→向外推
+      }
+    }
+    this.sys.ctxRef.effects?.douqiCircleSlash?.(origin.x, origin.y, radius, cfg.ringColor, cfg.ringDurationMs);
+    this.sys.ctxRef.scene && this.sys.ctxRef.effects; // (輕震由 camera shake 之後可接；階段 2 VFX 已足)
+  }
+
+  /** ②直線氣波：朝 aimAngle 矩形貫穿，pointInOrientedRect 對全場可傷怪一次性結算+紅斬帶 VFX。 */
+  private triggerLineWave(player: GameContext['player'], origin: { x: number; y: number }, aimAngle: number): void {
+    const cfg = DOUQI_COMBO_CONFIG.line;
+    const rmult = this.empowerRangeMult(player);
+    const length = cfg.lengthPx * rmult;
+    const halfWidth = (cfg.widthPx * rmult) / 2;
+    const dmg = Math.round(cfg.damage * this.empowerDamageMult(player));
+    for (const e of this.sys.ctxRef.getEnemies()) {
+      if (e.isDead()) continue;
+      const c = e.getHitCenter();
+      if (pointInOrientedRect(c.x, c.y, origin.x, origin.y, aimAngle, length + e.getHitRadius(), halfWidth + e.getHitRadius())) {
+        this.sys.applyDouqiAoeHit(player, e, dmg, cfg.knockback, origin);
+      }
+    }
+    this.sys.ctxRef.effects?.douqiLineWave?.(origin.x, origin.y, aimAngle, length, cfg.widthPx * rmult, cfg.beamColor, cfg.beamDurationMs);
+  }
+
+  /** ③爆發：原地無敵多段亂打（清場解圍）——對全場可傷怪結算 hits 段（擊退不變）。強化期間本就無敵；此技短暫保護。 */
+  private triggerBurst(player: GameContext['player'], origin: { x: number; y: number }): void {
+    const cfg = DOUQI_COMBO_CONFIG.burst;
+    const circle = DOUQI_COMBO_CONFIG.circle;
+    const radius = circle.radiusPx * this.empowerRangeMult(player);
+    const perHit = Math.round(circle.damage * this.empowerDamageMult(player));
+    // 16 段：對範圍內可傷怪各結算 hits 次（一次性總量＝perHit×hits，比照 v45 多段亂打；擊退用圓形斬 kb）。
+    for (const e of this.sys.ctxRef.getEnemies()) {
+      if (e.isDead()) continue;
+      const c = e.getHitCenter();
+      if (pointInCircle(c.x, c.y, origin.x, origin.y, radius + e.getHitRadius())) {
+        for (let i = 0; i < cfg.hits && !e.isDead(); i++) {
+          this.sys.applyDouqiAoeHit(player, e, perHit, circle.knockback, origin);
+        }
+      }
+    }
+    // VFX：爆發用擴張環（大一點）表現多段清場。
+    this.sys.ctxRef.effects?.douqiCircleSlash?.(origin.x, origin.y, radius, circle.ringColor, circle.ringDurationMs + 120);
+  }
+
+  /** ④滿連段強化：limited buff（無敵+傷/範圍/移速/衝速提升，角色仍可操控）+視覺放大(僅顯示)+金環。觸發後 combo 歸零。 */
+  private triggerEmpower(player: GameContext['player'], st: DouqiPlayerState): void {
+    const cfg = DOUQI_COMBO_CONFIG.empower;
+    st.empowerRemainingMs = cfg.durationMs;
+    st.combo = 0; // ★觸發後 spirit 歸零
+    player.setShielded?.(true); // 強化期間無敵
+    player.setEmpowerVisual?.(true, 1.35); // ★純顯示放大+金 tint（body 不放大，海牛血淚）
+    const pos = player.getPosition();
+    if (st.empowerAura == null) st.empowerAura = this.sys.ctxRef.effects?.douqiEmpowerAura?.(pos.x, pos.y) ?? null;
+  }
+
+  // --- 強化 buff 倍率（強化中回 mult，否則 1.0）---
+  private isEmpowered(player: GameContext['player']): boolean {
+    return (this.state.get(player.playerId)?.empowerRemainingMs ?? 0) > 0;
+  }
+  private empowerDamageMult(player: GameContext['player']): number {
+    return this.isEmpowered(player) ? DOUQI_COMBO_CONFIG.empower.damageMult : 1;
+  }
+  private empowerRangeMult(player: GameContext['player']): number {
+    return this.isEmpowered(player) ? DOUQI_COMBO_CONFIG.empower.rangeMult : 1;
+  }
+  private empowerMoveMult(player: GameContext['player']): number {
+    return this.isEmpowered(player) ? DOUQI_COMBO_CONFIG.empower.moveMult : 1;
+  }
+  private empowerDashSpeedMult(player: GameContext['player']): number {
+    return this.isEmpowered(player) ? DOUQI_COMBO_CONFIG.empower.dashSpeedMult : 1;
+  }
+  private empoweredDamage(player: GameContext['player']): number {
+    return Math.round(this.cfg.attackDamage * this.empowerDamageMult(player));
   }
 
   /** 收尾一次衝刺：關護盾無敵、清狀態旗標 + ★收視覺（idle 動畫、停護盾 fx）。鎖定框留給下幀 tick 重判。 */
@@ -305,11 +449,22 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     st.dashing = false;
     st.lockedEnemy = null;
     st.dashTraveledPx = 0;
-    player.setShielded?.(false);
+    // ★強化中不關護盾（強化本身給無敵）；非強化才依衝刺結束關護盾。
+    if (st.empowerRemainingMs <= 0) player.setShielded?.(false);
     player.setDashThrough?.(false); // ★收尾清穿透旗標（衝刺結束不再穿透，恢復被 immovable 擋）
     // ★視覺收尾：回 idle 動畫、停護盾 fx。鎖定框不在此收（下幀瞄準 tick 會依當前滑鼠重判顯示/收）。
     player.endDouqiDashVisual?.();
     if (st.dashShield) { this.sys.ctxRef.effects?.endPlayerDashShield?.(st.dashShield); st.dashShield = null; }
+  }
+
+  /** probe/測試用：讀某 pid 當前 combo（階段 2 headed 驗）。 */
+  debugCombo(pid: number): number {
+    return this.state.get(pid)?.combo ?? 0;
+  }
+
+  /** probe/測試用：讀某 pid 強化剩餘 ms（>0＝強化中）。 */
+  debugEmpowerMs(pid: number): number {
+    return this.state.get(pid)?.empowerRemainingMs ?? 0;
   }
 
   /** 取（或初始化）某 pid 的鬥氣狀態。 */
@@ -326,6 +481,9 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
         lockMarker: null,
         markedEnemy: null,
         dashShield: null,
+        combo: 0,
+        empowerRemainingMs: 0,
+        empowerAura: null,
       };
       this.state.set(pid, st);
     }

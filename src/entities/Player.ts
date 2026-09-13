@@ -103,6 +103,8 @@ export class Player implements Hittable {
 
   /** 二段變身視覺放大倍率（1=常態；二段變身時放大，乘在 SPRITE_SCALE 上）。 */
   private secondTransformScale = 1;
+  /** ★鬥氣滿連段強化視覺放大倍率（1=常態；純顯示、不動碰撞半徑）。 */
+  private empowerScale = 1;
 
   /** 衝刺狀態。 */
   private dashing = false;
@@ -213,8 +215,28 @@ export class Player implements Hittable {
    */
   setSecondTransformScale(mult: number): void {
     this.secondTransformScale = mult > 0 ? mult : 1;
-    this.anim.setScale(SPRITE_SCALE * this.secondTransformScale);
+    this.applyDisplayScale();
     this.syncFootGlow(); // 立即對齊：放大改變中心→腳底距離，footGlow 位置隨即更新（免站定不動時偏一幀）。
+  }
+
+  /**
+   * ★鬥氣滿連段強化視覺（階段 2）：純視覺放大 sprite（魄力）+ 金色 tint 染色。
+   *   ★★海牛血淚：只放大【顯示 sprite】、**碰撞判定半徑(hitRadiusPx)/真空(foot.radiusPx)/body 一律不動**
+   *   （放大 body→貼牆卡死 v41 元凶）——本方法只碰 anim 顯示 scale+tint，不改任何半徑。
+   * @param on true=強化中（放大+金染）、false=還原。
+   * @param scaleMult 顯示放大倍率（如 1.35）。
+   * @param tint 金色 tint（如 0xffd24d）。
+   */
+  setEmpowerVisual(on: boolean, scaleMult = 1.35, tint = 0xffd24d): void {
+    this.empowerScale = on && scaleMult > 0 ? scaleMult : 1;
+    this.applyDisplayScale();
+    if (on) this.anim.sprite.setTint(tint);
+    else this.anim.sprite.clearTint();
+  }
+
+  /** 套用最終顯示縮放＝SPRITE_SCALE × 二段變身 × 強化（純顯示，不動任何碰撞半徑）。 */
+  private applyDisplayScale(): void {
+    this.anim.setScale(SPRITE_SCALE * this.secondTransformScale * this.empowerScale);
   }
 
   getCharacterKey(): string {

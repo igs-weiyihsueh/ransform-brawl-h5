@@ -59,3 +59,43 @@ export const DOUQI_CONTROL_CONFIG: DouqiControlConfig = {
   attackCooldownMs: 160,
   pointerIdleEpsilonPx: 3,
 };
+
+/**
+ * ★鬥氣連段技 config（階段 2，海牛《鬥氣割草》v45 值）。★普通模式不掛不觸發、只 douqi。
+ *
+ * combo 累積＝普攻揮擊命中 +1（命中次數計，一次掃幾隻只 +1；連段技 AOE 命中【不】累積 combo）。
+ * 無時間衰減、達 max 歸零重來。門檻+teamLevel 雙條件（達 combo 門檻【且】等級到才觸發）；各技無獨立 cooldown（靠 combo 門檻節流）。
+ */
+export interface DouqiComboConfig {
+  /** combo 上限（達此歸零重來）。v45=10。 */
+  maxCombo: number;
+  /** 觸發門檻（combo ≥）。 */
+  thresholds: { circle: number; line: number; burst: number; empower: number };
+  /** 解鎖等級（teamLevel ≥）。 */
+  unlockLevel: { circle: number; line: number; burst: number; empower: number };
+  /** ①圓形斬：中心圓 AOE。 */
+  circle: { radiusPx: number; damage: number; knockback: number; ringColor: number; ringDurationMs: number };
+  /** ②直線氣波：朝 aimAngle 矩形貫穿。 */
+  line: { lengthPx: number; widthPx: number; damage: number; knockback: number; beamColor: number; beamDurationMs: number };
+  /** ③爆發：原地無敵多段亂打段數（清場解圍、擊退不變）。 */
+  burst: { hits: number };
+  /** ④滿連段強化 buff（limited）。 */
+  empower: {
+    durationMs: number;
+    damageMult: number; // ×1.8
+    rangeMult: number; // ×1.5
+    moveMult: number; // ×1.4（走位/衝刺終點距離）
+    dashSpeedMult: number; // ×1.5（衝速 2100）
+  };
+}
+
+/** ★海牛 v45 連段值。 */
+export const DOUQI_COMBO_CONFIG: DouqiComboConfig = {
+  maxCombo: 10,
+  thresholds: { circle: 3, line: 6, burst: 9, empower: 10 },
+  unlockLevel: { empower: 1, circle: 2, line: 4, burst: 6 },
+  circle: { radiusPx: 160, damage: 40, knockback: 200, ringColor: 0x00e5ff, ringDurationMs: 280 },
+  line: { lengthPx: 420, widthPx: 90, damage: 70, knockback: 260, beamColor: 0xff4d6d, beamDurationMs: 300 },
+  burst: { hits: 16 },
+  empower: { durationMs: 5000, damageMult: 1.8, rangeMult: 1.5, moveMult: 1.4, dashSpeedMult: 1.5 },
+};

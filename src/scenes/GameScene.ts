@@ -61,6 +61,8 @@ export class GameScene extends Phaser.Scene {
   private ctx!: GameContext;
   /** ★全域手感骨幹（第 4 塊）：TimeScaleCounter（scaledDt 單一注入）+ camera.shake + Boss-gate。 */
   private globalJuice!: GlobalJuice;
+  /** probe 用（階段 2）：PlayerControlSystem 參照（讀鬥氣 combo）。 */
+  private playerControlRef?: PlayerControlSystem;
   /** UISystem 實例（create 提前建立供擊殺回呼取寶盒錨點；registerSystems 再註冊）。 */
   private uiSystem!: UISystem;
   /** 2 新事件：地雷陷阱系統（附加類讀取式；create 建、registerSystems 註冊供每幀 update 讀 getActiveMinePreset）。 */
@@ -235,6 +237,10 @@ export class GameScene extends Phaser.Scene {
       triggerWave: (preset: unknown) => wave.onTowerWave?.(preset as never),
       /** probe 用：讀開場定格/鎖操作旗標。 */
       flags: () => ({ scriptedControl: this.ctx.scriptedControl, guardFocusPause: this.ctx.guardFocusPause, gameMode: this.ctx.gameMode }),
+      /** probe 用（階段 2）：讀鬥氣 combo。 */
+      douqiCombo: (pid: number) => this.playerControlRef?.getDouqiComboForProbe?.(pid) ?? 0,
+      /** probe 用（階段 2）：讀鬥氣強化剩餘 ms。 */
+      douqiEmpowerMs: (pid: number) => this.playerControlRef?.getDouqiEmpowerMsForProbe?.(pid) ?? 0,
       /** probe 用（第 4 塊）：讀生效時間縮放 + 是否 hitstop 中。 */
       juiceState: () => ({ scale: this.globalJuice.getEffectiveScale(), hitstop: this.globalJuice.isHitstopped() }),
       /** probe 用（第 4 塊）：觸發 Boss 級衝擊（camera.shake + 全域 hitstop）。 */
@@ -430,6 +436,7 @@ export class GameScene extends Phaser.Scene {
    */
   private registerSystems(): void {
     const playerControl = new PlayerControlSystem();
+    this.playerControlRef = playerControl; // probe 用（階段 2 douqiCombo）
     const enemy = new EnemySystem();
     // 十六輪(追加)：GrabSystem 掙脫成功→請求玩家強制真攻擊（揮開 grabber）；綁 hook 避免 GrabSystem 直接耦合 PlayerControlSystem。
     this.ctx.requestPlayerAttack = (pid: number) => playerControl.requestForcedAttack(pid);
