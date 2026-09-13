@@ -12,4 +12,9 @@ export interface InputSource {
   justPressedAttack(): boolean;
   /** 這一幀是否剛按下衝刺（edge）。 */
   justPressedDash(): boolean;
+  /**
+   * ★鬥氣模式（階段 1）：滑鼠世界座標（瞄準用）。人類鍵鼠來源回 activePointer 世界座標；
+   * AI 來源不實作（回 undefined）→ 鬥氣策略對 AI 走 fallback（朝移動向量/最近怪）。可選。
+   */
+  getPointerWorld?(): { x: number; y: number } | null;
 }

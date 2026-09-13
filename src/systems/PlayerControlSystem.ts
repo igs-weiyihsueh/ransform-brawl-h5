@@ -5,7 +5,6 @@ import {
   makeDashChargeState,
   canDash as canDashCharge,
   consumeDashCharge,
-  tickDashCharge,
   dashCooldownProgress,
 } from '@/systems/dashChargeMath';
 import {
@@ -44,6 +43,9 @@ import { EnergySystem, type AttackIntent } from '@/systems/EnergySystem';
 import type { Enemy } from '@/entities/Enemy';
 import type { GameContext } from '@/systems/GameContext';
 import type { GameSystem } from '@/systems/GameSystem';
+import type { IPlayerControlStrategy } from '@/systems/control/IPlayerControlStrategy';
+import { NormalControlStrategy } from '@/systems/control/NormalControlStrategy';
+import { DouqiControlStrategy } from '@/systems/control/DouqiControlStrategy';
 import {
   buildAttackCircle,
   buildAttackFan,
@@ -98,8 +100,8 @@ export class PlayerControlSystem implements GameSystem {
 
   // ---- 十六輪：充能式衝刺 -------------------------------------------------
 
-  /** 取某玩家衝刺充能狀態（惰性建立，初始滿格）。 */
-  private dashChargeOf(playerId: number): DashChargeState {
+  /** 取某玩家衝刺充能狀態（惰性建立，初始滿格）。@internal 供 control strategy 委派呼叫（body 不動）。 */
+  dashChargeOf(playerId: number): DashChargeState {
     let s = this.dashCharge.get(playerId);
     if (!s) {
       s = makeDashChargeState(this.dashMaxChargesOf());
@@ -108,13 +110,13 @@ export class PlayerControlSystem implements GameSystem {
     return s;
   }
 
-  /** 衝刺最大充能格數（讀已解析 dash 參數；override 優先）。 */
-  private dashMaxChargesOf(): number {
+  /** 衝刺最大充能格數（讀已解析 dash 參數；override 優先）。@internal 供 control strategy 委派呼叫。 */
+  dashMaxChargesOf(): number {
     return getResolvedDash().maxCharges;
   }
 
-  /** 每格衝刺回充時間（秒）。 */
-  private dashCooldownDurationOf(): number {
+  /** 每格衝刺回充時間（秒）。@internal 供 control strategy 委派呼叫。 */
+  dashCooldownDurationOf(): number {
     return getResolvedDash().cooldownDuration;
   }
 
@@ -141,27 +143,46 @@ export class PlayerControlSystem implements GameSystem {
   private lastCircle: AttackCircle | null = null;
   private lastFan: AttackFan | null = null;
   private shapeFlash = 0;
+  /** ★階段 1：當前操控策略（init 依 ctx.gameMode 選；update 委派）。normal→現有操控、douqi→鬥氣操控。 */
+  private strategy!: IPlayerControlStrategy;
+
+  // --- @internal：供 control strategy 委派呼叫的存取器（body 不動，只暴露既有 state 給策略） ---
+  /** @internal ctx（NormalControlStrategy.update 迴圈用 ctxRef.players）。 */
+  get ctxRef(): GameContext {
+    return this.ctx;
+  }
+  /** @internal 衝刺充能 Map（NormalControlStrategy.update 每幀 tick 回寫）。 */
+  get dashChargeMap(): Map<number, DashChargeState> {
+    return this.dashCharge;
+  }
+  /** @internal 判定形狀閃現殘留（NormalControlStrategy.update 尾端衰減）。 */
+  get shapeFlashRef(): number {
+    return this.shapeFlash;
+  }
+  /** @internal 判定形狀閃現衰減（原 update 尾端 `this.shapeFlash -= dt`，body 不動語意）。 */
+  decShapeFlash(dt: number): void {
+    this.shapeFlash -= dt;
+  }
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
-    // ★鬥氣模式階段 0 骨架：頂層分流錨點＝ctx.gameMode（已在 GameContext）。階段 0 兩模式皆走現有操控（douqi 佔位）；
-    //   階段 1+（衝刺代移動/融合瞄準/連段）在此依 ctx.gameMode 換策略物件，不在 update 插爛 if。
+    // ★鬥氣模式階段 1：依 ctx.gameMode 選操控策略（頂層分流錨點）。normal→現有操控（byte 同現況）；
+    //   douqi→鬥氣操控（commit1 先委派 Normal 佔位、commit2 才填衝刺/融合瞄準/衝刺攻擊）。
+    this.strategy = ctx.gameMode === 'douqi'
+      ? new DouqiControlStrategy(this)
+      : new NormalControlStrategy(this);
   }
 
   update(dt: number): void {
-    // buff 倍率/護盾每幀套（目前只影響 P1 玩家實體；per-player buff 之後 S5 再細分）。
-    this.applyBuffState();
-    // S4：對每個 player（P1 人類 + P2-P4 AI）各自跑操控結算。
-    for (const player of this.ctx.players) {
-      // 十六輪：衝刺充能逐格回充（每幀推進，不受待機/進場影響）。
-      this.dashCharge.set(player.playerId, tickDashCharge(this.dashChargeOf(player.playerId), dt, this.dashMaxChargesOf(), this.dashCooldownDurationOf()));
-      this.updatePlayer(player, dt);
-    }
-    if (this.shapeFlash > 0) this.shapeFlash -= dt;
+    // ★階段 1：委派操控策略（normal＝現有 update body 逐字搬進 NormalControlStrategy；douqi＝鬥氣操控）。
+    this.strategy.update(dt);
   }
 
-  /** 單一 player 的操控主迴圈（人類/AI 皆同，只差 InputSource）。 */
-  private updatePlayer(player: GameContext['player'], dt: number): void {
+  /**
+   * @internal 供 control strategy 委派呼叫（NormalControlStrategy.update 逐字搬用）。body 不動、僅可見性放寬。
+   * 單一 player 的操控主迴圈（人類/AI 皆同，只差 InputSource）。
+   */
+  updatePlayer(player: GameContext['player'], dt: number): void {
     const { energy, credit } = this.ctx;
     const pid = player.playerId;
 
@@ -426,8 +447,11 @@ export class PlayerControlSystem implements GameSystem {
     }
   }
 
-  /** 依 BuffSystem 聚合倍率設定玩家 stat 倍率/護盾（同 stat 多來源已相乘+clamp）。 */
-  private applyBuffState(): void {
+  /**
+   * @internal 供 control strategy 委派呼叫（NormalControlStrategy.update 逐字搬用）。body 不動、僅可見性放寬。
+   * 依 BuffSystem 聚合倍率設定玩家 stat 倍率/護盾（同 stat 多來源已相乘+clamp）。
+   */
+  applyBuffState(): void {
     const { buff, player } = this.ctx;
     // 移速 / 衝刺速度：用聚合倍率（單點 getStatMultiplier，含 clamp）。
     player.setSpeedMultiplier(buff.getStatMultiplier('moveSpeed'));
@@ -575,9 +599,35 @@ export class PlayerControlSystem implements GameSystem {
     }
   }
 
+  /**
+   * @internal 鬥氣模式（階段 1 commit2）衝刺揮擊命中：★走現有 takeHit（a655c53d ContactSolver/傷害路徑），
+   *   不自造判定/傷害；把 v45 damage/knockback 餵進去，並比照 resolveDashHits 做傷害歸屬/Credit/COMBO/JP 記帳。
+   *   只 DouqiControlStrategy 呼叫；normal 路徑不觸及。
+   * @param player 攻擊者。
+   * @param enemy 命中目標（呼叫端已確保鎖定/存活/在攻擊半徑內）。
+   * @param damage v45 attackDamage。
+   * @param knockback v45 knockback。
+   */
+  applyDouqiSwingHit(player: GameContext['player'], enemy: Enemy, damage: number, knockback: number): void {
+    if (typeof enemy.isDead === 'function' && enemy.isDead()) return;
+    const attackerId = player.playerId;
+    const pos = player.getPosition();
+    const c = enemy.getHitCenter();
+    // 擊退方向＝由玩家指向敵人（takeHit 以 enemy - fromPos 為方向；fromPos=玩家位置→沿玩家→敵人推）。
+    enemy.takeHit(damage, knockback, { x: pos.x, y: pos.y });
+    enemy.recordDamageFrom(attackerId, damage); // per-enemy 傷害歸屬
+    this.ctx.jp.recordDamage(attackerId, damage); // per-player 貢獻（additive）
+    // Credit 扣 + COMBO + JP 共享池（一次揮擊一次）。
+    this.ctx.credit.consumeOnHit(attackerId);
+    this.ctx.combo.onHit(attackerId);
+    this.ctx.jp.notifyCreditSpent(1);
+    void c;
+  }
+
   /** 十一輪#2：存活敵人 hitCenter 清單（auto-aim 找最近怪用）。dead 排除。 */
   private enemyHitCenters(): Vec2[] {
     const out: Vec2[] = [];
+
     for (const e of this.ctx.getEnemies()) {
       if (typeof e.isDead === 'function' && e.isDead()) continue;
       out.push(e.getHitCenter());

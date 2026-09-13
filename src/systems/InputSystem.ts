@@ -194,6 +194,13 @@ export class InputSystem implements GameSystem, InputSource {
     return this.justPressedNow.dash;
   }
 
+  /** ★鬥氣模式（階段 1）：滑鼠世界座標（瞄準用）。讀 activePointer 世界座標（受 camera scroll/zoom 影響已換算）。 */
+  getPointerWorld(): { x: number; y: number } | null {
+    const p = this.scene.input.activePointer;
+    if (!p) return null;
+    return { x: p.worldX, y: p.worldY };
+  }
+
   /** 投幣鍵（C）的 edge。 */
   justPressedCoin(): boolean {
     return this.justPressedNow.coin;
