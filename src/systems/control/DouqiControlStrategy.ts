@@ -151,6 +151,7 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     st.dashing = true;
     st.dashTraveledPx = 0;
     player.setShielded?.(true);
+    player.setDashThrough?.(true); // ★衝刺穿透旗標：吃 EnemySpawner 現有穿透豁免，穿過菁英/塔進 reach 揮擊（v45 dashThrough）
     // ★視覺回饋③：衝刺起手朝向+move 動畫+殘影。
     const dir = { x: st.dashTarget.x - origin.x, y: st.dashTarget.y - origin.y };
     player.beginDouqiDashVisual?.(dir);
@@ -303,6 +304,7 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     st.lockedEnemy = null;
     st.dashTraveledPx = 0;
     player.setShielded?.(false);
+    player.setDashThrough?.(false); // ★收尾清穿透旗標（衝刺結束不再穿透，恢復被 immovable 擋）
     // ★視覺收尾：回 idle 動畫、停護盾 fx。鎖定框不在此收（下幀瞄準 tick 會依當前滑鼠重判顯示/收）。
     player.endDouqiDashVisual?.();
     if (st.dashShield) { this.sys.ctxRef.effects?.endPlayerDashShield?.(st.dashShield); st.dashShield = null; }

@@ -161,6 +161,7 @@ export class EnemySpawner {
       isSurroundActive: () =>
         !(p.isWaiting?.() ?? false) &&
         !(p.isDashing?.() ?? false) &&
+        !(p.isDashThrough?.() ?? false) &&
         !(p.isOutOfCredit?.() ?? false),
     };
     this.surroundAdapters.set(p as unknown as object, adapter);
@@ -348,7 +349,7 @@ export class EnemySpawner {
     // 真空帶半徑用 getVacuumRadius（=FOOT_GLOW 50）、中心用 getVacuumCenter（身體中心, 七輪#8）。
     // 七輪#11：衝刺中的玩家排除（isDashing→真空判定失效, 敵人不被其真空推開, 玩家衝刺直直穿）。對齊 Unity。
     const players = this.getAllPlayers()
-      .filter((p) => !(p.isDashing?.() ?? false))
+      .filter((p) => !((p.isDashing?.() ?? false) || (p.isDashThrough?.() ?? false)))
       .map((p) => ({
         pos: p.getVacuumCenter?.() ?? p.getHitCenter(),
         hitRadius: p.getVacuumRadius?.() ?? p.getHitRadius(),
@@ -367,7 +368,7 @@ export class EnemySpawner {
       const ec = e.getHitCenter();
       const er = e.getHitRadius();
       for (const p of this.getAllPlayers()) {
-        if (p.isDashing?.()) continue; // 衝刺穿過菁英, 不被擋
+        if (p.isDashing?.() || p.isDashThrough?.()) continue; // 衝刺穿過菁英, 不被擋（★鬥氣衝刺 dashThrough 同穿透）
         const pc = p.getVacuumCenter?.() ?? p.getHitCenter();
         const vac = p.getVacuumRadius?.() ?? p.getHitRadius();
         const fixed = pushOutOfPlayer(pc, ec, er + vac);

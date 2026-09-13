@@ -106,6 +106,9 @@ export class Player implements Hittable {
 
   /** 衝刺狀態。 */
   private dashing = false;
+  /** ★鬥氣模式衝刺穿透旗標（獨立於 normal 的 dashing；只給 EnemySpawner 的衝刺穿透豁免看，
+   *   ★不驅動 normal 的 updateDash/dashing 語意——normal 衝刺仍完全靠 this.dashing，本旗標不污染）。 */
+  private dashThrough = false;
   private dashRemaining = 0;
   private dashDir: Vec2 = { x: 0, y: 0 };
   /** 本次衝刺已命中過的敵人（去重，一隻一次）。 */
@@ -779,6 +782,20 @@ export class Player implements Hittable {
 
   isDashing(): boolean {
     return this.dashing;
+  }
+
+  /**
+   * ★鬥氣模式衝刺穿透旗標（獨立於 dashing）：EnemySpawner 的衝刺穿透豁免（surround/vacuum/immovable push-out）
+   *   改讀 isDashing() || isDashThrough()，讓鬥氣 setPosition 衝刺也能穿過敵人/菁英（v45 dashThrough）。
+   *   ★不影響 normal：normal 的 updateDash/dashing 完全靠 this.dashing，不讀本旗標。
+   */
+  isDashThrough(): boolean {
+    return this.dashThrough;
+  }
+
+  /** ★設鬥氣衝刺穿透旗標（DouqiControlStrategy 衝刺起手 true、收尾 false）。純旗標、不動 dashing/位移。 */
+  setDashThrough(on: boolean): void {
+    this.dashThrough = on;
   }
 
   /** 目前衝刺方向（正規化）。 */
