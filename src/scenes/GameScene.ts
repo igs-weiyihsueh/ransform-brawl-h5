@@ -278,7 +278,10 @@ export class GameScene extends Phaser.Scene {
     };
 
     // 用戶 #3 收尾：JP 燈 HUD（3組×5顆，機台 jackpot 三層感），每幀反映 JpSystem litCount。
-    this.jpLampHud = new JpLampHud(this);
+    // ★鬥氣模式(用戶(i))：隱藏 JP 拉霸燈 HUD（150/300/600 tier+燈點刻度跟 DouqiExpBar Lv 貼太近擁擠；
+    //   鬥氣不玩 JP 拉霸）——douqi 不建 JpLampHud（★JpSystem gameplay 保留、只隱藏燈 HUD；
+    //   this.jpLampHud 所有用處皆 ?. 可選→不建即安全 no-op）。normal 仍建、byte 不變。
+    if (this.gameMode !== 'douqi') this.jpLampHud = new JpLampHud(this);
     // ★階段 3 commit4：鬥氣模式建經驗條 HUD（用戶要 B 顯示 teamLevel+經驗條）；normal 不建＝HUD 不變。
     if (this.gameMode === 'douqi') this.douqiExpBar = new DouqiExpBar(this);
 

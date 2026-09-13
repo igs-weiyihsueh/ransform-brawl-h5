@@ -20,13 +20,13 @@ export class DouqiExpBar {
     this.x = GAME_WIDTH / 2;
     const depth = 2000; // HUD 最上層
     this.barBg = scene.add
-      .rectangle(this.x, this.y, this.barWidth, this.barHeight, 0x1b2b4a, 0.85)
-      .setStrokeStyle(2, 0x8fd3ff)
+      .rectangle(this.x, this.y, this.barWidth, this.barHeight, 0x2a2010, 0.85) // 暖色深底（金框內）
+      .setStrokeStyle(2, 0xffd24d) // ★金色框（原藍框 0x8fd3ff→金，用戶要金色）
       .setOrigin(0.5, 0)
       .setScrollFactor(0)
       .setDepth(depth);
     this.barFill = scene.add
-      .rectangle(this.x - this.barWidth / 2, this.y, 0, this.barHeight, 0xffd24d, 1)
+      .rectangle(this.x - this.barWidth / 2, this.y, 0, this.barHeight, 0xffd24d, 1) // 金色填充
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(depth + 1);
