@@ -61,8 +61,19 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
         continue;
       }
 
-      // 2) 非戰鬥守衛（待機/被暈/被抓）→ 委派普通路徑（投幣/變身/掙脫/暈眩照舊），不套鬥氣。
-      if (player.isWaiting?.() || player.isStunned?.() || player.isGrabbed?.()) {
+      // 2) ★非「完全可操作」狀態一律委派普通路徑 sys.updatePlayer（不套鬥氣）——
+      //    ★★根因修（用戶實機 bug）：投幣後 waiting→isTransformFloating（變身浮起）→isEntering（降臨），
+      //    這串「進場流程」全在 updatePlayer 內推進。原本守衛只擋 isWaiting，導致按 C 離開待機進入
+      //    isTransformFloating 後 douqi 就搶去跑 tickPlayer→變身/降臨不再推進→卡原地、沒變身、沒進場。
+      //    故委派條件擴為：待機 / 變身浮起中 / 降臨中 / 被暈 / 被抓 / 導引走位鎖操作。全部走普通路徑照舊。
+      if (
+        this.sys.ctxRef.scriptedControl ||
+        player.isWaiting?.() ||
+        player.isTransformFloating?.() ||
+        player.isEntering?.() ||
+        player.isStunned?.() ||
+        player.isGrabbed?.()
+      ) {
         // 若此幀正處於衝刺，先安全收尾（關護盾），避免守衛期間留著無敵旗標。
         this.endDash(player);
         this.sys.updatePlayer(player, dt);
