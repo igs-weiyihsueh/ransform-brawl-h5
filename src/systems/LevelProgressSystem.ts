@@ -67,6 +67,8 @@ export class LevelProgressSystem implements GameSystem {
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
+    // ★鬥氣模式階段 0 骨架：關卡推進分流錨點＝ctx.gameMode。階段 0 兩模式同走現有 block-offset 推進（douqi 佔位）；
+    //   階段 3 鬥氣關卡流程時依 ctx.gameMode 分流，normal 路徑不動。
     this.wave = ctx.wave as unknown as LevelAdvanceWave;
     this.prevOnLevelCleared = this.wave.onLevelCleared;
     this.wave.onLevelCleared = () => {

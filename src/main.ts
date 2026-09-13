@@ -53,7 +53,7 @@ if (isPreviewMode()) {
   const bridge = new PreviewBridge((levels) => {
     // 收到並雙重驗證通過的關卡 → 以 previewLevels 啟動/重啟 GameScene。
     game.scene.stop('BootScene');
-    game.scene.start('GameScene', { previewLevels: levels });
+    game.scene.start('GameScene', { previewLevels: levels, gameMode: 'normal' });
   });
   bridge.start();
 } else {

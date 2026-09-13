@@ -144,6 +144,8 @@ export class PlayerControlSystem implements GameSystem {
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
+    // ★鬥氣模式階段 0 骨架：頂層分流錨點＝ctx.gameMode（已在 GameContext）。階段 0 兩模式皆走現有操控（douqi 佔位）；
+    //   階段 1+（衝刺代移動/融合瞄準/連段）在此依 ctx.gameMode 換策略物件，不在 update 插爛 if。
   }
 
   update(dt: number): void {

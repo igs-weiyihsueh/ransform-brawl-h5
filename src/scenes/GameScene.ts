@@ -44,6 +44,7 @@ import { WaveSystem } from '@/systems/WaveSystem';
 import { MineTrapSystem } from '@/systems/MineTrapSystem';
 import { LevelProgressSystem } from '@/systems/LevelProgressSystem';
 import { GlobalJuice } from '@/systems/GlobalJuice';
+import { DEFAULT_GAME_MODE, resolveGameMode, type GameMode } from '@/config/gameMode';
 
 /**
  * GameScene — 主場景（系統註冊表版）。
@@ -73,14 +74,22 @@ export class GameScene extends Phaser.Scene {
 
   /** 試玩模式注入的關卡（由 main.ts 經 scene data 傳入）；一般玩家為 undefined。 */
   private previewLevels?: LevelData[];
+  /** ★遊戲模式（鬥氣模式階段 0）：由 BootScene 按鈕/PreviewBridge 帶入；預設 normal＝現況。 */
+  private gameMode: GameMode = DEFAULT_GAME_MODE;
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
-  /** 接收 scene.start 傳入的資料（試玩模式帶 previewLevels）。 */
-  init(data?: { previewLevels?: LevelData[] }): void {
+  /** 接收 scene.start 傳入的資料（試玩模式帶 previewLevels；模式選擇帶 gameMode）。 */
+  init(data?: { previewLevels?: LevelData[]; gameMode?: GameMode }): void {
     this.previewLevels = data?.previewLevels;
+    this.gameMode = resolveGameMode(data?.gameMode); // ★缺省/非法一律 normal＝現況
+  }
+
+  /** 當前遊戲模式（鬥氣模式階段 0；probe/系統讀取用）。 */
+  getGameMode(): GameMode {
+    return this.gameMode;
   }
 
   /** 載入全部角色逐幀圖 + 攻擊特效 + UI icon。 */
@@ -172,6 +181,7 @@ export class GameScene extends Phaser.Scene {
       getEnemies: () => spawner.getEnemies(),
       scriptedControl: false, // 用戶 #4：守護波開場導引走位時設 true 鎖操作
       guardFocusPause: false, // 守護波聚焦定格：focus 期間 true 凍結玩法系統（聚焦 UI tween 照播）
+      gameMode: this.gameMode, // ★鬥氣模式階段 0：normal（現況預設）| douqi；系統依此頂層分流（階段 0 douqi 先沿用現有佔位）
     };
 
     // 能量飛光需在擊殺回呼裡取寶盒 UI 錨點：UISystem 提前建立（存 field，registerSystems 再註冊）。
@@ -224,7 +234,7 @@ export class GameScene extends Phaser.Scene {
       /** probe 用：直接觸發塔波 onTowerWave（模擬波騎 gate 跑完），驗開場序列（聚集→聚焦→生塔）。 */
       triggerWave: (preset: unknown) => wave.onTowerWave?.(preset as never),
       /** probe 用：讀開場定格/鎖操作旗標。 */
-      flags: () => ({ scriptedControl: this.ctx.scriptedControl, guardFocusPause: this.ctx.guardFocusPause }),
+      flags: () => ({ scriptedControl: this.ctx.scriptedControl, guardFocusPause: this.ctx.guardFocusPause, gameMode: this.ctx.gameMode }),
       /** probe 用（第 4 塊）：讀生效時間縮放 + 是否 hitstop 中。 */
       juiceState: () => ({ scale: this.globalJuice.getEffectiveScale(), hitstop: this.globalJuice.isHitstopped() }),
       /** probe 用（第 4 塊）：觸發 Boss 級衝擊（camera.shake + 全域 hitstop）。 */

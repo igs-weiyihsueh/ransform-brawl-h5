@@ -410,6 +410,8 @@ export class WaveSystem implements GameSystem {
 
   init(ctx: GameContext): void {
     this.ctx = ctx;
+    // ★鬥氣模式階段 0 骨架：關卡驅動分流錨點＝ctx.gameMode。階段 0 douqi 沿用本 WaveSystem 關卡（佔位）；
+    //   階段 3 鬥氣關卡流程時，GameScene 依 ctx.gameMode 改裝 DouqiLevelSystem，此處 normal 路徑不動。
     if (this.levels) {
       this.enterNode(0);
       return;

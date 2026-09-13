@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import type { GameMode } from '@/config/gameMode';
 import type { Enemy } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import type { ChestSystem } from '@/systems/ChestSystem';
@@ -110,4 +111,11 @@ export interface GameContext {
    * GuardEvent beginFocus 設 true、endFocus/forceFinish 設 false（務必解除乾淨不卡死）。可變。
    */
   guardFocusPause: boolean;
+
+  /**
+   * ★遊戲模式（鬥氣模式階段 0 骨架）：'normal'（現況，預設）| 'douqi'（鬥氣模式）。
+   * 由 BootScene 模式選擇/PreviewBridge 帶入 GameScene.init。系統可依此頂層分流不同關卡/戰鬥驅動；
+   * ★階段 0：douqi 先沿用現有戰鬥/關卡當佔位（gate 預留、不做鬥氣邏輯），normal 走現有路徑原封不動。唯讀。
+   */
+  readonly gameMode: GameMode;
 }
