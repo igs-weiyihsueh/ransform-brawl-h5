@@ -167,7 +167,9 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     const candidates: AimCandidate[] = [];
     for (let i = 0; i < enemies.length; i++) {
       const e = enemies[i];
-      if (e.isDead() || e.isTower()) continue;
+      // ★階段 1 小補：塔(isTower) 納入候選（用戶選 b：鬥氣能鎖定+衝刺打塔）。塔也 immovable→dashThrough 穿透通用、
+      //   塔本有 hp→takeHit 扣血（跟菁英同路徑）。塔完整攻擊/預警/定身＝階段 4 三事件才做。只排除已死。
+      if (e.isDead()) continue;
       const c = e.getHitCenter();
       candidates.push({ id: i, x: c.x, y: c.y, isItem: false });
     }
