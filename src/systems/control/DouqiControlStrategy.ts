@@ -3,6 +3,7 @@ import type { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import type { GameContext } from '@/systems/GameContext';
 import type { Enemy } from '@/entities/Enemy';
 import { DOUQI_CONTROL_CONFIG } from '@/config/douqiConfig';
+import { effectivePlayerBounds } from '@/config/mapConfig';
 import { selectFusionTarget, type AimCandidate } from '@/systems/fusionAimMath';
 
 /** 衝刺目標種類（v45 模型）：鎖怪 / 指空地走位 / 朝道具（階段 1 道具走位未啟用，保留列舉）。 */
@@ -112,18 +113,18 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     });
 
     if (selectedId != null) {
-      // 鎖到敵人：衝向其 hitCenter，到達 attackReach 內揮擊。
+      // 鎖到敵人：衝向其 hitCenter，到達 attackReach 內揮擊。★終點先 clamp 到場地內（主防線）。
       const enemy = enemies[selectedId];
       const c = enemy.getHitCenter();
-      st.dashTarget = { x: c.x, y: c.y };
+      st.dashTarget = this.clampToArena(c.x, c.y);
       st.dashMode = 'enemy';
       st.lockedEnemy = enemy;
     } else {
-      // 錐內無怪：朝滑鼠方向走位 dashDistancePx。
-      st.dashTarget = {
-        x: origin.x + Math.cos(aimAngle) * this.cfg.dashDistancePx,
-        y: origin.y + Math.sin(aimAngle) * this.cfg.dashDistancePx,
-      };
+      // 錐內無怪：朝滑鼠方向走位 dashDistancePx。★終點先 clamp（滑鼠指場外→夾到邊緣、衝到邊停不出界/不進面板）。
+      st.dashTarget = this.clampToArena(
+        origin.x + Math.cos(aimAngle) * this.cfg.dashDistancePx,
+        origin.y + Math.sin(aimAngle) * this.cfg.dashDistancePx,
+      );
       st.dashMode = 'empty';
       st.lockedEnemy = null;
     }
@@ -135,20 +136,19 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     player.setShielded?.(true);
   }
 
-  /** 衝刺推進一幀：移動、鎖怪到達判定、收尾條件。 */
+  /** 衝刺推進一幀：移動、鎖怪到達判定、★邊界 clamp + 防震盪（v45 三重處理，dashSpeed1400 必備）。 */
   private advanceDash(player: GameContext['player'], st: DouqiPlayerState, dt: number): void {
     const pos = player.getPosition();
 
-    // enemy 模式：目標會移動 → 每幀重取鎖定敵人 hitCenter；敵人死亡→轉為朝原點空走收尾。
+    // enemy 模式：目標會移動 → 每幀重取鎖定敵人 hitCenter（★同樣 clamp 到場內）；敵人死亡→轉空走收尾。
     if (st.dashMode === 'enemy') {
       const enemy = st.lockedEnemy;
       if (enemy == null || enemy.isDead()) {
-        // 目標消失：退化成空地走位（就地朝原目標推完剩餘距離後收尾）。
         st.dashMode = 'empty';
         st.lockedEnemy = null;
       } else {
         const c = enemy.getHitCenter();
-        st.dashTarget = { x: c.x, y: c.y };
+        st.dashTarget = this.clampToArena(c.x, c.y);
       }
     }
 
@@ -169,11 +169,13 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     // 本幀步進距離。
     const step = this.cfg.dashSpeedPxPerSec * dt;
 
-    // 到達落點（step 已可覆蓋剩餘距離）：貼齊落點後收尾。
-    if (distToTarget <= step || distToTarget < 1e-6) {
-      player.setPosition(st.dashTarget.x, st.dashTarget.y);
+    // ★防震盪②：結束門檻隨速度放大（stopDist = max(12, dashSpeed×0.032)）——剩餘距離 < 這一步會走的量
+    //   就直接停+收尾，不設反向速度（否則高速貼牆會來回抖）。
+    const stopDist = Math.max(12, this.cfg.dashSpeedPxPerSec * 0.032);
+    if (distToTarget <= stopDist || distToTarget < 1e-6) {
+      const snap = this.clampToArena(st.dashTarget.x, st.dashTarget.y);
+      player.setPosition(snap.x, snap.y);
       st.dashTraveledPx += distToTarget;
-      // enemy 模式貼到中心（極近）也視為到位 → 揮擊；empty/item 到點收尾。
       if (st.dashMode === 'enemy' && st.lockedEnemy != null && !st.lockedEnemy.isDead()) {
         this.performAttackOn(player, st.lockedEnemy);
       }
@@ -183,15 +185,37 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
 
     // 正常推進：朝目標移動 step。
     const inv = 1 / distToTarget;
-    const nx = pos.x + dx * inv * step;
-    const ny = pos.y + dy * inv * step;
-    player.setPosition(nx, ny);
+    const rawX = pos.x + dx * inv * step;
+    const rawY = pos.y + dy * inv * step;
+
+    // ★每幀位置 clamp②：即使高速一幀 overshoot 過界，夾回場內。
+    const clamped = this.clampToArena(rawX, rawY);
+    player.setPosition(clamped.x, clamped.y);
     st.dashTraveledPx += step;
+
+    // ★★防震盪①：若這一幀被邊界夾回（撞界）→ 直接 endDashState（速度歸零、撞牆立即停、
+    //   不再反向外衝、不卡 isDashing 導致「貼牆一直晃、能瞄不能衝」的 v41 血淚 bug）。
+    if (clamped.x !== rawX || clamped.y !== rawY) {
+      this.endDash(player);
+      return;
+    }
 
     // 空地/道具走位：累計超過 dashDistancePx → 收尾（鎖怪不受此限，追到為止）。
     if ((st.dashMode === 'empty' || st.dashMode === 'item') && st.dashTraveledPx >= this.cfg.dashDistancePx) {
       this.endDash(player);
     }
+  }
+
+  /**
+   * ★衝刺邊界 clamp（v45 主防線）：把座標夾到 playfield 內（含角色半徑 inset）。
+   *   arena＝effectivePlayerBounds()（offset-aware 現成；maxY 已是 playfield 底＝下方 UI 面板上緣，衝刺不進面板區）。
+   */
+  private clampToArena(x: number, y: number): { x: number; y: number } {
+    const b = effectivePlayerBounds();
+    const r = this.cfg.bodyRadiusPx;
+    const cx = Math.min(Math.max(x, b.minX + r), b.maxX - r);
+    const cy = Math.min(Math.max(y, b.minY + r), b.maxY - r);
+    return { x: cx, y: cy };
   }
 
   /** 揮擊命中：走 PlayerControlSystem 的 helper（用現有 takeHit/ContactSolver，不自造傷害）。 */
