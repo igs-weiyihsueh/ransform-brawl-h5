@@ -327,3 +327,55 @@ export const DOUQI_EVENT_REWARD_CONFIG: DouqiEventRewardConfig = {
   dropRingPx: 60,
   expKills: 20,
 };
+
+/**
+ * ★鬥氣 BOSS 設定（階段 5，第10關最終王）。海牛 v45 值。★BOSS 招 a 圓/c 扇形/d 半場 = towerRingSkill/技能三層
+ * 形狀區域 telegraph→fire pattern（塔四扇形做過）；固定場中央不動；HP 接 teamLevel curEnemyHpScale。
+ */
+export interface DouqiBossConfig {
+  maxHp: number; // base HP（×(1+(bossCount-1)×hpGrowthPerBoss)×curEnemyHpScale）
+  hpGrowthPerBoss: number;
+  radiusPx: number;
+  skillFillMs: number; // 招填滿預警時長→填滿發射
+  skillDamage: number; // a/c/d 命中傷害（走 curEnemyDamageScale）
+  skillRootMs: number; // a/c/d 命中定身
+  skillGapMs: number; // ★招間隔（從釋放完起算，非蓄力開始）
+  // a 圓
+  aRadiusPx: number;
+  // c 扇形
+  cRangePx: number;
+  cArcDeg: number; // 250°（留 110°缺口）
+  // d 左右半場接力
+  dHalfOverlap: number; // 左半 fill 到此比例時右半開始 fill
+  // 空檔 gap 球
+  gapBallIntervalMs: number;
+  gapBallSpeedPxPerSec: number;
+  gapBallRadiusPx: number;
+  gapBallDamage: number;
+  // 掉道具
+  dropCount: number; // 打倒掉幾個
+  dropDistPx: number; // 打倒掉落環半徑
+  dropEveryDamage: number; // 每累積受此傷→掉 1
+  dropScatterPx: number; // 過程掉落散佈
+}
+export const DOUQI_BOSS_CONFIG: DouqiBossConfig = {
+  maxHp: 3000,
+  hpGrowthPerBoss: 0.15,
+  radiusPx: 42,
+  skillFillMs: 4000,
+  skillDamage: 30,
+  skillRootMs: 2000,
+  skillGapMs: 3000,
+  aRadiusPx: 260,
+  cRangePx: 500,
+  cArcDeg: 250,
+  dHalfOverlap: 0.5,
+  gapBallIntervalMs: 900,
+  gapBallSpeedPxPerSec: 320,
+  gapBallRadiusPx: 12,
+  gapBallDamage: 15,
+  dropCount: 4,
+  dropDistPx: 170,
+  dropEveryDamage: 600,
+  dropScatterPx: 90,
+};

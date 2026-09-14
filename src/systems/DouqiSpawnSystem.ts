@@ -25,6 +25,7 @@ import { pickWeightedType } from '@/systems/waveMath'; // ★單一來源：波�
 import { DouqiTowerEvent } from '@/systems/DouqiTowerEvent';
 import { DouqiGuardEvent } from '@/systems/DouqiGuardEvent';
 import { DouqiCaptureEvent } from '@/systems/DouqiCaptureEvent';
+import { DouqiBossEvent } from '@/systems/DouqiBossEvent';
 
 /** 生怪驅動狀態機。 */
 export type DouqiWaveState = 'spawning' | 'clearing' | 'intermission' | 'boss' | 'event' | 'won';
@@ -71,11 +72,14 @@ export class DouqiSpawnSystem implements GameSystem {
   private readonly onPlayerHitEnergy: (playerId: number) => void;
   /** ★事件成功獎勵回呼（GameScene 注入：發經驗/掉道具佔位）。 */
   private readonly grantEventReward: (expKills: number, dropCount: number, dropRingPx: number) => void;
+  /** ★BOSS 共屏衝擊（GameScene 注入自 globalJuice.triggerBossImpact；Boss-gate）。 */
+  private readonly bossImpact: () => void;
 
   /** 當前事件（塔）。守護/佔領 commit2 加。 */
   private towerEvent: DouqiTowerEvent | null = null;
   private guardEvent: DouqiGuardEvent | null = null;
   private captureEvent: DouqiCaptureEvent | null = null;
+  private bossEvent: DouqiBossEvent | null = null;
   private eventKind: DouqiEventKind = 'none';
 
   private state: DouqiWaveState = 'spawning';
@@ -99,11 +103,13 @@ export class DouqiSpawnSystem implements GameSystem {
     scaleEnemy: (enemy: Enemy, baseHp: number, baseDamage: number) => void,
     onPlayerHitEnergy: (playerId: number) => void,
     grantEventReward: (expKills: number, dropCount: number, dropRingPx: number) => void,
+    bossImpact: () => void,
   ) {
     this.getTeamLevel = getTeamLevel;
     this.scaleEnemy = scaleEnemy;
     this.onPlayerHitEnergy = onPlayerHitEnergy;
     this.grantEventReward = grantEventReward;
+    this.bossImpact = bossImpact;
   }
 
   init(ctx: GameContext): void {
@@ -148,8 +154,7 @@ export class DouqiSpawnSystem implements GameSystem {
         if (this.now() >= this.intermissionUntil) this.advanceToNextWave();
         break;
       case 'boss':
-        // ★佔位：BOSS 具體留階段 5（簡單清場過關、不卡流程）。
-        this.tickPlaceholder(dtMs);
+        this.tickBoss(dt, dtMs);
         break;
       case 'event':
         this.tickEvent(dt, dtMs);
@@ -229,8 +234,7 @@ export class DouqiSpawnSystem implements GameSystem {
     // 達 quota 分流。
     if (isBossWave(this.currentWave, this.cfg.totalWaves)) {
       this.state = 'boss';
-      this.placeholderElapsedMs = 0;
-      this.spawnBossPlaceholder();
+      this.startBoss();
     } else if (isEventWave(this.currentWave, this.cfg.totalWaves, this.cfg.eventWaves)) {
       this.state = 'event';
       this.placeholderElapsedMs = 0;
@@ -283,10 +287,39 @@ export class DouqiSpawnSystem implements GameSystem {
     }
   }
 
-  // ---- BOSS / 事件 佔位（具體留階段 5 / 4，佔位不卡流程）----
-  private spawnBossPlaceholder(): void {
-    // 階段 5 具體 spawnBoss（大血量 Boss + 專屬行為）。佔位：不生額外物、短暫後過關（打倒第10關即通關）。
-    // 目前佔位＝placeholder 計時到 → 通關（第10關）或進 intermission。
+  // ---- BOSS（階段 5，第10關最終王）----
+  /** 出場：建 DouqiBossEvent + 生 BOSS（bossCount 用 wave/totalWaves＝第幾輪 BOSS，第10關=1）。 */
+  private startBoss(): void {
+    const bossCount = Math.max(1, Math.floor(this.currentWave / this.cfg.totalWaves));
+    this.bossEvent = new DouqiBossEvent(
+      this.ctx,
+      this.getTeamLevel,
+      this.onPlayerHitEnergy,
+      this.bossImpact,
+      (kills: number) => this.grantEventReward(kills, 0, 0),
+    );
+    this.bossEvent.start(bossCount);
+  }
+
+  private tickBoss(dt: number, dtMs: number): void {
+    if (this.bossEvent) {
+      this.bossEvent.update(dt);
+      if (this.bossEvent.isComplete()) {
+        // ★打倒最終 BOSS＝通關（第10關 isBossWave）。
+        this.bossEvent.destroy();
+        this.bossEvent = null;
+        this.state = 'won';
+      }
+      return;
+    }
+    // 無 bossEvent（不該發生）佔位：不卡流程。
+    this.placeholderElapsedMs += dtMs;
+    if (this.placeholderElapsedMs >= 1200) this.state = 'won';
+  }
+
+  /** BOSS 血條 ratio（僅 boss；其他回 -1）。 */
+  getBossHpRatio(): number {
+    return this.state === 'boss' && this.bossEvent ? this.bossEvent.getBossHpRatio() : -1;
   }
 
   // ---- 事件（階段 4；塔 commit1，守護/佔領 commit2）----
@@ -376,18 +409,6 @@ export class DouqiSpawnSystem implements GameSystem {
     if (this.eventKind === 'guard' && this.guardEvent) return this.guardEvent.getRemainSec();
     if (this.eventKind === 'capture' && this.captureEvent) return this.captureEvent.getRemainSec();
     return -1;
-  }
-
-  private tickPlaceholder(dtMs: number): void {
-    this.placeholderElapsedMs += dtMs;
-    // 佔位期間清完就過（不卡流程）：短暫延遲後分流。
-    if (this.placeholderElapsedMs < 1200) return;
-    if (this.state === 'boss' && this.currentWave >= this.cfg.totalWaves) {
-      this.state = 'won'; // 第 10 關 BOSS 佔位打完＝通關（triggerClear 由 GameScene 讀 state 接 GameOverScene won）。
-      return;
-    }
-    // 事件關 或 非最終 BOSS 關佔位 → 進喘息。
-    this.enterIntermission();
   }
 
   // ---- helpers ----

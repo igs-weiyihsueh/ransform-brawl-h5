@@ -510,6 +510,8 @@ export class GameScene extends Phaser.Scene {
         (expKills) => {
           for (let i = 0; i < expKills; i += 1) this.playerControlRef?.grantDouqiKillExp?.('Enemy_Rush');
         },
+        // ★BOSS 共屏衝擊（Boss-gate；登場/發招震動）。
+        () => this.globalJuice.triggerBossImpact(),
       );
       this.register(this.douqiSpawn); // 鬥氣生怪驅動（取代 WaveSystem+LevelProgressSystem）
     } else {

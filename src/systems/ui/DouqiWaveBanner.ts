@@ -15,6 +15,8 @@ export interface DouqiWaveInfo {
   getCaptureRatio?(): number;
   /** guard/capture 剩餘秒（倒數；無回 -1）。 */
   getEventRemainSec?(): number;
+  /** BOSS 血條 ratio（0~1；非 boss 回 -1）。 */
+  getBossHpRatio?(): number;
 }
 
 /**
@@ -106,8 +108,10 @@ export class DouqiWaveBanner {
     if (state !== this.lastState) {
       if (state === 'intermission') {
         this.showBanner(`WAVE ${this.lastWave} CLEAR!`, 0x8fffa0);
+      } else if (state === 'boss') {
+        this.showBanner('最終 BOSS 出現!', 0xff4466); // 仿 BOSS 紅字
       } else if (state === 'won') {
-        this.showBanner('ALL CLEAR!', 0xffe066);
+        this.showBanner('通關! 擊倒最終 BOSS', 0xffe066);
       }
     }
     // 進新關 spawning（關卡遞增）：彈「WAVE N」。
@@ -149,6 +153,14 @@ export class DouqiWaveBanner {
       const sec = info.getEventRemainSec?.() ?? -1;
       label = `佔領進度 ${Math.round((ratio < 0 ? 0 : ratio) * 100)}%${sec >= 0 ? `  ⏱ ${Math.ceil(sec)}s` : ''}`;
       barColor = 0x66ff88;
+    } else {
+      // BOSS 戰（state='boss'，eventKind='none'）：讀 BOSS 血條。
+      const bossR = info.getBossHpRatio?.() ?? -1;
+      if (bossR >= 0) {
+        ratio = bossR;
+        label = '最終 BOSS HP';
+        barColor = 0xff2244;
+      }
     }
     const show = ratio >= 0;
     this.eventBar.setVisible(show);
