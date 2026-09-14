@@ -58,6 +58,8 @@ export class DouqiSpawnSystem implements GameSystem {
   private readonly cfg: DouqiSpawnConfig = DOUQI_SPAWN_CONFIG;
   /** 取隊伍等級（GameScene 注入自 playerControlRef.getDouqiTeamLevel）。 */
   private readonly getTeamLevel: () => number;
+  /** ★套鬥氣敵人 scale（GameScene 注入自 playerControlRef.scaleDouqiEnemy；傳 douqi 專屬 base HP/傷）。 */
+  private readonly scaleEnemy: (enemy: Enemy, baseHp: number, baseDamage: number) => void;
 
   private state: DouqiWaveState = 'spawning';
   private currentWave = 1;
@@ -75,8 +77,12 @@ export class DouqiSpawnSystem implements GameSystem {
   /** 佔位事件/BOSS 關的簡單計時（ms）——佔位期間清完就過，不卡流程。 */
   private placeholderElapsedMs = 0;
 
-  constructor(getTeamLevel: () => number) {
+  constructor(
+    getTeamLevel: () => number,
+    scaleEnemy: (enemy: Enemy, baseHp: number, baseDamage: number) => void,
+  ) {
     this.getTeamLevel = getTeamLevel;
+    this.scaleEnemy = scaleEnemy;
   }
 
   init(ctx: GameContext): void {
@@ -166,14 +172,19 @@ export class DouqiSpawnSystem implements GameSystem {
     const slots = computeFormationSlots(config);
     const anchor = this.pickAnchor();
     // ★byWave 解鎖過濾（douqi 語意，我方 filterUnlockedEntries）→ 再丟波騎共用輪盤 pickWeightedType（單一來源）。
+    // ★byWave 解鎖過濾（douqi 語意，我方 filterUnlockedEntries）→ 再丟波騎共用輪盤 pickWeightedType（單一來源）。
+    //   entries 的 enemyType 欄裝**邏輯怪種名**（normal/tank/shooter…），供反查 DOUQI_ENEMY_STATS 專屬 base HP/傷。
     const typeEntries = filterUnlockedEntries(this.enemyTypeEntries(), this.currentWave);
     for (const slot of slots) {
       // ★别一次生超過 quota：生滿即停（殘留由 clearing 收）。
       if (this.spawned >= this.quota) break;
-      const key = pickWeightedType(typeEntries, rng) ?? 'Enemy_Rush';
+      const logicalName = pickWeightedType(typeEntries, rng) ?? 'normal';
+      const stat = DOUQI_ENEMY_STATS[logicalName] ?? DOUQI_ENEMY_STATS.normal;
       const x = anchor.x + slot.x * PPU;
       const y = anchor.y + slot.y * PPU;
-      const enemy = this.ctx.spawner.spawn(key, x, y); // onEnemySpawned 於此吃 teamLevel scale
+      const enemy = this.ctx.spawner.spawn(stat.spawnKey, x, y);
+      // ★套鬥氣專屬 base HP/傷（DOUQI_ENEMY_STATS）× teamLevel scale——修「敵人恆 1~3 HP 秒殺」（原乘 normal config 3/2/10）。
+      this.scaleEnemy(enemy, stat.maxHp, stat.attackDamage);
       this.applyTelegraph(enemy);
       this.spawned += 1;
     }
@@ -321,10 +332,10 @@ export class DouqiSpawnSystem implements GameSystem {
     }));
   }
 
-  /** byWave 解鎖的敵種輪盤項（enemyType = 實際素材 spawnKey；unlockWave 交 filterUnlockedEntries 過濾）。 */
+  /** byWave 解鎖的敵種輪盤項（enemyType = 邏輯怪種名，供反查 DOUQI_ENEMY_STATS 專屬 base；unlockWave 交 filterUnlockedEntries 過濾）。 */
   private enemyTypeEntries(): DouqiSpawnEntry[] {
-    return Object.values(DOUQI_ENEMY_STATS)
-      .filter((s) => s.spawnWeight > 0)
-      .map((s) => ({ enemyType: s.spawnKey, weight: s.spawnWeight, unlockWave: s.unlockWave }));
+    return Object.entries(DOUQI_ENEMY_STATS)
+      .filter(([, s]) => s.spawnWeight > 0)
+      .map(([name, s]) => ({ enemyType: name, weight: s.spawnWeight, unlockWave: s.unlockWave }));
   }
 }

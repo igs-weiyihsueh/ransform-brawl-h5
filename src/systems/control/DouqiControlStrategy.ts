@@ -92,18 +92,40 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
   }
 
   /**
-   * ★階段 3 commit2：鬥氣模式生怪後套 teamLevel 難度 scale（EnemySpawner.onEnemySpawned 於 douqi 呼）。
-   *   敵 HP ×curEnemyHpScale(Lv1×0.35→Lv10 滿)、敵傷 ×curEnemyDamageScale(×0.55→滿)。★只 douqi 生的怪套。
-   *   ★修「怪太弱」病根＝敵人接上 teamLevel（雙軌另一半）。base HP＝敵自身 config hp（現走 WaveSystem normal 關卡怪）。
+   * ★階段 3 commit2 / 實機修：鬥氣模式生怪後套 teamLevel 難度 scale（DouqiSpawnSystem 生怪後直接呼）。
+   *   ★base HP/傷害用**鬥氣專屬 DOUQI_ENEMY_STATS**（90/200/45… + attackDamage），非 enemy 的 normal config hp(3/2/10)——
+   *     修「敵人恆 1~3 HP 秒殺」病根（原乘到 normal 平衡極小值）。呼叫端(DouqiSpawnSystem)已知邏輯怪種 → 傳 base 進來。
+   *   敵 HP = baseHp(douqi) × curEnemyHpScale(Lv1×0.35→Lv10 滿)；敵傷 = baseDamage(douqi) × curEnemyDamageScale(×0.55→滿)，
+   *     用 setDamageMult 相對 enemy 自身攻擊值換算（damageMult = 目標傷/enemy 原攻擊，讓實際輸出＝douqi 傷×scale）。
+   *   ★只 douqi 生的怪套；normal 不呼＝維持原樣 byte 不變。
+   * @param baseHp 鬥氣該怪 base HP（DOUQI_ENEMY_STATS.maxHp）。
+   * @param baseDamage 鬥氣該怪 base 攻擊（DOUQI_ENEMY_STATS 對應攻擊值）；<=0 表用 enemy 原攻擊只套 scale。
    */
-  scaleSpawnedEnemy(enemy: { getMaxHp?: () => number; setMaxHp?: (hp: number) => void; setDamageMult?: (m: number) => void }): void {
+  scaleSpawnedEnemy(
+    enemy: {
+      getMaxHp?: () => number;
+      setMaxHp?: (hp: number) => void;
+      setDamageMult?: (m: number) => void;
+      getBaseAttackDamage?: () => number;
+    },
+    baseHp: number,
+    baseDamage = 0,
+  ): void {
     const cap = DOUQI_LEVEL_CONFIG.cap;
     const lv = this.teamLevelValue;
     const hpScale = levelScale(DOUQI_LEVEL_CONFIG.difficultyLv1.enemyHp, lv, cap);
     const dmgScale = levelScale(DOUQI_LEVEL_CONFIG.difficultyLv1.enemyDamage, lv, cap);
-    const baseHp = enemy.getMaxHp?.() ?? 0;
+    // HP：鬥氣 base × 等級 scale（前期脆是 v45 設計正回饋；Lv1 90×0.35≈31 dmg36 一兩下有打擊感、Lv10 滿）。
     if (baseHp > 0) enemy.setMaxHp?.(Math.max(1, Math.round(baseHp * hpScale)));
-    enemy.setDamageMult?.(dmgScale);
+    // 傷害：目標 = 鬥氣 base 傷 × scale；damageMult = 目標 / enemy 原攻擊（讓 enemy 攻擊實際輸出＝鬥氣傷）。
+    if (baseDamage > 0) {
+      const enemyBaseAtk = enemy.getBaseAttackDamage?.() ?? 0;
+      const targetDmg = baseDamage * dmgScale;
+      const mult = enemyBaseAtk > 0 ? targetDmg / enemyBaseAtk : dmgScale;
+      enemy.setDamageMult?.(Math.max(0.01, mult));
+    } else {
+      enemy.setDamageMult?.(dmgScale); // 無 douqi base 傷→只套 scale（保守回退）
+    }
   }
 
   update(dt: number): void {

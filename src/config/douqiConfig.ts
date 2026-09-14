@@ -155,6 +155,8 @@ export interface DouqiEnemyStat {
   spawnWeight: number;
   unlockWave: number; // byWave 解鎖（10 關階段用）
   frontDamageMult?: number; // shielder 正面減傷
+  /** ★鬥氣專屬 base 攻擊傷害（scaleSpawnedEnemy 用 douqi base×等級 scale，非 normal config 極小值）。v45 attackDamage。 */
+  attackDamage: number;
   /**
    * ★實際生怪素材 key（spawner.spawn 用）。目前我方只有 Enemy_Rush/Enemy_Ranged/Enemy_Elite 三種素材，
    *  shielder/bomber/charger/boss 尚無專屬素材→暫時 fallback 到現有素材（數值/行為仍走該怪 stat，
@@ -163,14 +165,14 @@ export interface DouqiEnemyStat {
   spawnKey: string;
 }
 export const DOUQI_ENEMY_STATS: Record<string, DouqiEnemyStat> = {
-  normal: { maxHp: 90, speed: 70, radius: 14, spawnWeight: 75, unlockWave: 1, spawnKey: 'Enemy_Rush' },
-  tank: { maxHp: 200, speed: 40, radius: 22, spawnWeight: 12, unlockWave: 2, spawnKey: 'Enemy_Elite' },
-  shooter: { maxHp: 45, speed: 60, radius: 13, spawnWeight: 10, unlockWave: 6, spawnKey: 'Enemy_Ranged' },
+  normal: { maxHp: 90, speed: 70, radius: 14, spawnWeight: 75, unlockWave: 1, attackDamage: 12, spawnKey: 'Enemy_Rush' },
+  tank: { maxHp: 200, speed: 40, radius: 22, spawnWeight: 12, unlockWave: 2, attackDamage: 18, spawnKey: 'Enemy_Elite' },
+  shooter: { maxHp: 45, speed: 60, radius: 13, spawnWeight: 10, unlockWave: 6, attackDamage: 10, spawnKey: 'Enemy_Ranged' },
   // ★以下尚無專屬素材，暫 fallback（數值走各自 stat/killExpMult 待補；有素材即換 spawnKey）：
-  shielder: { maxHp: 100, speed: 58, radius: 16, spawnWeight: 6, unlockWave: 4, frontDamageMult: 0.15, spawnKey: 'Enemy_Rush' },
-  bomber: { maxHp: 60, speed: 55, radius: 15, spawnWeight: 8, unlockWave: 5, spawnKey: 'Enemy_Rush' },
-  charger: { maxHp: 110, speed: 66, radius: 15, spawnWeight: 0, unlockWave: 99, spawnKey: 'Enemy_Rush' }, // 未啟用（不在表）
-  boss: { maxHp: 3000, speed: 46, radius: 42, spawnWeight: 0, unlockWave: 99, spawnKey: 'Enemy_Elite' }, // 階段 5
+  shielder: { maxHp: 100, speed: 58, radius: 16, spawnWeight: 6, unlockWave: 4, frontDamageMult: 0.15, attackDamage: 12, spawnKey: 'Enemy_Rush' },
+  bomber: { maxHp: 60, speed: 55, radius: 15, spawnWeight: 8, unlockWave: 5, attackDamage: 22, spawnKey: 'Enemy_Rush' },
+  charger: { maxHp: 110, speed: 66, radius: 15, spawnWeight: 0, unlockWave: 99, attackDamage: 14, spawnKey: 'Enemy_Rush' }, // 未啟用（不在表）
+  boss: { maxHp: 3000, speed: 46, radius: 42, spawnWeight: 0, unlockWave: 99, attackDamage: 40, spawnKey: 'Enemy_Elite' }, // 階段 5
 };
 
 /**

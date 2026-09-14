@@ -205,10 +205,12 @@ export class PlayerControlSystem implements GameSystem {
     const s = this.strategy as unknown as { getTeamExp?: () => number };
     return typeof s?.getTeamExp === 'function' ? s.getTeamExp() : 0;
   }
-  /** ★階段 3 commit2：套鬥氣敵人 scale（GameScene onEnemySpawned 於 douqi 呼；normal 策略無此方法→no-op）。 */
-  scaleDouqiEnemy(enemy: import('@/entities/Enemy').Enemy): void {
-    const s = this.strategy as unknown as { scaleSpawnedEnemy?: (e: unknown) => void };
-    s?.scaleSpawnedEnemy?.(enemy);
+  /** ★階段 3 commit2 / 實機修：套鬥氣敵人 scale（DouqiSpawnSystem 生怪後呼，傳 douqi base HP/傷；normal 策略無此方法→no-op）。 */
+  scaleDouqiEnemy(enemy: import('@/entities/Enemy').Enemy, baseHp: number, baseDamage = 0): void {
+    const s = this.strategy as unknown as {
+      scaleSpawnedEnemy?: (e: unknown, baseHp: number, baseDamage?: number) => void;
+    };
+    s?.scaleSpawnedEnemy?.(enemy, baseHp, baseDamage);
   }
   /** ★階段 3 commit4：升下一級所需經驗（經驗條 UI；normal 回 0）。 */
   getDouqiExpToNext(): number {

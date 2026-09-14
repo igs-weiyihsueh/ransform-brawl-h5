@@ -954,6 +954,11 @@ export class Enemy implements Hittable {
     return this.maxHp;
   }
 
+  /** ★鬥氣 scale 用：讀 enemy 自身 config 攻擊傷害（damageMult 換算基準）。 */
+  getBaseAttackDamage(): number {
+    return this.cfg.attack?.damage ?? 0;
+  }
+
   /** 覆寫血量（尖塔怪 towerHp 由 TowerWave 節點設定，spawn 後套用；同步 hp/maxHp）。 */
   setMaxHp(hp: number): void {
     if (!Number.isFinite(hp) || hp <= 0) return;

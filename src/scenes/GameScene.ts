@@ -33,6 +33,7 @@ import { InputSystem } from '@/systems/InputSystem';
 import { JpSystem } from '@/systems/JpSystem';
 import { JpLampHud } from '@/systems/ui/JpLampHud';
 import { DouqiExpBar } from '@/systems/ui/DouqiExpBar';
+import { DouqiWaveBanner } from '@/systems/ui/DouqiWaveBanner';
 import { pickLightGroup, JP_TICKET_FACE } from '@/config/jpConfig';
 import { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import { TransformSystem } from '@/systems/TransformSystem';
@@ -73,6 +74,8 @@ export class GameScene extends Phaser.Scene {
   private jpLampHud?: JpLampHud;
   /** ★鬥氣模式 teamLevel+經驗條 HUD（階段 3；只 douqi 建/更新）。 */
   private douqiExpBar?: DouqiExpBar;
+  /** ★鬥氣模式波次推進宣告 HUD（實機修；只 douqi 建/更新）。 */
+  private douqiWaveBanner?: DouqiWaveBanner;
   /** ★鬥氣模式 10 關生怪驅動（階段 3 後半；只 douqi 註冊，與 normal WaveSystem 互斥）。 */
   private douqiSpawn?: DouqiSpawnSystem;
   /** 魔尖塔波開場演出序列（塔波照搬守護波 GuardEvent intro：玩家聚集中央→聚焦壓黑定格→生塔）；active 時每幀 tick。 */
@@ -224,11 +227,9 @@ export class GameScene extends Phaser.Scene {
     };
     // 防穿透對所有 player（多人）：讓 spawner 讀 players[]。
     spawner.getAllPlayers = () => this.ctx.players;
-    // ★階段 3 commit2：鬥氣模式生怪後套 teamLevel 敵人 scale（HP/傷×curEnemyScale）。★只 douqi 設此回呼；
-    //   normal 模式不設→spawner.onEnemySpawned=null→怪 byte 不變（WaveSystem/EnemySpawner 現有怪數值不碰）。
-    if (this.gameMode === 'douqi') {
-      spawner.onEnemySpawned = (enemy) => this.playerControlRef?.scaleDouqiEnemy?.(enemy);
-    }
+    // ★階段 3 commit2 / 實機修：鬥氣敵人 scale 改由 DouqiSpawnSystem 生怪後直接呼（它知道邏輯怪種→傳 DOUQI_ENEMY_STATS
+    //   專屬 base HP/傷；onEnemySpawned 拿不到邏輯怪種故不在此掛）。normal 不設此回呼＝怪 byte 不變。
+    // （onEnemySpawned 保留給其他潛在用途；douqi scale 走 DouqiSpawnSystem 內建 scale callback。）
     // 階段3：玩家被怪擊中 → 二段能量倒扣（★flag 關/能量 0/未一段變身 → no-op 由 TransformSystem gate）。
     spawner.onPlayerHit = (pid) => transform.loseSecondTransformEnergy(pid);
     // 魔尖塔環狀技命中玩家 → 扣 energyCost 段能量（ratio 已在 EnemySpawner 算好：段×energyLossOnHit）。
@@ -300,6 +301,8 @@ export class GameScene extends Phaser.Scene {
     if (this.gameMode !== 'douqi') this.jpLampHud = new JpLampHud(this);
     // ★階段 3 commit4：鬥氣模式建經驗條 HUD（用戶要 B 顯示 teamLevel+經驗條）；normal 不建＝HUD 不變。
     if (this.gameMode === 'douqi') this.douqiExpBar = new DouqiExpBar(this);
+    // ★實機修：鬥氣波次推進宣告 HUD（第 N 關常駐 + 過關/開波過場宣告）。只 douqi 建＝normal HUD 不變。
+    if (this.gameMode === 'douqi') this.douqiWaveBanner = new DouqiWaveBanner(this);
 
     // 獎勵節點報獎演出（用戶 #3，純視覺）：進 Reward 節點 → 「恭喜獲獎！」banner + 飛光到「該組下一顆 JP 燈」→ 到達點亮該燈。
     // 先 pickLightGroup 決定要點哪組 → 飛光飛向該組真燈位置 → 到達 jp.addRewardLight(該組) 點亮（看得到燈號增加）。
@@ -497,7 +500,11 @@ export class GameScene extends Phaser.Scene {
     //   douqi→DouqiSpawnSystem（獨立 10 關生怪驅動，quota/過關 douqi 自寫），同時只一個生怪驅動跑。
     //   ★完全不動 WaveSystem 本體（波騎 file）；ctx.wave 仍建（JP/塔波等既有接線讀它），只是 douqi 不 register 進主迴圈驅動。
     if (this.gameMode === 'douqi') {
-      this.douqiSpawn = new DouqiSpawnSystem(() => this.playerControlRef?.getDouqiTeamLevel?.() ?? 1);
+      this.douqiSpawn = new DouqiSpawnSystem(
+        () => this.playerControlRef?.getDouqiTeamLevel?.() ?? 1,
+        // ★scale callback：DouqiSpawnSystem 生怪後傳 douqi 專屬 base HP/傷 → 套 teamLevel scale（修「恆 1~3 HP 秒殺」）。
+        (enemy, baseHp, baseDamage) => this.playerControlRef?.scaleDouqiEnemy?.(enemy, baseHp, baseDamage),
+      );
       this.register(this.douqiSpawn); // 鬥氣生怪驅動（取代 WaveSystem+LevelProgressSystem）
     } else {
       this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
@@ -551,6 +558,10 @@ export class GameScene extends Phaser.Scene {
         this.playerControlRef.getDouqiTeamExp(),
         this.playerControlRef.getDouqiExpToNext(),
       );
+    }
+    // ★實機修：鬥氣波次宣告 HUD 更新（讀 DouqiSpawnSystem 狀態機，過關/開波彈過場）。只 douqi 建了才更新。
+    if (this.douqiWaveBanner && this.douqiSpawn) {
+      this.douqiWaveBanner.update(this.douqiSpawn);
     }
   }
 
