@@ -2,6 +2,7 @@ import type Phaser from 'phaser';
 import type { IPlayerControlStrategy } from '@/systems/control/IPlayerControlStrategy';
 import type { PlayerControlSystem } from '@/systems/PlayerControlSystem';
 import type { GameContext } from '@/systems/GameContext';
+import type { DouqiEmpowerAuraHandle } from '@/systems/EffectSystem';
 import type { Enemy } from '@/entities/Enemy';
 import { DOUQI_CONTROL_CONFIG, DOUQI_COMBO_CONFIG, DOUQI_LEVEL_CONFIG } from '@/config/douqiConfig';
 import { effectivePlayerBounds } from '@/config/mapConfig';
@@ -36,8 +37,8 @@ interface DouqiPlayerState {
   combo: number;
   /** ★階段 2 強化：剩餘強化時間（ms，real dt 倒數；>0＝強化中）。 */
   empowerRemainingMs: number;
-  /** ★階段 2 強化：金色光環 handle（強化期間持續跟本體、收尾停）。 */
-  empowerAura: Phaser.GameObjects.Graphics | null;
+  /** ★階段 2 強化：金色光環 handle（第三顆升級為金光點公轉+脈動圈 sprite 集合；強化期間持續跟本體、收尾停）。 */
+  empowerAura: DouqiEmpowerAuraHandle | null;
 }
 
 /**

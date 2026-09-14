@@ -26,6 +26,25 @@ import type { ChestRewardKind } from '@/config/chestConfig';
 
 const BASE_PATH = 'assets/images/vfx';
 
+/**
+ * ★鬥氣滿連段強化金光 handle（第三顆）：3 顆公轉金光點 + 脈動光圈 sprite；素材未載 fallback 走 Graphics。
+ *   由 douqiEmpowerAura 建、updateDouqiEmpowerAura 每幀跟位+公轉、endDouqiEmpowerAura 清。
+ */
+export interface DouqiEmpowerAuraHandle {
+  /** 素材未載時的退化 Graphics（雙金圈）；有素材時為 null。 */
+  fallback: Phaser.GameObjects.Graphics | null;
+  /** 3 顆公轉金光點。 */
+  motes: Phaser.GameObjects.Image[];
+  /** 脈動光圈 sprite。 */
+  ring: Phaser.GameObjects.Image | null;
+  /** 光圈呼吸 tween handle（收時 stop）。 */
+  ringTween: Phaser.Tweens.Tween | null;
+  /** 建立時間（ms，公轉相位基準）。 */
+  startMs: number;
+  /** 公轉半徑 px。 */
+  orbitRadiusPx: number;
+}
+
 /** 能量飛光 depth（飛在角色上層；角色 depth 為 0 量級、頭上 UI 900）。 */
 const ENERGY_FLY_DEPTH = 950;
 
@@ -73,6 +92,11 @@ const ENEMY_ATTACK_VFX = {
   douqiBurstSlash1: { key: 'vfx-douqi-burst-slash-1', path: `${BASE_PATH}/fx_douqi_burst_slash_1.png` },
   douqiBurstSlash2: { key: 'vfx-douqi-burst-slash-2', path: `${BASE_PATH}/fx_douqi_burst_slash_2.png` },
   douqiBurstSlash3: { key: 'vfx-douqi-burst-slash-3', path: `${BASE_PATH}/fx_douqi_burst_slash_3.png` },
+  /** ★鬥氣滿連段強化金光素材（特效手，只 douqi 強化用）：金光點(白核+金暈+十字星芒，3顆繞角色公轉) + 脈動光圈 3 幀(中空不蓋角色)。 */
+  douqiBuffMote: { key: 'vfx-douqi-buff-mote', path: `${BASE_PATH}/fx_douqi_buff_mote.png` },
+  douqiBuffRing1: { key: 'vfx-douqi-buff-ring-1', path: `${BASE_PATH}/fx_douqi_buff_ring_1.png` },
+  douqiBuffRing2: { key: 'vfx-douqi-buff-ring-2', path: `${BASE_PATH}/fx_douqi_buff_ring_2.png` },
+  douqiBuffRing3: { key: 'vfx-douqi-buff-ring-3', path: `${BASE_PATH}/fx_douqi_buff_ring_3.png` },
   /** 十五輪：守護聚焦壓暗遮罩（1920×1080 徑向 vignette，中心透明圓露雕像、邊緣黑 alpha 0.85 柔邊）。 */
   guardFocusVignette: { key: 'vfx-guard-focus-vignette', path: `${BASE_PATH}/fx_guard_focus_vignette.png` },
   /** 十五輪：守護聚焦暖白柔光暈（1024×1024，中心 alpha 0.57→邊緣 0，疊雕像後增強聚光）。 */
@@ -1468,34 +1492,71 @@ export class EffectSystem {
   }
 
   /**
-   * ★鬥氣滿連段強化光環（階段 2）：角色身上金色脈動圈 handle（強化期間持續、收尾停）。
-   * @returns Graphics handle。
+   * ★鬥氣滿連段強化金光（第三顆升級：疊在 setEmpowerVisual 之上的環繞金光；不碰 body/hitRadius）。
+   *   3 顆金光點(fx_douqi_buff_mote)繞角色中心公轉(相位差120°、半徑75px、1圈~1.5s、各自±3px 浮動) + 脈動光圈(fx_douqi_buff_ring_2
+   *   tween scale0.85↔1.1/alpha0.6↔1.0 呼吸、中空 origin0.5 不蓋角色)。★素材未載 fallback 退回舊 Graphics 雙圈。
+   * @returns 金光 handle（container/sprites 集合）；強化結束 endDouqiEmpowerAura 清。
    */
-  douqiEmpowerAura(x: number, y: number, color = 0xffd24d): Phaser.GameObjects.Graphics | null {
-    const g = this.scene.add.graphics();
-    g.setDepth(ATTACK_VFX_DEPTH + 1).setPosition(x, y);
-    g.lineStyle(4, color, 0.9);
-    g.strokeCircle(0, 0, 46);
-    g.lineStyle(2, color, 0.5);
-    g.strokeCircle(0, 0, 60);
-    g.setAlpha(0);
-    this.scene.tweens.add({ targets: g, alpha: 1, duration: 120 });
-    this.scene.tweens.add({ targets: g, scale: 1.15, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-    return g;
+  douqiEmpowerAura(x: number, y: number, color = 0xffd24d): DouqiEmpowerAuraHandle | null {
+    const moteKey = ENEMY_ATTACK_VFX.douqiBuffMote.key;
+    const ringKey = ENEMY_ATTACK_VFX.douqiBuffRing2.key;
+    const haveArt = this.scene.textures.exists(moteKey) && this.scene.textures.exists(ringKey);
+    if (!haveArt) {
+      // fallback：舊 Graphics 雙圈（素材未載時至少有金環）。
+      const g = this.scene.add.graphics();
+      g.setDepth(ATTACK_VFX_DEPTH + 1).setPosition(x, y);
+      g.lineStyle(4, color, 0.9); g.strokeCircle(0, 0, 46);
+      g.lineStyle(2, color, 0.5); g.strokeCircle(0, 0, 60);
+      g.setAlpha(0);
+      this.scene.tweens.add({ targets: g, alpha: 1, duration: 120 });
+      this.scene.tweens.add({ targets: g, scale: 1.15, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      return { fallback: g, motes: [], ring: null, ringTween: null, startMs: this.scene.time.now, orbitRadiusPx: 0 };
+    }
+    // 脈動光圈（中空、origin 中心、呼吸 tween）。
+    const ring = this.scene.add.image(x, y, ringKey).setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH).setScale(0.85).setAlpha(0.6);
+    const ringTween = this.scene.tweens.add({ targets: ring, scale: 1.1, alpha: 1.0, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    // 3 顆金光點（公轉：位置每幀在 update 算；此處先建、貼初始相位）。
+    const motes: Phaser.GameObjects.Image[] = [];
+    for (let i = 0; i < 3; i++) {
+      const m = this.scene.add.image(x, y, moteKey).setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH + 2).setScale(0.9).setAlpha(0);
+      this.scene.tweens.add({ targets: m, alpha: 1, duration: 150 });
+      motes.push(m);
+    }
+    return { fallback: null, motes, ring, ringTween, startMs: this.scene.time.now, orbitRadiusPx: 75 };
   }
 
-  /** ★強化光環每幀跟本體。handle=null 忽略。 */
-  updateDouqiEmpowerAura(handle: Phaser.GameObjects.Graphics | null, x: number, y: number): void {
-    if (!handle || !handle.active) return;
-    handle.setPosition(x, y);
-  }
-
-  /** ★強化光環收（強化結束）。handle=null 忽略。 */
-  endDouqiEmpowerAura(handle: Phaser.GameObjects.Graphics | null): void {
+  /** ★強化金光每幀跟本體 + 金光點公轉（相位差120°、±3px 浮動）。handle=null 忽略。 */
+  updateDouqiEmpowerAura(handle: DouqiEmpowerAuraHandle | null, x: number, y: number): void {
     if (!handle) return;
-    this.scene.tweens.killTweensOf(handle);
-    if (!handle.active) { handle.destroy(); return; }
-    this.scene.tweens.add({ targets: handle, alpha: 0, scale: 1.5, duration: 160, onComplete: () => handle.destroy() });
+    if (handle.fallback) { if (handle.fallback.active) handle.fallback.setPosition(x, y); return; }
+    if (handle.ring && handle.ring.active) handle.ring.setPosition(x, y);
+    const t = (this.scene.time.now - handle.startMs) / 1000;
+    const orbitPerSec = (Math.PI * 2) / 1.5; // 1 圈 / 1.5s
+    for (let i = 0; i < handle.motes.length; i++) {
+      const m = handle.motes[i];
+      if (!m.active) continue;
+      const ang = t * orbitPerSec + (i * Math.PI * 2) / 3; // 相位差 120°
+      const bob = Math.sin(t * 3 + i) * 3; // ±3px 上下浮動
+      m.setPosition(x + Math.cos(ang) * handle.orbitRadiusPx, y + Math.sin(ang) * handle.orbitRadiusPx + bob);
+    }
+  }
+
+  /** ★強化金光收（強化結束）：淡出銷毀所有 sprite/graphics。handle=null 忽略。 */
+  endDouqiEmpowerAura(handle: DouqiEmpowerAuraHandle | null): void {
+    if (!handle) return;
+    if (handle.fallback) {
+      this.scene.tweens.killTweensOf(handle.fallback);
+      if (!handle.fallback.active) { handle.fallback.destroy(); return; }
+      this.scene.tweens.add({ targets: handle.fallback, alpha: 0, scale: 1.5, duration: 160, onComplete: () => handle.fallback?.destroy() });
+      return;
+    }
+    if (handle.ringTween) handle.ringTween.stop();
+    const all: Phaser.GameObjects.Image[] = [...handle.motes];
+    if (handle.ring) all.push(handle.ring);
+    for (const s of all) {
+      if (!s.active) { s.destroy(); continue; }
+      this.scene.tweens.add({ targets: s, alpha: 0, scale: (s.scale || 1) * 1.4, duration: 160, onComplete: () => s.destroy() });
+    }
   }
 
   /**
