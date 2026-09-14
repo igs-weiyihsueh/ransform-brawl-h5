@@ -413,6 +413,13 @@ export class GameScene extends Phaser.Scene {
 
     // ★全域手感骨幹（第 4 塊）：TimeScaleCounter + camera.shake + Boss-gate（預設全 1.0/globalEffectsBossOnly=true）。
     this.globalJuice = new GlobalJuice(this);
+    // ★鬥氣連段技打擊三元素（震動/頓幀）委派全域手感給 EffectSystem。只 douqi 注入＝normal EffectSystem 無 juice、shakeOnce/triggerHitstop no-op、byte 不變。
+    if (this.gameMode === 'douqi') {
+      effects.setJuice({
+        shake: (i, sec) => this.globalJuice.shake(i, sec),
+        hitstop: (sec) => this.globalJuice.hitstop(sec),
+      });
+    }
 
     this.registerSystems();
 

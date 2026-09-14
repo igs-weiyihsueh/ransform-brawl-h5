@@ -77,8 +77,20 @@ export interface DouqiComboConfig {
   circle: { radiusPx: number; damage: number; knockback: number; ringColor: number; ringDurationMs: number };
   /** ②直線氣波：朝 aimAngle 矩形貫穿。 */
   line: { lengthPx: number; widthPx: number; damage: number; knockback: number; beamColor: number; beamDurationMs: number };
-  /** ③爆發：原地無敵多段亂打段數（清場解圍、擊退不變）。 */
-  burst: { hits: number };
+  /**
+   * ③爆發：★原地無敵「時間軸多段連打」（v45 割草：非一瞬結算）。每 intervalMs 一段共 hits 段，
+   *   每段對 radiusPx 內怪 damagePerHit（擊退 knockback，v45=0 原地狂斬不推怪）+命中 hitstopMs 破頓+閃白+小震+隨機位置斬光。
+   */
+  burst: {
+    hits: number; // 段數（16）
+    intervalMs: number; // 每段間隔（55→總~880ms）
+    damagePerHit: number; // 每段傷（22，總 16×22=352）
+    radiusPx: number; // 每段作用半徑（140，以角色為心）
+    knockback: number; // 擊退（0＝原地狂斬不推）
+    hitstopMs: number; // 每段命中破頓（55）
+    invulnMs: number; // 原地無敵時長（~1180＝hits×interval+300）
+    slashScatterPx: number; // 每段斬光隨機散佈半徑（±70）
+  };
   /** ④滿連段強化 buff（limited）。 */
   empower: {
     durationMs: number;
@@ -86,6 +98,20 @@ export interface DouqiComboConfig {
     rangeMult: number; // ×1.5
     moveMult: number; // ×1.4（走位/衝刺終點距離）
     dashSpeedMult: number; // ×1.5（衝速 2100）
+  };
+  /**
+   * ★打擊感三元素參數（震動/頓幀；只 douqi 連段技呼，normal 命中路徑完全不碰）。
+   *   shakeOnce(intensity,durationSec)。招式中震 skillShake、爆發開場大震 burstOpenShake、爆發每段小震 burstTickShake。
+   */
+  juice: {
+    skillShakeIntensity: number; // 圓/氣波中震強度（0.006）
+    skillShakeDurationMs: number; // 80
+    burstOpenShakeIntensity: number; // 爆發開場大震（0.009）
+    burstOpenShakeDurationMs: number; // 300
+    burstTickShakeIntensity: number; // 爆發每段小震（0.006）
+    burstTickShakeDurationMs: number; // 60
+    hitFlashColor: number; // 命中閃白色（0xffffff）
+    hitFlashDurationMs: number; // 80
   };
 }
 
@@ -96,8 +122,18 @@ export const DOUQI_COMBO_CONFIG: DouqiComboConfig = {
   unlockLevel: { empower: 1, circle: 2, line: 4, burst: 6 },
   circle: { radiusPx: 160, damage: 40, knockback: 200, ringColor: 0x00e5ff, ringDurationMs: 280 },
   line: { lengthPx: 420, widthPx: 90, damage: 70, knockback: 260, beamColor: 0xff4d6d, beamDurationMs: 300 },
-  burst: { hits: 16 },
+  burst: { hits: 16, intervalMs: 55, damagePerHit: 22, radiusPx: 140, knockback: 0, hitstopMs: 55, invulnMs: 1180, slashScatterPx: 70 },
   empower: { durationMs: 5000, damageMult: 1.8, rangeMult: 1.5, moveMult: 1.4, dashSpeedMult: 1.5 },
+  juice: {
+    skillShakeIntensity: 0.006,
+    skillShakeDurationMs: 80,
+    burstOpenShakeIntensity: 0.009,
+    burstOpenShakeDurationMs: 300,
+    burstTickShakeIntensity: 0.006,
+    burstTickShakeDurationMs: 60,
+    hitFlashColor: 0xffffff,
+    hitFlashDurationMs: 80,
+  },
 };
 
 /**

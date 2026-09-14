@@ -133,9 +133,33 @@ export class EffectSystem {
   private readonly scene: Phaser.Scene;
   /** 用戶 #5/#8：螢幕訊息位置快取（waveMessage/eventMessage/fireRainMessage），null=尚未讀。 */
   private cachedScreenEl: Partial<Record<'waveMessage' | 'eventMessage' | 'fireRainMessage', ScreenElement>> = {};
+  /** ★全域手感（震動/頓幀）委派；由 GameScene 注入。只 douqi 連段技呼 shakeOnce/triggerHitstop→normal 不碰。 */
+  private juice: { shake(intensity: number, durationSec: number): void; hitstop(sec: number): void } | null = null;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
+  }
+
+  /** ★注入全域手感（GameScene create 時把 globalJuice 交進來，供 douqi 連段技 shakeOnce/triggerHitstop 委派）。 */
+  setJuice(juice: { shake(intensity: number, durationSec: number): void; hitstop(sec: number): void }): void {
+    this.juice = juice;
+  }
+
+  /**
+   * ★螢幕震動一次（douqi 連段技用；委派 GlobalJuice.shake 不重造）。normal 不呼＝byte 不變。
+   * @param intensity 0~1（Phaser shake 比例）。
+   * @param durationMs 毫秒。
+   */
+  shakeOnce(intensity: number, durationMs: number): void {
+    this.juice?.shake(intensity, durationMs / 1000);
+  }
+
+  /**
+   * ★命中頓幀（douqi 連段技每段命中破頓；委派 GlobalJuice.hitstop）。normal 不呼＝byte 不變。
+   * @param ms 頓幀毫秒（爆發每段 55）。
+   */
+  triggerHitstop(ms: number): void {
+    this.juice?.hitstop(ms / 1000);
   }
 
   /** preload 指定特效（或全部）的幀圖。放在場景 preload() 呼叫。 */

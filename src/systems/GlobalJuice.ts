@@ -99,4 +99,14 @@ export class GlobalJuice {
   isHitstopped(): boolean {
     return this.hitstopRemaining > 0;
   }
+
+  /**
+   * ★局部頓幀（不含震動；供 douqi 連段技每段命中破頓呼）：只延長全域 hitstop 剩餘（取較長者）。
+   *   ★只由 douqi 命中路徑呼；normal 命中不呼＝normal byte 不變。倒數同樣走 tick(realDt) 不會頓死自己。
+   * @param sec 頓幀時長（秒）。
+   */
+  hitstop(sec: number): void {
+    if (sec <= 0) return;
+    this.hitstopRemaining = Math.max(this.hitstopRemaining, sec);
+  }
 }

@@ -432,20 +432,23 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     const cfg = DOUQI_COMBO_CONFIG.circle;
     const radius = cfg.radiusPx * this.charSkillRangeScale() * this.empowerRangeMult(player);
     const dmg = Math.round(cfg.damage * this.charSkillDamageScale() * this.empowerDamageMult(player));
+    const juice = DOUQI_COMBO_CONFIG.juice;
     for (const e of this.sys.ctxRef.getEnemies()) {
       if (e.isDead()) continue; // 可傷怪（含菁英/塔）
       const c = e.getHitCenter();
       if (pointInCircle(c.x, c.y, origin.x, origin.y, radius + e.getHitRadius())) {
         this.sys.applyDouqiAoeHit(player, e, dmg, cfg.knockback, origin); // fromPos=玩家心→向外推
+        e.flashWhite?.(juice.hitFlashColor, juice.hitFlashDurationMs / 1000); // 命中閃白
       }
     }
     this.sys.ctxRef.effects?.douqiCircleSlash?.(origin.x, origin.y, radius, cfg.ringColor, cfg.ringDurationMs);
-    this.sys.ctxRef.scene && this.sys.ctxRef.effects; // (輕震由 camera shake 之後可接；階段 2 VFX 已足)
+    this.sys.ctxRef.effects?.shakeOnce?.(juice.skillShakeIntensity, juice.skillShakeDurationMs); // 招式中震
   }
 
   /** ②直線氣波：朝 aimAngle 矩形貫穿，pointInOrientedRect 對全場可傷怪一次性結算+紅斬帶 VFX。 */
   private triggerLineWave(player: GameContext['player'], origin: { x: number; y: number }, aimAngle: number): void {
     const cfg = DOUQI_COMBO_CONFIG.line;
+    const juice = DOUQI_COMBO_CONFIG.juice;
     const rmult = this.charSkillRangeScale() * this.empowerRangeMult(player);
     const length = cfg.lengthPx * rmult;
     const halfWidth = (cfg.widthPx * rmult) / 2;
@@ -455,29 +458,70 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
       const c = e.getHitCenter();
       if (pointInOrientedRect(c.x, c.y, origin.x, origin.y, aimAngle, length + e.getHitRadius(), halfWidth + e.getHitRadius())) {
         this.sys.applyDouqiAoeHit(player, e, dmg, cfg.knockback, origin);
+        e.flashWhite?.(juice.hitFlashColor, juice.hitFlashDurationMs / 1000); // 命中閃白
       }
     }
     this.sys.ctxRef.effects?.douqiLineWave?.(origin.x, origin.y, aimAngle, length, cfg.widthPx * rmult, cfg.beamColor, cfg.beamDurationMs);
+    this.sys.ctxRef.effects?.shakeOnce?.(juice.skillShakeIntensity, juice.skillShakeDurationMs); // 招式中震
   }
 
-  /** ③爆發：原地無敵多段亂打（清場解圍）——對全場可傷怪結算 hits 段（擊退不變）。強化期間本就無敵；此技短暫保護。 */
-  private triggerBurst(player: GameContext['player'], origin: { x: number; y: number }): void {
+  /**
+   * ③爆發：★v45 割草「時間軸 16 段連打」（非一瞬結算）——原地無敵 ~invulnMs、每 intervalMs 一段共 hits 段，
+   *   每段對 radiusPx 內怪 damagePerHit（擊退0 原地狂斬不推）+命中→頓幀 hitstopMs+閃白+小震+**隨機位置斬光**（douqiSlashSwing 橙 tint，
+   *   不再沿用圓形斬青環＝解決撞臉）。開場大震。角色 setShielded 無敵全程。★用戶要的割草連斬打擊感。
+   */
+  private triggerBurst(player: GameContext['player'], _origin: { x: number; y: number }): void {
     const cfg = DOUQI_COMBO_CONFIG.burst;
-    const circle = DOUQI_COMBO_CONFIG.circle;
-    const radius = circle.radiusPx * this.charSkillRangeScale() * this.empowerRangeMult(player);
-    const perHit = Math.round(circle.damage * this.charSkillDamageScale() * this.empowerDamageMult(player));
-    // 16 段：對範圍內可傷怪各結算 hits 次（一次性總量＝perHit×hits，比照 v45 多段亂打；擊退用圓形斬 kb）。
+    const juice = DOUQI_COMBO_CONFIG.juice;
+    const fx = this.sys.ctxRef.effects;
+    const scene = this.sys.ctxRef.scene;
+    const rmult = this.charSkillRangeScale() * this.empowerRangeMult(player);
+    const radius = cfg.radiusPx * rmult;
+    const perHit = Math.round(cfg.damagePerHit * this.charSkillDamageScale() * this.empowerDamageMult(player));
+    // 開場大震 + 原地無敵全程（用既有衝刺護盾機制 setShielded；invulnMs 後若非強化中才關）。
+    fx?.shakeOnce?.(juice.burstOpenShakeIntensity, juice.burstOpenShakeDurationMs);
+    player.setShielded?.(true);
+    scene.time.delayedCall(cfg.invulnMs, () => {
+      // 無敵到期：非強化中才收護盾（強化本身給無敵，別誤關）。
+      if ((this.state.get(player.playerId)?.empowerRemainingMs ?? 0) <= 0) player.setShielded?.(false);
+    });
+    // 時間軸 16 段：每 intervalMs 一段 burstTick（Phaser timer 逐段展開，非一瞬）。
+    scene.time.addEvent({
+      delay: cfg.intervalMs,
+      repeat: cfg.hits - 1,
+      callback: () => this.burstTick(player, radius, perHit, cfg, juice, fx),
+    });
+  }
+
+  /** 爆發單段：對範圍內怪傷 + 命中頓幀/閃白/小震 + 隨機位置斬光（橙）。 */
+  private burstTick(
+    player: GameContext['player'],
+    radius: number,
+    perHit: number,
+    cfg: typeof DOUQI_COMBO_CONFIG.burst,
+    juice: typeof DOUQI_COMBO_CONFIG.juice,
+    fx: GameContext['effects'] | undefined,
+  ): void {
+    const origin = player.getPosition(); // 每段讀當前位置（原地無敵故大致不動）
+    let hitAny = false;
     for (const e of this.sys.ctxRef.getEnemies()) {
       if (e.isDead()) continue;
       const c = e.getHitCenter();
       if (pointInCircle(c.x, c.y, origin.x, origin.y, radius + e.getHitRadius())) {
-        for (let i = 0; i < cfg.hits && !e.isDead(); i++) {
-          this.sys.applyDouqiAoeHit(player, e, perHit, circle.knockback, origin);
-        }
+        this.sys.applyDouqiAoeHit(player, e, perHit, cfg.knockback, origin);
+        e.flashWhite?.(juice.hitFlashColor, juice.hitFlashDurationMs / 1000);
+        hitAny = true;
       }
     }
-    // VFX：爆發用擴張環（大一點）表現多段清場。
-    this.sys.ctxRef.effects?.douqiCircleSlash?.(origin.x, origin.y, radius, circle.ringColor, circle.ringDurationMs + 120);
+    // 命中→破頓 + 小震（有打到才頓，避免空砍卡幀）。
+    if (hitAny) {
+      fx?.triggerHitstop?.(cfg.hitstopMs);
+      fx?.shakeOnce?.(juice.burstTickShakeIntensity, juice.burstTickShakeDurationMs);
+    }
+    // 每段隨機位置斬光（橙 tint、角度隨機）——連續多段散佈＝割草連斬視覺，明顯區別於圓形斬青環。
+    const ox = origin.x + (Math.random() * 2 - 1) * cfg.slashScatterPx;
+    const oy = origin.y + (Math.random() * 2 - 1) * cfg.slashScatterPx;
+    fx?.douqiSlashSwing?.(ox, oy, Math.random() * Math.PI * 2, 1.2, 0xffa500);
   }
 
   /** ④滿連段強化：limited buff（無敵+傷/範圍/移速/衝速提升，角色仍可操控）+視覺放大(僅顯示)+金環。觸發後 combo 歸零。 */

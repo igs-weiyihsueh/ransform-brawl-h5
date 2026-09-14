@@ -441,6 +441,17 @@ export class Enemy implements Hittable {
     return this.stunRemaining > 0;
   }
 
+  /**
+   * ★受擊白閃（douqi 連段技命中回饋用；委派注入的 hitFeelFx.hitFlash 對自身 sprite 染白）。
+   *   只由 douqi 連段技命中呼；normal 命中走既有 takeHit 的 hitFeel（不呼此）＝normal byte 不變。
+   * @param color 閃色（預設白）。
+   * @param sec 持續秒（預設 0.08）。
+   */
+  flashWhite(color = 0xffffff, sec = 0.08): void {
+    if (this.dead) return;
+    this.hitFeelFx?.hitFlash?.(this.anim.sprite, color, sec);
+  }
+
   constructor(scene: Phaser.Scene, x: number, y: number, charKey: string = ENEMY_CHARACTERS[0]) {
     // 六輪 enemies JSON 化：override(enemy-editor 套用)優先 + cache，無/壞→打包預設 ENEMY_AI。
     this.cfg = getResolvedEnemy(charKey) ?? getResolvedEnemy(ENEMY_CHARACTERS[0]) ?? ENEMY_AI[ENEMY_CHARACTERS[0]];
