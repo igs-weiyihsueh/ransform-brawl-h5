@@ -504,6 +504,12 @@ export class GameScene extends Phaser.Scene {
         () => this.playerControlRef?.getDouqiTeamLevel?.() ?? 1,
         // ★scale callback：DouqiSpawnSystem 生怪後傳 douqi 專屬 base HP/傷 → 套 teamLevel scale（修「恆 1~3 HP 秒殺」）。
         (enemy, baseHp, baseDamage) => this.playerControlRef?.scaleDouqiEnemy?.(enemy, baseHp, baseDamage),
+        // ★塔扇形命中玩家 → 二段能量倒扣（沿用既有 onPlayerHit 語意）。
+        (pid) => this.ctx.transform.loseSecondTransformEnergy(pid),
+        // ★事件成功獎勵：發等效經驗（掉道具佔位——現無 douqi 拾取系統，先發經驗，道具完整留階段4後做）。
+        (expKills) => {
+          for (let i = 0; i < expKills; i += 1) this.playerControlRef?.grantDouqiKillExp?.('Enemy_Rush');
+        },
       );
       this.register(this.douqiSpawn); // 鬥氣生怪驅動（取代 WaveSystem+LevelProgressSystem）
     } else {

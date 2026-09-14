@@ -1,10 +1,14 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/config/gameConfig';
 
-/** DouqiSpawnSystem 狀態機對外查詢（本 HUD 只依賴這兩個 + 狀態字串）。 */
+/** DouqiSpawnSystem 狀態機對外查詢（本 HUD 依賴這些）。 */
 export interface DouqiWaveInfo {
   getState(): string;
   getCurrentWave(): number;
+  /** 事件種類（'tower'|'guard'|'capture'|'none'）——決定事件 HUD 顯示。 */
+  getEventKind?(): string;
+  /** 塔事件血條 ratio（0~1；非 tower 回 -1）。 */
+  getTowerHpRatio?(): number;
 }
 
 /**
@@ -22,10 +26,14 @@ export class DouqiWaveBanner {
   private readonly waveLabel: Phaser.GameObjects.Text; // 常駐「第 N 關」
   private readonly banner: Phaser.GameObjects.Text; // 過場宣告
   private bannerTween: Phaser.Tweens.Tween | null = null;
+  /** ★事件 HUD：塔血條（tower 事件時顯示；佔領/守護 commit2 擴充）。 */
+  private readonly eventBar: Phaser.GameObjects.Graphics;
+  private readonly eventLabel: Phaser.GameObjects.Text;
 
   /** 上一幀觀察到的關卡/狀態（偵測轉場）。 */
   private lastWave = 0;
   private lastState = '';
+  private lastEventKind = 'none';
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -56,6 +64,21 @@ export class DouqiWaveBanner {
       .setScrollFactor(0)
       .setDepth(depth + 1)
       .setAlpha(0);
+    // ★事件 HUD：塔血條（下方置中，tower 事件才顯示）+ 標籤。
+    this.eventBar = scene.add.graphics().setScrollFactor(0).setDepth(depth).setVisible(false);
+    this.eventLabel = scene.add
+      .text(GAME_WIDTH / 2, 56, '', {
+        fontFamily: 'Arial, "Microsoft JhengHei", sans-serif',
+        fontSize: '18px',
+        color: '#ff8888',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 0)
+      .setScrollFactor(0)
+      .setDepth(depth + 1)
+      .setVisible(false);
   }
 
   /** 每幀更新（GameScene.update 於 douqi 呼）：常駐關卡文字 + 偵測轉場彈過場宣告。 */
@@ -86,8 +109,33 @@ export class DouqiWaveBanner {
       this.showBanner(`WAVE ${wave}`, 0xffd24d);
     }
 
+    // ★事件 HUD（塔血條 + 登場提示）。
+    const eventKind = info.getEventKind?.() ?? 'none';
+    if (eventKind !== this.lastEventKind) {
+      if (eventKind === 'tower') this.showBanner('魔尖塔 出現!', 0xffcc33); // 仿 BOSS 黃字
+      this.lastEventKind = eventKind;
+    }
+    this.updateEventBar(eventKind, info.getTowerHpRatio?.() ?? -1);
+
     this.lastWave = wave;
     this.lastState = state;
+  }
+
+  /** 事件血條（tower：塔 HP）。非事件→隱藏。 */
+  private updateEventBar(eventKind: string, towerHpRatio: number): void {
+    const show = eventKind === 'tower' && towerHpRatio >= 0;
+    this.eventBar.setVisible(show);
+    this.eventLabel.setVisible(show);
+    if (!show) return;
+    const w = 360;
+    const h = 14;
+    const x = GAME_WIDTH / 2 - w / 2;
+    const y = 80;
+    this.eventLabel.setText('魔尖塔 HP');
+    this.eventBar.clear();
+    this.eventBar.fillStyle(0x2a0808, 0.85).fillRect(x, y, w, h);
+    this.eventBar.fillStyle(0xff4444, 1).fillRect(x, y, w * Math.max(0, Math.min(1, towerHpRatio)), h);
+    this.eventBar.lineStyle(2, 0xff8888).strokeRect(x, y, w, h);
   }
 
   /** 過場宣告：淡入放大→停留→淡出。 */
@@ -118,5 +166,7 @@ export class DouqiWaveBanner {
     this.bannerTween?.stop();
     this.waveLabel.destroy();
     this.banner.destroy();
+    this.eventBar.destroy();
+    this.eventLabel.destroy();
   }
 }

@@ -248,3 +248,82 @@ export const DOUQI_SPAWN_CONFIG: DouqiSpawnConfig = {
   maxAliveMultLv1: 0.5,
   maxAliveMultCap: 1.0,
 };
+
+/**
+ * ★鬥氣三事件設定（階段 4）。海牛 v45 值。事件關（eventWaves 循環內 3/5/7）達 quota 後啟動；
+ * 成功獎勵 dropCount+expKills+banner；失敗無獎勵但仍過關（不重來不扣血）。
+ */
+export interface DouqiTowerEventConfig {
+  baseHp: number; // 塔 base HP（×(1+(wave-1)×hpGrowthPerWave)×curEnemyHpScale）
+  hpGrowthPerWave: number;
+  radiusPx: number; // 塔判定半徑
+  spawnIntervalMs: number; // 塔生怪間隔
+  spawnBatch: number; // 每次生幾隻
+  spawnAroundPx: number; // 塔周圍生怪半徑
+  // 四扇形 fanBlast
+  fanCount: number; // 扇形數
+  fanArcDeg: number; // 每扇形弧度（留縫）
+  fanRadiusPx: number; // 扇形半徑（塔中心往外）
+  fanFillMs: number; // 填滿預警時長→填滿瞬間發射
+  fanDamage: number; // 命中傷害（走二段能量倒扣）
+  fanRootMs: number; // 命中定身
+  fanCycleMs: number; // 每組間隔
+}
+export interface DouqiGuardEventConfig {
+  npcHp: number;
+  radiusPx: number;
+  spawnIntervalMs: number;
+  spawnBatch: number;
+  npcAttackCooldownMs: number; // 每隻怪對 NPC 攻擊冷卻
+  durationMs: number; // 撐過即成功
+}
+export interface DouqiCaptureEventConfig {
+  captureRadiusPx: number;
+  waveSize: number; // 每波生幾隻
+  spawnInsideRatio: number; // 生在圈心此比例半徑內
+  waveGapMs: number; // 圈內清空後隔多久出下波
+  progressPerSec: number; // 在圈+無怪時推進/秒
+  timeLimitMs: number; // 限時
+}
+export interface DouqiEventRewardConfig {
+  dropCount: number; // 掉道具數
+  dropRingPx: number; // 場中心周圍環半徑
+  expKills: number; // 等效擊殺經驗數（≈expKills×normal killExp）
+}
+
+export const DOUQI_TOWER_EVENT_CONFIG: DouqiTowerEventConfig = {
+  baseHp: 2000,
+  hpGrowthPerWave: 0.12,
+  radiusPx: 34,
+  spawnIntervalMs: 800,
+  spawnBatch: 2,
+  spawnAroundPx: 300,
+  fanCount: 4,
+  fanArcDeg: 48,
+  fanRadiusPx: 520,
+  fanFillMs: 2000,
+  fanDamage: 24,
+  fanRootMs: 2000,
+  fanCycleMs: 3200,
+};
+export const DOUQI_GUARD_EVENT_CONFIG: DouqiGuardEventConfig = {
+  npcHp: 1600,
+  radiusPx: 26,
+  spawnIntervalMs: 550,
+  spawnBatch: 2,
+  npcAttackCooldownMs: 1000,
+  durationMs: 30000,
+};
+export const DOUQI_CAPTURE_EVENT_CONFIG: DouqiCaptureEventConfig = {
+  captureRadiusPx: 340,
+  waveSize: 5,
+  spawnInsideRatio: 0.85,
+  waveGapMs: 1800,
+  progressPerSec: 12,
+  timeLimitMs: 45000,
+};
+export const DOUQI_EVENT_REWARD_CONFIG: DouqiEventRewardConfig = {
+  dropCount: 4,
+  dropRingPx: 60,
+  expKills: 20,
+};

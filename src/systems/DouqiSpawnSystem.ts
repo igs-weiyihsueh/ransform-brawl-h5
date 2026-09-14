@@ -9,6 +9,7 @@ import {
   DOUQI_SPAWN_CONFIG,
   DOUQI_ENEMY_STATS,
   DOUQI_LEVEL_CONFIG,
+  DOUQI_EVENT_REWARD_CONFIG,
   type DouqiSpawnConfig,
 } from '@/config/douqiConfig';
 import {
@@ -21,9 +22,13 @@ import {
   type DouqiSpawnEntry,
 } from '@/systems/douqiSpawnMath';
 import { pickWeightedType } from '@/systems/waveMath'; // ★單一來源：波騎抽出的共用輪盤（735ca1d，byte-gate 驗過）
+import { DouqiTowerEvent } from '@/systems/DouqiTowerEvent';
 
 /** 生怪驅動狀態機。 */
 export type DouqiWaveState = 'spawning' | 'clearing' | 'intermission' | 'boss' | 'event' | 'won';
+
+/** 事件種類（循環內序：3=塔、5=守護、7=佔領）。 */
+export type DouqiEventKind = 'tower' | 'guard' | 'capture' | 'none';
 
 /** v45 陣型類型名 → 我方 FormationType 映射（我方素材只有 Line/Triangle/Square/Circle/Hexagonal）。 */
 const FORMATION_TYPE_MAP: Record<string, FormationType> = {
@@ -60,6 +65,14 @@ export class DouqiSpawnSystem implements GameSystem {
   private readonly getTeamLevel: () => number;
   /** ★套鬥氣敵人 scale（GameScene 注入自 playerControlRef.scaleDouqiEnemy；傳 douqi 專屬 base HP/傷）。 */
   private readonly scaleEnemy: (enemy: Enemy, baseHp: number, baseDamage: number) => void;
+  /** ★塔扇形命中玩家→二段能量倒扣（GameScene 注入自 spawner.onPlayerHit 語意）。 */
+  private readonly onPlayerHitEnergy: (playerId: number) => void;
+  /** ★事件成功獎勵回呼（GameScene 注入：發經驗/掉道具佔位）。 */
+  private readonly grantEventReward: (expKills: number, dropCount: number, dropRingPx: number) => void;
+
+  /** 當前事件（塔）。守護/佔領 commit2 加。 */
+  private towerEvent: DouqiTowerEvent | null = null;
+  private eventKind: DouqiEventKind = 'none';
 
   private state: DouqiWaveState = 'spawning';
   private currentWave = 1;
@@ -80,9 +93,13 @@ export class DouqiSpawnSystem implements GameSystem {
   constructor(
     getTeamLevel: () => number,
     scaleEnemy: (enemy: Enemy, baseHp: number, baseDamage: number) => void,
+    onPlayerHitEnergy: (playerId: number) => void,
+    grantEventReward: (expKills: number, dropCount: number, dropRingPx: number) => void,
   ) {
     this.getTeamLevel = getTeamLevel;
     this.scaleEnemy = scaleEnemy;
+    this.onPlayerHitEnergy = onPlayerHitEnergy;
+    this.grantEventReward = grantEventReward;
   }
 
   init(ctx: GameContext): void {
@@ -127,9 +144,11 @@ export class DouqiSpawnSystem implements GameSystem {
         if (this.now() >= this.intermissionUntil) this.advanceToNextWave();
         break;
       case 'boss':
-      case 'event':
-        // ★佔位：具體 BOSS（階段 5）/事件（階段 4）留後續。目前簡單清場過關（不卡流程）。
+        // ★佔位：BOSS 具體留階段 5（簡單清場過關、不卡流程）。
         this.tickPlaceholder(dtMs);
+        break;
+      case 'event':
+        this.tickEvent(dt, dtMs);
         break;
     }
   }
@@ -209,7 +228,7 @@ export class DouqiSpawnSystem implements GameSystem {
     } else if (isEventWave(this.currentWave, this.cfg.totalWaves, this.cfg.eventWaves)) {
       this.state = 'event';
       this.placeholderElapsedMs = 0;
-      this.startEventPlaceholder();
+      this.startEvent();
     } else {
       this.enterIntermission();
     }
@@ -264,10 +283,61 @@ export class DouqiSpawnSystem implements GameSystem {
     // 目前佔位＝placeholder 計時到 → 通關（第10關）或進 intermission。
   }
 
-  private startEventPlaceholder(): void {
-    // 階段 4 具體事件（塔四扇形/守護 NPC/佔領圈）。★踩雷①事件關先清 quota 小怪再啟動事件（已由 checkWaveComplete
-    //   在達 quota 後才轉 event 保證）。★踩雷②事件中停生一般怪（event state 下 update 不呼 tickSpawning，保證）。
-    // 佔位：短暫後視為事件完成 → 進 intermission。
+  // ---- 事件（階段 4；塔 commit1，守護/佔領 commit2）----
+  /** 循環內序決定事件種類：3=塔、5=守護、7=佔領。 */
+  private eventKindForWave(wave: number): DouqiEventKind {
+    const inCycle = ((wave - 1) % this.cfg.totalWaves) + 1;
+    if (inCycle === 3) return 'tower';
+    if (inCycle === 5) return 'guard';
+    if (inCycle === 7) return 'capture';
+    return 'none';
+  }
+
+  /** 啟動事件（★踩雷①已清 quota 才進 event；★踩雷②event state 不呼 tickSpawning＝停生一般怪）。 */
+  private startEvent(): void {
+    this.eventKind = this.eventKindForWave(this.currentWave);
+    if (this.eventKind === 'tower') {
+      this.towerEvent = new DouqiTowerEvent(this.ctx, this.getTeamLevel, this.onPlayerHitEnergy);
+      this.towerEvent.start(this.currentWave);
+    } else {
+      // 守護/佔領 commit2；未實作前佔位（短暫後過關，不卡流程）。
+      this.placeholderElapsedMs = 0;
+    }
+  }
+
+  private tickEvent(dt: number, dtMs: number): void {
+    if (this.eventKind === 'tower' && this.towerEvent) {
+      this.towerEvent.update(dt);
+      if (this.towerEvent.isComplete()) {
+        this.completeEvent(/*success*/ true); // 打掉塔＝成功
+      }
+      return;
+    }
+    // 守護/佔領未實作前佔位（不卡流程）。
+    this.placeholderElapsedMs += dtMs;
+    if (this.placeholderElapsedMs >= 1200) this.completeEvent(false);
+  }
+
+  /** 事件結束：成功發獎（經驗+道具佔位）、清事件、進喘息（★失敗無獎但仍過關）。 */
+  private completeEvent(success: boolean): void {
+    if (success) {
+      const r = DOUQI_EVENT_REWARD_CONFIG;
+      this.grantEventReward(r.expKills, r.dropCount, r.dropRingPx);
+    }
+    this.towerEvent?.destroy();
+    this.towerEvent = null;
+    this.eventKind = 'none';
+    this.enterIntermission();
+  }
+
+  // ---- 事件 HUD 查詢（GameScene/HUD 讀）----
+  /** 當前事件種類（HUD 判要顯示塔血條/NPC 血條/佔領進度）。 */
+  getEventKind(): DouqiEventKind {
+    return this.eventKind;
+  }
+  /** 塔事件血條 ratio（僅 tower；其他回 -1）。 */
+  getTowerHpRatio(): number {
+    return this.eventKind === 'tower' && this.towerEvent ? this.towerEvent.getTowerHpRatio() : -1;
   }
 
   private tickPlaceholder(dtMs: number): void {
