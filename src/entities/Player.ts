@@ -938,6 +938,37 @@ export class Player implements Hittable {
     this.faceTowards(targetX);
   }
 
+  /**
+   * ★鬥氣普攻揮砍姿態（用戶要的「揮砍動作感」）：純顯示 tween——sprite 朝揮擊方向快速「揮出」再回正
+   *   （angle 甩一下 + scaleX 略前傾），~140ms 回原狀。★只改 sprite 顯示 angle/scale（body/判定/位移/normal 全不動）。
+   * @param dirX 揮擊方向 x 分量（>0 朝右揮、<0 朝左）；用來決定甩的正負。
+   */
+  playDouqiSwingPose(dirX: number): void {
+    const sp = this.anim.sprite;
+    if (dirX > 0.001) this.setFacing(1);
+    else if (dirX < -0.001) this.setFacing(-1);
+    // 甩刀方向：面右→順時針甩(+)、面左→逆時針(-)。用 sprite 當前 angle 為基準回正。
+    const kick = this.facing >= 0 ? 26 : -26;
+    const baseScaleX = sp.scaleX;
+    const baseScaleY = sp.scaleY;
+    this.scene.tweens.killTweensOf(sp); // 清前一個揮砍 tween 免疊
+    // 起手：快速甩出 angle + 略拉伸；收尾：回正。
+    this.scene.tweens.add({
+      targets: sp,
+      angle: kick,
+      scaleX: baseScaleX * 1.12,
+      scaleY: baseScaleY * 0.94,
+      duration: 80,
+      ease: 'Cubic.easeOut',
+      yoyo: true,
+      onComplete: () => {
+        sp.angle = 0;
+        sp.scaleX = baseScaleX;
+        sp.scaleY = baseScaleY;
+      },
+    });
+  }
+
   /** 衝刺命中去重：回傳 true 表示這隻本次衝刺尚未打過（並記錄）。 */
   tryDashHit(enemy: object): boolean {
     if (this.dashHitSet.has(enemy)) return false;

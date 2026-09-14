@@ -655,13 +655,18 @@ export class PlayerControlSystem implements GameSystem {
     const c = enemy.getHitCenter();
     // 擊退方向＝由玩家指向敵人（takeHit 以 enemy - fromPos 為方向；fromPos=玩家位置→沿玩家→敵人推）。
     enemy.takeHit(damage, knockback, { x: pos.x, y: pos.y });
+    // ★用戶要的「攻擊揮砍動作感」（只 douqi）：角色揮砍姿態 + 斬光弧 fx（沿玩家→敵方向、鬥氣金）。
+    const dx = c.x - pos.x;
+    const dy = c.y - pos.y;
+    const angleRad = Math.atan2(dy, dx);
+    (player as unknown as { playDouqiSwingPose?: (dirX: number) => void }).playDouqiSwingPose?.(dx);
+    this.ctx.effects?.douqiSlashSwing?.(c.x, c.y, angleRad, 1.4, 0xfff0c8); // 揮擊點=敵中心、暖白(略金)保留青白刀光亮度、scale 1.4 顯眼
     enemy.recordDamageFrom(attackerId, damage); // per-enemy 傷害歸屬
     this.ctx.jp.recordDamage(attackerId, damage); // per-player 貢獻（additive）
     // Credit 扣 + COMBO + JP 共享池（一次揮擊一次）。
     this.ctx.credit.consumeOnHit(attackerId);
     this.ctx.combo.onHit(attackerId);
     this.ctx.jp.notifyCreditSpent(1);
-    void c;
   }
 
   /**

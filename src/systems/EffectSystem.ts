@@ -65,6 +65,10 @@ const ENEMY_ATTACK_VFX = {
   playerDash: { key: 'vfx-player-dash', path: `${BASE_PATH}/fx_player_dash.png` },
   /** 九輪#3：玩家衝刺前方防護罩（128×128, 朝右凸弧形力場罩, 可染玩家色）。 */
   playerDashShield: { key: 'vfx-player-dash-shield', path: `${BASE_PATH}/fx_player_dash_shield.png` },
+  /** ★鬥氣攻擊揮砍斬光弧 3 幀（特效手，青白鬥氣色，f1 起手→f2 峰值→f3 收尾，中性可 setTint 染金）。只 douqi 用。 */
+  douqiSlash1: { key: 'vfx-douqi-slash-1', path: `${BASE_PATH}/fx_douqi_slash_1.png` },
+  douqiSlash2: { key: 'vfx-douqi-slash-2', path: `${BASE_PATH}/fx_douqi_slash_2.png` },
+  douqiSlash3: { key: 'vfx-douqi-slash-3', path: `${BASE_PATH}/fx_douqi_slash_3.png` },
   /** 十五輪：守護聚焦壓暗遮罩（1920×1080 徑向 vignette，中心透明圓露雕像、邊緣黑 alpha 0.85 柔邊）。 */
   guardFocusVignette: { key: 'vfx-guard-focus-vignette', path: `${BASE_PATH}/fx_guard_focus_vignette.png` },
   /** 十五輪：守護聚焦暖白柔光暈（1024×1024，中心 alpha 0.57→邊緣 0，疊雕像後增強聚光）。 */
@@ -1368,6 +1372,45 @@ export class EffectSystem {
     g.fillRect(0, -width / 2, length, width);
     g.setAlpha(1);
     this.scene.tweens.add({ targets: g, alpha: 0, scaleY: 0.4, duration: durMs, ease: 'Quad.easeOut', onComplete: () => g.destroy() });
+  }
+
+  /**
+   * ★鬥氣普攻揮砍斬光弧（用戶要的攻擊揮砍動作感）：沿揮擊方向播一道刀光劃過。
+   * 3 幀序列 f1 起手→f2 峰值→f3 收尾（各 ~50ms），origin(0.5,0.5) 對揮擊點、setRotation 對齊方向、setTint 鬥氣金。
+   * 素材沒載→退化為單張 f2 tween（scale 0.7→1.15 + alpha 淡出）不硬依賴。只 douqi 用。
+   * @param x,y 揮擊點（衝到怪前的落點世界座標）。
+   * @param angleRad 揮擊方向（玩家→怪）。
+   * @param scale 依攻擊範圍縮放（呼叫端傳 attackHitRadius 相關）。
+   * @param tint 染色（鬥氣金；預設不染=中性青白）。
+   */
+  douqiSlashSwing(x: number, y: number, angleRad: number, scale = 1, tint?: number): void {
+    const frames = [ENEMY_ATTACK_VFX.douqiSlash1.key, ENEMY_ATTACK_VFX.douqiSlash2.key, ENEMY_ATTACK_VFX.douqiSlash3.key];
+    const haveFrames = frames.every((k) => this.scene.textures.exists(k));
+    if (haveFrames) {
+      // 3 幀序列刀光劃過：一次生一張、切幀、末幀淡出銷毀。
+      const spr = this.scene.add.image(x, y, frames[0]);
+      spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH + 1).setRotation(angleRad).setScale(scale).setAlpha(1);
+      if (tint != null) spr.setTint(tint);
+      const frameMs = 65;
+      this.scene.time.delayedCall(frameMs, () => { if (spr.active) spr.setTexture(frames[1]); });
+      this.scene.time.delayedCall(frameMs * 2, () => { if (spr.active) spr.setTexture(frames[2]); });
+      // 峰值略放大 + 收尾淡出。
+      this.scene.tweens.add({ targets: spr, scale: scale * 1.15, duration: frameMs * 3, ease: 'Cubic.easeOut' });
+      this.scene.tweens.add({
+        targets: spr, alpha: 0, delay: frameMs * 2, duration: frameMs * 1.6, ease: 'Sine.easeIn',
+        onComplete: () => spr.destroy(),
+      });
+      return;
+    }
+    // fallback：素材未載→退化為既有 enemySlash 風格（單張 tween），至少有揮砍感。
+    const g = this.scene.add.graphics();
+    g.setDepth(ATTACK_VFX_DEPTH + 1).setPosition(x, y).setRotation(angleRad);
+    g.lineStyle(5, tint ?? 0xbdf0ff, 1);
+    g.beginPath();
+    g.arc(0, 0, 42 * scale, -Math.PI / 3, Math.PI / 3, false); // 一道 120° 弧刀光
+    g.strokePath();
+    g.setScale(0.7).setAlpha(1);
+    this.scene.tweens.add({ targets: g, scale: 1.15 * scale, alpha: 0, duration: 160, ease: 'Cubic.easeOut', onComplete: () => g.destroy() });
   }
 
   /**
