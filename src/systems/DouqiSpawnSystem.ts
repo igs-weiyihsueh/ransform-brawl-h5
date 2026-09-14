@@ -23,6 +23,8 @@ import {
 } from '@/systems/douqiSpawnMath';
 import { pickWeightedType } from '@/systems/waveMath'; // ★單一來源：波騎抽出的共用輪盤（735ca1d，byte-gate 驗過）
 import { DouqiTowerEvent } from '@/systems/DouqiTowerEvent';
+import { DouqiGuardEvent } from '@/systems/DouqiGuardEvent';
+import { DouqiCaptureEvent } from '@/systems/DouqiCaptureEvent';
 
 /** 生怪驅動狀態機。 */
 export type DouqiWaveState = 'spawning' | 'clearing' | 'intermission' | 'boss' | 'event' | 'won';
@@ -72,6 +74,8 @@ export class DouqiSpawnSystem implements GameSystem {
 
   /** 當前事件（塔）。守護/佔領 commit2 加。 */
   private towerEvent: DouqiTowerEvent | null = null;
+  private guardEvent: DouqiGuardEvent | null = null;
+  private captureEvent: DouqiCaptureEvent | null = null;
   private eventKind: DouqiEventKind = 'none';
 
   private state: DouqiWaveState = 'spawning';
@@ -218,7 +222,9 @@ export class DouqiSpawnSystem implements GameSystem {
 
   // ---- 過關/流程 ----
   private checkWaveComplete(): void {
-    if (this.state === 'intermission' || this.state === 'won') return;
+    // ★只在 spawning/clearing 才判過關分流；已在 event/boss/intermission/won→不重入（否則事件中每殺一隻怪都
+    //   re-startEvent 重生塔/NPC＝實測 bug：塔打不死一直重生、事件永不完成）。
+    if (this.state !== 'spawning' && this.state !== 'clearing') return;
     if (this.killed < this.quota) return;
     // 達 quota 分流。
     if (isBossWave(this.currentWave, this.cfg.totalWaves)) {
@@ -296,11 +302,17 @@ export class DouqiSpawnSystem implements GameSystem {
   /** 啟動事件（★踩雷①已清 quota 才進 event；★踩雷②event state 不呼 tickSpawning＝停生一般怪）。 */
   private startEvent(): void {
     this.eventKind = this.eventKindForWave(this.currentWave);
+    const scaleNormal = (e: Enemy) => this.scaleEnemy(e, DOUQI_ENEMY_STATS.normal.maxHp, DOUQI_ENEMY_STATS.normal.attackDamage);
     if (this.eventKind === 'tower') {
       this.towerEvent = new DouqiTowerEvent(this.ctx, this.getTeamLevel, this.onPlayerHitEnergy);
       this.towerEvent.start(this.currentWave);
+    } else if (this.eventKind === 'guard') {
+      this.guardEvent = new DouqiGuardEvent(this.ctx, scaleNormal);
+      this.guardEvent.start();
+    } else if (this.eventKind === 'capture') {
+      this.captureEvent = new DouqiCaptureEvent(this.ctx, scaleNormal);
+      this.captureEvent.start();
     } else {
-      // 守護/佔領 commit2；未實作前佔位（短暫後過關，不卡流程）。
       this.placeholderElapsedMs = 0;
     }
   }
@@ -308,17 +320,25 @@ export class DouqiSpawnSystem implements GameSystem {
   private tickEvent(dt: number, dtMs: number): void {
     if (this.eventKind === 'tower' && this.towerEvent) {
       this.towerEvent.update(dt);
-      if (this.towerEvent.isComplete()) {
-        this.completeEvent(/*success*/ true); // 打掉塔＝成功
-      }
+      if (this.towerEvent.isComplete()) this.completeEvent(/*success*/ true); // 打掉塔＝成功
       return;
     }
-    // 守護/佔領未實作前佔位（不卡流程）。
+    if (this.eventKind === 'guard' && this.guardEvent) {
+      this.guardEvent.update(dt);
+      if (this.guardEvent.isComplete()) this.completeEvent(this.guardEvent.isSuccess());
+      return;
+    }
+    if (this.eventKind === 'capture' && this.captureEvent) {
+      this.captureEvent.update(dt);
+      if (this.captureEvent.isComplete()) this.completeEvent(this.captureEvent.isSuccess());
+      return;
+    }
+    // 無事件（不該發生）佔位：不卡流程。
     this.placeholderElapsedMs += dtMs;
     if (this.placeholderElapsedMs >= 1200) this.completeEvent(false);
   }
 
-  /** 事件結束：成功發獎（經驗+道具佔位）、清事件、進喘息（★失敗無獎但仍過關）。 */
+  /** 事件結束：★成功發獎（經驗+道具佔位）；★失敗無獎但仍過關（不重來不扣血）。清事件、進喘息。 */
   private completeEvent(success: boolean): void {
     if (success) {
       const r = DOUQI_EVENT_REWARD_CONFIG;
@@ -326,6 +346,10 @@ export class DouqiSpawnSystem implements GameSystem {
     }
     this.towerEvent?.destroy();
     this.towerEvent = null;
+    this.guardEvent?.destroy();
+    this.guardEvent = null;
+    this.captureEvent?.destroy();
+    this.captureEvent = null;
     this.eventKind = 'none';
     this.enterIntermission();
   }
@@ -338,6 +362,20 @@ export class DouqiSpawnSystem implements GameSystem {
   /** 塔事件血條 ratio（僅 tower；其他回 -1）。 */
   getTowerHpRatio(): number {
     return this.eventKind === 'tower' && this.towerEvent ? this.towerEvent.getTowerHpRatio() : -1;
+  }
+  /** 守護事件 NPC 血條 ratio（僅 guard；其他回 -1）。 */
+  getGuardHpRatio(): number {
+    return this.eventKind === 'guard' && this.guardEvent ? this.guardEvent.getNpcHpRatio() : -1;
+  }
+  /** 佔領事件進度 ratio（僅 capture；其他回 -1）。 */
+  getCaptureRatio(): number {
+    return this.eventKind === 'capture' && this.captureEvent ? this.captureEvent.getProgressRatio() : -1;
+  }
+  /** 事件剩餘秒（guard/capture 倒數；無回 -1）。 */
+  getEventRemainSec(): number {
+    if (this.eventKind === 'guard' && this.guardEvent) return this.guardEvent.getRemainSec();
+    if (this.eventKind === 'capture' && this.captureEvent) return this.captureEvent.getRemainSec();
+    return -1;
   }
 
   private tickPlaceholder(dtMs: number): void {

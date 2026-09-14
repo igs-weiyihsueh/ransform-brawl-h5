@@ -9,6 +9,12 @@ export interface DouqiWaveInfo {
   getEventKind?(): string;
   /** 塔事件血條 ratio（0~1；非 tower 回 -1）。 */
   getTowerHpRatio?(): number;
+  /** 守護事件 NPC 血條 ratio（0~1；非 guard 回 -1）。 */
+  getGuardHpRatio?(): number;
+  /** 佔領事件進度 ratio（0~1；非 capture 回 -1）。 */
+  getCaptureRatio?(): number;
+  /** guard/capture 剩餘秒（倒數；無回 -1）。 */
+  getEventRemainSec?(): number;
 }
 
 /**
@@ -109,21 +115,42 @@ export class DouqiWaveBanner {
       this.showBanner(`WAVE ${wave}`, 0xffd24d);
     }
 
-    // ★事件 HUD（塔血條 + 登場提示）。
+    // ★事件 HUD（塔/守護/佔領血條進度 + 登場提示）。
     const eventKind = info.getEventKind?.() ?? 'none';
     if (eventKind !== this.lastEventKind) {
-      if (eventKind === 'tower') this.showBanner('魔尖塔 出現!', 0xffcc33); // 仿 BOSS 黃字
+      if (eventKind === 'tower') this.showBanner('魔尖塔 出現!', 0xffcc33);
+      else if (eventKind === 'guard') this.showBanner('守護目標!', 0x66ccff);
+      else if (eventKind === 'capture') this.showBanner('佔領據點!', 0x66ff88);
       this.lastEventKind = eventKind;
     }
-    this.updateEventBar(eventKind, info.getTowerHpRatio?.() ?? -1);
+    this.updateEventBar(info);
 
     this.lastWave = wave;
     this.lastState = state;
   }
 
-  /** 事件血條（tower：塔 HP）。非事件→隱藏。 */
-  private updateEventBar(eventKind: string, towerHpRatio: number): void {
-    const show = eventKind === 'tower' && towerHpRatio >= 0;
+  /** 事件血條/進度條（塔 HP / 守護 NPC HP / 佔領進度 + 倒數）。非事件→隱藏。 */
+  private updateEventBar(info: DouqiWaveInfo): void {
+    const kind = info.getEventKind?.() ?? 'none';
+    let ratio = -1;
+    let label = '';
+    let barColor = 0xff4444;
+    if (kind === 'tower') {
+      ratio = info.getTowerHpRatio?.() ?? -1;
+      label = '魔尖塔 HP';
+      barColor = 0xff4444;
+    } else if (kind === 'guard') {
+      ratio = info.getGuardHpRatio?.() ?? -1;
+      const sec = info.getEventRemainSec?.() ?? -1;
+      label = `守護 NPC HP${sec >= 0 ? `  ⏱ ${Math.ceil(sec)}s` : ''}`;
+      barColor = 0x66ccff;
+    } else if (kind === 'capture') {
+      ratio = info.getCaptureRatio?.() ?? -1;
+      const sec = info.getEventRemainSec?.() ?? -1;
+      label = `佔領進度 ${Math.round((ratio < 0 ? 0 : ratio) * 100)}%${sec >= 0 ? `  ⏱ ${Math.ceil(sec)}s` : ''}`;
+      barColor = 0x66ff88;
+    }
+    const show = ratio >= 0;
     this.eventBar.setVisible(show);
     this.eventLabel.setVisible(show);
     if (!show) return;
@@ -131,11 +158,11 @@ export class DouqiWaveBanner {
     const h = 14;
     const x = GAME_WIDTH / 2 - w / 2;
     const y = 80;
-    this.eventLabel.setText('魔尖塔 HP');
+    this.eventLabel.setText(label);
     this.eventBar.clear();
-    this.eventBar.fillStyle(0x2a0808, 0.85).fillRect(x, y, w, h);
-    this.eventBar.fillStyle(0xff4444, 1).fillRect(x, y, w * Math.max(0, Math.min(1, towerHpRatio)), h);
-    this.eventBar.lineStyle(2, 0xff8888).strokeRect(x, y, w, h);
+    this.eventBar.fillStyle(0x101010, 0.85).fillRect(x, y, w, h);
+    this.eventBar.fillStyle(barColor, 1).fillRect(x, y, w * Math.max(0, Math.min(1, ratio)), h);
+    this.eventBar.lineStyle(2, 0xffffff, 0.6).strokeRect(x, y, w, h);
   }
 
   /** 過場宣告：淡入放大→停留→淡出。 */
