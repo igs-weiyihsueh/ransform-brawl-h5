@@ -518,10 +518,10 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
       fx?.triggerHitstop?.(cfg.hitstopMs);
       fx?.shakeOnce?.(juice.burstTickShakeIntensity, juice.burstTickShakeDurationMs);
     }
-    // 每段隨機位置斬光（橙 tint、角度隨機）——連續多段散佈＝割草連斬視覺，明顯區別於圓形斬青環。
+    // 每段隨機位置斬光（★專屬爆發斬光 fx_douqi_burst_slash 3幀橙、角度隨機）——連續多段散佈＝割草連斬視覺，明顯區別於圓形斬青環。
     const ox = origin.x + (Math.random() * 2 - 1) * cfg.slashScatterPx;
     const oy = origin.y + (Math.random() * 2 - 1) * cfg.slashScatterPx;
-    fx?.douqiSlashSwing?.(ox, oy, Math.random() * Math.PI * 2, 1.2, 0xffa500);
+    fx?.douqiBurstSlash?.(ox, oy, Math.random() * Math.PI * 2, 1.2);
   }
 
   /** ④滿連段強化：limited buff（無敵+傷/範圍/移速/衝速提升，角色仍可操控）+視覺放大(僅顯示)+金環。觸發後 combo 歸零。 */

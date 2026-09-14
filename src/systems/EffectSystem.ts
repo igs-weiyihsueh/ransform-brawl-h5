@@ -69,6 +69,10 @@ const ENEMY_ATTACK_VFX = {
   douqiSlash1: { key: 'vfx-douqi-slash-1', path: `${BASE_PATH}/fx_douqi_slash_1.png` },
   douqiSlash2: { key: 'vfx-douqi-slash-2', path: `${BASE_PATH}/fx_douqi_slash_2.png` },
   douqiSlash3: { key: 'vfx-douqi-slash-3', path: `${BASE_PATH}/fx_douqi_slash_3.png` },
+  /** ★鬥氣爆發專屬連斬斬光 3 幀（特效手，橙色系白熱核心+橙外焰，f1 起手→f2 峰值→f3 收尾，凌厲利刃）。只 douqi 爆發用。 */
+  douqiBurstSlash1: { key: 'vfx-douqi-burst-slash-1', path: `${BASE_PATH}/fx_douqi_burst_slash_1.png` },
+  douqiBurstSlash2: { key: 'vfx-douqi-burst-slash-2', path: `${BASE_PATH}/fx_douqi_burst_slash_2.png` },
+  douqiBurstSlash3: { key: 'vfx-douqi-burst-slash-3', path: `${BASE_PATH}/fx_douqi_burst_slash_3.png` },
   /** 十五輪：守護聚焦壓暗遮罩（1920×1080 徑向 vignette，中心透明圓露雕像、邊緣黑 alpha 0.85 柔邊）。 */
   guardFocusVignette: { key: 'vfx-guard-focus-vignette', path: `${BASE_PATH}/fx_guard_focus_vignette.png` },
   /** 十五輪：守護聚焦暖白柔光暈（1024×1024，中心 alpha 0.57→邊緣 0，疊雕像後增強聚光）。 */
@@ -1435,6 +1439,32 @@ export class EffectSystem {
     g.strokePath();
     g.setScale(0.7).setAlpha(1);
     this.scene.tweens.add({ targets: g, scale: 1.15 * scale, alpha: 0, duration: 160, ease: 'Cubic.easeOut', onComplete: () => g.destroy() });
+  }
+
+  /**
+   * ★鬥氣爆發專屬連斬斬光（第二顆：換掉第一階段 douqiSlashSwing 橙 tint 佔位）。3 幀 f1→f2→f3 播完淡出銷毀，
+   *   橙色系素材原色（白熱核心+橙外焰）不 tint。爆發 burstTick 每段隨機位置/角度呼一次＝連斬散佈 flurry。
+   *   ★素材未載 fallback：退回 douqiSlashSwing 橙弧（至少有斬光）。只 douqi 爆發呼。
+   * @param x,y 世界座標（burstTick 隨機散佈點）。
+   * @param angleRad 旋轉角（隨機）。
+   * @param scale 縮放。
+   */
+  douqiBurstSlash(x: number, y: number, angleRad: number, scale = 1): void {
+    const frames = [ENEMY_ATTACK_VFX.douqiBurstSlash1.key, ENEMY_ATTACK_VFX.douqiBurstSlash2.key, ENEMY_ATTACK_VFX.douqiBurstSlash3.key];
+    if (!frames.every((k) => this.scene.textures.exists(k))) {
+      this.douqiSlashSwing(x, y, angleRad, scale, 0xffa500); // fallback：素材未載→橙 tint 通用斬光
+      return;
+    }
+    const spr = this.scene.add.image(x, y, frames[0]);
+    spr.setOrigin(0.5, 0.5).setDepth(ATTACK_VFX_DEPTH + 1).setRotation(angleRad).setScale(scale).setAlpha(1);
+    const frameMs = 60;
+    this.scene.time.delayedCall(frameMs, () => { if (spr.active) spr.setTexture(frames[1]); });
+    this.scene.time.delayedCall(frameMs * 2, () => { if (spr.active) spr.setTexture(frames[2]); });
+    this.scene.tweens.add({ targets: spr, scale: scale * 1.15, duration: frameMs * 3, ease: 'Cubic.easeOut' });
+    this.scene.tweens.add({
+      targets: spr, alpha: 0, delay: frameMs * 2, duration: frameMs * 1.6, ease: 'Sine.easeIn',
+      onComplete: () => spr.destroy(),
+    });
   }
 
   /**
