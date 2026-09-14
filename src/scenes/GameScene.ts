@@ -33,6 +33,7 @@ import { InputSystem } from '@/systems/InputSystem';
 import { JpSystem } from '@/systems/JpSystem';
 import { JpLampHud } from '@/systems/ui/JpLampHud';
 import { DouqiExpBar } from '@/systems/ui/DouqiExpBar';
+import { DouqiComboHud } from '@/systems/ui/DouqiComboHud';
 import { DouqiWaveBanner } from '@/systems/ui/DouqiWaveBanner';
 import { pickLightGroup, JP_TICKET_FACE } from '@/config/jpConfig';
 import { PlayerControlSystem } from '@/systems/PlayerControlSystem';
@@ -74,6 +75,7 @@ export class GameScene extends Phaser.Scene {
   private jpLampHud?: JpLampHud;
   /** ★鬥氣模式 teamLevel+經驗條 HUD（階段 3；只 douqi 建/更新）。 */
   private douqiExpBar?: DouqiExpBar;
+  private douqiComboHud?: DouqiComboHud;
   /** ★鬥氣模式波次推進宣告 HUD（實機修；只 douqi 建/更新）。 */
   private douqiWaveBanner?: DouqiWaveBanner;
   /** ★鬥氣模式 10 關生怪驅動（階段 3 後半；只 douqi 註冊，與 normal WaveSystem 互斥）。 */
@@ -301,6 +303,8 @@ export class GameScene extends Phaser.Scene {
     if (this.gameMode !== 'douqi') this.jpLampHud = new JpLampHud(this);
     // ★階段 3 commit4：鬥氣模式建經驗條 HUD（用戶要 B 顯示 teamLevel+經驗條）；normal 不建＝HUD 不變。
     if (this.gameMode === 'douqi') this.douqiExpBar = new DouqiExpBar(this);
+    // ★用戶實玩後要：鬥氣連段介面 HUD（連段條 + 4 招式節點三態預告 + 強化倒數，per-pid）。只 douqi 建＝normal 不建、byte 安全。
+    if (this.gameMode === 'douqi') this.douqiComboHud = new DouqiComboHud(this);
     // ★實機修：鬥氣波次推進宣告 HUD（第 N 關常駐 + 過關/開波過場宣告）。只 douqi 建＝normal HUD 不變。
     if (this.gameMode === 'douqi') this.douqiWaveBanner = new DouqiWaveBanner(this);
 
@@ -566,6 +570,14 @@ export class GameScene extends Phaser.Scene {
         this.playerControlRef.getDouqiTeamExp(),
         this.playerControlRef.getDouqiExpToNext(),
       );
+    }
+    // ★連段介面 HUD 更新（per-pid combo/teamLevel/empower）。只 douqi 建了才更新。
+    if (this.douqiComboHud && this.playerControlRef) {
+      const entries = this.ctx.players.map((p) => ({
+        pid: p.playerId,
+        data: this.playerControlRef!.getDouqiComboHudData(p.playerId),
+      }));
+      this.douqiComboHud.update(entries);
     }
     // ★實機修：鬥氣波次宣告 HUD 更新（讀 DouqiSpawnSystem 狀態機，過關/開波彈過場）。只 douqi 建了才更新。
     if (this.douqiWaveBanner && this.douqiSpawn) {

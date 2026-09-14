@@ -190,6 +190,12 @@ export class PlayerControlSystem implements GameSystem {
     return typeof s?.debugEmpowerMs === 'function' ? s.debugEmpowerMs(pid) : 0;
   }
 
+  /** ★連段 HUD 資料源（僅 douqi；normal 回 null＝HUD 不建/不更新）。 */
+  getDouqiComboHudData(pid: number): { combo: number; comboMax: number; teamLevel: number; empowerRemainMs: number } | null {
+    const s = this.strategy as unknown as { getComboHudData?: (pid: number) => { combo: number; comboMax: number; teamLevel: number; empowerRemainMs: number } };
+    return typeof s?.getComboHudData === 'function' ? s.getComboHudData(pid) : null;
+  }
+
   /** ★階段 3：擊殺給經驗（GameScene onEnemyKilled 於 douqi 時呼；normal 策略無此方法→no-op）。 */
   grantDouqiKillExp(enemyKey: string): void {
     const s = this.strategy as unknown as { grantKillExp?: (k: string) => void };

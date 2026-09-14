@@ -551,6 +551,19 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     return this.state.get(pid)?.empowerRemainingMs ?? 0;
   }
 
+  /**
+   * ★連段 HUD 資料源（每幀餵 DouqiComboHud）：讀現有 per-pid combo 內部計數 + teamLevel + 強化剩餘。
+   *   純讀，不改連段邏輯。門檻/解鎖等級 HUD 直接讀 DOUQI_COMBO_CONFIG（單一真源）。
+   */
+  getComboHudData(pid: number): { combo: number; comboMax: number; teamLevel: number; empowerRemainMs: number } {
+    return {
+      combo: this.state.get(pid)?.combo ?? 0,
+      comboMax: DOUQI_COMBO_CONFIG.maxCombo,
+      teamLevel: this.teamLevelValue,
+      empowerRemainMs: this.state.get(pid)?.empowerRemainingMs ?? 0,
+    };
+  }
+
   /** 取（或初始化）某 pid 的鬥氣狀態。 */
   private stateOf(pid: number): DouqiPlayerState {
     let st = this.state.get(pid);
