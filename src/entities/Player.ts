@@ -947,25 +947,20 @@ export class Player implements Hittable {
     const sp = this.anim.sprite;
     if (dirX > 0.001) this.setFacing(1);
     else if (dirX < -0.001) this.setFacing(-1);
-    // 甩刀方向：面右→順時針甩(+)、面左→逆時針(-)。用 sprite 當前 angle 為基準回正。
+    // 甩刀方向：面右→順時針甩(+)、面左→逆時針(-)。
     const kick = this.facing >= 0 ? 26 : -26;
-    const baseScaleX = sp.scaleX;
-    const baseScaleY = sp.scaleY;
-    this.scene.tweens.killTweensOf(sp); // 清前一個揮砍 tween 免疊
-    // 起手：快速甩出 angle + 略拉伸；收尾：回正。
+    // ★bug2 修（強化連打角色越來越扁）：原本 tween 非等比 scaleX×1.12/scaleY×0.94 squash，killTweensOf 中斷不跑 onComplete →
+    //   sprite 卡中途扁值，下擊又讀當前扁值當 base 再乘 → 逐擊累積變形（強化連打尤甚）。
+    //   ★改 angle-only 揮砍（不動 scale）＝根絕累積變形；scale 一律交 applyDisplayScale（SPRITE_SCALE×二段×強化）絕對控制。squash 割捨（錦上添花，穩定優先）。
+    this.scene.tweens.killTweensOf(sp);
+    sp.angle = 0;
     this.scene.tweens.add({
       targets: sp,
       angle: kick,
-      scaleX: baseScaleX * 1.12,
-      scaleY: baseScaleY * 0.94,
       duration: 80,
       ease: 'Cubic.easeOut',
       yoyo: true,
-      onComplete: () => {
-        sp.angle = 0;
-        sp.scaleX = baseScaleX;
-        sp.scaleY = baseScaleY;
-      },
+      onComplete: () => { sp.angle = 0; },
     });
   }
 

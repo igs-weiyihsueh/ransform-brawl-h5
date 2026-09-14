@@ -488,6 +488,9 @@ export class EnemySpawner {
       if (!e.isTower() || e.isDead()) continue;
       const ring = e.getRingSkill();
       if (!ring) continue;
+      // ★bug3 修：ringCount<=0＝關環（鬥氣塔事件/BossEvent 傳 ringCount0 不放舊環狀技，只走各自事件攻擊）。
+      //   ★normal TowerWave 恆傳 ringCount>=1（towerSchema min:1）不受影響。清掉可能殘留的環狀 state。
+      if (ring.ringCount <= 0) { this.towerRingStates.delete(e.id); continue; }
       const params = resolveTowerRingParams(ring);
       let state = this.towerRingStates.get(e.id);
       const justCreated = !state; // ★Bug3：本幀首建 state → 需主動補發初始環 warning VFX（第 0 環）

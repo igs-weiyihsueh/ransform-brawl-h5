@@ -842,7 +842,8 @@ export class Enemy implements Hittable {
     const baseWarning = (base as { warningSec?: number }).warningSec ?? 0.5;
     const baseVacuum = (base as { vacuumRadiusPx?: number }).vacuumRadiusPx;
     this.ringSkillOverride = {
-      ringCount: ring.ringCount != null && ring.ringCount >= 1 ? Math.floor(ring.ringCount) : base.ringCount,
+      // ★bug3 修：允許 ringCount:0 存入（原 >=1 把 0 當「沒給」退回 base.ringCount3→塔仍放舊環）。0＝關環（updateTowerRings 跳過不放）。
+      ringCount: ring.ringCount != null && ring.ringCount >= 0 ? Math.floor(ring.ringCount) : base.ringCount,
       baseRadiusPx: ring.baseRadiusPx != null && ring.baseRadiusPx >= 0 ? ring.baseRadiusPx : base.baseRadiusPx,
       radiusStepPx: ring.radiusStepPx != null && ring.radiusStepPx >= 0 ? ring.radiusStepPx : base.radiusStepPx,
       ringIntervalSec: ring.ringIntervalSec != null && ring.ringIntervalSec > 0 ? ring.ringIntervalSec : base.ringIntervalSec,

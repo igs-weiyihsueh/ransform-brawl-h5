@@ -1161,10 +1161,18 @@ export class EffectSystem {
    */
   punchScale(sprite: Phaser.GameObjects.Sprite, amount: number): void {
     if (!sprite || !sprite.active) return;
-    const baseX = sprite.scaleX;
-    const baseY = sprite.scaleY;
-    // 先歸位再彈（避免連打疊加爆縮放）。
-    sprite.setScale(baseX, baseY);
+    // ★bug1 修（怪越打越大）：連打時前一次 punch tween 未結束 → 讀當前(膨脹)scale 當 base 會逐擊累加爆縮放。
+    //   改：存「靜止原始 scale」一次（首次 punch 時的乾淨 scale）→ 每次 punch 先 killTweensOf + setScale 回絕對原始值 → 再彈。
+    //   目標用絕對值（不讀當前 sprite.scale）＝連打不累積。（動 EffectSystem 表演層；normal 連段同型一併修好，NormalControlStrategy 不動。）
+    let baseX = sprite.getData('punchBaseScaleX') as number | undefined;
+    let baseY = sprite.getData('punchBaseScaleY') as number | undefined;
+    if (baseX == null || baseY == null) {
+      baseX = sprite.scaleX; baseY = sprite.scaleY; // 首次：此刻＝靜止原始 scale（尚無 punch 進行）
+      sprite.setData('punchBaseScaleX', baseX);
+      sprite.setData('punchBaseScaleY', baseY);
+    }
+    this.scene.tweens.killTweensOf(sprite); // 殺前一 punch tween（免中途值污染）
+    sprite.setScale(baseX, baseY); // 回絕對原始（不吃膨脹值）
     this.scene.tweens.add({
       targets: sprite,
       scaleX: baseX * (1 + amount),
@@ -1173,7 +1181,7 @@ export class EffectSystem {
       yoyo: true,
       ease: 'Quad.easeOut',
       onComplete: () => {
-        if (sprite && sprite.active) sprite.setScale(baseX, baseY);
+        if (sprite && sprite.active) sprite.setScale(baseX as number, baseY as number);
       },
     });
   }
