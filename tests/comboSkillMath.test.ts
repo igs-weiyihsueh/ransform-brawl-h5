@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pointInCircle, pointInOrientedRect, bumpCombo, comboSkillReady } from '@/systems/comboSkillMath';
+import { pointInCircle, pointInOrientedRect, bumpCombo, comboSkillReady, comboSkillEdgeTriggered } from '@/systems/comboSkillMath';
 
 describe('pointInCircle', () => {
   it('圓內→true', () => expect(pointInCircle(3, 4, 0, 0, 5)).toBe(true)); // dist 5 = radius
@@ -28,4 +28,29 @@ describe('comboSkillReady — 門檻+等級雙條件', () => {
   it('combo 夠但等級不夠→false', () => expect(comboSkillReady(3, 1, 3, 2)).toBe(false));
   it('等級夠但 combo 不夠→false', () => expect(comboSkillReady(2, 5, 3, 2)).toBe(false));
   it('圓形斬 combo6/Lv4 也滿足 combo≥3&Lv≥2', () => expect(comboSkillReady(6, 4, 3, 2)).toBe(true));
+});
+
+describe('comboSkillEdgeTriggered — 門檻邊緣觸發（===threshold，修 >= 每擊重放 bug、v45 規則）', () => {
+  // 圓形斬 threshold3/unlockLevel2
+  it('combo 剛好等於門檻+等級夠→true（只在剛到那擊觸發）', () => expect(comboSkillEdgeTriggered(3, 2, 3, 2)).toBe(true));
+  it('★combo 超過門檻（4/5/6…）→false（不再每擊重放，修氣波 combo6 後重複 bug）', () => {
+    expect(comboSkillEdgeTriggered(4, 5, 3, 2)).toBe(false);
+    expect(comboSkillEdgeTriggered(6, 5, 3, 2)).toBe(false);
+    expect(comboSkillEdgeTriggered(9, 9, 3, 2)).toBe(false);
+  });
+  it('combo 未達門檻→false', () => expect(comboSkillEdgeTriggered(2, 5, 3, 2)).toBe(false));
+  it('combo 到門檻但等級不夠→false（爆發 combo9 但 Lv5<6）', () => expect(comboSkillEdgeTriggered(9, 5, 9, 6)).toBe(false));
+  it('氣波 combo===6&Lv≥4→true、combo7→false（一輪只放一次）', () => {
+    expect(comboSkillEdgeTriggered(6, 4, 6, 4)).toBe(true);
+    expect(comboSkillEdgeTriggered(7, 4, 6, 4)).toBe(false);
+  });
+  it('★一輪 1→10 逐擊：圓只在3、氣波只在6、爆發只在9 各觸發一次', () => {
+    const fires = { circle: 0, line: 0, burst: 0 };
+    for (let c = 1; c <= 10; c++) {
+      if (comboSkillEdgeTriggered(c, 6, 3, 2)) fires.circle++;
+      if (comboSkillEdgeTriggered(c, 6, 6, 4)) fires.line++;
+      if (comboSkillEdgeTriggered(c, 6, 9, 6)) fires.burst++;
+    }
+    expect(fires).toEqual({ circle: 1, line: 1, burst: 1 }); // 各恰一次
+  });
 });

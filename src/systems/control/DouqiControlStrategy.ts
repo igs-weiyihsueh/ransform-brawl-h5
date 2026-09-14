@@ -5,7 +5,7 @@ import type { GameContext } from '@/systems/GameContext';
 import type { Enemy } from '@/entities/Enemy';
 import { DOUQI_CONTROL_CONFIG, DOUQI_COMBO_CONFIG, DOUQI_LEVEL_CONFIG } from '@/config/douqiConfig';
 import { effectivePlayerBounds } from '@/config/mapConfig';
-import { bumpCombo, comboSkillReady, pointInCircle, pointInOrientedRect } from '@/systems/comboSkillMath';
+import { bumpCombo, comboSkillReady, comboSkillEdgeTriggered, pointInCircle, pointInOrientedRect } from '@/systems/comboSkillMath';
 import { expForKill, applyKillExp, levelScale, expToNextLevel } from '@/systems/douqiLevelMath';
 import { selectFusionTarget, type AimCandidate } from '@/systems/fusionAimMath';
 
@@ -396,27 +396,32 @@ export class DouqiControlStrategy implements IPlayerControlStrategy {
     return this.teamLevelValue;
   }
 
-  /** 檢查並自動疊放連段技（圓形斬/氣波/爆發/強化）。普攻命中的附帶疊放，同幀可多技（低→高門檻）。 */
+  /**
+   * 檢查並自動疊放連段技（圓形斬/氣波/爆發/強化）。普攻命中的附帶疊放。
+   * ★修觸發 bug（照海牛 v45 GameScene.onComboHit）：圓/氣波/爆發用「門檻邊緣觸發 combo===threshold」——combo 連續爬 1→10，
+   *   只在「命中到剛好那個門檻」的那一擊放該招一次（不再 >= 每擊重放氣波、不再蓋掉圓/跳過爆發）。強化用 >=10 於 cap 邊界，放完 combo 歸零。
+   *   一輪 10 擊依序：3→圓、6→氣波、9→爆發、10→強化(歸零)，各放一次；歸零後下輪重爬再依序各放一次。
+   */
   private tryComboSkills(player: GameContext['player'], st: DouqiPlayerState, lockedEnemy: Enemy): void {
     const cfg = DOUQI_COMBO_CONFIG;
     const lvl = this.teamLevel(player);
     const combo = st.combo;
     const origin = player.getPosition();
-    // ①圓形斬 combo≥3 且 Lv≥2。
-    if (comboSkillReady(combo, lvl, cfg.thresholds.circle, cfg.unlockLevel.circle)) {
+    // ①圓形斬 combo===3 且 Lv≥2（邊緣觸發，只在剛到 3 那擊放一次）。
+    if (comboSkillEdgeTriggered(combo, lvl, cfg.thresholds.circle, cfg.unlockLevel.circle)) {
       this.triggerCircleSlash(player, origin);
     }
-    // ②直線氣波 combo≥6 且 Lv≥4：朝鎖定目標/鎖定敵方向。
-    if (comboSkillReady(combo, lvl, cfg.thresholds.line, cfg.unlockLevel.line)) {
+    // ②直線氣波 combo===6 且 Lv≥4：朝鎖定目標/鎖定敵方向（只在剛到 6 那擊放一次，不再每擊重放）。
+    if (comboSkillEdgeTriggered(combo, lvl, cfg.thresholds.line, cfg.unlockLevel.line)) {
       const c = lockedEnemy.getHitCenter();
       const aimAngle = Math.atan2(c.y - origin.y, c.x - origin.x);
       this.triggerLineWave(player, origin, aimAngle);
     }
-    // ③爆發 combo≥9 且 Lv≥6。
-    if (comboSkillReady(combo, lvl, cfg.thresholds.burst, cfg.unlockLevel.burst)) {
+    // ③爆發 combo===9 且 Lv≥6（邊緣觸發，只在剛到 9 那擊放一次）。
+    if (comboSkillEdgeTriggered(combo, lvl, cfg.thresholds.burst, cfg.unlockLevel.burst)) {
       this.triggerBurst(player, origin);
     }
-    // ④滿連段強化 combo≥10 且 Lv≥1：觸發後 combo 歸零。
+    // ④滿連段強化 combo≥10 且 Lv≥1：觸發後 combo 歸零（>= 於 cap 邊界，與 v45 一致）。
     if (comboSkillReady(combo, lvl, cfg.thresholds.empower, cfg.unlockLevel.empower)) {
       this.triggerEmpower(player, st);
     }

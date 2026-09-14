@@ -54,3 +54,17 @@ export function bumpCombo(current: number, maxCombo: number): number {
 export function comboSkillReady(combo: number, teamLevel: number, threshold: number, unlockLevel: number): boolean {
   return combo >= threshold && teamLevel >= unlockLevel;
 }
+
+/**
+ * ★連段技「門檻邊緣觸發」判定（修觸發 bug；照海牛 v45 GameScene.onComboHit 的 `combo === threshold`）。
+ *   combo 每擊 +1 連續爬 1→maxCombo，只在「命中到剛好那個門檻數字」的那一擊觸發該招一次（圓 combo===3、氣波===6、爆發===9）——
+ *   ★用嚴格等於（非 >=）：因 combo 連續爬只會「經過」每個門檻值一次，自然「一輪各放一次」、不會每擊重放（>= 的病根）。
+ *   ★等價於邊緣觸發 prevCombo<threshold<=combo（combo 每次 +1 時 ===threshold 即剛跨過）。強化(empower)仍用 comboSkillReady(>=) 於 cap 邊界。
+ * @param combo 本擊揮擊 +1 後的 combo。
+ * @param teamLevel 當前隊伍等級。
+ * @param threshold 該招 combo 門檻。
+ * @param unlockLevel 該招解鎖等級。
+ */
+export function comboSkillEdgeTriggered(combo: number, teamLevel: number, threshold: number, unlockLevel: number): boolean {
+  return combo === threshold && teamLevel >= unlockLevel;
+}
