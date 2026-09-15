@@ -95,6 +95,9 @@ export class DouqiBossEvent {
     this.bossMax = bossMaxHp(this.cfg.maxHp, bossCount, this.cfg.hpGrowthPerBoss, hpScale);
     // 用 spawnTower 生固定不動可打的本體（Enemy_Tower 靜態不動、ringCount0＝不放環狀技，攻擊全走本事件招式）。
     this.boss = this.ctx.spawner.spawnTower(this.center.x, this.center.y, this.bossMax, { ringCount: 0 }, 1.6);
+    // ★換 BOSS 專屬立繪（純表現層：只換顯示貼圖/origin/scale；body/hitRadius/招式全不動）。素材未載→保留塔 cone（fallback）。
+    //   douqi_boss 原生 320×384，顯示 scale 0.85≈326px 高（比一般怪大數倍、巨型魔王份量，中心對齊固定中央、上下到邊 400 內不超戰場）。
+    (this.boss as unknown as { setBossSprite?: (key: string, scale: number) => void }).setBossSprite?.('vfx-douqi-boss', 0.85);
     this.lastBossHp = this.bossMax;
     this.dmgSinceDrop = 0;
     this.active = true;

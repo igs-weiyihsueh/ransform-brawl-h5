@@ -97,6 +97,8 @@ const ENEMY_ATTACK_VFX = {
   douqiBuffRing1: { key: 'vfx-douqi-buff-ring-1', path: `${BASE_PATH}/fx_douqi_buff_ring_1.png` },
   douqiBuffRing2: { key: 'vfx-douqi-buff-ring-2', path: `${BASE_PATH}/fx_douqi_buff_ring_2.png` },
   douqiBuffRing3: { key: 'vfx-douqi-buff-ring-3', path: `${BASE_PATH}/fx_douqi_buff_ring_3.png` },
+  /** ★鬥氣第10關最終 BOSS 本體專屬立繪（特效手，巨型紅魔王 320×384，取代塔 cone 佔位）。只 douqi BOSS 用。 */
+  douqiBoss: { key: 'vfx-douqi-boss', path: `${BASE_PATH}/douqi_boss.png` },
   /** 十五輪：守護聚焦壓暗遮罩（1920×1080 徑向 vignette，中心透明圓露雕像、邊緣黑 alpha 0.85 柔邊）。 */
   guardFocusVignette: { key: 'vfx-guard-focus-vignette', path: `${BASE_PATH}/fx_guard_focus_vignette.png` },
   /** 十五輪：守護聚焦暖白柔光暈（1024×1024，中心 alpha 0.57→邊緣 0，疊雕像後增強聚光）。 */

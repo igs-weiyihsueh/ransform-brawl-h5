@@ -862,6 +862,19 @@ export class Enemy implements Hittable {
   }
 
   /**
+   * ★鬥氣 BOSS 專屬顯示貼圖（純表現層：只換 anim sprite 的 texture/origin/scale，★不動 body/hitRadius/碰撞判定/招式）。
+   *   DouqiBossEvent 生 BOSS(spawnTower) 後呼，把塔 cone 佔位貼圖換成 douqi_boss 紅魔王。origin 中心(0.5,0.5)＝BOSS 固定站中央。
+   *   ★被打判定走 getBodyRadius()=radiusPx（與 sprite 無關）＝換貼圖不影響 gameplay（避 v41 body 放大教訓）。
+   * @param textureKey douqi_boss texture key。
+   * @param displayScale 顯示縮放（依原生尺寸調到比一般怪大 2~3 倍）。
+   */
+  setBossSprite(textureKey: string, displayScale: number): void {
+    if (!this.anim.sprite.scene.textures.exists(textureKey)) return; // 素材未載→保留原貼圖（不崩）
+    this.anim.setStaticTexture(textureKey, 0.5, 0.5); // 中心 origin（BOSS 站中央）
+    if (Number.isFinite(displayScale) && displayScale > 0) this.anim.sprite.setScale(displayScale);
+  }
+
+  /**
    * ★真空帶（物件間碰撞/推擠最小距離）：覆寫塔的 body 碰撞半徑 radiusPx。
    * getBodyRadius() 回此值 → ContactSolver paceMove 接觸距離 = 玩家半徑 + 此半徑 → 縮小它讓角色能貼近塔。
    * 用戶要能調塔真空帶（碰撞半徑），towerCollisionRadiusPx preset 欄由 spawnTower 傳入。>=0；省略不呼＝現行預設。
