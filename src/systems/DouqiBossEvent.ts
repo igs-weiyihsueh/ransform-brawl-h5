@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { GameContext } from '@/systems/GameContext';
 import type { Enemy } from '@/entities/Enemy';
 import { GAME_WIDTH, GAME_HEIGHT } from '@/config/gameConfig';
+import { MAP_BOUNDS } from '@/config/mapConfig';
 import { DOUQI_BOSS_CONFIG, DOUQI_LEVEL_CONFIG } from '@/config/douqiConfig';
 import { levelScale } from '@/systems/douqiLevelMath';
 import {
@@ -234,12 +235,14 @@ export class DouqiBossEvent {
       g.fillPath();
     } else {
       // d 左右半場接力：左半先 fill、右半延遲。以垂直中線分左右，alpha 各自隨 fill。
+      // ★範圍修：telegraph 畫「可走區 MAP_BOUNDS」（非 ctx.worldBounds 全螢幕）→ Y clamp 到 140~940 不畫進下方面板；半場寬＝MAP 寬/2。
       const { leftFill, rightFill } = halfFieldFills(this.castMs, this.cfg.skillFillMs, this.cfg.dHalfOverlap);
-      const b = this.ctx.worldBounds;
+      const bx = MAP_BOUNDS.minX, by = MAP_BOUNDS.minY;
+      const bw = MAP_BOUNDS.maxX - MAP_BOUNDS.minX, bh = MAP_BOUNDS.maxY - MAP_BOUNDS.minY;
       g.fillStyle(color, 0.16 + 0.34 * leftFill);
-      g.fillRect(b.x, b.y, this.center.x - b.x, b.height);
+      g.fillRect(bx, by, this.center.x - bx, bh);
       g.fillStyle(color, 0.16 + 0.34 * rightFill);
-      g.fillRect(this.center.x, b.y, b.x + b.width - this.center.x, b.height);
+      g.fillRect(this.center.x, by, bx + bw - this.center.x, bh);
     }
   }
 

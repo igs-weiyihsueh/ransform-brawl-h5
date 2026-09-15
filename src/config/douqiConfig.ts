@@ -402,9 +402,9 @@ export const DOUQI_BOSS_CONFIG: DouqiBossConfig = {
   skillDamage: 30,
   skillRootMs: 2000,
   skillGapMs: 3000,
-  aRadiusPx: 260,
-  cRangePx: 500,
-  cArcDeg: 250,
+  aRadiusPx: 333, // ★範圍修：260→333（×1.282，直徑666 水平覆蓋我方寬42%≈割草44%壓迫感；333<中央到邊400 不超界）。巨型魔王大範圍。
+  cRangePx: 360, // ★範圍修：500→360（=中央到最近邊400×0.9；原 500>Y半高400 垂直超界進面板→capped 不超界不畫面板）。
+  cArcDeg: 250, // 角度不縮（與尺寸無關）
   dHalfOverlap: 0.5,
   gapBallIntervalMs: 900,
   gapBallSpeedPxPerSec: 320,
