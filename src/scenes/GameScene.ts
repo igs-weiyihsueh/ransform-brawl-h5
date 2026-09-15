@@ -47,6 +47,7 @@ import { WaveSystem } from '@/systems/WaveSystem';
 import { MineTrapSystem } from '@/systems/MineTrapSystem';
 import { LevelProgressSystem } from '@/systems/LevelProgressSystem';
 import { DouqiSpawnSystem } from '@/systems/DouqiSpawnSystem';
+import { DouqiItemSystem } from '@/systems/DouqiItemSystem';
 import { GlobalJuice } from '@/systems/GlobalJuice';
 import { DEFAULT_GAME_MODE, resolveGameMode, type GameMode } from '@/config/gameMode';
 
@@ -80,6 +81,8 @@ export class GameScene extends Phaser.Scene {
   private douqiWaveBanner?: DouqiWaveBanner;
   /** ★鬥氣模式 10 關生怪驅動（階段 3 後半；只 douqi 註冊，與 normal WaveSystem 互斥）。 */
   private douqiSpawn?: DouqiSpawnSystem;
+  /** ★鬥氣道具系統 v45（階段1：掉落/場上/拾取框架；只 douqi 建）。 */
+  private douqiItems?: DouqiItemSystem;
   /** 魔尖塔波開場演出序列（塔波照搬守護波 GuardEvent intro：玩家聚集中央→聚焦壓黑定格→生塔）；active 時每幀 tick。 */
   private towerIntro: TowerIntroSequence | null = null;
   /** 塔波過關獎勵券數（onTowerWave 時由 preset resolveTowerUi.rewardTickets 設，onTowerWaveResult(true) 發獎用）。 */
@@ -210,6 +213,7 @@ export class GameScene extends Phaser.Scene {
       if (this.gameMode === 'douqi') {
         this.playerControlRef?.grantDouqiKillExp?.(enemyKey);
         this.douqiSpawn?.notifyKill(enemyKey); // ★階段 3 後半：本波擊殺 +1（過關 quota 判定）
+        this.douqiItems?.rollDropAt(deathPos); // ★道具階段1：打死怪 roll 掉落（dropChance0.06、加權挑、maxAlive5）
       }
       const total = chestChargeForResolved(getResolvedChest(), enemyKey);      const shares = splitChestByDamage(total, damageByPlayer, player.playerId);
       for (const [pid, amount] of shares) {
@@ -525,6 +529,9 @@ export class GameScene extends Phaser.Scene {
         () => this.globalJuice.triggerBossImpact(),
       );
       this.register(this.douqiSpawn); // 鬥氣生怪驅動（取代 WaveSystem+LevelProgressSystem）
+      // ★鬥氣道具系統 v45（階段1）：掉落/場上/拾取框架。只 douqi 建/註冊＝normal 不生道具、byte 不變。
+      this.douqiItems = new DouqiItemSystem();
+      this.register(this.douqiItems);
     } else {
       this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
       this.register(new LevelProgressSystem()); // 關卡推進 step1：全波次打完→左通道→走進→notifyPortalEntered
