@@ -1476,6 +1476,28 @@ export class EffectSystem {
   }
 
   /**
+   * ★釋放擴張環（telegraph 強化第 3 顆）：填滿瞬間從中心「炸開」到範圍值的色環——add.circle 起始半徑10→radius、
+   *   strokeStyle(4,color,0.9)、tween 半徑放大+alpha→0、Cubic.easeOut、完成 destroy 乾淨（純視覺、不擋判定）。
+   *   只 douqi 塔/BOSS 招式填滿瞬間呼。
+   * @param x,y 中心（塔/BOSS 圓心）。
+   * @param radius 目標擴張半徑（=該招範圍值）。
+   * @param color 環色（用該招 fill 色）。
+   * @param durMs 擴張時長（圓/半場~300、扇形~260）。
+   */
+  spawnExpandingRing(x: number, y: number, radius: number, color: number, durMs = 300): void {
+    if (radius <= 10) return;
+    const ring = this.scene.add.circle(x, y, 10).setStrokeStyle(4, color, 0.9).setFillStyle(undefined, 0).setDepth(ATTACK_VFX_DEPTH + 2);
+    this.scene.tweens.add({
+      targets: ring,
+      radius, // Arc.radius 可 tween（Phaser 會重繪）
+      alpha: 0,
+      duration: durMs,
+      ease: 'Cubic.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  /**
    * ★鬥氣爆發專屬連斬斬光（第二顆：換掉第一階段 douqiSlashSwing 橙 tint 佔位）。3 幀 f1→f2→f3 播完淡出銷毀，
    *   橙色系素材原色（白熱核心+橙外焰）不 tint。爆發 burstTick 每段隨機位置/角度呼一次＝連斬散佈 flurry。
    *   ★素材未載 fallback：退回 douqiSlashSwing 橙弧（至少有斬光）。只 douqi 爆發呼。

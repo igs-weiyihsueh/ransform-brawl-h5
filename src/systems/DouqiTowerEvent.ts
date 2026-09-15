@@ -147,6 +147,16 @@ export class DouqiTowerEvent {
       g.closePath();
       g.fillPath();
     }
+    // ★選配：2px 薄外框（更精緻輪廓；填滿越滿越顯）。
+    g.lineStyle(2, color, 0.5 + 0.1 * p);
+    for (const cDeg of centers) {
+      const cRad = (cDeg * Math.PI) / 180;
+      g.beginPath();
+      g.moveTo(this.center.x, this.center.y);
+      g.arc(this.center.x, this.center.y, rad, cRad - half, cRad + half, false);
+      g.closePath();
+      g.strokePath();
+    }
   }
 
   private clearTelegraph(): void {
@@ -155,6 +165,7 @@ export class DouqiTowerEvent {
 
   /** 填滿瞬間發射：對每個玩家判定（距塔≤radius+玩家半徑 且 角度落扇形±arcDeg/2）→命中定身+二段能量倒扣。 */
   private fire(): void {
+    if (!this.tower || this.tower.isDead()) return; // ★死了不放環/不判定（釋放前檢查 active）
     const centers = fanGroupCenters(this.fanGroup, this.cfg.fanCount);
     for (const player of this.ctx.players) {
       const pos = player.getPosition();
@@ -165,6 +176,9 @@ export class DouqiTowerEvent {
         this.onPlayerHitEnergy(player.playerId); // 塔傷＝二段能量倒扣（角色無血量，沿用既有 onPlayerHit 語意）
       }
     }
+    // ★telegraph 強化：釋放瞬間擴張環（塔中心炸開到扇形範圍）+ 震動（塔原本沒震動）。純視覺，只 douqi 塔釋放呼。
+    this.ctx.effects?.spawnExpandingRing?.(this.center.x, this.center.y, this.cfg.fanRadiusPx, 0xff5555, 260);
+    this.ctx.effects?.shakeOnce?.(0.009, 130);
   }
 
   /** 清理（事件結束/場景關）。塔本身由 spawner registry 管（清場一併清）。 */

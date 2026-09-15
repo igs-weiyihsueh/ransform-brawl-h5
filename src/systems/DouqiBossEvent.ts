@@ -191,7 +191,7 @@ export class DouqiBossEvent {
     }
   }
 
-  /** a/c 招填滿瞬間發射：對每個玩家判定命中→定身+二段能量倒扣；發 triggerBossImpact 共屏震動。 */
+  /** a/c 招填滿瞬間發射：對每個玩家判定命中→定身+二段能量倒扣；發 triggerBossImpact 共屏震動 + 釋放擴張環。 */
   private fireSkill(): void {
     for (const player of this.ctx.players) {
       const pos = player.getPosition();
@@ -201,15 +201,21 @@ export class DouqiBossEvent {
       else if (this.curSkill === 'c') hit = fanHit(this.center, pos, pr, this.curAimDeg, this.cfg.cArcDeg, this.cfg.cRangePx);
       if (hit) this.applyHitToPlayer(player);
     }
-    this.bossImpact(); // 發射共屏震動（Boss-gate）
+    // ★telegraph 強化：釋放瞬間擴張環（a 圓擴到 aRadiusPx333 dur300、c 扇形擴到 cRangePx360 dur260）+ 共屏震動更明顯。
+    if (this.curSkill === 'a') this.ctx.effects?.spawnExpandingRing?.(this.center.x, this.center.y, this.cfg.aRadiusPx, 0xff4466, 300);
+    else if (this.curSkill === 'c') this.ctx.effects?.spawnExpandingRing?.(this.center.x, this.center.y, this.cfg.cRangePx, 0xff4466, 260);
+    this.bossImpact(); // 發射共屏震動（Boss-gate；已調更明顯）
   }
 
-  /** d 招某半場發射判定：玩家在該半場側→命中定身。 */
+  /** d 招某半場發射判定：玩家在該半場側→命中定身 + 該半中心擴張環。 */
   private fireHalf(side: 'left' | 'right'): void {
     for (const player of this.ctx.players) {
       const pos = player.getPosition();
       if (halfFieldHit(this.center.x, pos.x, side)) this.applyHitToPlayer(player);
     }
+    // ★釋放擴張環：該半場中心炸開（半場範圍大環）。
+    const hx = side === 'left' ? (MAP_BOUNDS.minX + this.center.x) / 2 : (this.center.x + MAP_BOUNDS.maxX) / 2;
+    this.ctx.effects?.spawnExpandingRing?.(hx, this.center.y, (MAP_BOUNDS.maxX - MAP_BOUNDS.minX) / 4, 0xff4466, 300);
   }
 
   private applyHitToPlayer(player: GameContext['players'][number]): void {
@@ -227,6 +233,8 @@ export class DouqiBossEvent {
     g.fillStyle(color, alpha);
     if (this.curSkill === 'a') {
       g.fillCircle(this.center.x, this.center.y, this.cfg.aRadiusPx * p);
+      g.lineStyle(2, color, 0.5 + 0.1 * p); // ★選配 2px 薄外框
+      g.strokeCircle(this.center.x, this.center.y, this.cfg.aRadiusPx * p);
     } else if (this.curSkill === 'c') {
       const half = (this.cfg.cArcDeg / 2) * (Math.PI / 180);
       const cRad = (this.curAimDeg * Math.PI) / 180;
@@ -236,6 +244,12 @@ export class DouqiBossEvent {
       g.arc(this.center.x, this.center.y, r, cRad - half, cRad + half, false);
       g.closePath();
       g.fillPath();
+      g.lineStyle(2, color, 0.5 + 0.1 * p); // ★選配 2px 薄外框
+      g.beginPath();
+      g.moveTo(this.center.x, this.center.y);
+      g.arc(this.center.x, this.center.y, r, cRad - half, cRad + half, false);
+      g.closePath();
+      g.strokePath();
     } else {
       // d 左右半場接力：左半先 fill、右半延遲。以垂直中線分左右，alpha 各自隨 fill。
       // ★範圍修：telegraph 畫「可走區 MAP_BOUNDS」（非 ctx.worldBounds 全螢幕）→ Y clamp 到 140~940 不畫進下方面板；半場寬＝MAP 寬/2。
