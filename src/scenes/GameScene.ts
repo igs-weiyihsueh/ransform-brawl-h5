@@ -540,7 +540,7 @@ export class GameScene extends Phaser.Scene {
         this.ctx,
         (pl, enemy, dmg, kb, fromPos) => this.playerControlRef?.applyDouqiAoeHit?.(pl, enemy, dmg, kb, fromPos),
       );
-      this.douqiItems.onPickup = (skill, pid) => this.douqiItemEffects?.trigger(skill, pid);
+      this.douqiItems.onPickup = (skill, pid) => this.douqiItemEffects?.trigger(skill, pid) ?? true; // 回 boolean=是否消耗（無 executor→預設消耗）
     } else {
       this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
       this.register(new LevelProgressSystem()); // 關卡推進 step1：全波次打完→左通道→走進→notifyPortalEntered

@@ -17,11 +17,15 @@ export class DouqiItemSystem implements GameSystem {
   private ctx!: GameContext;
   private readonly cfg = DOUQI_ITEM_CONFIG;
   private items: DouqiItem[] = [];
-  /** 拾取觸發 hook（階段1 log；階段2 GameScene 綁各道具效果）。 */
-  onPickup: (skill: DouqiItemSkill, playerId: number) => void = (skill, pid) => {
-    // 階段1 佔位：留 hook，效果階段2 接。
+  /**
+   * 拾取觸發 hook（階段2c：回 boolean＝是否消耗道具）。
+   * ★回 true＝消耗（移除道具，A/B/C/E/F 及 T 有觸發時）；回 false＝不消耗（T 時停空放 spreadRadius 內無敵→道具留著避免浪費）。
+   */
+  onPickup: (skill: DouqiItemSkill, playerId: number) => boolean = (skill, pid) => {
+    // 預設佔位：log + 消耗（真效果由 GameScene 綁 DouqiItemEffects.trigger）。
     // eslint-disable-next-line no-console
-    console.log(`[DouqiItem] P${pid + 1} 撿到道具 ${skill}（效果階段2接）`);
+    console.log(`[DouqiItem] P${pid + 1} 撿到道具 ${skill}`);
+    return true;
   };
 
   init(ctx: GameContext): void {
@@ -69,8 +73,12 @@ export class DouqiItemSystem implements GameSystem {
         }
       }
       if (pickedBy >= 0) {
-        this.onPickup(item.skill, pickedBy); // 階段1 hook（log）；階段2 接效果
-        item.destroy();
+        const consumed = this.onPickup(item.skill, pickedBy); // 回 boolean＝是否消耗
+        if (consumed) {
+          item.destroy();
+        } else {
+          remaining.push(item); // ★T 空放不消耗→道具留著
+        }
       } else {
         remaining.push(item);
       }

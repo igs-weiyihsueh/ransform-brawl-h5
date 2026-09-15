@@ -5,6 +5,10 @@ import {
   orbitPoint,
   circleAoeHit,
   pathSamplePoints,
+  hasVulnerableInRange,
+  pickComboTargets,
+  orbitLandingPoint,
+  comboStepMs,
 } from '@/systems/douqiItemEffectMath';
 
 describe('douqiItemEffectMath', () => {
@@ -55,5 +59,43 @@ describe('douqiItemEffectMath', () => {
         expect(pts[i].x - pts[i - 1].x).toBeLessThanOrEqual(50 + 1e-6);
       }
     });
+  });
+
+  describe('hasVulnerableInRange (T 時停空放判定)', () => {
+    it('範圍內有敵→true', () => expect(hasVulnerableInRange([{ x: 100, y: 0 }], 0, 0, 900)).toBe(true));
+    it('範圍外無敵→false', () => expect(hasVulnerableInRange([{ x: 1000, y: 0 }], 0, 0, 900)).toBe(false));
+    it('空陣列→false', () => expect(hasVulnerableInRange([], 0, 0, 900)).toBe(false));
+    it('邊界 900→true', () => expect(hasVulnerableInRange([{ x: 900, y: 0 }], 0, 0, 900)).toBe(true));
+  });
+
+  describe('pickComboTargets (連斬9下依距離、不足循環)', () => {
+    const enemies = [{ x: 300, y: 0, id: 0 }, { x: 100, y: 0, id: 1 }, { x: 200, y: 0, id: 2 }];
+    it('依距離近→遠排序', () => {
+      const t = pickComboTargets(enemies, 0, 0, 3, 900);
+      expect(t).toEqual([1, 2, 0]); // 100,200,300
+    });
+    it('★不足9下循環同一批', () => {
+      const t = pickComboTargets(enemies, 0, 0, 9, 900);
+      expect(t.length).toBe(9);
+      expect(t).toEqual([1, 2, 0, 1, 2, 0, 1, 2, 0]); // 3 個循環
+    });
+    it('範圍外排除', () => {
+      const t = pickComboTargets([{ x: 1000, y: 0, id: 0 }, { x: 50, y: 0, id: 1 }], 0, 0, 2, 900);
+      expect(t).toEqual([1, 1]); // 只 id1 在範圍、循環
+    });
+    it('全空→空陣列', () => expect(pickComboTargets([{ x: 2000, y: 0, id: 0 }], 0, 0, 9, 900)).toEqual([]));
+  });
+
+  describe('orbitLandingPoint (左右交替落點)', () => {
+    it('偶=右(+offset)、奇=左(-offset)', () => {
+      expect(orbitLandingPoint(100, 100, 70, 0)).toEqual({ x: 170, y: 100 });
+      expect(orbitLandingPoint(100, 100, 70, 1)).toEqual({ x: 30, y: 100 });
+      expect(orbitLandingPoint(100, 100, 70, 2)).toEqual({ x: 170, y: 100 });
+    });
+  });
+
+  describe('comboStepMs (連斬節奏 duration/(targets+1))', () => {
+    it('2000/(9+1)=200', () => expect(comboStepMs(2000, 9)).toBe(200));
+    it('2000/(4+1)=400', () => expect(comboStepMs(2000, 4)).toBe(400));
   });
 });

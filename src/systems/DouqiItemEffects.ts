@@ -3,9 +3,10 @@ import type { GameContext } from '@/systems/GameContext';
 import type { Enemy } from '@/entities/Enemy';
 import type { DouqiItemSkill } from '@/config/douqiItemConfig';
 import { DOUQI_ITEM_CONFIG } from '@/config/douqiItemConfig';
-import { lightningStrikeAngles, orbitPoint, circleAoeHit, pathSamplePoints } from '@/systems/douqiItemEffectMath';
+import { lightningStrikeAngles, orbitPoint, circleAoeHit, pathSamplePoints, hasVulnerableInRange, pickComboTargets, orbitLandingPoint, comboStepMs } from '@/systems/douqiItemEffectMath';
 import { pointInOrientedRect } from '@/systems/comboSkillMath';
 import { effectivePlayerBounds } from '@/config/mapConfig';
+import { GAME_WIDTH, GAME_HEIGHT } from '@/config/gameConfig';
 
 /** 對敵人套 AOE 傷害（複用 PlayerControlSystem.applyDouqiAoeHit）。 */
 type ApplyAoeHit = (player: GameContext['player'], enemy: Enemy, damage: number, knockback: number, fromPos: { x: number; y: number }) => void;
@@ -27,26 +28,32 @@ export class DouqiItemEffects {
   private timers: Phaser.Time.TimerEvent[] = [];
   /** ★居合位移中旗標（防重入 + destroy 保證解鎖 scriptedControl）。 */
   private iaiActive = false;
+  /** ★時停連斬中旗標（同 iai：防重入 + destroy 保證解鎖 scriptedControl）。 */
+  private timestopActive = false;
+  /** 時停暗罩 handle（destroy 清）。 */
+  private dimOverlay: Phaser.GameObjects.Rectangle | null = null;
 
   constructor(ctx: GameContext, applyAoeHit: ApplyAoeHit) {
     this.ctx = ctx;
     this.applyAoeHit = applyAoeHit;
   }
 
-  /** 撿到道具觸發（DouqiItemSystem.onPickup 綁）。依 skill 分派；T 留 2c。 */
-  trigger(skill: DouqiItemSkill, playerId: number): void {
+  /**
+   * 撿到道具觸發（DouqiItemSystem.onPickup 綁）。★回 boolean＝是否消耗道具。
+   *   A/B/C/E/F 恆消耗(true)；T 時停 spreadRadius 內無敵空放→不消耗(false)、道具留著。
+   */
+  trigger(skill: DouqiItemSkill, playerId: number): boolean {
     const player = this.playerOf(playerId);
-    if (!player) return;
+    if (!player) return true;
     switch (skill) {
-      case 'E': this.doBurst(player); break;
-      case 'A': this.doWhirl(player); break;
-      case 'B': this.doThunder(player); break;
-      case 'C': this.doIai(player); break;
-      case 'F': this.doFlame(player); break;
+      case 'E': this.doBurst(player); return true;
+      case 'A': this.doWhirl(player); return true;
+      case 'B': this.doThunder(player); return true;
+      case 'C': this.doIai(player); return true;
+      case 'F': this.doFlame(player); return true;
+      case 'T': return this.doTimestop(player); // ★空放回 false（不消耗）
       default:
-        // T 時停（2c）：佔位 log。（H 已移除、不會進來。）
-        // eslint-disable-next-line no-console
-        console.log(`[DouqiItemEffect] ${skill} 效果待後續階段（2c）`);
+        return true; // 未知（H 已移除、不該進來）→消耗
     }
   }
 
@@ -94,6 +101,67 @@ export class DouqiItemEffects {
         this.ctx.effects?.shakeOnce?.(0.007, 90);
       }); // after() 已 push 到 timers
     });
+  }
+
+  /**
+   * ★T 時停（2c）：全場敵 applyStun(2s) 凍結（進度天然不流失、玩家豁免）+ 微暗罩 + 單目標連斬 9 下。
+   *   ★spreadRadius 內無敵→不觸發、回 false（不消耗、道具留著）。連斬位移走既有 setPosition+scriptedControl（同 C）。
+   * @returns 是否消耗道具（true=消耗、false=空放留著）。
+   */
+  private doTimestop(player: GameContext['player']): boolean {
+    if (this.timestopActive) return true; // 進行中重撿→消耗（防重入）
+    const c = this.cfg.timestop;
+    const pos = player.getPosition();
+    const enemies = this.ctx.getEnemies().filter((e) => !e.isDead());
+    const inRange = enemies.map((e) => ({ x: e.getHitCenter().x, y: e.getHitCenter().y }));
+    if (!hasVulnerableInRange(inRange, pos.x, pos.y, c.spreadRadiusPx)) return false; // ★空放不消耗
+    // ① 凍全場敵（applyStun 2 秒，進度天然不流失、玩家不受影響）。
+    for (const e of enemies) (e as unknown as { applyStun?: (s: number) => void }).applyStun?.(c.durationMs / 1000);
+    // 微暗罩（全屏、depth15、2 秒後淡出）。
+    this.dimOverlay = this.ctx.scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, c.dimColor, c.dimAlpha).setScrollFactor(0).setDepth(15);
+    this.after(c.durationMs, () => this.endTimestop()); // 保險：時間到清暗罩+解鎖
+    // ③ 單目標連斬 9 下（凍結同時；走既有 setPosition+scriptedControl）。
+    this.timestopActive = true;
+    this.ctx.scriptedControl = true;
+    this.runComboDashes(player, 0);
+    return true; // 消耗
+  }
+
+  /** 連斬單下（idx 0..dashes-1）：選目標→setPosition 到目標旁交替落點→hitRadius 圓命中→下一下 stepMs 後。 */
+  private runComboDashes(player: GameContext['player'], idx: number): void {
+    if (!this.timestopActive) return;
+    const c = this.cfg.timestop;
+    if (idx >= c.dashes) { this.endTimestop(); return; } // 全 9 下完→解鎖
+    const pos = player.getPosition();
+    const alive = this.ctx.getEnemies().filter((e) => !e.isDead());
+    const withId = alive.map((e, i) => ({ x: e.getHitCenter().x, y: e.getHitCenter().y, id: i }));
+    const targets = pickComboTargets(withId, pos.x, pos.y, c.dashes, c.spreadRadiusPx);
+    if (targets.length === 0) { this.endTimestop(); return; } // 目標全清→提早結束解鎖
+    const t = alive[targets[idx % targets.length]];
+    const tc = t.getHitCenter();
+    const land = orbitLandingPoint(tc.x, tc.y, c.orbitOffsetPx, idx); // 左右交替
+    const b = effectivePlayerBounds();
+    player.setPosition(Math.max(b.minX, Math.min(b.maxX, land.x)), Math.max(b.minY, Math.min(b.maxY, land.y))); // ★既有位移
+    // hitRadius 圓命中（傷 damage×命中次數＝這裡每下一次；多下累積＝多次呼）。
+    for (const e of alive) {
+      const hc = e.getHitCenter();
+      const tr = (e as unknown as { getHitRadius?: () => number }).getHitRadius?.() ?? 0;
+      if (circleAoeHit(land.x, land.y, hc.x, hc.y, c.hitRadiusPx, tr)) {
+        this.applyAoeHit(player, e, c.damage, c.knockback, { x: land.x, y: land.y });
+        (e as unknown as { flashWhite?: (col?: number, s?: number) => void }).flashWhite?.(0xffffff, 0.08);
+      }
+    }
+    this.ctx.effects?.douqiSlashSwing?.(land.x, land.y, Math.atan2(tc.y - land.y, tc.x - land.x), 1.4, this.cfg.iai.color);
+    this.ctx.effects?.triggerHitstop?.(40);
+    this.after(comboStepMs(c.durationMs, c.dashes), () => this.runComboDashes(player, idx + 1));
+  }
+
+  /** 時停收尾：解鎖 scriptedControl + 清暗罩 + 旗標。★所有結束路徑（正常/提早/destroy）都經此＝不鎖死。 */
+  private endTimestop(): void {
+    if (this.dimOverlay) { const d = this.dimOverlay; this.dimOverlay = null; this.ctx.scene.tweens.add({ targets: d, alpha: 0, duration: 200, onComplete: () => d.destroy() }); }
+    if (!this.timestopActive) return;
+    this.timestopActive = false;
+    this.ctx.scriptedControl = false; // ★保證還原
   }
 
   /**
@@ -269,5 +337,6 @@ export class DouqiItemEffects {
     for (const ev of this.timers) ev.remove(false);
     this.timers = [];
     this.endIai(); // ★保證還原 scriptedControl（不鎖死操作）
+    this.endTimestop(); // ★時停中場景關→解鎖 scriptedControl+清暗罩（不鎖死）
   }
 }

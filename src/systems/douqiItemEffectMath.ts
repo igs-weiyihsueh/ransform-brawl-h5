@@ -53,3 +53,63 @@ export function circleAoeHit(cx: number, cy: number, tx: number, ty: number, rad
   const rr = radius + targetRadius;
   return dx * dx + dy * dy <= rr * rr;
 }
+
+// ---- T 時停連斬（階段2c）純函式 ----
+
+/** spreadRadius 內是否有可打敵（vulnerable）：空放判定用（無→不觸發不消耗）。 */
+export function hasVulnerableInRange(
+  enemies: ReadonlyArray<{ x: number; y: number }>,
+  px: number,
+  py: number,
+  spreadRadius: number,
+): boolean {
+  const r2 = spreadRadius * spreadRadius;
+  for (const e of enemies) {
+    const dx = e.x - px;
+    const dy = e.y - py;
+    if (dx * dx + dy * dy <= r2) return true;
+  }
+  return false;
+}
+
+/**
+ * ★連斬目標序列：spreadRadius 內敵依距玩家近→遠排序，取 count 個；pool 不足則循環（重複打同一敵）。
+ * @param enemies 敵位置陣列（含原索引 id）。
+ * @returns 長度 count 的目標索引陣列（指向 enemies）；無可打→空陣列。
+ */
+export function pickComboTargets(
+  enemies: ReadonlyArray<{ x: number; y: number; id: number }>,
+  px: number,
+  py: number,
+  count: number,
+  spreadRadius: number,
+): number[] {
+  const r2 = spreadRadius * spreadRadius;
+  const inRange = enemies
+    .filter((e) => {
+      const dx = e.x - px;
+      const dy = e.y - py;
+      return dx * dx + dy * dy <= r2;
+    })
+    .sort((a, b) => {
+      const da = (a.x - px) ** 2 + (a.y - py) ** 2;
+      const db = (b.x - px) ** 2 + (b.y - py) ** 2;
+      return da - db;
+    })
+    .map((e) => e.id);
+  if (inRange.length === 0) return [];
+  const out: number[] = [];
+  for (let i = 0; i < count; i += 1) out.push(inRange[i % inRange.length]); // 不足循環
+  return out;
+}
+
+/** 連斬落點：目標旁 orbitOffset 左右交替（sideIndex 偶=右、奇=左）。 */
+export function orbitLandingPoint(tx: number, ty: number, offset: number, sideIndex: number): { x: number; y: number } {
+  const side = sideIndex % 2 === 0 ? 1 : -1;
+  return { x: tx + offset * side, y: ty };
+}
+
+/** 連斬每下延遲 ms＝duration/(targets+1)（連斬節奏，含收尾一段）。 */
+export function comboStepMs(durationMs: number, targets: number): number {
+  return durationMs / (targets + 1);
+}

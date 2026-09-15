@@ -56,6 +56,11 @@ export interface DouqiItemConfig {
       flameLengthPx: number; flameWidthPx: number; burstDamage: number; burstKnockback: number;
       burnLengthPx: number; burnWidthPx: number; burnStartPx: number; burnDurationMs: number; burnTickMs: number; burnTickDamage: number;
     };
+    /** ★T 時停（2c）：全場敵凍結 + 單目標連斬。 */
+    timestop: {
+      durationMs: number; dashes: number; spreadRadiusPx: number; hitRadiusPx: number; damage: number; knockback: number; orbitOffsetPx: number;
+      dimColor: number; dimAlpha: number;
+    };
   };
 }
 
@@ -88,6 +93,10 @@ export const DOUQI_ITEM_CONFIG: DouqiItemConfig = {
       windupMs: 220, sprayMs: 480, color: 0xff7a1a, // F 橙紅
       flameLengthPx: 340, flameWidthPx: 150, burstDamage: 60, burstKnockback: 200,
       burnLengthPx: 300, burnWidthPx: 150, burnStartPx: 40, burnDurationMs: 2000, burnTickMs: 400, burnTickDamage: 22,
+    },
+    timestop: {
+      durationMs: 2000, dashes: 9, spreadRadiusPx: 900, hitRadiusPx: 180, damage: 220, knockback: 700, orbitOffsetPx: 70,
+      dimColor: 0x2233aa, dimAlpha: 0.12,
     },
   },
 };
