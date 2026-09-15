@@ -40,6 +40,17 @@ export interface DouqiItemConfig {
   shieldHp: number;
   /** 場上顯示半徑 px（色塊/圖示視覺大小；純顯示）。 */
   displayRadiusPx: number;
+  /** ★階段2a：4 招道具效果參數（H 補能量/E 震爆/A 旋風 DOT/B 雷擊；C/F/T 留 2b/2c）。 */
+  effect: {
+    /** H 補血→回二段變身能量（我方無血量、能量＝生命資源）。amount＝fillThreshold×0.35。 */
+    healEnergyRatio: number;
+    /** E 震爆：跳→砸→落地圓形一次性。 */
+    burst: { jumpMs: number; slamMs: number; radiusPx: number; damage: number; knockback: number; visualMs: number; color: number };
+    /** A 旋風斬：以角色為心持續 DOT 圓場（跟角色移動）。 */
+    whirl: { radiusPx: number; durationMs: number; tickMs: number; damagePerHit: number; knockback: number; color: number };
+    /** B 天降雷擊：角色周圍環繞多道依序落雷。 */
+    thunder: { orbitRadiusPx: number; strikes: number; strikeRadiusPx: number; damage: number; knockback: number; strikeDelayMs: number; chargeMs: number; color: number };
+  };
 }
 
 /** ★v45 道具參數（海牛規格）。 */
@@ -62,4 +73,10 @@ export const DOUQI_ITEM_CONFIG: DouqiItemConfig = {
   maxAlive: 5,
   shieldHp: 3,
   displayRadiusPx: 16,
+  effect: {
+    healEnergyRatio: 0.35, // H：回二段能量 fillThreshold×0.35（顯著回饋不過量）
+    burst: { jumpMs: 260, slamMs: 160, radiusPx: 450, damage: 70, knockback: 800, visualMs: 320, color: 0xa855f7 }, // E 紫
+    whirl: { radiusPx: 200, durationMs: 3000, tickMs: 200, damagePerHit: 22, knockback: 0, color: 0x00e5ff }, // A 青 DOT
+    thunder: { orbitRadiusPx: 120, strikes: 6, strikeRadiusPx: 90, damage: 80, knockback: 260, strikeDelayMs: 110, chargeMs: 350, color: 0xffd700 }, // B 金
+  },
 };

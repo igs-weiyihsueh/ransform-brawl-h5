@@ -48,6 +48,7 @@ import { MineTrapSystem } from '@/systems/MineTrapSystem';
 import { LevelProgressSystem } from '@/systems/LevelProgressSystem';
 import { DouqiSpawnSystem } from '@/systems/DouqiSpawnSystem';
 import { DouqiItemSystem } from '@/systems/DouqiItemSystem';
+import { DouqiItemEffects } from '@/systems/DouqiItemEffects';
 import { GlobalJuice } from '@/systems/GlobalJuice';
 import { DEFAULT_GAME_MODE, resolveGameMode, type GameMode } from '@/config/gameMode';
 
@@ -83,6 +84,8 @@ export class GameScene extends Phaser.Scene {
   private douqiSpawn?: DouqiSpawnSystem;
   /** ★鬥氣道具系統 v45（階段1：掉落/場上/拾取框架；只 douqi 建）。 */
   private douqiItems?: DouqiItemSystem;
+  /** ★鬥氣道具效果執行器（階段2a：H/E/A/B；只 douqi 建）。 */
+  private douqiItemEffects?: DouqiItemEffects;
   /** 魔尖塔波開場演出序列（塔波照搬守護波 GuardEvent intro：玩家聚集中央→聚焦壓黑定格→生塔）；active 時每幀 tick。 */
   private towerIntro: TowerIntroSequence | null = null;
   /** 塔波過關獎勵券數（onTowerWave 時由 preset resolveTowerUi.rewardTickets 設，onTowerWaveResult(true) 發獎用）。 */
@@ -532,6 +535,12 @@ export class GameScene extends Phaser.Scene {
       // ★鬥氣道具系統 v45（階段1）：掉落/場上/拾取框架。只 douqi 建/註冊＝normal 不生道具、byte 不變。
       this.douqiItems = new DouqiItemSystem();
       this.register(this.douqiItems);
+      // ★階段2a：道具效果執行器（H 補能量/E 震爆/A 旋風 DOT/B 雷擊）。綁 onPickup→trigger。★不碰 DouqiControlStrategy（applyDouqiAoeHit public 複用）。
+      this.douqiItemEffects = new DouqiItemEffects(
+        this.ctx,
+        (pl, enemy, dmg, kb, fromPos) => this.playerControlRef?.applyDouqiAoeHit?.(pl, enemy, dmg, kb, fromPos),
+      );
+      this.douqiItems.onPickup = (skill, pid) => this.douqiItemEffects?.trigger(skill, pid);
     } else {
       this.register(this.ctx.wave); // 波次：生怪節奏 + 一幕通關事件（JP 接）
       this.register(new LevelProgressSystem()); // 關卡推進 step1：全波次打完→左通道→走進→notifyPortalEntered
@@ -604,6 +613,8 @@ export class GameScene extends Phaser.Scene {
     for (const sys of this.systems) {
       sys.destroy?.();
     }
+    // ★道具效果執行器非 registry member（DouqiItemSystem 才是）→ 場景關手動清其進行中 timer（DOT/雷擊/跳砸未觸發者）。
+    this.douqiItemEffects?.destroy();
     // InputSystem 現在也是 registry member，destroy() 已在上面迴圈被呼叫，無需另外清。
     this.systems = [];
   }
