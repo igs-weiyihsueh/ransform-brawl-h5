@@ -18,14 +18,17 @@ describe('douqiItemMath', () => {
   });
 
   describe('pickWeightedDropSkill (加權；T 稀有 0.25)', () => {
-    const entries = DOUQI_ITEM_CONFIG.entries; // A~H 各1、T 0.25，total=6.25
+    const entries = DOUQI_ITEM_CONFIG.entries; // A/B/C/E/F 各1、T 0.25（H 已移除），total=5.25
     it('rng=0 → 第一筆 A', () => expect(pickWeightedDropSkill(entries, () => 0)).toBe('A'));
-    it('rng 落在第二段 → B', () => expect(pickWeightedDropSkill(entries, () => 1.5 / 6.25)).toBe('B'));
+    it('rng 落在第二段 → B', () => expect(pickWeightedDropSkill(entries, () => 1.5 / 5.25)).toBe('B'));
     it('rng 接近 1 → T（最後、稀有段）', () => expect(pickWeightedDropSkill(entries, () => 0.999)).toBe('T'));
     it('空陣列 → null', () => expect(pickWeightedDropSkill([], () => 0)).toBe(null));
-    it('★T 稀有：權重 0.25/6.25≈4%（落在 6.0~6.25 段才中 T）', () => {
-      expect(pickWeightedDropSkill(entries, () => 5.9 / 6.25)).toBe('H'); // 6.0 前是 H
-      expect(pickWeightedDropSkill(entries, () => 6.1 / 6.25)).toBe('T'); // 6.0 後才 T
+    it('★T 稀有：權重 0.25/5.25≈4.8%（落在 5.0~5.25 段才中 T）', () => {
+      expect(pickWeightedDropSkill(entries, () => 4.9 / 5.25)).toBe('F'); // 5.0 前是 F（第5筆）
+      expect(pickWeightedDropSkill(entries, () => 5.1 / 5.25)).toBe('T'); // 5.0 後才 T
+    });
+    it('★H 已移除：掉落池不含 H', () => {
+      expect(entries.some((e) => e.skill === 'H')).toBe(false);
     });
   });
 

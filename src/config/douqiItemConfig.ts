@@ -40,16 +40,22 @@ export interface DouqiItemConfig {
   shieldHp: number;
   /** 場上顯示半徑 px（色塊/圖示視覺大小；純顯示）。 */
   displayRadiusPx: number;
-  /** ★階段2a：4 招道具效果參數（H 補能量/E 震爆/A 旋風 DOT/B 雷擊；C/F/T 留 2b/2c）。 */
+  /** ★階段2a/2b：道具效果參數（E 震爆/A 旋風 DOT/B 雷擊/C 居合/F 噴火；T 時停留 2c；H 補血已移除）。 */
   effect: {
-    /** H 補血→回二段變身能量（我方無血量、能量＝生命資源）。amount＝fillThreshold×0.35。 */
-    healEnergyRatio: number;
     /** E 震爆：跳→砸→落地圓形一次性。 */
     burst: { jumpMs: number; slamMs: number; radiusPx: number; damage: number; knockback: number; visualMs: number; color: number };
     /** A 旋風斬：以角色為心持續 DOT 圓場（跟角色移動）。 */
     whirl: { radiusPx: number; durationMs: number; tickMs: number; damagePerHit: number; knockback: number; color: number };
     /** B 天降雷擊：角色周圍環繞多道依序落雷。 */
     thunder: { orbitRadiusPx: number; strikes: number; strikeRadiusPx: number; damage: number; knockback: number; strikeDelayMs: number; chargeMs: number; color: number };
+    /** ★C 居合貫穿（2b）：位移直線來回兩趟、沿路徑取樣圓命中（走既有 setPosition+scriptedControl）。 */
+    iai: { distancePx: number; speedPxPerSec: number; windupMs: number; hitRadiusPx: number; damage: number; knockback: number; passes: number; sampleStepPx: number; color: number };
+    /** ★F 噴火（2b）：矩形火道即時傷 + 地面燒灼 DOT 矩形。 */
+    flame: {
+      windupMs: number; sprayMs: number; color: number;
+      flameLengthPx: number; flameWidthPx: number; burstDamage: number; burstKnockback: number;
+      burnLengthPx: number; burnWidthPx: number; burnStartPx: number; burnDurationMs: number; burnTickMs: number; burnTickDamage: number;
+    };
   };
 }
 
@@ -61,8 +67,8 @@ export const DOUQI_ITEM_CONFIG: DouqiItemConfig = {
     { skill: 'C', color: 0xff4d6d, weight: 1, label: 'C' }, // 居合 紅
     { skill: 'E', color: 0xa855f7, weight: 1, label: 'E' }, // 震爆 紫
     { skill: 'F', color: 0xff7a1a, weight: 1, label: 'F' }, // 噴火 橙紅
-    { skill: 'H', color: 0x2ecc71, weight: 1, label: 'H' }, // 補血 綠
     { skill: 'T', color: 0xffffff, weight: 0.25, label: 'T' }, // 時停 白（稀有）
+    // ★H 補血已移除（用戶：我方無血量、補二段能量意義模糊，拿掉）。剩 6 種。
   ],
   dropChance: 0.06,
   periodicDropMs: 0,
@@ -74,9 +80,14 @@ export const DOUQI_ITEM_CONFIG: DouqiItemConfig = {
   shieldHp: 3,
   displayRadiusPx: 16,
   effect: {
-    healEnergyRatio: 0.35, // H：回二段能量 fillThreshold×0.35（顯著回饋不過量）
     burst: { jumpMs: 260, slamMs: 160, radiusPx: 450, damage: 70, knockback: 800, visualMs: 320, color: 0xa855f7 }, // E 紫
     whirl: { radiusPx: 200, durationMs: 3000, tickMs: 200, damagePerHit: 22, knockback: 0, color: 0x00e5ff }, // A 青 DOT
     thunder: { orbitRadiusPx: 120, strikes: 6, strikeRadiusPx: 90, damage: 80, knockback: 260, strikeDelayMs: 110, chargeMs: 350, color: 0xffd700 }, // B 金
+    iai: { distancePx: 1300, speedPxPerSec: 2600, windupMs: 160, hitRadiusPx: 55, damage: 120, knockback: 420, passes: 2, sampleStepPx: 40, color: 0xff4d6d }, // C 紅（來回2趟）
+    flame: {
+      windupMs: 220, sprayMs: 480, color: 0xff7a1a, // F 橙紅
+      flameLengthPx: 340, flameWidthPx: 150, burstDamage: 60, burstKnockback: 200,
+      burnLengthPx: 300, burnWidthPx: 150, burnStartPx: 40, burnDurationMs: 2000, burnTickMs: 400, burnTickDamage: 22,
+    },
   },
 };
