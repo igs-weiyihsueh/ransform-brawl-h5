@@ -499,6 +499,13 @@ export class PlayerControlSystem implements GameSystem {
               }
             }
           }
+        } else {
+          // ★測試兼容：沒有位置信息時回退到原有攻擊邏輯
+          const intent = energy.resolveAttackIntent(pid);
+          if (player.tryStartAttack(intent.attack.hitDelay / as.mult, as.cooldown, as.animTimeScale, undefined)) {
+            this.pendingIntent.set(pid, intent);
+            this.pendingAim.set(pid, null);
+          }
         }
       }
     }
