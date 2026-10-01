@@ -110,12 +110,11 @@ describe('S2 — PlayerControl pull-based 從 player.inputSource 取意圖', () 
     expect(calls.moveVecs[0]).toEqual({ x: 1, y: 0 }); // 驅動 player.move 用的是 inputSource 的向量
   });
 
-  it('衝刺：inputSource.justPressedDash()=true → 觸發 player.startDash（用 inputSource 的移動向量）', () => {
+  it('衝刺：inputSource.justPressedDash()=true → Normal模式已禁用X鍵衝刺', () => {
     const { src } = fakeInputSource({ dash: true, move: { x: -1, y: 0 } });
     const { player, calls } = fakePlayer(src);
     makePcs(player).update(0.016);
-    expect(calls.startDashVecs.length).toBe(1);
-    expect(calls.startDashVecs[0]).toEqual({ x: -1, y: 0 });
+    expect(calls.startDashVecs.length).toBe(0); // Normal模式禁用X鍵衝刺
   });
 
   it('攻擊：inputSource.justPressedAttack()=true → 觸發 player.tryStartAttack', () => {

@@ -3,8 +3,6 @@ import { getResolvedDash } from '@/config/dashSchema';
 import {
   type DashChargeState,
   makeDashChargeState,
-  canDash as canDashCharge,
-  consumeDashCharge,
   dashCooldownProgress,
 } from '@/systems/dashChargeMath';
 import {
@@ -95,10 +93,21 @@ export class PlayerControlSystem implements GameSystem {
   /** ★Normal 攻擊改造：每玩家鎖定目標（140px 圓形範圍，黏著式鎖定）。 */
   private lockedTarget = new Map<number, Enemy | null>();
 
+  /** ★Normal 攻擊改造：每玩家鎖定框 handle（復用鬥氣模式的視覺系統）。 */
+  private normalLockMarker = new Map<number, Phaser.GameObjects.Graphics | null>();
+
+  /** ★Normal 攻擊改造：每玩家鎖定框當前跟的敵人（供偵測鎖定目標切換）。 */
+  private normalMarkedEnemy = new Map<number, Enemy | null>();
+
   /** Normal 攻擊改造：更新玩家的鎖定目標（140px 範圍，黏著式鎖定）。 */
   private updateTargetLock(player: any, playerId: number): void {
     const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
-    if (!ppos) return;
+    if (!ppos) {
+      // 沒有位置信息時清除鎖定
+      this.lockedTarget.set(playerId, null);
+      this.setNormalLockMarker(playerId, null);
+      return;
+    }
 
     const enemies = this.ctx.getEnemies();
     const LOCK_RANGE_PX = 140; // 140px 圓形範圍
@@ -112,7 +121,9 @@ export class PlayerControlSystem implements GameSystem {
       if (targetPos) {
         const dist = Math.sqrt((targetPos.x - ppos.x) ** 2 + (targetPos.y - ppos.y) ** 2);
         if (dist <= LOCK_RANGE_PX) {
-          return; // 保持當前鎖定
+          // 保持當前鎖定，更新鎖定框位置
+          this.setNormalLockMarker(playerId, currentTarget);
+          return;
         }
       }
     }
@@ -132,12 +143,43 @@ export class PlayerControlSystem implements GameSystem {
       }
     }
     
+    // 更新鎖定目標和鎖定框
     this.lockedTarget.set(playerId, nearestEnemy);
+    this.setNormalLockMarker(playerId, nearestEnemy);
   }
 
   /** Normal 攻擊改造：獲取玩家當前鎖定的目標。 */
   private getLockedTarget(playerId: number): any {
     return this.lockedTarget.get(playerId) || null;
+  }
+
+  /** Normal 攻擊改造：設置鎖定框跟隨（復用鬥氣模式的視覺系統）。 */
+  private setNormalLockMarker(playerId: number, target: Enemy | null): void {
+    const fx = this.ctx.effects;
+    const currentMarker = this.normalLockMarker.get(playerId);
+    const currentMarkedEnemy = this.normalMarkedEnemy.get(playerId);
+    
+    if (target == null || (typeof target.isDead === 'function' && target.isDead())) {
+      if (currentMarker) { 
+        fx?.endDouqiLockMarker?.(currentMarker); 
+        this.normalLockMarker.set(playerId, null);
+      }
+      this.normalMarkedEnemy.set(playerId, null);
+      return;
+    }
+    
+    const c = typeof target.getHitCenter === 'function' ? target.getHitCenter() : null;
+    if (!c) return;
+    
+    if (currentMarker == null || currentMarkedEnemy !== target) {
+      // 新鎖定/切換目標：收舊框、建新框。
+      if (currentMarker) fx?.endDouqiLockMarker?.(currentMarker);
+      const newMarker = fx?.douqiLockMarker?.(c.x, c.y, 0x00ff88) ?? null; // 用綠色區分 Normal 模式
+      this.normalLockMarker.set(playerId, newMarker);
+      this.normalMarkedEnemy.set(playerId, target);
+    } else {
+      fx?.updateDouqiLockMarker?.(currentMarker, c.x, c.y);
+    }
   }
 
   /** 十六輪(追加)：GrabSystem 掙脫成功呼叫 → 該玩家下一幀強制揮一次真攻擊（揮開打退 grabber，非只解除被抓）。 */
@@ -371,22 +413,23 @@ export class PlayerControlSystem implements GameSystem {
     // hitFeel 玩家 hitlag 推進：計時歸零 or 攻擊結束 → 恢復（在移動/衝刺前 tick，isInHitlag 期間 move/dash 自會凍結）。
     if (typeof player.tickHitlag === 'function') player.tickHitlag(dt);
 
+    // ★Normal 攻擊改造：禁用 X 鍵衝刺（改為空白鍵攻擊整合衝刺機制）
     // 衝刺觸發（edge；需可攻擊、非衝刺中、且有充能格）。
-    if (src.justPressedDash() && !player.isDashing() && credit.canAttack(pid) && canDashCharge(this.dashChargeOf(pid))) {
-      // 十六輪：消耗一格衝刺充能（滿格→掉格則起算該格冷卻）。
-      const consumed = consumeDashCharge(this.dashChargeOf(pid), this.dashMaxChargesOf());
-      this.dashCharge.set(pid, consumed.state);
-      this.clearDashShield(pid); // 十五輪 bug④：重新衝刺前先清前一個防護罩 handle（防反覆 dash 舊 fx 殘留/洩漏）
-      player.startDash(src.getMoveVector());
-      this.dashConsumedCredit.set(pid, false);
-      // 十一輪#3：衝刺起手建防護罩特效 handle（持續整個衝刺、跟本體移動）。純視覺。
-      const dd = player.getDashDir?.() ?? { x: player.getFacing?.() ?? 1, y: 0 };
-      const dpos = player.getPosition?.();
-      if (dpos) {
-        const handle = this.ctx.effects?.playerDash?.(dpos.x, dpos.y, Math.atan2(dd.y, dd.x), playerColor(pid)) ?? null;
-        this.dashShield.set(pid, handle);
-      }
-    }
+    // if (src.justPressedDash() && !player.isDashing() && credit.canAttack(pid) && canDashCharge(this.dashChargeOf(pid))) {
+    //   // 十六輪：消耗一格衝刺充能（滿格→掉格則起算該格冷卻）。
+    //   const consumed = consumeDashCharge(this.dashChargeOf(pid), this.dashMaxChargesOf());
+    //   this.dashCharge.set(pid, consumed.state);
+    //   this.clearDashShield(pid); // 十五輪 bug④：重新衝刺前先清前一個防護罩 handle（防反覆 dash 舊 fx 殘留/洩漏）
+    //   player.startDash(src.getMoveVector());
+    //   this.dashConsumedCredit.set(pid, false);
+    //   // 十一輪#3：衝刺起手建防護罩特效 handle（持續整個衝刺、跟本體移動）。純視覺。
+    //   const dd = player.getDashDir?.() ?? { x: player.getFacing?.() ?? 1, y: 0 };
+    //   const dpos = player.getPosition?.();
+    //   if (dpos) {
+    //     const handle = this.ctx.effects?.playerDash?.(dpos.x, dpos.y, Math.atan2(dd.y, dd.x), playerColor(pid)) ?? null;
+    //     this.dashShield.set(pid, handle);
+    //   }
+    // }
 
     if (player.isDashing()) {
       player.updateDash(dt);
