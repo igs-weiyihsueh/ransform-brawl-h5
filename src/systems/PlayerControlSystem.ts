@@ -99,6 +99,14 @@ export class PlayerControlSystem implements GameSystem {
   /** ★Normal 攻擊改造：每玩家鎖定框當前跟的敵人（供偵測鎖定目標切換）。 */
   private normalMarkedEnemy = new Map<number, Enemy | null>();
 
+  /** ★Normal 攻擊改造：每玩家衝刺狀態（類似鬥氣模式的自管理衝刺）。 */
+  private normalDashState = new Map<number, {
+    dashing: boolean;
+    target: { x: number; y: number };
+    lockedEnemy: Enemy | null;
+    mode: 'enemy' | 'direction'; // enemy=衝向敵人, direction=朝方向衝刺
+  }>();
+
   /** Normal 攻擊改造：更新玩家的鎖定目標（140px 範圍，黏著式鎖定）。 */
   private updateTargetLock(player: any, playerId: number): void {
     const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
@@ -179,6 +187,103 @@ export class PlayerControlSystem implements GameSystem {
       this.normalMarkedEnemy.set(playerId, target);
     } else {
       fx?.updateDouqiLockMarker?.(currentMarker, c.x, c.y);
+    }
+  }
+
+  /** Normal 攻擊改造：開始 Normal 模式衝刺。 */
+  private startNormalDash(player: any, target: { x: number; y: number }, lockedEnemy: Enemy | null, mode: 'enemy' | 'direction'): void {
+    const playerId = player.playerId;
+    this.normalDashState.set(playerId, {
+      dashing: true,
+      target,
+      lockedEnemy,
+      mode
+    });
+  }
+
+  /** Normal 攻擊改造：結束 Normal 模式衝刺。 */
+  private endNormalDash(player: any): void {
+    const playerId = player.playerId;
+    this.normalDashState.set(playerId, {
+      dashing: false,
+      target: { x: 0, y: 0 },
+      lockedEnemy: null,
+      mode: 'direction'
+    });
+  }
+
+  /** Normal 攻擊改造：獲取 Normal 衝刺狀態。 */
+  private getNormalDashState(playerId: number) {
+    return this.normalDashState.get(playerId) || {
+      dashing: false,
+      target: { x: 0, y: 0 },
+      lockedEnemy: null,
+      mode: 'direction' as const
+    };
+  }
+
+  /** Normal 攻擊改造：每幀推進 Normal 衝刺（類似鬥氣模式）。 */
+  private updateNormalDashProgress(player: any, dt: number): void {
+    const playerId = player.playerId;
+    const dashState = this.getNormalDashState(playerId);
+    
+    if (!dashState.dashing) return;
+
+    const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
+    if (!ppos) {
+      this.endNormalDash(player);
+      return;
+    }
+
+    const dx = dashState.target.x - ppos.x;
+    const dy = dashState.target.y - ppos.y;
+    const distToTarget = Math.hypot(dx, dy);
+
+    // 衝向敵人模式：檢查是否到達攻擊距離
+    if (dashState.mode === 'enemy' && dashState.lockedEnemy) {
+      const enemy = dashState.lockedEnemy;
+      const ATTACK_REACH = 40; // 攻擊距離 (px)
+      const enemyRadius = typeof enemy.getHitRadius === 'function' ? enemy.getHitRadius() : 20;
+      const reach = ATTACK_REACH + enemyRadius;
+      
+      if (distToTarget <= reach) {
+        // 到達攻擊距離：停止衝刺並執行攻擊
+        this.endNormalDash(player);
+        if (typeof player.tryStartAttack === 'function') {
+          player.tryStartAttack();
+        }
+        return;
+      }
+    }
+
+    // 衝刺推進邏輯（復用 DASH_CONFIG 參數）
+    const DASH_SPEED = 1500; // 15 unit/s = 1500 px/s
+    const step = DASH_SPEED * dt;
+
+    // 防止震盪：如果剩餘距離很小就直接到達
+    const stopDist = Math.max(8, DASH_SPEED * 0.016); // 避免高速震盪
+    if (distToTarget <= stopDist) {
+      // 直接到達目標位置
+      if (typeof player.setPosition === 'function') {
+        player.setPosition(dashState.target.x, dashState.target.y);
+      }
+      
+      // 如果是攻擊敵人模式，執行攻擊
+      if (dashState.mode === 'enemy' && dashState.lockedEnemy && typeof player.tryStartAttack === 'function') {
+        player.tryStartAttack();
+      }
+      
+      this.endNormalDash(player);
+      return;
+    }
+
+    // 正常推進
+    const inv = 1 / distToTarget;
+    const newX = ppos.x + dx * inv * step;
+    const newY = ppos.y + dy * inv * step;
+    
+    if (typeof player.setPosition === 'function') {
+      player.setPosition(newX, newY);
     }
   }
 
@@ -320,6 +425,9 @@ export class PlayerControlSystem implements GameSystem {
   updatePlayer(player: GameContext['player'], dt: number): void {
     const { energy, credit } = this.ctx;
     const pid = player.playerId;
+
+    // ★Normal 攻擊改造：衝刺推進邏輯（在所有其他邏輯之前處理）
+    this.updateNormalDashProgress(player, dt);
 
     // 投幣（C 鍵，Unity: 最先判斷不被任何狀態擋）：若在待機則進場。
     // Credit +100 由 CreditSystem.update 處理（順序在本系統前）；此處只負責 waiting→EnterGame。
@@ -468,7 +576,6 @@ export class PlayerControlSystem implements GameSystem {
         );
         
         if (ppos) {
-          let dashDir = { x: 0, y: 0 };
           let isNormalAttack = false;
           
           if (lockedTarget) {
@@ -486,20 +593,8 @@ export class PlayerControlSystem implements GameSystem {
                 if (typeof player.faceTowards === 'function') {
                   player.faceTowards(ppos.x + sideDirX);
                 }
-              } else {
-                // 距離較遠：衝向鎖定敵人
-                const dx = targetPos.x - ppos.x;
-                const dy = targetPos.y - ppos.y;
-                const len = Math.sqrt(dx * dx + dy * dy);
-                if (len > 0) {
-                  dashDir = { x: dx / len, y: dy / len };
-                }
               }
             }
-          } else {
-            // 無鎖定目標：朝面向方向衝刺攻擊
-            const facing = player.getFacing?.() ?? 1;
-            dashDir = { x: facing, y: 0 };
           }
           
           if (isNormalAttack) {
@@ -520,27 +615,45 @@ export class PlayerControlSystem implements GameSystem {
               this.pendingAim.set(pid, null);
             }
           } else {
-            // 衝刺攻擊：使用衝刺參數
-            if (typeof player.startDash === 'function') {
-              // 面向衝刺方向
-              if (Math.abs(dashDir.x) > 1e-6 && typeof player.faceTowards === 'function') {
-                player.faceTowards(ppos.x + Math.sign(dashDir.x));
+            // 衝刺攻擊：使用新的 Normal 衝刺系統
+            const lockedEnemy = this.getLockedTarget(pid);
+            let target: { x: number; y: number };
+            let mode: 'enemy' | 'direction';
+            
+            if (lockedEnemy) {
+              // 有鎖定：衝向敵人
+              const enemyPos = typeof lockedEnemy.getHitCenter === 'function' ? lockedEnemy.getHitCenter() : null;
+              if (enemyPos) {
+                target = enemyPos;
+                mode = 'enemy';
+              } else {
+                // 備用：朝面向方向
+                const DASH_DISTANCE = 150; // 衝刺距離
+                const facing = player.getFacing?.() ?? 1;
+                target = { x: ppos.x + facing * DASH_DISTANCE, y: ppos.y };
+                mode = 'direction';
               }
-              
-              // 啟動衝刺（復用現有衝刺系統的參數和特效）
-              this.clearDashShield(pid);
-              player.startDash(dashDir);
-              this.dashConsumedCredit.set(pid, false);
-              
-              // 衝刺特效
-              const handle = this.ctx.effects?.playerDash?.(ppos.x, ppos.y, Math.atan2(dashDir.y, dashDir.x), playerColor(pid)) ?? null;
-              this.dashShield.set(pid, handle);
-              
-              // 設置攻擊冷卻（使用原有攻擊冷卻時間）
-              if (typeof player.tryStartAttack === 'function') {
-                player.tryStartAttack(0, as.cooldown, as.animTimeScale, undefined);
-              }
+            } else {
+              // 無鎖定：朝面向方向衝刺
+              const DASH_DISTANCE = 150; // 衝刺距離
+              const facing = player.getFacing?.() ?? 1;
+              target = { x: ppos.x + facing * DASH_DISTANCE, y: ppos.y };
+              mode = 'direction';
             }
+            
+            // 面向衝刺方向
+            if (target.x !== ppos.x && typeof player.faceTowards === 'function') {
+              player.faceTowards(target.x);
+            }
+            
+            // 啟動 Normal 衝刺系統
+            this.startNormalDash(player, target, lockedEnemy, mode);
+            
+            // 衝刺特效（復用現有系統）
+            this.clearDashShield(pid);
+            const angle = Math.atan2(target.y - ppos.y, target.x - ppos.x);
+            const handle = this.ctx.effects?.playerDash?.(ppos.x, ppos.y, angle, playerColor(pid)) ?? null;
+            this.dashShield.set(pid, handle);
           }
         } else {
           // ★測試兼容：沒有位置信息時回退到原有攻擊邏輯
