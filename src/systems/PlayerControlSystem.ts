@@ -58,7 +58,6 @@ import {
   type OBB,
   type Vec2,
 } from '@/systems/hitDetection';
-import { nearestPoint } from '@/systems/targetingMath';
 
 /**
  * PlayerControlSystem — 玩家操控主迴圈。
@@ -92,6 +91,54 @@ export class PlayerControlSystem implements GameSystem {
   private dashShield = new Map<number, Phaser.GameObjects.Image | null>();
   /** 十六輪(追加)：被抓掙脫成功那刻請求「強制真攻擊」的 pid 集合（GrabSystem escape 觸發，下一幀 updatePlayer 消費揮擊）。 */
   private forcedAttackPids = new Set<number>();
+
+  /** ★Normal 攻擊改造：每玩家鎖定目標（140px 圓形範圍，黏著式鎖定）。 */
+  private lockedTarget = new Map<number, Enemy | null>();
+
+  /** Normal 攻擊改造：更新玩家的鎖定目標（140px 範圍，黏著式鎖定）。 */
+  private updateTargetLock(player: any, playerId: number): void {
+    const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
+    if (!ppos) return;
+
+    const enemies = this.ctx.getEnemies();
+    const LOCK_RANGE_PX = 140; // 140px 圓形範圍
+    
+    // 獲取當前鎖定目標
+    const currentTarget = this.lockedTarget.get(playerId);
+    
+    // 黏著式鎖定：如果已有鎖定目標且仍在範圍內，保持鎖定
+    if (currentTarget && enemies.includes(currentTarget)) {
+      const targetPos = typeof currentTarget.getHitCenter === 'function' ? currentTarget.getHitCenter() : null;
+      if (targetPos) {
+        const dist = Math.sqrt((targetPos.x - ppos.x) ** 2 + (targetPos.y - ppos.y) ** 2);
+        if (dist <= LOCK_RANGE_PX) {
+          return; // 保持當前鎖定
+        }
+      }
+    }
+    
+    // 尋找新的鎖定目標（範圍內最近的敵人）
+    let nearestEnemy: any = null;
+    let nearestDist = LOCK_RANGE_PX;
+    
+    for (const enemy of enemies) {
+      const epos = typeof enemy.getHitCenter === 'function' ? enemy.getHitCenter() : null;
+      if (!epos) continue;
+      
+      const dist = Math.sqrt((epos.x - ppos.x) ** 2 + (epos.y - ppos.y) ** 2);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestEnemy = enemy;
+      }
+    }
+    
+    this.lockedTarget.set(playerId, nearestEnemy);
+  }
+
+  /** Normal 攻擊改造：獲取玩家當前鎖定的目標。 */
+  private getLockedTarget(playerId: number): any {
+    return this.lockedTarget.get(playerId) || null;
+  }
 
   /** 十六輪(追加)：GrabSystem 掙脫成功呼叫 → 該玩家下一幀強制揮一次真攻擊（揮開打退 grabber，非只解除被抓）。 */
   requestForcedAttack(playerId: number): void {
@@ -355,6 +402,9 @@ export class PlayerControlSystem implements GameSystem {
       // 十一輪#3：衝刺結束（非 dashing）→ 若有防護罩 handle，淡出銷毀（bug④：統一走 clearDashShield）。
       this.clearDashShield(pid);
       if (credit.canAct(pid)) {
+        // ★Normal 攻擊改造：更新鎖定目標（140px 範圍，黏著式鎖定）
+        this.updateTargetLock(player, pid);
+        
         const mv = src.getMoveVector();
         // 推怪負重（用戶）：有移動意圖才算——數真空圈內可推敵人(非菁英/非grabber)→降速。
         const moving = mv.x !== 0 || mv.y !== 0;
@@ -367,61 +417,91 @@ export class PlayerControlSystem implements GameSystem {
         player.move(adjustedMv, dt);
       }
       if ((src.justPressedAttack() || this.forcedAttackPids.delete(pid)) && credit.canAttack(pid)) {
-        const intent = energy.resolveAttackIntent(pid);
-        // 第十一輪#1：攻擊速度 override（per-character）→ 冷卻/前搖/動畫倍率。
+        // ★Normal 攻擊改造：基於鎖定的衝刺攻擊系統
+        const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
+        const lockedTarget = this.getLockedTarget(pid);
         const as = getResolvedAttackSpeedFor(
           typeof player.getCharacterKey === 'function' ? player.getCharacterKey() : '',
         );
-        // 十三輪軟鎖修（用戶釐清：讓角色往怪方向去，含斜角）：
-        //   lunge 位移「往怪的實際方向（斜向 dx,dy）」前撲靠近——玩家有推方向→往玩家推的方向（含斜角，意志優先）；
-        //   無推→往最近怪的實際方向（斜向）。面向仍只取左右（sign dx）驅動 attack 揮動畫（角色只左右揮，動畫限制）。
-        //   位移斜向靠近 + 面向左右揮 兩者分開。
-        const ppos = typeof player.getPosition === 'function' ? player.getPosition() : null;
-        const mvNow = src.getMoveVector();
-        let lungeDX = 0;
-        let lungeDY = 0;
-        if (Math.abs(mvNow.x) > 1e-6 || Math.abs(mvNow.y) > 1e-6) {
-          // 軟鎖：玩家有推方向 → lunge 往玩家推的方向（含斜角，玩家意志優先，即使背對怪）。
-          lungeDX = mvNow.x;
-          lungeDY = mvNow.y;
-        } else if (ppos) {
-          // 無輸入 → lunge 往最近怪的實際方向（斜向前撲靠近）。
-          const nearest = nearestPoint(ppos, this.enemyHitCenters());
-          if (nearest) { lungeDX = nearest.x - ppos.x; lungeDY = nearest.y - ppos.y; }
-        }
-        // 面向只取左右（sign dx）→ attack 揮動畫（無左右分量 fallback 現有 facing）。
-        const sideDirX = Math.abs(lungeDX) > 1e-6 ? Math.sign(lungeDX) : (player.getFacing?.() ?? 1);
-        if (ppos && typeof player.faceTowards === 'function') {
-          player.faceTowards(ppos.x + sideDirX); // 依左右側轉向（揮動畫左右）
-        }
-        // 十三輪#1 徹底解：斬光特效「綁揮擊幀」——動畫播到揮出幀(ATTACK_SWING_FRAME)才觸發（非計時），
-        //   嚴格對齊動作：動畫沒揮到→不出特效；連打 restart→重播到揮擊幀才出。傷害判定仍走 hitDelay（解耦、手感準）。
-        const swingVfx = intent.attack.vfxKey ? () => {
-          const p = typeof player.getPosition === 'function' ? player.getPosition() : { x: 0, y: 0 };
-          const fac = player.getFacing?.() ?? 1;
-          const vfxKey = intent.attack.vfxKey!;
-          // 攻擊 shape 中心（水平 facing，無 aim）當特效位置；scale/alpha 讓位（不蓋角色）。
-          const off = (intent.attack.offsetX ?? 0) * PPU * (this.ctx.energy.getAttackScale?.() ?? 1);
-          const ex = p.x + fac * off;
-          const ey = p.y + (intent.attack.offsetY ?? 0) * PPU;
-          const baseScale = (this.ctx.effects.getEffectScale?.(vfxKey) ?? 1) * 0.72;
-          this.ctx.effects.play(vfxKey, ex, ey, fac, baseScale, undefined, 0.7);
-        } : undefined;
-        if (player.tryStartAttack(intent.attack.hitDelay / as.mult, as.cooldown, as.animTimeScale, swingVfx)) {
-          this.pendingIntent.set(pid, intent);
-          this.pendingAim.set(pid, null); // ★攻擊判定走水平 facing（動畫左右）；lunge 位移往怪斜向。
-          // 軟鎖 lunge 前撲：往怪/玩家輸入的實際方向（含斜角）靠近；都無→用 facing 水平 fallback。
-          if (Math.abs(lungeDX) > 1e-6 || Math.abs(lungeDY) > 1e-6) {
-            player.startLunge?.(lungeDX, lungeDY);
+        
+        if (ppos) {
+          let dashDir = { x: 0, y: 0 };
+          let isNormalAttack = false;
+          
+          if (lockedTarget) {
+            // 有鎖定目標：檢查是否已貼近
+            const targetPos = typeof lockedTarget.getHitCenter === 'function' ? lockedTarget.getHitCenter() : null;
+            if (targetPos) {
+              const dist = Math.sqrt((targetPos.x - ppos.x) ** 2 + (targetPos.y - ppos.y) ** 2);
+              const MELEE_RANGE_PX = 80; // 貼近距離，切換近戰攻擊
+              
+              if (dist <= MELEE_RANGE_PX) {
+                // 貼近敵人：使用近戰攻擊（原有攻擊判定）
+                isNormalAttack = true;
+                const dx = targetPos.x - ppos.x;
+                const sideDirX = Math.abs(dx) > 1e-6 ? Math.sign(dx) : (player.getFacing?.() ?? 1);
+                if (typeof player.faceTowards === 'function') {
+                  player.faceTowards(ppos.x + sideDirX);
+                }
+              } else {
+                // 距離較遠：衝向鎖定敵人
+                const dx = targetPos.x - ppos.x;
+                const dy = targetPos.y - ppos.y;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0) {
+                  dashDir = { x: dx / len, y: dy / len };
+                }
+              }
+            }
           } else {
-            player.startLunge?.(player.getFacing?.() ?? 1, 0);
+            // 無鎖定目標：朝面向方向衝刺攻擊
+            const facing = player.getFacing?.() ?? 1;
+            dashDir = { x: facing, y: 0 };
+          }
+          
+          if (isNormalAttack) {
+            // 近戰攻擊：使用原有邏輯
+            const intent = energy.resolveAttackIntent(pid);
+            const swingVfx = intent.attack.vfxKey ? () => {
+              const fac = player.getFacing?.() ?? 1;
+              const vfxKey = intent.attack.vfxKey!;
+              const off = (intent.attack.offsetX ?? 0) * PPU * (this.ctx.energy.getAttackScale?.() ?? 1);
+              const ex = ppos.x + fac * off;
+              const ey = ppos.y + (intent.attack.offsetY ?? 0) * PPU;
+              const baseScale = (this.ctx.effects.getEffectScale?.(vfxKey) ?? 1) * 0.72;
+              this.ctx.effects.play(vfxKey, ex, ey, fac, baseScale, undefined, 0.7);
+            } : undefined;
+            
+            if (player.tryStartAttack(intent.attack.hitDelay / as.mult, as.cooldown, as.animTimeScale, swingVfx)) {
+              this.pendingIntent.set(pid, intent);
+              this.pendingAim.set(pid, null);
+            }
+          } else {
+            // 衝刺攻擊：使用衝刺參數
+            if (typeof player.startDash === 'function') {
+              // 面向衝刺方向
+              if (Math.abs(dashDir.x) > 1e-6 && typeof player.faceTowards === 'function') {
+                player.faceTowards(ppos.x + Math.sign(dashDir.x));
+              }
+              
+              // 啟動衝刺（復用現有衝刺系統的參數和特效）
+              this.clearDashShield(pid);
+              player.startDash(dashDir);
+              this.dashConsumedCredit.set(pid, false);
+              
+              // 衝刺特效
+              const handle = this.ctx.effects?.playerDash?.(ppos.x, ppos.y, Math.atan2(dashDir.y, dashDir.x), playerColor(pid)) ?? null;
+              this.dashShield.set(pid, handle);
+              
+              // 設置攻擊冷卻（使用原有攻擊冷卻時間）
+              if (typeof player.tryStartAttack === 'function') {
+                player.tryStartAttack(0, as.cooldown, as.animTimeScale, undefined);
+              }
+            }
           }
         }
       }
     }
-
-    // 十一輪#2：每幀推進 lunge 位移（攻擊前戳，衰減不回彈）。衝刺中也讓 lunge 收尾（updateLunge 內部凍結由 hitlag/grabbed 管）。
-    player.updateLunge?.(dt);
 
     // 計時器；hitDelay 到期做命中判定（衝刺中仍讓在途攻擊結算）。
     const pending = this.pendingIntent.get(pid) ?? null;
@@ -686,17 +766,6 @@ export class PlayerControlSystem implements GameSystem {
     enemy.takeHit(damage, knockback, fromPos);
     enemy.recordDamageFrom(player.playerId, damage);
     this.ctx.jp.recordDamage(player.playerId, damage);
-  }
-
-  /** 十一輪#2：存活敵人 hitCenter 清單（auto-aim 找最近怪用）。dead 排除。 */
-  private enemyHitCenters(): Vec2[] {
-    const out: Vec2[] = [];
-
-    for (const e of this.ctx.getEnemies()) {
-      if (typeof e.isDead === 'function' && e.isDead()) continue;
-      out.push(e.getHitCenter());
-    }
-    return out;
   }
 
   /** 依 intent 的 AttackData 形狀建立判定、查命中、套傷害；回報 EnergySystem 充能。aim=auto-aim 目標（十一輪#2，null→水平 facing）。 */
